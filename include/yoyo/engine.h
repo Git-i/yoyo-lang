@@ -1,0 +1,6 @@
+namespace Yoyo {
+    class Engine
+    {
+        
+    };
+}
