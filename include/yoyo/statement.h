@@ -14,6 +14,7 @@ namespace Yoyo
     {
     public:
         std::unique_ptr<Expression> expression;
+        explicit ExpressionStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {};
     };
     class VariableDeclaration : public Statement
     {
@@ -37,6 +38,7 @@ namespace Yoyo
     {
     public:
         std::unique_ptr<Expression> expression;
+        explicit ReturnStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {}
     };
     class IfStatement : public Statement
     {
@@ -44,5 +46,7 @@ namespace Yoyo
         std::unique_ptr<Expression> condition;
         std::unique_ptr<Statement> then_stat;
         std::unique_ptr<Statement> else_stat;
+        IfStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> then_, std::unique_ptr<Statement> else_)
+            : condition(std::move(cond)), then_stat(std::move(then_)), else_stat(std::move(else_)) {}
     };
 }

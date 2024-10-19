@@ -6,6 +6,7 @@ namespace Yoyo {
     Scanner::Scanner(std::string_view view): source(view),
     keywords({
         {"if", TokenType::If},
+        {"else", TokenType::Else},
         {"while", TokenType::While},
         {"in", TokenType::In},
         {"inout", TokenType::InOut},

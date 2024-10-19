@@ -5,7 +5,7 @@ namespace Yoyo {
     {
         Invalid, Eof,
         Identifier, SPIdentifier,
-        If, While, For,
+        If, Else, While, For,
         Plus, Minus, Slash, Star, Bang, Percent,
         Equal, BangEqual, PlusEqual, MinusEqual, SlashEqual, StarEqual, PercentEqual,
         Less, Greater, DoubleEqual, LessEqual, GreaterEqual,

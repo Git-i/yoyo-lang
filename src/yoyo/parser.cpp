@@ -305,19 +305,55 @@ namespace Yoyo
         return parseStatement();
     }
 
+    std::unique_ptr<Statement> Parser::parseReturnStatement()
+    {
+        auto expr = parseExpression(0);
+        if(!expr) return nullptr;
+        if(!discard(TokenType::SemiColon)) return nullptr;
+        return std::make_unique<ReturnStatement>(std::move(expr));
+    }
+
+    std::unique_ptr<Statement> Parser::parseExpressionStatement()
+    {
+        auto expr = parseExpression(0);
+        if(!expr) return nullptr;
+        if(!discard(TokenType::SemiColon)) return nullptr;
+        return std::make_unique<ExpressionStatement>(std::move(expr));
+    }
+
+    std::unique_ptr<Statement> Parser::parseIfStatement()
+    {
+        if(!discard(TokenType::LParen)) return nullptr;
+        auto condition = parseExpression(0);
+        if(!condition) return nullptr;
+        if(!discard(TokenType::RParen)) return nullptr;
+        auto then = parseStatement();
+        if(!then) return nullptr;
+
+        std::unique_ptr<Statement> else_stat = nullptr;
+        auto else_tk = Peek();
+        if(else_tk && else_tk->type == TokenType::Else)
+        {
+            Get();
+            else_stat = parseStatement();
+            if(!else_stat) return nullptr;
+        }
+        return std::make_unique<IfStatement>(std::move(condition), std::move(then), std::move(else_stat));
+    }
+
     std::unique_ptr<Statement> Parser::parseStatement()
     {
         auto tk = Peek();
         if(!tk) return nullptr;
         switch(tk->type)
         {
-        case TokenType::Return:;//TODO
-        case TokenType::If:;//TODO
+        case TokenType::Return: {Get(); return parseReturnStatement();}
+        case TokenType::If: {Get(); return parseIfStatement();}
         case TokenType::While:;//TODO
         case TokenType::For:;//TODO
         default:;//TODO
         }
-        return nullptr;
+        return parseExpressionStatement();
     }
 
     std::optional<Type> parseArrayType(Token t, Parser& parser)
