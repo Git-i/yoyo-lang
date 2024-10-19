@@ -34,3 +34,14 @@ TEST_CASE("Test Grouping experession", "[parser]")
     REQUIRE(grp != nullptr);
     REQUIRE(dynamic_cast<Yoyo::BinaryOperation*>(grp->expr.get()) != nullptr);
 }
+
+TEST_CASE("Test type parsing", "[parser]")
+{
+    Yoyo::Parser p("[foo2 & foo::<bar, baz>]");
+    auto type = *p.parseType(0);
+    REQUIRE(type.name == "__arr");
+    REQUIRE(type.subtypes[0].name == "__tup");
+    REQUIRE(type.subtypes[0].subtypes[0].name == "foo2");
+    REQUIRE(type.subtypes[0].subtypes[1].name == "foo");
+    REQUIRE(type.subtypes[0].subtypes[1].subtypes[0].name == "bar");
+}

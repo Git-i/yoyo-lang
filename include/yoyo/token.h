@@ -9,13 +9,15 @@ namespace Yoyo {
         Plus, Minus, Slash, Star, Bang, Percent,
         Equal, BangEqual, PlusEqual, MinusEqual, SlashEqual, StarEqual, PercentEqual,
         Less, Greater, DoubleEqual, LessEqual, GreaterEqual,
-        Colon, Arrow,
+        DoubleColon, Colon, Arrow,
         LParen, RParen, RCurly, LCurly, LSquare, RSquare,
         Dot, Comma,
         Ampersand, Pipe, DoubleAmpersand, DoublePipe,
         AmpersandEqual, PipeEqual,
         Caret, CaretEqual,
         IntegerLiteral, RealLiteral, StringLiteral,
+        TemplateOpen, /// ::<
+        DoubleGreater, DoubleLess,
         Underscore
     };
     struct Token

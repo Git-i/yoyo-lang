@@ -1,7 +1,7 @@
 #include "parser.h"
 
 #include <precedences.h>
-
+#include "statement.h"
 namespace Yoyo
 {
 
@@ -90,6 +90,11 @@ namespace Yoyo
         return false;
     }
 
+    void Parser::pushToken(Token t)
+    {
+        peekBuffer.push_back(t);
+    }
+
     std::optional<Token> Parser::Peek()
     {
         if(!peekBuffer.empty())
@@ -132,4 +137,104 @@ namespace Yoyo
         return left;
     }
 
+    std::optional<Type> parseArrayType(Token t, Parser& parser)
+    {
+        auto next = parser.parseType(0);
+        if(!next) return std::nullopt;
+        if(!parser.discard(TokenType::RSquare)) return std::nullopt;
+        return Type("__arr", {*next});
+    }
+    std::optional<Type> parseTypeGroup(Token t, Parser& parser)
+    {
+
+        auto next = parser.parseType(0);
+        if(!next) return std::nullopt;
+        if(!parser.discard(TokenType::RCurly)) return std::nullopt;
+        return *next;
+    }
+    static constexpr uint32_t PipePrecedence = 1;
+    static constexpr uint32_t AmpersandPrecedence = 2;
+    static constexpr uint32_t TemplatePrecedence = 3;
+    uint32_t Parser::GetNextTypePrecedence()
+    {
+        auto tk = Peek();
+        if(!tk) return 0;
+        switch(tk->type)
+        {
+        case TokenType::Ampersand: return AmpersandPrecedence; break;
+        case TokenType::Pipe: return PipePrecedence; break;
+        case TokenType::TemplateOpen: return TemplatePrecedence; break;
+        default: return 0;
+        }
+    }
+    std::optional<Type> parseAmpTypeExpr(Parser& p, Type left)
+    {
+        auto t = p.parseType(AmpersandPrecedence);
+        if(!t) return std::nullopt;
+        if(left.name == "__tup")
+        {
+            left.subtypes.push_back(*t);
+            return left;
+        }
+        return Type("__tup", {left, *t});
+    }
+    std::optional<Type> parsePipeTypeExpr(Parser& p, Type left)
+    {
+        auto t = p.parseType(PipePrecedence);
+        if(!t) return std::nullopt;
+        if(left.name == "__var")
+        {
+            left.subtypes.push_back(*t);
+            return left;
+        }
+        return Type("__var", {left, *t});
+    }
+    std::optional<Type> parseTemplateTypeExpr(Parser& p, Type left)
+    {
+        auto t = p.parseType(0);
+        if(!t) return std::nullopt;
+        left.subtypes.push_back(std::move(t).value());
+        while(p.discard(TokenType::Comma))
+        {
+            t = p.parseType(0);
+            if(!t) return std::nullopt;
+            left.subtypes.push_back(std::move(t).value());
+        }
+        if(!p.discard(TokenType::Greater))
+        {
+            if(p.discard(TokenType::DoubleGreater))
+            {
+                p.pushToken(Token{TokenType::Greater});
+                return left;
+            }
+            return std::nullopt;
+        }
+        return left;
+    }
+    std::optional<Type> Parser::parseType(uint32_t precedence)
+    {
+        auto tk = Get();
+        if(!tk) return std::nullopt;
+        std::optional<Type> t;
+        switch(tk->type)
+        {
+        case TokenType::Identifier: t = Type(std::string(tk->text), {}); break;
+        case TokenType::LSquare: t = parseArrayType(*tk, *this); break;
+        case TokenType::LCurly: t = parseTypeGroup(*tk, *this); break;
+        default: t = std::nullopt;
+        }
+        while(precedence < GetNextTypePrecedence())
+        {
+            if(!t) return std::nullopt;
+            tk = Get();
+            switch(tk->type)
+            {
+            case TokenType::Ampersand: t = parseAmpTypeExpr(*this, std::move(t).value()); break;
+            case TokenType::Pipe: t = parsePipeTypeExpr(*this, std::move(t).value()); break;
+            case TokenType::TemplateOpen: t = parseTemplateTypeExpr(*this, std::move(t).value()); break;
+            default: /*unreachable*/;
+            }
+        }
+        return t;
+    }
 }

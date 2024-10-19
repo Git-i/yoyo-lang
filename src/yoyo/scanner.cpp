@@ -41,6 +41,18 @@ namespace Yoyo {
                     if (NextIs('|')) return Token{TokenType::DoublePipe};
                     return Token{TokenType::Pipe};
                 }
+            case '>':
+                {
+                    if (NextIs('=')) return Token{TokenType::GreaterEqual};
+                    if (NextIs('>')) return Token{TokenType::DoubleGreater};
+                    return Token{TokenType::Greater};
+                }
+            case '<':
+                {
+                    if (NextIs('=')) return Token{TokenType::LessEqual};
+                    if (NextIs('<')) return Token{TokenType::DoubleLess};
+                    return Token{TokenType::Less};
+                }
             case '(': return Token{TokenType::LParen};
             case ')': return Token{TokenType::RParen};
             case '{': return Token{TokenType::LCurly};
@@ -49,7 +61,15 @@ namespace Yoyo {
             case ']': return Token{TokenType::RSquare};
             case '.': return Token{TokenType::Dot};
             case ',': return Token{TokenType::Comma};
-            case ':': return Token{TokenType::Colon};
+            case ':':
+                {
+                    if (NextIs(':'))
+                    {
+                        if(NextIs('<')) return Token{TokenType::TemplateOpen};
+                        return Token{TokenType::DoubleColon};
+                    }
+                    Token{TokenType::Colon};
+                }
             case '^': return Token{TokenType::Caret};
             case '_':
                 {
