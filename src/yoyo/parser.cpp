@@ -96,6 +96,116 @@ namespace Yoyo
         peekBuffer.push_back(t);
     }
 
+    std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
+    {
+        auto sig = parseFunctionSignature();
+        if(!sig) return nullptr;
+        if(!discard(TokenType::Equal)) return nullptr;
+        auto stat = parseStatement();
+        if(!stat) return nullptr;
+        return std::make_unique<FunctionDeclaration>(identifier, std::move(sig).value(), std::move(stat));
+    }
+
+    std::optional<FunctionSignature> Parser::parseFunctionSignature()
+    {
+        if(!discard(TokenType::LParen)) return std::nullopt;
+        FunctionSignature sig;
+        auto parseParam = [this](std::string name) -> std::optional<FunctionParameter>
+        {
+            /*
+             * fn_name: (_: in int, : inout float)
+             *              ^         ^        <- This function starts here
+             */
+            auto tk = Peek();
+            if(!tk) return std::nullopt;
+            auto t = ParamType::In;
+            if(tk->type == TokenType::In) Get();
+            else if(tk->type == TokenType::InOut)
+            {
+                t = ParamType::InOut;
+                Get();
+            }
+            auto type = parseType(0);
+            if(!type) return std::nullopt;
+            return FunctionParameter{*type, t, std::move(name)};
+        };
+        auto tk = Peek();
+        if(!tk) return std::nullopt;
+        if(tk->type == TokenType::Underscore)
+        {
+            Get();
+            if(!discard(TokenType::Colon)) return std::nullopt;
+            auto p = parseParam("");
+            if(!p) return std::nullopt;
+            sig.parameters.push_back(std::move(p).value());
+        }
+        else if(tk->type == TokenType::Colon)
+        {
+            Get();
+            auto p = parseParam("");
+            if(!p) return std::nullopt;
+            sig.parameters.push_back(std::move(p).value());
+        }
+        else if(tk->type == TokenType::Identifier)
+        {
+            Get();
+            if(!discard(TokenType::Colon)) return std::nullopt;
+            auto p = parseParam(std::string(tk->text));
+            if(!p) return std::nullopt;
+            sig.parameters.push_back(std::move(p).value());
+        }
+        //this is allowed for first parameter
+        else if(tk->type == TokenType::This)
+        {
+            Get();
+            sig.parameters.push_back(FunctionParameter{Type{"This", {}}, ParamType::InOut, "this"});
+        }
+        while(discard(TokenType::Comma))
+        {
+            auto tk = Peek();
+            if(!tk) return std::nullopt;
+            if(tk->type == TokenType::Underscore)
+            {
+                Get();
+                if(!discard(TokenType::Colon)) return std::nullopt;
+                auto p = parseParam("");
+                if(!p) return std::nullopt;
+                sig.parameters.push_back(std::move(p).value());
+            }
+            else if(tk->type == TokenType::Colon)
+            {
+                Get();
+                auto p = parseParam("");
+                if(!p) return std::nullopt;
+                sig.parameters.push_back(std::move(p).value());
+            }
+            else if(tk->type == TokenType::Identifier)
+            {
+                Get();
+                if(!discard(TokenType::Colon)) return std::nullopt;
+                auto p = parseParam(std::string(tk->text));
+                if(!p) return std::nullopt;
+                sig.parameters.push_back(std::move(p).value());
+            }
+        }
+        if(!discard(TokenType::RParen)) return std::nullopt;
+        sig.return_is_ref = false;
+        sig.returnType = Type{"void", {}};
+        if(discard(TokenType::Arrow))
+        {
+            auto ref_tk = Peek();
+            if(ref_tk->type == TokenType::Ref)
+            {
+                Get();
+                sig.return_is_ref = true;
+            }
+            auto ret_type = parseType(0);
+            if(!ret_type) return std::nullopt;
+            sig.returnType = std::move(ret_type).value();
+        }
+        return sig;
+    }
+
     std::optional<Token> Parser::Peek()
     {
         if(!peekBuffer.empty())
@@ -182,12 +292,12 @@ namespace Yoyo
             {
                 auto look_ahead = Peek();
                 if(!look_ahead) return nullptr;
-                if(look_ahead->type == TokenType::LParen);// return parseFunctionDeclaration(tk.value());
-                if(look_ahead->type == TokenType::Class);
-                if(look_ahead->type == TokenType::Struct);
-                if(look_ahead->type == TokenType::Enum);
-                if(look_ahead->type == TokenType::EnumFlag);
-                if(look_ahead->type == TokenType::Union);
+                if(look_ahead->type == TokenType::LParen) return parseFunctionDeclaration(tk.value());
+                if(look_ahead->type == TokenType::Class) ;//TODO
+                if(look_ahead->type == TokenType::Struct);//TODO
+                if(look_ahead->type == TokenType::Enum);//TODO
+                if(look_ahead->type == TokenType::EnumFlag);//TODO
+                if(look_ahead->type == TokenType::Union);//TODO
                 return parseVariableDeclaration(tk.value());
             }
             pushToken(tk.value());
@@ -197,7 +307,17 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseStatement()
     {
-
+        auto tk = Peek();
+        if(!tk) return nullptr;
+        switch(tk->type)
+        {
+        case TokenType::Return:;//TODO
+        case TokenType::If:;//TODO
+        case TokenType::While:;//TODO
+        case TokenType::For:;//TODO
+        default:;//TODO
+        }
+        return nullptr;
     }
 
     std::optional<Type> parseArrayType(Token t, Parser& parser)

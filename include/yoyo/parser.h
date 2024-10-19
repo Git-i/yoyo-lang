@@ -23,6 +23,7 @@ namespace Yoyo
         void pushToken(Token t);
     private:
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
+        std::optional<FunctionSignature> parseFunctionSignature();
 
         std::optional<Token> Get();
         std::optional<Token> Peek();
