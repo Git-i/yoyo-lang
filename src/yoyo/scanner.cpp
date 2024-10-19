@@ -1,5 +1,5 @@
 #include "scanner.h"
-
+#include <locale>
 #include <optional>
 
 namespace Yoyo {
@@ -48,7 +48,7 @@ namespace Yoyo {
                 {
                     if (const char8_t next = Peek(); std::isalnum(next))
                     {
-                        std::u8string str = u8"_";
+                        std::string str = "_";
                         while (std::isalnum(Peek()))
                         {
                             str.push_back(Get());

@@ -1,9 +1,10 @@
-#include <istream>
+#pragma once
 #include <optional>
 
 #include "token.h"
 namespace Yoyo {
     class Scanner {
+    public:
         explicit Scanner(std::string_view);
 
         std::optional<Token> NextToken();

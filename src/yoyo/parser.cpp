@@ -67,24 +67,62 @@ namespace Yoyo
     }
     uint32_t Parser::GetNextPrecedence()
     {
-        auto parselet = GetInfixParselet(Peek().type);
+        auto tk = Peek();
+        if(!tk) return 0;
+        auto parselet = GetInfixParselet(tk->type);
         if(!parselet) return 0;
         return parselet->precedence();
+    }
+
+    bool Parser::discard(TokenType t)
+    {
+        auto tk = Peek();
+        if(tk && tk->type == t)
+        {
+            Get();
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<Token> Parser::Peek()
+    {
+        if(!peekBuffer.empty())
+        {
+            return peekBuffer.back();
+        }
+        auto tk = scn.NextToken();
+        if(!tk) return std::nullopt;
+        peekBuffer.push_back(tk.value());
+        return peekBuffer.back();
+    }
+
+    std::optional<Token> Parser::Get()
+    {
+        if(!peekBuffer.empty())
+        {
+            auto bk = peekBuffer.back();
+            peekBuffer.pop_back();
+            return bk;
+        }
+        return scn.NextToken();
     }
 
 
     std::unique_ptr<Expression> Parser::parseExpression(uint32_t precedence)
     {
         auto tk = Get();
-        auto prefixParselet = GetPrefixParselet(tk.type);
+        if(!tk) return nullptr; //todo: handle invalid token
+        auto prefixParselet = GetPrefixParselet(tk->type);
         if(!prefixParselet) return nullptr;
-        auto left = prefixParselet->parse(*this, tk);
+        auto left = prefixParselet->parse(*this, tk.value());
 
         while(precedence < GetNextPrecedence())
         {
+            //GetNext ensures we have a valid token
             tk = Get();
-            auto infixParselet = GetInfixParselet(tk.type);
-            left = infixParselet->parse(*this, std::move(left), tk);
+            auto infixParselet = GetInfixParselet(tk->type);
+            left = infixParselet->parse(*this, std::move(left), *tk);
         }
         return left;
     }
