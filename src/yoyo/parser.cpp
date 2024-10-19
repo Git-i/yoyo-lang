@@ -8,11 +8,14 @@ namespace Yoyo
     Parser::Parser(std::string src) : source(std::move(src)), scn(source)
     {
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
+        auto name_parselet = std::make_shared<NameParselet>();
         prefixParselets[TokenType::Minus] = prefix_op_parselet;
         prefixParselets[TokenType::Bang] = prefix_op_parselet;
         prefixParselets[TokenType::IntegerLiteral] = std::make_shared<IntLiteralParselet>();
         prefixParselets[TokenType::RealLiteral] = std::make_shared<RealLiteralParselet>();
         prefixParselets[TokenType::StringLiteral] = std::make_shared<StringLiteralParselet>();
+        prefixParselets[TokenType::Identifier] = name_parselet;
+        prefixParselets[TokenType::SPIdentifier] = name_parselet;
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);
@@ -21,7 +24,7 @@ namespace Yoyo
         auto access_parselet = std::make_shared<BinaryOperationParselet>(Precedences::MemberAccess);
         infixParselets[TokenType::Plus] = sum_parselet;
         infixParselets[TokenType::Minus] = sum_parselet;
-        infixParselets[TokenType::Slash] = product_parselet;
+        infixParselets[TokenType::Star] = product_parselet;
         infixParselets[TokenType::Slash] = product_parselet;
         infixParselets[TokenType::Percent] = product_parselet;
         infixParselets[TokenType::DoubleEqual] = equality_parselet;
@@ -51,6 +54,7 @@ namespace Yoyo
         infixParselets[TokenType::DoublePipe] = std::make_shared<LogicalOperationParselet>(Precedences::LogicOr);
 
         infixParselets[TokenType::Bang] = std::make_shared<PostfixOperationParselet>(Precedences::InvalidPropagate);
+        infixParselets[TokenType::LParen] = std::make_shared<CallOperationParselet>(Precedences::Call);
     }
 
     PrefixParselet* Parser::GetPrefixParselet(TokenType t)

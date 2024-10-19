@@ -18,6 +18,20 @@ namespace Yoyo
     {
         return std::make_unique<PostfixOperation>(tk, std::move(left));
     }
+    std::unique_ptr<Expression> CallOperationParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
+    {
+        std::vector<std::unique_ptr<Expression>> arguments;
+        while(true)
+        {
+            auto arg = parser.parseExpression(prec);
+            if(arg == nullptr) break;
+            arguments.push_back(std::move(arg));
+            if(!parser.discard(TokenType::Comma)) break;
+        }
+        if(!parser.discard(TokenType::RParen)) return nullptr;
+        return std::make_unique<CallOperation>(std::move(left), std::move(arguments));
+    }
+
 
 
 

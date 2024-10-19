@@ -12,8 +12,8 @@ namespace Yoyo
     public:
         explicit Parser(std::string source);
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
-    private:
         [[nodiscard]] bool discard(TokenType t);
+    private:
         std::optional<Token> Get();
         std::optional<Token> Peek();
         uint32_t GetNextPrecedence();

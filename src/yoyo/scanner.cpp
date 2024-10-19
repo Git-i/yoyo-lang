@@ -3,7 +3,14 @@
 #include <optional>
 
 namespace Yoyo {
-    Scanner::Scanner(std::string_view view): source(view) {}
+    Scanner::Scanner(std::string_view view): source(view),
+    keywords({
+        {"if", TokenType::If},
+        {"while", TokenType::While},
+    })
+    {
+
+    }
 
     std::optional<Token> Scanner::NextToken()
     {
@@ -61,12 +68,40 @@ namespace Yoyo {
             case ' ': [[fallthrough]];
             case '\r': break;
             case '\n': line++; break;
-            default: return std::nullopt;
+            default:
+                {
+                    if(std::isdigit(c)) return ScanNumber();
+                    if(std::isalpha(c)) return ScanIdentifier();
+                    return std::nullopt;
+                }
             }
         }
         return Token{TokenType::Eof};
     }
 
+    Token Scanner::ScanIdentifier()
+    {
+        size_t iden_begin = position - 1;
+        while (!IsEof() && std::isalnum(Peek())) std::ignore = Get();
+        auto view = std::string_view(source.begin() + iden_begin, source.begin() + position);
+        if (const auto kw = keywords.find(view); kw != keywords.end())
+        {
+            return {kw->second, view};
+        }
+        return {TokenType::Identifier, view};
+    }
+
+    Token Scanner::ScanNumber()
+    {
+        size_t number_begin = position - 1;
+        while (!IsEof() && std::isdigit(Peek())) std::ignore = Get();
+        if (IsEof() || Peek() != '.' || position + 1 >= source.size() || !std::isdigit(PeekNext()))
+            return {TokenType::IntegerLiteral,
+            std::string_view(source.begin() + number_begin, source.begin() + position)};
+        while (std::isdigit(Peek())) Get();
+        return {TokenType::RealLiteral,
+            std::string_view(source.begin() + number_begin, source.begin() + position)};
+    }
     char Scanner::Get()
     {
         return source[position++];
@@ -75,6 +110,10 @@ namespace Yoyo {
     char Scanner::Peek() const
     {
         return source[position];
+    }
+    char Scanner::PeekNext() const
+    {
+        return source[position + 1];
     }
 
     bool Scanner::NextIs(char c)

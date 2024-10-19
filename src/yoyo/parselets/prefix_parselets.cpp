@@ -1,4 +1,6 @@
 #include "parselets/prefix_parselets.h"
+
+
 #include "parser.h"
 #include "precedences.h"
 namespace Yoyo
@@ -19,6 +21,10 @@ namespace Yoyo
     std::unique_ptr<Expression> StringLiteralParselet::parse(Parser& parser, Token tk)
     {
         return std::make_unique<StringLiteral>(tk);
+    }
+    std::unique_ptr<Expression> NameParselet::parse(Parser& parser, Token tk)
+    {
+        return std::make_unique<NameExpression>(tk);
     }
 
 }

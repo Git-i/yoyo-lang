@@ -1,6 +1,8 @@
 #pragma once
 #include "token.h"
 #include <memory>
+#include <vector>
+
 namespace Yoyo
 {
     class Expression {
@@ -21,6 +23,11 @@ namespace Yoyo
     public:
         Token token;
         explicit StringLiteral(const Token& tk) : token(tk) {}
+    };
+    class NameExpression : public Expression {
+    public:
+        Token token;
+        explicit NameExpression(const Token& tk) : token(tk) {}
     };
     class PrefixOperation : public Expression {
     public:
@@ -49,5 +56,12 @@ namespace Yoyo
         Token op;
         std::unique_ptr<Expression> operand;
         PostfixOperation(const Token& op, std::unique_ptr<Expression> operand) : op(op), operand(std::move(operand)) {}
+    };
+    class CallOperation : public Expression {
+    public:
+        std::unique_ptr<Expression> callee;
+        std::vector<std::unique_ptr<Expression>> arguments;
+        CallOperation(std::unique_ptr<Expression> callee, std::vector<std::unique_ptr<Expression>> args) :
+            callee(std::move(callee)), arguments(std::move(args)) {}
     };
 }
