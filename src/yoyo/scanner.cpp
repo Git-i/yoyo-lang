@@ -19,6 +19,7 @@ namespace Yoyo {
             char c = Get();
             switch (c)
             {
+            case ';': return Token{TokenType::SemiColon};
             case '+': return NextIs('=') ? Token{TokenType::PlusEqual} : Token{TokenType::Plus};
             case '-':
                 {
@@ -68,7 +69,7 @@ namespace Yoyo {
                         if(NextIs('<')) return Token{TokenType::TemplateOpen};
                         return Token{TokenType::DoubleColon};
                     }
-                    Token{TokenType::Colon};
+                    return Token{TokenType::Colon};
                 }
             case '^': return Token{TokenType::Caret};
             case '_':
@@ -88,6 +89,11 @@ namespace Yoyo {
             case ' ': [[fallthrough]];
             case '\r': break;
             case '\n': line++; break;
+            case '=':
+                {
+                    if (NextIs('=')) return Token{TokenType::DoubleEqual};
+                    return Token{TokenType::Equal};
+                }
             default:
                 {
                     if(std::isdigit(c)) return ScanNumber();

@@ -2,6 +2,7 @@
 
 #include <precedences.h>
 #include "statement.h"
+#include "func_sig.h"
 namespace Yoyo
 {
 
@@ -135,6 +136,68 @@ namespace Yoyo
             left = infixParselet->parse(*this, std::move(left), *tk);
         }
         return left;
+    }
+
+    std::unique_ptr<Statement> Parser::parseVariableDeclaration(Token identifier)
+    {
+        auto tk = Peek();
+        if(!tk) return nullptr;
+        if(tk->type == TokenType::Underscore)
+        {
+            Get();
+            if(!discard(TokenType::Equal)) return nullptr;
+            auto initializer = parseExpression(0);
+            if(initializer == nullptr) return nullptr;
+            if(!discard(TokenType::SemiColon)) return nullptr;
+            return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer));
+        }
+        if(tk->type == TokenType::Equal)
+        {
+            Get();
+            auto initializer = parseExpression(0);
+            if(initializer == nullptr) return nullptr;
+            if(!discard(TokenType::SemiColon)) return nullptr;
+            return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer));
+        }
+        auto type = parseType(0);
+        if(!type) return nullptr;
+        std::unique_ptr<Expression> init = nullptr;
+        if(discard(TokenType::Equal))
+        {
+            auto initializer = parseExpression(0);
+            if(initializer == nullptr) return nullptr;
+        }
+        if(!discard(TokenType::SemiColon)) return nullptr;
+        return std::make_unique<VariableDeclaration>(identifier, type, std::move(init));
+    }
+
+    std::unique_ptr<Statement> Parser::parseDeclaration()
+    {
+        auto tk = Peek();
+        if(!tk) return nullptr;
+        if(tk->type == TokenType::Identifier)
+        {
+            Get();
+            if(discard(TokenType::Colon))
+            {
+                auto look_ahead = Peek();
+                if(!look_ahead) return nullptr;
+                if(look_ahead->type == TokenType::LParen);// return parseFunctionDeclaration(tk.value());
+                if(look_ahead->type == TokenType::Class);
+                if(look_ahead->type == TokenType::Struct);
+                if(look_ahead->type == TokenType::Enum);
+                if(look_ahead->type == TokenType::EnumFlag);
+                if(look_ahead->type == TokenType::Union);
+                return parseVariableDeclaration(tk.value());
+            }
+            pushToken(tk.value());
+        }
+        return parseStatement();
+    }
+
+    std::unique_ptr<Statement> Parser::parseStatement()
+    {
+
     }
 
     std::optional<Type> parseArrayType(Token t, Parser& parser)

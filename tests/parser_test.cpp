@@ -35,13 +35,36 @@ TEST_CASE("Test Grouping experession", "[parser]")
     REQUIRE(dynamic_cast<Yoyo::BinaryOperation*>(grp->expr.get()) != nullptr);
 }
 
-TEST_CASE("Test type parsing", "[parser]")
+TEST_CASE("Test type parsing", "[types][parser]")
 {
-    Yoyo::Parser p("[foo2 & foo::<bar, baz>]");
+    Yoyo::Parser p("[foo2 & foo::<bar, baz::<int>>]");
     auto type = *p.parseType(0);
     REQUIRE(type.name == "__arr");
     REQUIRE(type.subtypes[0].name == "__tup");
     REQUIRE(type.subtypes[0].subtypes[0].name == "foo2");
     REQUIRE(type.subtypes[0].subtypes[1].name == "foo");
-    REQUIRE(type.subtypes[0].subtypes[1].subtypes[0].name == "bar");
+    REQUIRE(type.subtypes[0].subtypes[1].subtypes[1].name == "baz");
+}
+
+TEST_CASE("Variable parsing", "[parser]")
+{
+    Yoyo::Parser p1("lol: int;");
+    Yoyo::Parser p2("lol: = 100;");
+    Yoyo::Parser p3("lol: _ = 100;");
+    auto s1 = p1.parseDeclaration();
+    auto s2 = p2.parseDeclaration();
+    auto s3 = p3.parseDeclaration();
+
+    auto decl1 = dynamic_cast<Yoyo::VariableDeclaration*>(s1.get());
+    REQUIRE(decl1->identifier.text == "lol");
+    REQUIRE(decl1->type->name == "int");
+
+    auto decl2 = dynamic_cast<Yoyo::VariableDeclaration*>(s2.get());
+    REQUIRE(decl2->identifier.text == "lol");
+    REQUIRE(decl2->type == std::nullopt);
+
+    auto decl3 = dynamic_cast<Yoyo::VariableDeclaration*>(s3.get());
+    REQUIRE(decl3->identifier.text == "lol");
+    REQUIRE(decl3->type == std::nullopt);
+
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <scanner.h>
+#include <statement.h>
 #include <type.h>
 #include <unordered_map>
 
@@ -13,11 +14,16 @@ namespace Yoyo
     public:
         explicit Parser(std::string source);
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
+        std::unique_ptr<Statement> parseVariableDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseDeclaration();
+        std::unique_ptr<Statement> parseStatement();
         uint32_t GetNextTypePrecedence();
         std::optional<Type> parseType(uint32_t precedence);
         [[nodiscard]] bool discard(TokenType t);
         void pushToken(Token t);
     private:
+        std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
+
         std::optional<Token> Get();
         std::optional<Token> Peek();
         uint32_t GetNextPrecedence();

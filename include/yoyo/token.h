@@ -18,6 +18,8 @@ namespace Yoyo {
         IntegerLiteral, RealLiteral, StringLiteral,
         TemplateOpen, /// ::<
         DoubleGreater, DoubleLess,
+        Class, Struct, Enum, EnumFlag, Union, Scheme, Interface,
+        SemiColon,
         Underscore
     };
     struct Token
