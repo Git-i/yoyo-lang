@@ -26,5 +26,12 @@ namespace Yoyo
     {
         return std::make_unique<NameExpression>(tk);
     }
+    std::unique_ptr<Expression> GroupParselet::parse(Parser& parser, Token tk)
+    {
+        auto expr = parser.parseExpression(0);
+        if(!parser.discard(TokenType::RParen)) return nullptr;
+        return std::make_unique<GroupingExpression>(std::move(expr));
+    }
+
 
 }

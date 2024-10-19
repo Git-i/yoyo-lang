@@ -16,6 +16,7 @@ namespace Yoyo
         prefixParselets[TokenType::StringLiteral] = std::make_shared<StringLiteralParselet>();
         prefixParselets[TokenType::Identifier] = name_parselet;
         prefixParselets[TokenType::SPIdentifier] = name_parselet;
+        prefixParselets[TokenType::LParen] = std::make_shared<GroupParselet>();
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);

@@ -35,6 +35,11 @@ namespace Yoyo
         std::unique_ptr<Expression> operand;
         PrefixOperation(const Token& op, std::unique_ptr<Expression> operand) : op(op), operand(std::move(operand)) {}
     };
+    class GroupingExpression : public Expression {
+    public:
+        std::unique_ptr<Expression> expr;
+        explicit GroupingExpression(std::unique_ptr<Expression> expr) : expr(std::move(expr)) {}
+    };
     class BinaryOperation : public Expression {
     public:
         Token op;

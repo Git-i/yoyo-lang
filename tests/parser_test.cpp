@@ -23,3 +23,14 @@ TEST_CASE("Test Member access and Call", "[parser]")
     REQUIRE(call_exp != nullptr);
     REQUIRE(call_exp->arguments.size() == 2);
 }
+
+TEST_CASE("Test Grouping experession", "[parser]")
+{
+    Yoyo::Parser p("(10 + 20) * 21");
+    auto exp = p.parseExpression(0);
+    auto product_exp = dynamic_cast<Yoyo::BinaryOperation*>(exp.get());
+    REQUIRE(product_exp->op.type == Yoyo::TokenType::Star);
+    auto grp = dynamic_cast<Yoyo::GroupingExpression*>(product_exp->lhs.get());
+    REQUIRE(grp != nullptr);
+    REQUIRE(dynamic_cast<Yoyo::BinaryOperation*>(grp->expr.get()) != nullptr);
+}
