@@ -3,17 +3,13 @@
 #include <optional>
 
 namespace Yoyo {
-    Scanner::Scanner(std::u8string_view view) : source(view) {}
-    Scanner::Scanner(std::string_view view)
-    {
-        source = std::u8string_view(reinterpret_cast<const char8_t*>(view.data()), view.size());
-    }
+    Scanner::Scanner(std::string_view view): source(view) {}
 
     std::optional<Token> Scanner::NextToken()
     {
         while(!IsEof())
         {
-            char8_t c = Get();
+            char c = Get();
             switch (c)
             {
             case '+': return NextIs('=') ? Token{TokenType::PlusEqual} : Token{TokenType::Plus};
@@ -71,12 +67,12 @@ namespace Yoyo {
         return Token{TokenType::Eof};
     }
 
-    char8_t Scanner::Get()
+    char Scanner::Get()
     {
         return source[position++];
     }
 
-    char8_t Scanner::Peek() const
+    char Scanner::Peek() const
     {
         return source[position];
     }
