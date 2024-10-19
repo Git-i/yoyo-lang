@@ -68,3 +68,9 @@ TEST_CASE("Variable parsing", "[parser]")
     REQUIRE(decl3->type == std::nullopt);
 
 }
+
+TEST_CASE("Function parsing", "[parser]")
+{
+    Yoyo::Parser p1("name: (:int, lol: inout float) -> ref string = return 5;");
+    auto decl = p1.parseDeclaration();
+}

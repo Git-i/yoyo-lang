@@ -7,6 +7,17 @@ namespace Yoyo {
     keywords({
         {"if", TokenType::If},
         {"while", TokenType::While},
+        {"in", TokenType::In},
+        {"inout", TokenType::InOut},
+        {"ref", TokenType::Ref},
+        {"return", TokenType::Return},
+        {"class", TokenType::Class},
+        {"struct", TokenType::Struct},
+        {"union", TokenType::Union},
+        {"enum", TokenType::Enum},
+        {"enum_flag", TokenType::EnumFlag},
+        {"scheme", TokenType::Scheme},
+        {"interface", TokenType::Interface}
     })
     {
 

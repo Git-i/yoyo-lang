@@ -30,5 +30,19 @@ namespace Yoyo
         FunctionSignature signature;
         Token identifier;
         std::unique_ptr<Statement> body;
+        FunctionDeclaration(Token ident, FunctionSignature sig, std::unique_ptr<Statement> body)
+            : signature(std::move(sig)), identifier(ident), body(std::move(body)) {}
+    };
+    class ReturnStatement : public Statement
+    {
+    public:
+        std::unique_ptr<Expression> expression;
+    };
+    class IfStatement : public Statement
+    {
+    public:
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<Statement> then_stat;
+        std::unique_ptr<Statement> else_stat;
     };
 }

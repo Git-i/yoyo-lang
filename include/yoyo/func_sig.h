@@ -2,7 +2,7 @@
 #include "type.h"
 namespace Yoyo
 {
-    enum ParamType
+    enum class ParamType
     {
         In, InOut
     };
