@@ -377,6 +377,12 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseReturnStatement()
     {
+        //empty return
+        if(Peek() && Peek()->type == TokenType::SemiColon)
+        {
+            Get();
+            return std::make_unique<ReturnStatement>(nullptr);
+        }
         auto expr = parseExpression(0);
         if(!expr) return nullptr;
         if(!discard(TokenType::SemiColon)) return nullptr;

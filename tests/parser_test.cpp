@@ -88,7 +88,7 @@ TEST_CASE("Class parsing", "[parser]")
     Yoyo::Parser p1(
         "lol: class = {"
         " static lamo: int,"
-        " function: () -> void = return 0;"
+        " function: () -> void = return;"
         " mod lola: float}"
     );
     auto decl = p1.parseDeclaration();
