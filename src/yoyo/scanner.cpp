@@ -20,7 +20,10 @@ namespace Yoyo {
         {"scheme", TokenType::Scheme},
         {"interface", TokenType::Interface},
         {"true", TokenType::True},
-        {"false", TokenType::False}
+        {"false", TokenType::False},
+        {"pub", TokenType::Pub},
+        {"mod", TokenType::Mod},
+        {"static", TokenType::Static}
     })
     {
 

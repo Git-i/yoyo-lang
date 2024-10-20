@@ -55,7 +55,8 @@ namespace Yoyo
             return std::make_unique<ArrayLiteral>(std::vector<std::unique_ptr<Expression>>{});
         auto expr = parser.parseExpression(0);
         if(!expr) return nullptr;
-        std::vector expressions = {std::move(expr)};
+        std::vector<std::unique_ptr<Expression>> expressions;
+        expressions.push_back(std::move(expr));
         while(parser.discard(TokenType::Comma))
         {
             expr = parser.parseExpression(0);

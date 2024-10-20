@@ -285,6 +285,68 @@ namespace Yoyo
         if(!discard(TokenType::SemiColon)) return nullptr;
         return std::make_unique<VariableDeclaration>(identifier, type, std::move(init));
     }
+    std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier)
+    {
+        std::vector<ClassMethod> methods;
+        std::vector<ClassVariable> vars;
+        Get(); //skip the "class" keyword
+        if(!discard(TokenType::Equal)) return nullptr;
+        if(!discard(TokenType::LCurly)) return nullptr;
+        while(!discard(TokenType::RCurly))
+        {
+            bool is_static = false;
+            AccessSpecifier spec = AccessSpecifier::Private;
+            while(true)
+            {
+                auto tk = Peek();
+                if(!tk) return nullptr;
+                if(tk->type == TokenType::Static)
+                {
+                    if(is_static) return nullptr;
+                    is_static = true;
+                    Get();
+                }
+                else if(tk->type == TokenType::Pub)
+                {
+                    if(spec != AccessSpecifier::Private) return nullptr;
+                    spec = AccessSpecifier::Public;
+                    Get();
+                }
+                else if(tk->type == TokenType::Mod)
+                {
+                    if(spec != AccessSpecifier::Private) return nullptr;
+                    spec = AccessSpecifier::Module;
+                    Get();
+                }
+                else if(tk->type == TokenType::Identifier) break;
+                else return nullptr;
+            }
+            auto iden = *Get();
+            if(!discard(TokenType::Colon)) return nullptr;
+            auto next_tk = Peek();
+            if(!next_tk) return nullptr;
+            if(next_tk->type == TokenType::LParen)
+            {
+                if(is_static) return nullptr;//static doesn't apply to functions
+                auto stat = parseFunctionDeclaration(iden);
+                if(!stat) return nullptr;
+                methods.push_back(ClassMethod{.function_decl = std::move(stat), .access = spec});
+                std::ignore = discard(TokenType::Comma); //comma is optional after function
+            }
+            else
+            {
+                auto type = parseType(0);
+                if(!type) return nullptr;
+                vars.push_back(ClassVariable{.access = spec, .name = std::string{iden.text}, .type = *type, .is_static = is_static});
+                if(!discard(TokenType::Comma))
+                {
+                    if(!discard(TokenType::RCurly)) return nullptr;
+                    break;
+                }
+            }
+        }
+        return std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods));
+    }
 
     std::unique_ptr<Statement> Parser::parseDeclaration()
     {
@@ -300,7 +362,7 @@ namespace Yoyo
                 switch (look_ahead->type)
                 {
                 case TokenType::LParen: return parseFunctionDeclaration(tk.value());
-                case TokenType::Class:;//TODO
+                case TokenType::Class: return parseClassDeclaration(tk.value());
                 case TokenType::Struct:;//TODO
                 case TokenType::Enum:;//TODO
                 case TokenType::EnumFlag:;//TODO

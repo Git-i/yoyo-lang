@@ -3,6 +3,7 @@
 
 #include "type.h"
 #include "expression.h"
+#include "class_entry.h"
 namespace Yoyo
 {
     class Statement
@@ -62,5 +63,15 @@ namespace Yoyo
     public:
         std::vector<std::unique_ptr<Statement>> statements;
         explicit BlockStatement(std::vector<std::unique_ptr<Statement>> stats) : statements(std::move(stats)) {}
+    };
+
+    class ClassDeclaration : public Statement
+    {
+    public:
+        Token identifier;
+        std::vector<ClassVariable> vars;
+        std::vector<ClassMethod> methods;
+        ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods)
+            : identifier(ident), vars(std::move(vars)), methods(std::move(methods)) {}
     };
 }
