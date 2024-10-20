@@ -19,6 +19,8 @@ namespace Yoyo
         std::unique_ptr<Statement> parseReturnStatement();
         std::unique_ptr<Statement> parseExpressionStatement();
         std::unique_ptr<Statement> parseIfStatement();
+        std::unique_ptr<Statement> parseBlockStatement();
+        std::unique_ptr<Statement> parseWhileStatement();
         std::unique_ptr<Statement> parseStatement();
         uint32_t GetNextTypePrecedence();
         std::optional<Type> parseType(uint32_t precedence);

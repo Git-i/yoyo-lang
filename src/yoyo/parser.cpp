@@ -340,7 +340,27 @@ namespace Yoyo
         }
         return std::make_unique<IfStatement>(std::move(condition), std::move(then), std::move(else_stat));
     }
-
+    std::unique_ptr<Statement> Parser::parseBlockStatement()
+    {
+        std::vector<std::unique_ptr<Statement>> statements;
+        while(!discard(TokenType::RCurly))
+        {
+            auto decl = parseDeclaration();
+            if(!decl) return nullptr;
+            statements.push_back(std::move(decl));
+        }
+        return std::make_unique<BlockStatement>(std::move(statements));
+    }
+    std::unique_ptr<Statement> Parser::parseWhileStatement()
+    {
+        if(!discard(TokenType::LParen)) return nullptr;
+        auto condition = parseExpression(0);
+        if(!condition) return nullptr;
+        if(!discard(TokenType::RParen)) return nullptr;
+        auto body = parseStatement();
+        if(!body) return nullptr;
+        return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
+    }
     std::unique_ptr<Statement> Parser::parseStatement()
     {
         auto tk = Peek();
@@ -349,11 +369,12 @@ namespace Yoyo
         {
         case TokenType::Return: {Get(); return parseReturnStatement();}
         case TokenType::If: {Get(); return parseIfStatement();}
-        case TokenType::While:;//TODO
+        case TokenType::LCurly: {Get(); return parseBlockStatement();}
+        case TokenType::While: {Get(); parseWhileStatement();}
         case TokenType::For:;//TODO
-        default:;//TODO
+        default: return parseExpressionStatement();
         }
-        return parseExpressionStatement();
+
     }
 
     std::optional<Type> parseArrayType(Token t, Parser& parser)

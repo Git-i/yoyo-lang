@@ -18,7 +18,9 @@ namespace Yoyo {
         {"enum", TokenType::Enum},
         {"enum_flag", TokenType::EnumFlag},
         {"scheme", TokenType::Scheme},
-        {"interface", TokenType::Interface}
+        {"interface", TokenType::Interface},
+        {"true", TokenType::True},
+        {"false", TokenType::False}
     })
     {
 

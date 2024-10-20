@@ -49,4 +49,18 @@ namespace Yoyo
         IfStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> then_, std::unique_ptr<Statement> else_)
             : condition(std::move(cond)), then_stat(std::move(then_)), else_stat(std::move(else_)) {}
     };
+    class WhileStatement : public Statement
+    {
+    public:
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<Statement> body;
+        WhileStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> body)
+            : condition(std::move(cond)), body(std::move(body)) {}
+    };
+    class BlockStatement : public Statement
+    {
+    public:
+        std::vector<std::unique_ptr<Statement>> statements;
+        explicit BlockStatement(std::vector<std::unique_ptr<Statement>> stats) : statements(std::move(stats)) {}
+    };
 }

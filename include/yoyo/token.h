@@ -15,7 +15,7 @@ namespace Yoyo {
         Ampersand, Pipe, DoubleAmpersand, DoublePipe,
         AmpersandEqual, PipeEqual,
         Caret, CaretEqual,
-        IntegerLiteral, RealLiteral, StringLiteral,
+        IntegerLiteral, RealLiteral, StringLiteral, True, False,
         TemplateOpen, /// ::<
         DoubleGreater, DoubleLess,
         Class, Struct, Enum, EnumFlag, Union, Scheme, Interface,
