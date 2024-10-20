@@ -13,6 +13,7 @@ namespace Yoyo
         auto bool_parselet = std::make_shared<BoolLiteralParselet>();
         prefixParselets[TokenType::Minus] = prefix_op_parselet;
         prefixParselets[TokenType::Bang] = prefix_op_parselet;
+        prefixParselets[TokenType::Tilde] = prefix_op_parselet;
         prefixParselets[TokenType::IntegerLiteral] = std::make_shared<IntLiteralParselet>();
         prefixParselets[TokenType::RealLiteral] = std::make_shared<RealLiteralParselet>();
         prefixParselets[TokenType::StringLiteral] = std::make_shared<StringLiteralParselet>();
@@ -21,6 +22,7 @@ namespace Yoyo
         prefixParselets[TokenType::LParen] = std::make_shared<GroupParselet>();
         prefixParselets[TokenType::True] = bool_parselet;
         prefixParselets[TokenType::False] = bool_parselet;
+        prefixParselets[TokenType::LSquare] = std::make_shared<ArrayLiteralParselet>();
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);

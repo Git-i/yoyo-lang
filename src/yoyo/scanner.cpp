@@ -138,7 +138,8 @@ namespace Yoyo {
         if (IsEof() || Peek() != '.' || position + 1 >= source.size() || !std::isdigit(PeekNext()))
             return {TokenType::IntegerLiteral,
             std::string_view(source.begin() + number_begin, source.begin() + position)};
-        while (std::isdigit(Peek())) Get();
+        std::ignore = Get();//discard the dot
+        while (std::isdigit(Peek())) std::ignore = Get();
         return {TokenType::RealLiteral,
             std::string_view(source.begin() + number_begin, source.begin() + position)};
     }

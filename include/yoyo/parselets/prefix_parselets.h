@@ -26,13 +26,18 @@ namespace Yoyo {
     class BoolLiteralParselet : public PrefixParselet {
     public:
         std::unique_ptr<Expression> parse(Parser& parser, Token tk) override;
-    }
+    };
     class NameParselet : public PrefixParselet
     {
     public:
         std::unique_ptr<Expression> parse(Parser& parser, Token tk) override;
     };
     class GroupParselet : public PrefixParselet
+    {
+    public:
+        std::unique_ptr<Expression> parse(Parser& parser, Token tk) override;
+    };
+    class ArrayLiteralParselet : public PrefixParselet
     {
     public:
         std::unique_ptr<Expression> parse(Parser& parser, Token tk) override;

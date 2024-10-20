@@ -69,8 +69,16 @@ TEST_CASE("Variable parsing", "[parser]")
 
 }
 
-TEST_CASE("Function parsing", "[parser]")
+TEST_CASE("Tuple Literal vs Grouping", "[parser]")
 {
-    Yoyo::Parser p1("name: (:int, lol: inout float) -> ref string = return 5;");
-    auto decl = p1.parseDeclaration();
+    Yoyo::Parser p1("(10)");
+    Yoyo::Parser p2("(20, 10.50)");
+    auto exp1 = p1.parseExpression(0);
+    auto exp2 = p2.parseExpression(0);
+
+    auto grp = dynamic_cast<Yoyo::GroupingExpression*>(exp1.get());
+    REQUIRE(grp != nullptr);
+    auto tup = dynamic_cast<Yoyo::TupleLiteral*>(exp2.get());
+    REQUIRE(tup != nullptr);
+    REQUIRE(tup->elements.size() == 2);
 }

@@ -19,6 +19,16 @@ namespace Yoyo
         Token token;
         explicit BooleanLiteral(const Token& tk) : token(tk) {}
     };
+    class TupleLiteral : public Expression {
+    public:
+        std::vector<std::unique_ptr<Expression>> elements;
+        explicit TupleLiteral(std::vector<std::unique_ptr<Expression>> elems) : elements(std::move(elems)) {}
+    };
+    class ArrayLiteral : public Expression {
+    public:
+        std::vector<std::unique_ptr<Expression>> elements;
+        explicit ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems) : elements(std::move(elems)) {}
+    };
     class RealLiteral : public Expression {
     public:
         Token token;
@@ -73,5 +83,12 @@ namespace Yoyo
         std::vector<std::unique_ptr<Expression>> arguments;
         CallOperation(std::unique_ptr<Expression> callee, std::vector<std::unique_ptr<Expression>> args) :
             callee(std::move(callee)), arguments(std::move(args)) {}
+    };
+    class SubscriptOperation : public Expression {
+    public:
+        std::unique_ptr<Expression> object;
+        std::unique_ptr<Expression> index;
+        SubscriptOperation(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> idx)
+            : object(std::move(obj)), index(std::move(idx)) {}
     };
 }

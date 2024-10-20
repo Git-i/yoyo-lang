@@ -8,7 +8,9 @@ namespace Yoyo
     std::unique_ptr<Expression> PrefixOperationParselet::parse(Parser& parser, Token tk)
     {
         //prefix operations are right associative
-        return std::make_unique<PrefixOperation>(tk, parser.parseExpression(Precedences::Prefix - 1));
+        auto expr = parser.parseExpression(Precedences::Prefix - 1);
+        if(!expr) return nullptr;
+        return std::make_unique<PrefixOperation>(tk, std::move(expr));
     }
     std::unique_ptr<Expression> IntLiteralParselet::parse(Parser& parser, Token tk)
     {
@@ -28,10 +30,42 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> GroupParselet::parse(Parser& parser, Token tk)
     {
+        //empty tuple
+        if(parser.discard(TokenType::RParen))
+            return std::make_unique<TupleLiteral>(std::vector<std::unique_ptr<Expression>>{});
         auto expr = parser.parseExpression(0);
+        if(!expr) return nullptr;
+        bool is_tuple = false;
+        std::vector<std::unique_ptr<Expression>> expressions;
+        while(parser.discard(TokenType::Comma))
+        {
+            expressions.push_back(std::move(expr));
+            is_tuple = true;
+            expr = parser.parseExpression(0);
+            if(!expr) return nullptr;
+        }
+        if(is_tuple) expressions.push_back(std::move(expr));
         if(!parser.discard(TokenType::RParen)) return nullptr;
-        return std::make_unique<GroupingExpression>(std::move(expr));
+        return is_tuple ? static_cast<std::unique_ptr<Expression>>(std::make_unique<TupleLiteral>(std::move(expressions)))
+            : static_cast<std::unique_ptr<Expression>>(std::make_unique<GroupingExpression>(std::move(expr)));
     }
+    std::unique_ptr<Expression> ArrayLiteralParselet::parse(Parser& parser, Token tk)
+    {
+        if(parser.discard(TokenType::RSquare))
+            return std::make_unique<ArrayLiteral>(std::vector<std::unique_ptr<Expression>>{});
+        auto expr = parser.parseExpression(0);
+        if(!expr) return nullptr;
+        std::vector expressions = {std::move(expr)};
+        while(parser.discard(TokenType::Comma))
+        {
+            expr = parser.parseExpression(0);
+            if(!expr) return nullptr;
+            expressions.push_back(std::move(expr));
+        }
+        if(!parser.discard(TokenType::RSquare)) return nullptr;
+        return std::make_unique<ArrayLiteral>(std::move(expressions));
+    }
+
     std::unique_ptr<Expression> BoolLiteralParselet::parse(Parser& parser, Token tk)
     {
         return std::make_unique<BooleanLiteral>(tk);

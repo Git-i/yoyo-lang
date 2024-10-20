@@ -19,7 +19,7 @@ namespace Yoyo {
         TemplateOpen, /// ::<
         DoubleGreater, DoubleLess,
         Class, Struct, Enum, EnumFlag, Union, Scheme, Interface,
-        SemiColon, In, InOut, This, Ref, Return,
+        SemiColon, In, InOut, This, Ref, Return, Tilde,
         Underscore
     };
     struct Token
