@@ -10,6 +10,7 @@ namespace Yoyo
     {
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
         auto name_parselet = std::make_shared<NameParselet>();
+        auto bool_parselet = std::make_shared<BoolLiteralParselet>();
         prefixParselets[TokenType::Minus] = prefix_op_parselet;
         prefixParselets[TokenType::Bang] = prefix_op_parselet;
         prefixParselets[TokenType::IntegerLiteral] = std::make_shared<IntLiteralParselet>();
@@ -18,6 +19,8 @@ namespace Yoyo
         prefixParselets[TokenType::Identifier] = name_parselet;
         prefixParselets[TokenType::SPIdentifier] = name_parselet;
         prefixParselets[TokenType::LParen] = std::make_shared<GroupParselet>();
+        prefixParselets[TokenType::True] = bool_parselet;
+        prefixParselets[TokenType::False] = bool_parselet;
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);
@@ -292,13 +295,16 @@ namespace Yoyo
             {
                 auto look_ahead = Peek();
                 if(!look_ahead) return nullptr;
-                if(look_ahead->type == TokenType::LParen) return parseFunctionDeclaration(tk.value());
-                if(look_ahead->type == TokenType::Class) ;//TODO
-                if(look_ahead->type == TokenType::Struct);//TODO
-                if(look_ahead->type == TokenType::Enum);//TODO
-                if(look_ahead->type == TokenType::EnumFlag);//TODO
-                if(look_ahead->type == TokenType::Union);//TODO
-                return parseVariableDeclaration(tk.value());
+                switch (look_ahead->type)
+                {
+                case TokenType::LParen: return parseFunctionDeclaration(tk.value());
+                case TokenType::Class:;//TODO
+                case TokenType::Struct:;//TODO
+                case TokenType::Enum:;//TODO
+                case TokenType::EnumFlag:;//TODO
+                case TokenType::Union:;//TODO
+                default: return parseVariableDeclaration(tk.value());
+                }
             }
             pushToken(tk.value());
         }
@@ -370,7 +376,7 @@ namespace Yoyo
         case TokenType::Return: {Get(); return parseReturnStatement();}
         case TokenType::If: {Get(); return parseIfStatement();}
         case TokenType::LCurly: {Get(); return parseBlockStatement();}
-        case TokenType::While: {Get(); parseWhileStatement();}
+        case TokenType::While: {Get(); return parseWhileStatement();}
         case TokenType::For:;//TODO
         default: return parseExpressionStatement();
         }

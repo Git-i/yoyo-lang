@@ -32,6 +32,11 @@ namespace Yoyo
         if(!parser.discard(TokenType::RParen)) return nullptr;
         return std::make_unique<GroupingExpression>(std::move(expr));
     }
+    std::unique_ptr<Expression> BoolLiteralParselet::parse(Parser& parser, Token tk)
+    {
+        return std::make_unique<BooleanLiteral>(tk);
+    }
+
 
 
 }

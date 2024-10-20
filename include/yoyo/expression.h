@@ -14,6 +14,11 @@ namespace Yoyo
         Token token;
         explicit IntegerLiteral(const Token& tk) : token(tk) {}
     };
+    class BooleanLiteral : public Expression {
+    public:
+        Token token;
+        explicit BooleanLiteral(const Token& tk) : token(tk) {}
+    };
     class RealLiteral : public Expression {
     public:
         Token token;
