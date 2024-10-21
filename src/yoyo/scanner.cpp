@@ -23,7 +23,9 @@ namespace Yoyo {
         {"false", TokenType::False},
         {"pub", TokenType::Pub},
         {"mod", TokenType::Mod},
-        {"static", TokenType::Static}
+        {"static", TokenType::Static},
+        {"for", TokenType::For}
+
     })
     {
 
@@ -162,6 +164,7 @@ namespace Yoyo {
 
     bool Scanner::NextIs(char c)
     {
+        if(IsEof()) return false;
         if (Peek() == c)
         {
             Get(); return true;

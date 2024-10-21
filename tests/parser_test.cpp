@@ -83,13 +83,11 @@ TEST_CASE("Tuple Literal vs Grouping", "[parser]")
     REQUIRE(tup->elements.size() == 2);
 }
 
-TEST_CASE("Class parsing", "[parser]")
+TEST_CASE("Error recovery", "[parser]")
 {
-    Yoyo::Parser p1(
-        "lol: class = {"
-        " static lamo: int,"
-        " function: () -> void = return;"
-        " mod lola: float}"
-    );
-    auto decl = p1.parseDeclaration();
+    Yoyo::Parser p1("10 + -");
+    auto expr = p1.parseExpression(0);
+    REQUIRE(expr != nullptr);
+    Yoyo::Parser p2("function: () -> return;");
+    auto decl = p2.parseDeclaration();
 }

@@ -74,4 +74,13 @@ namespace Yoyo
         ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods)
             : identifier(ident), vars(std::move(vars)), methods(std::move(methods)) {}
     };
+    class ForStatement : public Statement
+    {
+    public:
+        std::unique_ptr<Expression> iterable;
+        std::vector<Token> names;
+        std::unique_ptr<Statement> body;
+        ForStatement(std::vector<Token> names, std::unique_ptr<Expression> expr, std::unique_ptr<Statement> body)
+            : iterable(std::move(expr)), names(std::move(names)), body(std::move(body)) {}
+    };
 }
