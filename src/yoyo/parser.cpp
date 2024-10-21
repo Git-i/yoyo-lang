@@ -118,7 +118,7 @@ namespace Yoyo
     {
         auto sig = parseFunctionSignature();
         if(!sig) synchronizeTo({{TokenType::Equal}});
-        if(!discard(TokenType::Equal)) 
+        if(!discard(TokenType::Equal))
         {
             error("Expected '='", Peek());
         }
@@ -303,8 +303,8 @@ namespace Yoyo
         std::vector<ClassMethod> methods;
         std::vector<ClassVariable> vars;
         Get(); //skip the "class" keyword
-        if(!discard(TokenType::Equal)) return nullptr;
-        if(!discard(TokenType::LCurly)) return nullptr;
+        if(!discard(TokenType::Equal)) error("Expected '='", Peek());
+        if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
         {
             bool is_static = false;
@@ -315,46 +315,47 @@ namespace Yoyo
                 if(!tk) return nullptr;
                 if(tk->type == TokenType::Static)
                 {
-                    if(is_static) return nullptr;
+                    if(is_static) error("Multiple 'static' on one object", tk);
                     is_static = true;
                     Get();
                 }
                 else if(tk->type == TokenType::Pub)
                 {
-                    if(spec != AccessSpecifier::Private) return nullptr;
+                    if(spec != AccessSpecifier::Private) error("Multiple access specifiers on one object", tk);
                     spec = AccessSpecifier::Public;
                     Get();
                 }
                 else if(tk->type == TokenType::Mod)
                 {
-                    if(spec != AccessSpecifier::Private) return nullptr;
+                    if(spec != AccessSpecifier::Private) error("Multiple access specifiers on one object", tk);
                     spec = AccessSpecifier::Module;
                     Get();
                 }
                 else if(tk->type == TokenType::Identifier) break;
-                else return nullptr;
+                else error("Unexpected token, expected '_', 'pub', 'mod' or identifier", Peek());
             }
             auto iden = *Get();
-            if(!discard(TokenType::Colon)) return nullptr;
+            if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
             auto next_tk = Peek();
             if(!next_tk) return nullptr;
             if(next_tk->type == TokenType::LParen)
             {
-                if(is_static) return nullptr;//static doesn't apply to functions
+                if(is_static) error("'static' cannot be applied to methods", next_tk);//static doesn't apply to functions
                 auto stat = parseFunctionDeclaration(iden);
-                if(!stat) return nullptr;
                 methods.push_back(ClassMethod{.function_decl = std::move(stat), .access = spec});
                 std::ignore = discard(TokenType::Comma); //comma is optional after function
             }
             else
             {
                 auto type = parseType(0);
-                if(!type) return nullptr;
-                vars.push_back(ClassVariable{.access = spec, .name = std::string{iden.text}, .type = *type, .is_static = is_static});
+                vars.push_back(ClassVariable{.access = spec,
+                    .name = std::string{iden.text},
+                    .type = std::move(type).value_or(Type{}),
+                    .is_static = is_static});
                 if(!discard(TokenType::Comma))
                 {
-                    if(!discard(TokenType::RCurly)) return nullptr;
-                    break;
+                    if(!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());
+                    else break;
                 }
             }
         }
@@ -397,27 +398,24 @@ namespace Yoyo
             return std::make_unique<ReturnStatement>(nullptr);
         }
         auto expr = parseExpression(0);
-        if(!expr) return nullptr;
-        if(!discard(TokenType::SemiColon)) return nullptr;
+        if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
         return std::make_unique<ReturnStatement>(std::move(expr));
     }
 
     std::unique_ptr<Statement> Parser::parseExpressionStatement()
     {
         auto expr = parseExpression(0);
-        if(!expr) return nullptr;
-        if(!discard(TokenType::SemiColon)) return nullptr;
+        if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
         return std::make_unique<ExpressionStatement>(std::move(expr));
     }
 
     std::unique_ptr<Statement> Parser::parseIfStatement()
     {
-        if(!discard(TokenType::LParen)) return nullptr;
+        if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto condition = parseExpression(0);
-        if(!condition) return nullptr;
-        if(!discard(TokenType::RParen)) return nullptr;
+        if(!condition) synchronizeTo({{TokenType::RParen}});
+        if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
         auto then = parseStatement();
-        if(!then) return nullptr;
 
         std::unique_ptr<Statement> else_stat = nullptr;
         auto else_tk = Peek();
@@ -425,7 +423,6 @@ namespace Yoyo
         {
             Get();
             else_stat = parseStatement();
-            if(!else_stat) return nullptr;
         }
         return std::make_unique<IfStatement>(std::move(condition), std::move(then), std::move(else_stat));
     }
@@ -435,44 +432,42 @@ namespace Yoyo
         while(!discard(TokenType::RCurly))
         {
             auto decl = parseDeclaration();
-            if(!decl) return nullptr;
             statements.push_back(std::move(decl));
         }
         return std::make_unique<BlockStatement>(std::move(statements));
     }
     std::unique_ptr<Statement> Parser::parseForStatement()
     {
-        if(!discard(TokenType::LParen)) return nullptr;
+        if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         std::vector<Token> vars;
         auto iden = Peek();
         if(!iden) return nullptr;
-        if(iden->type != TokenType::Identifier || iden->type != TokenType::Underscore) return nullptr;
+        if(iden->type != TokenType::Identifier || iden->type != TokenType::Underscore) error("Expected identifier or '_'", Peek());
         Get();
         vars.emplace_back(*iden);
         while(discard(TokenType::Comma))
         {
             iden = Peek();
             if(!iden) return nullptr;
-            if(iden->type != TokenType::Identifier || iden->type != TokenType::Underscore) return nullptr;
+            if(iden->type != TokenType::Identifier || iden->type != TokenType::Underscore) error("Expected identifier or '_'", Peek());
             Get();
             vars.emplace_back(*iden);
         }
-        if(!discard(TokenType::In)) return nullptr;
+        if(!discard(TokenType::In)) error("Expected 'in'", Peek());
         auto expr = parseExpression(0);
-        if(!expr) return nullptr;
-        if(!discard(TokenType::RParen)) return nullptr;
+        if(!expr) synchronizeTo({{TokenType::RParen}});
+        if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
         auto then = parseStatement();
         return std::make_unique<ForStatement>(std::move(vars), std::move(expr), std::move(then));
     }
 
     std::unique_ptr<Statement> Parser::parseWhileStatement()
     {
-        if(!discard(TokenType::LParen)) return nullptr;
+        if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto condition = parseExpression(0);
-        if(!condition) return nullptr;
-        if(!discard(TokenType::RParen)) return nullptr;
+        if(!condition) synchronizeTo({{TokenType::RParen}});
+        if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
         auto body = parseStatement();
-        if(!body) return nullptr;
         return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
     }
     std::unique_ptr<Statement> Parser::parseStatement()
@@ -494,17 +489,16 @@ namespace Yoyo
     std::optional<Type> parseArrayType(Token t, Parser& parser)
     {
         auto next = parser.parseType(0);
-        if(!next) return std::nullopt;
-        if(!parser.discard(TokenType::RSquare)) return std::nullopt;
-        return Type("__arr", {*next});
+        if(!next) parser.synchronizeTo({{TokenType::RSquare}});
+        if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
+        return Type("__arr", {std::move(next).value_or(Type{})});
     }
     std::optional<Type> parseTypeGroup(Token t, Parser& parser)
     {
-
         auto next = parser.parseType(0);
-        if(!next) return std::nullopt;
-        if(!parser.discard(TokenType::RCurly)) return std::nullopt;
-        return *next;
+        if(!next) parser.synchronizeTo({{TokenType::RCurly}});
+        if(!parser.discard(TokenType::RCurly)) parser.error("Expected '}'", parser.Peek());
+        return std::move(next).value_or(Type{});
     }
     static constexpr uint32_t PipePrecedence = 1;
     static constexpr uint32_t AmpersandPrecedence = 2;
@@ -515,44 +509,42 @@ namespace Yoyo
         if(!tk) return 0;
         switch(tk->type)
         {
-        case TokenType::Ampersand: return AmpersandPrecedence; break;
-        case TokenType::Pipe: return PipePrecedence; break;
-        case TokenType::TemplateOpen: return TemplatePrecedence; break;
+        case TokenType::Ampersand: return AmpersandPrecedence;
+        case TokenType::Pipe: return PipePrecedence;
+        case TokenType::TemplateOpen: return TemplatePrecedence;
         default: return 0;
         }
     }
     std::optional<Type> parseAmpTypeExpr(Parser& p, Type left)
     {
         auto t = p.parseType(AmpersandPrecedence);
-        if(!t) return std::nullopt;
         if(left.name == "__tup")
         {
-            left.subtypes.push_back(*t);
+            left.subtypes.push_back(std::move(t).value_or(Type{}));
             return left;
         }
-        return Type("__tup", {left, *t});
+        return Type("__tup", {left, std::move(t).value_or(Type{})});
     }
     std::optional<Type> parsePipeTypeExpr(Parser& p, Type left)
     {
         auto t = p.parseType(PipePrecedence);
-        if(!t) return std::nullopt;
         if(left.name == "__var")
         {
-            left.subtypes.push_back(*t);
+            left.subtypes.push_back(std::move(t).value_or(Type{}));
             return left;
         }
-        return Type("__var", {left, *t});
+        return Type("__var", {left, std::move(t).value_or(Type{})});
     }
     std::optional<Type> parseTemplateTypeExpr(Parser& p, Type left)
     {
         auto t = p.parseType(0);
-        if(!t) return std::nullopt;
-        left.subtypes.push_back(std::move(t).value());
+        if(!t) p.synchronizeTo({{TokenType::Comma, TokenType::Greater, TokenType::DoubleGreater}});
+        left.subtypes.push_back(std::move(t).value_or(Type{}));
         while(p.discard(TokenType::Comma))
         {
             t = p.parseType(0);
-            if(!t) return std::nullopt;
-            left.subtypes.push_back(std::move(t).value());
+            if(!t) p.synchronizeTo({{TokenType::Comma, TokenType::Greater, TokenType::DoubleGreater}});
+            left.subtypes.push_back(std::move(t).value_or(Type{}));
         }
         if(!p.discard(TokenType::Greater))
         {
@@ -561,7 +553,7 @@ namespace Yoyo
                 p.pushToken(Token{TokenType::Greater});
                 return left;
             }
-            return std::nullopt;
+            p.error("Expected '>'", p.Peek());
         }
         return left;
     }

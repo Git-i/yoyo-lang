@@ -3,7 +3,7 @@
 namespace Yoyo {
     enum class TokenType
     {
-        Invalid, Eof,
+        Invalid, Eof, NewLine,
         Identifier, SPIdentifier,
         If, Else, While, For,
         Plus, Minus, Slash, Star, Bang, Percent,
