@@ -6,14 +6,14 @@ namespace Yoyo
         if(typ.is_unsigned_integral()) return std::nullopt;
         if(typ.is_signed_integral() || typ.is_floating_point()) return typ;
         if(auto fn = mod->findFunction("__op_unary_negate__" + typ.name))
-            return fn->signature.returnType;
+            return fn->returnType;
         return std::nullopt;
     }
     static std::optional<Type> unaryNotResult(Module* module, const Type& type)
     {
         if(type.is_boolean()) return type;
         if(auto fn = module->findFunction("__op_unary_not__" + type.name))
-            return fn->signature.returnType;
+            return fn->returnType;
         return std::nullopt;
     }
     std::optional<Type> ExpressionTypeChecker::operator()(ArrayLiteral* lit)
@@ -49,7 +49,7 @@ namespace Yoyo
                 }
             }
         }
-
+        //TODO
     }
     std::optional<Type> ExpressionTypeChecker::operator()(BooleanLiteral*)
     {

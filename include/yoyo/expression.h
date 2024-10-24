@@ -2,7 +2,7 @@
 #include "token.h"
 #include <memory>
 #include <vector>
-
+#include <variant>
 namespace Yoyo
 {
     class SubscriptOperation;
@@ -73,6 +73,7 @@ namespace Yoyo
     public:
         Token token;
         explicit StringLiteral(const Token& tk) : token(tk) {}
+        ExpressionVariant toVariant() override;
     };
     class NameExpression : public Expression {
     public:

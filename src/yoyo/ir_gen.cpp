@@ -18,6 +18,16 @@ namespace Yoyo
         auto return_t = ToLLVMType(sig.returnType, sig.return_is_ref);
         return llvm::FunctionType::get(return_t, args, false);
     }
+
+    bool IRGenerator::isShadowing(const std::string& name) const
+    {
+        for(auto& map : variables)
+            if(map.contains(name)) return true;
+        for(auto& map : types)
+            if(map.contains(name)) return true;
+        return false;
+    }
+
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
         auto name = block_hash + std::string{decl->identifier.text};
@@ -33,18 +43,34 @@ namespace Yoyo
         block_hash = name + "__";
         std::visit(*this, decl->body->toVariant());
     }
+    void IRGenerator::operator()(ExpressionStatement* stat)
+    {
+        std::visit(ExpressionEvaluator{this}, stat->expression->toVariant());
+    }
+
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
+        std::string name(decl->identifier.text);
         std::vector<llvm::Type*> args(decl->vars.size());
+        if(isShadowing(name))
+        {
+            error();
+            return;
+        }
         std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
             [](const ClassVariable& p)
             {
                 return ToLLVMType(p.type, false);
             });
-        llvm::StructType::create()
+        types.back()[name] = {llvm::StructType::get(context, args), decl};
     }
     void IRGenerator::operator()(VariableDeclaration* decl)
     {
+        std::string name(decl->identifier.text);
+        if(isShadowing(name))
+        {
+            error(); return;
+        }
         auto entry_block = &builder->GetInsertBlock()->getParent()->getEntryBlock();
         llvm::IRBuilder<> temp(entry_block,
                  entry_block->begin());
@@ -54,7 +80,50 @@ namespace Yoyo
             error();
             return;
         }
-        temp.CreateAlloca(ToLLVMType(type.value(), false), nullptr, decl->identifier.text);
+        auto alloc = temp.CreateAlloca(ToLLVMType(type.value(), false), nullptr, decl->identifier.text);
+        variables.back()[name] = {alloc, decl};
+    }
+    void IRGenerator::operator()(BlockStatement* stat)
+    {
+        pushScope();
+        for(auto& stat : stat->statements)
+        {
+            std::visit(*this, stat->toVariant());
+        }
+    }
+    void IRGenerator::operator()(ForStatement*)
+    {
+
+    }
+    void IRGenerator::operator()(WhileStatement* expr)
+    {
+        if(!std::visit(ExpressionTypeChecker{this}, expr->condition->toVariant())->is_boolean())
+        {
+            error();
+            return;
+        }
+        auto while_bb = llvm::BasicBlock::Create(context, "while", builder->GetInsertBlock()->getParent());
+        auto then_bb = llvm::BasicBlock::Create(context, "loopthen");
+        auto cont_bb = llvm::BasicBlock::Create(context, "loopcont");
+        builder->SetInsertPoint(while_bb);
+        auto value = std::visit(ExpressionEvaluator{this}, expr->condition->toVariant());
+        builder->CreateCondBr(value, then_bb, cont_bb);
+        builder->SetInsertPoint(then_bb);
+        std::visit(*this, expr->body->toVariant());
+        builder->CreateBr(while_bb);
+        builder->SetInsertPoint(cont_bb);
+    }
+    void IRGenerator::error()
+    {
+        throw std::runtime_error("IRGenerator error");
+    }
+
+    void IRGenerator::operator()(ReturnStatement* stat)
+    {
+        if(stat->expression)
+            builder->CreateRet(std::visit(ExpressionEvaluator{this}, stat->expression->toVariant()));
+        else
+            builder->CreateRetVoid();
     }
 
     void IRGenerator::operator()(IfStatement* stat)

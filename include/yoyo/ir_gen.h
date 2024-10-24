@@ -13,16 +13,23 @@ namespace Yoyo
         Module* module;
         llvm::Module* code;
         llvm::IRBuilder<>* builder;
-        std::vector<std::unordered_map<std::string, llvm::AllocaInst*>> variables;
+        std::vector<std::unordered_map<std::string, std::pair<llvm::AllocaInst*, VariableDeclaration*>>> variables;
+        std::vector<std::unordered_map<std::string, std::pair<llvm::StructType*, ClassDeclaration*>>> types;
         std::string block_hash;
+
+        bool isShadowing(const std::string&) const;
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
         void operator()(VariableDeclaration*);
         void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
+        void operator()(BlockStatement*);
+        void operator()(ReturnStatement*);
+        void operator()(ExpressionStatement*);
 
         void error();
+        void pushScope() {variables.emplace_back(); types.emplace_back();}
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         void HandleFunctionDeclaration(FunctionDeclaration* decl);
         Module GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements);
@@ -41,9 +48,6 @@ namespace Yoyo
     class ExpressionTypeChecker
     {
         IRGenerator* irgen;
-        constexpr std::unordered_map<std::string, std::string> operators = {
-
-        };
     public:
         explicit ExpressionTypeChecker(IRGenerator* gen) : irgen(gen) {}
         std::optional<Type> operator()(IntegerLiteral*);

@@ -1,7 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
-#include <set>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +11,10 @@ namespace Yoyo
     {
         std::string name;
         std::vector<Type> subtypes;
+        bool operator==(const Type& other) const
+        {
+            return is_equal(other);
+        }
         [[nodiscard]] bool is_equal(const Type& other) const
         {
             return name == other.name && subtypes == other.subtypes;
