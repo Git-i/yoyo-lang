@@ -88,7 +88,7 @@ namespace Yoyo
         if(callee_ty->name != "__fn") return std::nullopt;
         if(auto fn = irgen->module->findFunction(callee_ty->subtypes[0].name))
         {
-            return fn->signature.returnType;
+            return fn->returnType;
         }
         return std::nullopt;
     }
