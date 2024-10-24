@@ -40,6 +40,9 @@ namespace Yoyo
 
         std::optional<Token> Get();
         uint32_t GetNextPrecedence();
+        std::unique_ptr<Statement> parseTopLevelDeclaration();
+        std::vector<std::unique_ptr<Statement>> parseProgram();
+        bool isTopLevelDeclaration();
         PrefixParselet* GetPrefixParselet(TokenType t);
         InfixParselet* GetInfixParselet(TokenType t);
         std::string source;

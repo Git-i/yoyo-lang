@@ -6,7 +6,6 @@
 #include "func_sig.h"
 namespace Yoyo
 {
-
     Parser::Parser(std::string src) : source(std::move(src)), scn(source)
     {
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
@@ -64,7 +63,6 @@ namespace Yoyo
         infixParselets[TokenType::Bang] = std::make_shared<PostfixOperationParselet>(Precedences::InvalidPropagate);
         infixParselets[TokenType::LParen] = std::make_shared<CallOperationParselet>(Precedences::Call);
     }
-
     PrefixParselet* Parser::GetPrefixParselet(TokenType t)
     {
         if(const auto f = prefixParselets.find(t); f != prefixParselets.end())
@@ -84,6 +82,52 @@ namespace Yoyo
         auto parselet = GetInfixParselet(tk->type);
         if(!parselet) return 0;
         return parselet->precedence();
+    }
+
+    std::unique_ptr<Statement> Parser::parseTopLevelDeclaration()
+    {
+        auto iden = Get();
+        if(!iden) return nullptr;
+        if(iden->type != TokenType::Identifier) error("Expected Identifier", iden);
+        Get();//discard the ':'
+        auto look_ahead = Peek();
+        if(!look_ahead) return nullptr;
+        switch (look_ahead->type)
+        {
+        case TokenType::LParen: return parseFunctionDeclaration(iden.value());
+        case TokenType::Class: return parseClassDeclaration(iden.value());
+        case TokenType::Struct:;//TODO
+        case TokenType::Enum:;//TODO
+        case TokenType::EnumFlag:;//TODO
+        case TokenType::Union:;//TODO
+        default: return parseVariableDeclaration(iden.value());
+        }
+    }
+
+    std::vector<std::unique_ptr<Statement>> Parser::parseProgram()
+    {
+        std::vector<std::unique_ptr<Statement>> statements;
+        while(Peek())
+        {
+            statements.push_back(parseTopLevelDeclaration());
+        }
+        return statements;
+    }
+    bool Parser::isTopLevelDeclaration()
+    {
+        auto tk = Peek();
+        if(tk && tk->type == TokenType::Identifier)
+        {
+            Get();
+            if(Peek() && Peek()->type == TokenType::Colon)
+            {
+                pushToken(*tk);
+                return true;
+            }
+            pushToken(*tk);
+            return false;
+        }
+        return false;
     }
 
     bool Parser::discard(TokenType t)
@@ -364,27 +408,9 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseDeclaration()
     {
-        auto tk = Peek();
-        if(!tk) return nullptr;
-        if(tk->type == TokenType::Identifier)
+        if(isTopLevelDeclaration())
         {
-            Get();
-            if(discard(TokenType::Colon))
-            {
-                auto look_ahead = Peek();
-                if(!look_ahead) return nullptr;
-                switch (look_ahead->type)
-                {
-                case TokenType::LParen: return parseFunctionDeclaration(tk.value());
-                case TokenType::Class: return parseClassDeclaration(tk.value());
-                case TokenType::Struct:;//TODO
-                case TokenType::Enum:;//TODO
-                case TokenType::EnumFlag:;//TODO
-                case TokenType::Union:;//TODO
-                default: return parseVariableDeclaration(tk.value());
-                }
-            }
-            pushToken(tk.value());
+            return parseTopLevelDeclaration();
         }
         return parseStatement();
     }
