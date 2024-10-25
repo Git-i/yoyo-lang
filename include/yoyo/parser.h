@@ -26,8 +26,10 @@ namespace Yoyo
         std::unique_ptr<Statement> parseWhileStatement();
         std::unique_ptr<Statement> parseStatement();
         uint32_t GetNextTypePrecedence();
+        std::vector<std::unique_ptr<Statement>> parseProgram();
         std::optional<Type> parseType(uint32_t precedence);
         [[nodiscard]] bool discard(TokenType t);
+        [[nodiscard]] bool failed() const {return has_error;};
         void pushToken(Token t);
         void error(std::string message, std::optional<Token> tk);
 
@@ -41,7 +43,6 @@ namespace Yoyo
         std::optional<Token> Get();
         uint32_t GetNextPrecedence();
         std::unique_ptr<Statement> parseTopLevelDeclaration();
-        std::vector<std::unique_ptr<Statement>> parseProgram();
         bool isTopLevelDeclaration();
         PrefixParselet* GetPrefixParselet(TokenType t);
         InfixParselet* GetInfixParselet(TokenType t);

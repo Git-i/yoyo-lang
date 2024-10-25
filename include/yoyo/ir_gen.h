@@ -17,6 +17,8 @@ namespace Yoyo
         std::vector<std::unordered_map<std::string, std::pair<llvm::StructType*, ClassDeclaration*>>> types;
         std::string block_hash;
 
+        llvm::Type* ToLLVMType(const Type& type, bool is_ref);
+        llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
         bool isShadowing(const std::string&) const;
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
@@ -70,6 +72,7 @@ namespace Yoyo
         IRGenerator* irgen;
     public:
         explicit ExpressionEvaluator(IRGenerator* gen) : irgen(gen) {}
+        llvm::Value* doAddition(BinaryOperation* op);
         llvm::Value* operator()(IntegerLiteral*);
         llvm::Value* operator()(BooleanLiteral*);
         llvm::Value* operator()(TupleLiteral*);

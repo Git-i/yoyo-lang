@@ -2,15 +2,32 @@
 
 namespace Yoyo
 {
-    llvm::Type* ToLLVMType(const Type& type, bool is_ref)
+    llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
-
+        if(type.is_integral())
+            return llvm::Type::getIntNTy(context, *type.integer_width());
+        if(type.is_floating_point())
+            return *type.float_wwdth() == 32 ? llvm::Type::getFloatTy(context) : llvm::Type::getDoubleTy(context);
+        if(type.is_boolean())
+            return llvm::Type::getInt1Ty(context);
+        if(type.name == "void")
+            return llvm::Type::getVoidTy(context);
+        for(size_t i = types.size(); i > 0; i--)
+        {
+            auto idx = i - 1;
+            if(auto t = types[idx].find(type.name); t != types[idx].end())
+            {
+                return t->second.first;
+            }
+        }
+        error();
+        return nullptr;
     }
-    llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig)
+    llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)
     {
         std::vector<llvm::Type*> args(sig.parameters.size());
         std::transform(sig.parameters.begin(), sig.parameters.end(), args.begin(),
-            [](const FunctionParameter& p)
+            [this](const FunctionParameter& p)
             {
                 return ToLLVMType(p.type, p.convention == ParamType::InOut);
             });
@@ -41,6 +58,7 @@ namespace Yoyo
         builder->SetInsertPoint(bb);
         auto old_hash = block_hash;
         block_hash = name + "__";
+        pushScope();
         std::visit(*this, decl->body->toVariant());
     }
     void IRGenerator::operator()(ExpressionStatement* stat)
@@ -58,7 +76,7 @@ namespace Yoyo
             return;
         }
         std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
-            [](const ClassVariable& p)
+            [this](const ClassVariable& p)
             {
                 return ToLLVMType(p.type, false);
             });
@@ -162,7 +180,7 @@ namespace Yoyo
         code = md.code.get();
         auto bld = std::make_unique<llvm::IRBuilder<>>(context);
         builder = bld.get();
-        variables.emplace_back();
+        pushScope();
         for(auto& stat : statements)
         {
             std::visit(*this, stat->toVariant());

@@ -107,7 +107,7 @@ namespace Yoyo
     std::vector<std::unique_ptr<Statement>> Parser::parseProgram()
     {
         std::vector<std::unique_ptr<Statement>> statements;
-        while(Peek())
+        while(Peek() && Peek()->type != TokenType::Eof)
         {
             statements.push_back(parseTopLevelDeclaration());
         }

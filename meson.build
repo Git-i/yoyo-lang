@@ -8,9 +8,11 @@ sources = [
     'src/yoyo/expression_type_checker.cpp',
     'src/yoyo/expression.cpp',
     'src/yoyo/top_level_visitor.cpp',
+    'src/yoyo/expression_evaluator.cpp',
     'src/yoyo/parselets/infix_parselets.cpp',
     'src/yoyo/parselets/prefix_parselets.cpp',
 ]
 yoyo_lib = library('yoyo', sources, include_directories: 'include/yoyo',dependencies: dependency('llvm'))
-yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib)
+yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: dependency('llvm'))
 parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
+parser_test = executable('ir_gen_test', ['tests/ir_gen_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
