@@ -7,7 +7,7 @@ namespace Yoyo
         if(type.is_integral())
             return llvm::Type::getIntNTy(context, *type.integer_width());
         if(type.is_floating_point())
-            return *type.float_wwdth() == 32 ? llvm::Type::getFloatTy(context) : llvm::Type::getDoubleTy(context);
+            return *type.float_width() == 32 ? llvm::Type::getFloatTy(context) : llvm::Type::getDoubleTy(context);
         if(type.is_boolean())
             return llvm::Type::getInt1Ty(context);
         if(type.name == "void")
@@ -84,6 +84,7 @@ namespace Yoyo
     }
     void IRGenerator::operator()(VariableDeclaration* decl)
     {
+        //TODO implicit conversion and validation
         std::string name(decl->identifier.text);
         if(isShadowing(name))
         {

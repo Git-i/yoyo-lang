@@ -106,7 +106,7 @@ namespace Yoyo
             std::string size(name.begin() + 1, name.end());
             return std::stoul(size);
         }
-        [[nodiscard]] std::optional<uint32_t> float_wwdth() const
+        [[nodiscard]] std::optional<uint32_t> float_width() const
         {
             if(!is_floating_point()) return std::nullopt;
             std::string size(name.begin() + 1, name.end());

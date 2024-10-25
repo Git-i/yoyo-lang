@@ -37,7 +37,7 @@ namespace Yoyo
         if(!lhs || !rhs) return std::nullopt;
         auto left_int_width = lhs->integer_width();
         auto right_int_width = rhs->integer_width();
-        auto left_float_width = lhs->float_wwdth();
+        auto left_float_width = lhs->float_width();
         switch(expr->op.type)
         {
             using enum TokenType;

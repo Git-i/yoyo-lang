@@ -4,9 +4,9 @@
 TEST_CASE("Test IR")
 {
     std::string source = R"(
-main: () -> i32 = {
-    a: i32 = 0;
-    b := 10;
+main: () -> f64 = {
+    a: f64 = 0.0;
+    b := 10.4;
     return a + b;
 }
 )";

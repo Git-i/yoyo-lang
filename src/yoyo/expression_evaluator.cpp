@@ -7,15 +7,29 @@ namespace Yoyo
         {
             const auto width = *otherty.integer_width();
             const auto N = *thisty.integer_width();
-            if(width == N) return builder->CreateAdd(iN, other);
+            if(width == N) return builder->CreateAdd(iN, other, "iaddtmp");
             if(width > N) return builder->CreateAdd(other,
                 thisty.is_signed_integral() ?
-                builder->CreateSExt(iN, llvm::Type::getIntNTy(builder->getContext(), width)) :
-                builder->CreateZExt(iN, llvm::Type::getIntNTy(builder->getContext(), width)) );
+                builder->CreateSExt(iN, llvm::Type::getIntNTy(builder->getContext(), width), "extension_temp") :
+                builder->CreateZExt(iN, llvm::Type::getIntNTy(builder->getContext(), width), "extension_temp"), "iaddtmp" );
             return builder->CreateAdd(iN,
                 otherty.is_signed_integral() ?
-                builder->CreateSExt(other, llvm::Type::getIntNTy(builder->getContext(), N)) :
-                builder->CreateZExt(other, llvm::Type::getIntNTy(builder->getContext(), N)) );
+                builder->CreateSExt(other, llvm::Type::getIntNTy(builder->getContext(), N), "iexttmp") :
+                builder->CreateZExt(other, llvm::Type::getIntNTy(builder->getContext(), N), "iexttmp"), "iaddtmp" );
+        }
+        return nullptr;
+    }
+    llvm::Value* addFN(llvm::Value* fN, llvm::Value* other, llvm::IRBuilder<>*builder, const Type& otherty, const Type& thisty)
+    {
+        if(otherty.is_floating_point())
+        {
+            const auto other_w = *otherty.float_width();
+            const auto this_w = *thisty.float_width();
+            if(other_w == this_w) return builder->CreateFAdd(fN, other, "faddtmp");
+            //since there's only doubles and float, other_w being greater means it's a double
+            auto dbl = llvm::Type::getDoubleTy(builder->getContext());
+            if(other_w > this_w) return builder->CreateFAdd(other, builder->CreateFPExt(fN, dbl, "fexttmp"), "faddtmp");
+            return builder->CreateFAdd(fN, builder->CreateFPExt(other, dbl, "fexttmp"), "faddtmp");
         }
         return nullptr;
     }
@@ -32,6 +46,9 @@ namespace Yoyo
         auto lhs = std::visit(*this, l_as_var);
         if(left_type->is_integral())
             return addIN(lhs, rhs, irgen->builder, *right_type, *left_type);
+        if(left_type->is_floating_point())
+            return addFN(lhs, rhs, irgen->builder, *right_type, *left_type);
+        return nullptr;
 
     }
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
