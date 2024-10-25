@@ -57,7 +57,17 @@ namespace Yoyo
     }
     std::optional<Type> ExpressionTypeChecker::operator()(NameExpression* expr)
     {
-
+        std::string name(expr->token.text);
+        for(size_t i = irgen->variables.size(); i > 0; --i)
+        {
+            size_t idx = i - 1;
+            if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
+            {
+                auto decl = var->second.second;
+                return decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
+            }
+        }
+        return std::nullopt;
     }
     std::optional<Type> ExpressionTypeChecker::operator()(PostfixOperation*)
     {

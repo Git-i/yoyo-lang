@@ -99,6 +99,10 @@ namespace Yoyo
             return;
         }
         auto alloc = temp.CreateAlloca(ToLLVMType(type.value(), false), nullptr, decl->identifier.text);
+        if(decl->initializer)
+        {
+            builder->CreateStore(std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant()), alloc);
+        }
         variables.back()[name] = {alloc, decl};
     }
     void IRGenerator::operator()(BlockStatement* stat)

@@ -4,7 +4,7 @@
 TEST_CASE("Test IR")
 {
     std::string source = R"(
-main: () = {
+main: () -> i32 = {
     a: i32 = 0;
     b := 10;
     return a + b;
@@ -15,5 +15,6 @@ main: () = {
     REQUIRE(!p1.failed());
     llvm::LLVMContext context;
     Yoyo::IRGenerator gen(context);
-    gen.GenerateIR("MOO", std::move(decl));
+    auto mod = gen.GenerateIR("MOO", std::move(decl));
+    mod.code->print(llvm::errs(), nullptr);
 }

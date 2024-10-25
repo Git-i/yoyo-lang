@@ -337,7 +337,7 @@ namespace Yoyo
         std::unique_ptr<Expression> init = nullptr;
         if(discard(TokenType::Equal))
         {
-            auto initializer = parseExpression(0);
+            init = parseExpression(0);
         }
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
         return std::make_unique<VariableDeclaration>(identifier, type, std::move(init));

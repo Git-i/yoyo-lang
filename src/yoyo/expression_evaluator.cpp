@@ -1,18 +1,25 @@
 #include "ir_gen.h"
 namespace Yoyo
 {
-    llvm::Value* addI64(llvm::Value* i64, llvm::Value* other, llvm::IRBuilder<>*builder, const Type& otherty)
+    llvm::Value* addIN(llvm::Value* iN, llvm::Value* other, llvm::IRBuilder<>*builder, const Type& otherty, const Type& thisty)
     {
-        if(otherty.is_signed_integral())
+        if(otherty.is_integral())
         {
-            auto width = *otherty.integer_width();
-            if(width == 64) return builder->CreateAdd(i64, other);
-            if(width == 32)
-            {
-                return builder->CreateAdd(i64, builder->crea)
-            }
+            const auto width = *otherty.integer_width();
+            const auto N = *thisty.integer_width();
+            if(width == N) return builder->CreateAdd(iN, other);
+            if(width > N) return builder->CreateAdd(other,
+                thisty.is_signed_integral() ?
+                builder->CreateSExt(iN, llvm::Type::getIntNTy(builder->getContext(), width)) :
+                builder->CreateZExt(iN, llvm::Type::getIntNTy(builder->getContext(), width)) );
+            return builder->CreateAdd(iN,
+                otherty.is_signed_integral() ?
+                builder->CreateSExt(other, llvm::Type::getIntNTy(builder->getContext(), N)) :
+                builder->CreateZExt(other, llvm::Type::getIntNTy(builder->getContext(), N)) );
         }
+        return nullptr;
     }
+
     llvm::Value* ExpressionEvaluator::doAddition(BinaryOperation* op)
     {
         auto l_as_var = op->lhs->toVariant();
@@ -23,6 +30,8 @@ namespace Yoyo
 
         auto rhs = std::visit(*this, r_as_var);
         auto lhs = std::visit(*this, l_as_var);
+        if(left_type->is_integral())
+            return addIN(lhs, rhs, irgen->builder, *right_type, *left_type);
 
     }
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
