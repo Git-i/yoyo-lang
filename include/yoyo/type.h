@@ -7,7 +7,6 @@
 
 namespace Yoyo
 {
-    class FunctionDeclaration;
     class ClassDeclaration;
     class IRGenerator;
     struct Type
@@ -53,12 +52,5 @@ namespace Yoyo
     };
 
 
-    struct FunctionType : Type
-    {
-        FunctionDeclaration* decl = nullptr;
-        bool is_bound = false;
-        FunctionType() = default;
-        FunctionType(FunctionDeclaration* decl, bool is_bound)
-            : Type{.name = "__fn", .subtypes = {}}, decl(decl), is_bound(is_bound) {}
-    };
+
 }

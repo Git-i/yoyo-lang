@@ -1,4 +1,5 @@
 #include "ir_gen.h"
+#include "fn_type.h"
 namespace Yoyo
 {
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)

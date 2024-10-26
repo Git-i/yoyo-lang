@@ -1,4 +1,5 @@
 #include "ir_gen.h"
+#include "fn_type.h"
 namespace Yoyo
 {
     static std::optional<Type> checkAddition(const Type &a, const Type &b)
@@ -158,7 +159,7 @@ namespace Yoyo
                             {
                                 return std::nullopt;
                             }
-                            return FunctionType{decl, true};
+                            return FunctionType{decl->signature, true};
                         }
                     }
                 }
@@ -166,7 +167,7 @@ namespace Yoyo
                 if(!rhs || !rhs->is_function()) return std::nullopt;
                 auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
                 if(as_function.is_bound) return std::nullopt;
-                if(!as_function.decl->signature.parameters[0].type.is_equal(*lhs))
+                if(!as_function.sig.parameters[0].type.is_equal(*lhs))
                 {
                     return std::nullopt;
                 }
@@ -193,6 +194,10 @@ namespace Yoyo
                 t->is_lvalue = true;
                 return t;
             }
+        }
+        if(auto fn = irgen->module->findFunction(name))
+        {
+            return FunctionType{*fn, false};
         }
         return std::nullopt;
     }
@@ -254,12 +259,14 @@ namespace Yoyo
     {
         auto callee_ty = std::visit(*this, op->callee->toVariant());
         if(!callee_ty) return std::nullopt;
-        if(callee_ty->name != "__fn") return std::nullopt;
-        if(auto fn = irgen->module->findFunction(callee_ty->subtypes[0].name))
+        if(!callee_ty->is_function()) return std::nullopt;
+        auto& as_fn = reinterpret_cast<FunctionType&>(*callee_ty);
+        if(op->arguments.size() != as_fn.sig.parameters.size()) return std::nullopt;
+        for(size_t i = 0; i < as_fn.sig.parameters.size(); ++i)
         {
-            return fn->returnType;
+            if(std::visit(*this, op->arguments[i]->toVariant())->is_equal(as_fn.sig.parameters[i].type)) return std::nullopt;
         }
-        return std::nullopt;
+        return as_fn.sig.returnType;
     }
     std::optional<Type> ExpressionTypeChecker::operator()(RealLiteral*)
     {
