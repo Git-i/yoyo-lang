@@ -156,9 +156,17 @@ namespace Yoyo
         return nullptr;
     }
 
-    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(NameExpression*)
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
     {
-        //TODO
+        std::string name(nm->token.text);
+        for(size_t i = irgen->variables.size(); i > 0; --i)
+        {
+            size_t idx = i - 1;
+            if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
+            {
+                return var->second.first;
+            }
+        }
     }
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation*)

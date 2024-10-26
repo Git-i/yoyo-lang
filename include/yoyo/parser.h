@@ -36,7 +36,7 @@ namespace Yoyo
         void synchronizeTo(std::span<const TokenType> t);///< skip all tokens till the next token of type @c t
         std::optional<Token> Peek();
     private:
-        bool has_error;
+        bool has_error = false;
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
         std::optional<FunctionSignature> parseFunctionSignature();
 

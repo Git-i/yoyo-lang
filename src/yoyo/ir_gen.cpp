@@ -193,12 +193,26 @@ namespace Yoyo
             return method.name;
         });
         for(const auto& name: var_names)
-        {
             if(std::ranges::find(fn_names, name) != fn_names.end()){error(); return nullptr;}
-            if(std::set{var_names.cbegin(), var_names.cend()}.size() != var_names.size()){error(); return nullptr;}
-        }
+
         for(const auto& name: fn_names)
-            if(std::ranges::find(fn_names, name) != fn_names.end()){error(); return nullptr;}
+            if(std::ranges::find(var_names, name) != var_names.end()){error(); return nullptr;}
+        for(size_t i = 0; i < var_names.size(); ++i)
+        {
+            for(size_t j = 0; j < var_names.size(); ++j)
+            {
+                if(j == i) continue;
+                if(var_names[i] == var_names[j]) {error(); return nullptr;}
+            }
+        }
+        for(size_t i = 0; i < fn_names.size(); ++i)
+        {
+            for(size_t j = 0; j < fn_names.size(); ++j)
+            {
+                if(j == i) continue;
+                if(fn_names[i] == fn_names[j]) {error(); return nullptr;}
+            }
+        }
 
         std::vector<llvm::Type*> args(decl->vars.size());
         std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),

@@ -21,12 +21,15 @@ namespace Yoyo
     std::unique_ptr<Expression> CallOperationParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
     {
         std::vector<std::unique_ptr<Expression>> arguments;
-        while(true)
+        if(parser.discard(TokenType::RParen))
+            return std::make_unique<CallOperation>(std::move(left), std::move(arguments));
+
+        arguments.push_back(parser.parseExpression(0));
+        while(!parser.discard(TokenType::RParen))
         {
-            auto arg = parser.parseExpression(prec);
-            if(arg == nullptr) break;
+            if(!parser.discard(TokenType::Comma)) parser.error("Expected ','", parser.Peek());
+            auto arg = parser.parseExpression(0);
             arguments.push_back(std::move(arg));
-            if(!parser.discard(TokenType::Comma)) break;
         }
         if(!parser.discard(TokenType::RParen)) return nullptr;
         return std::make_unique<CallOperation>(std::move(left), std::move(arguments));

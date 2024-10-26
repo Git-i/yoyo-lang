@@ -191,6 +191,7 @@ namespace Yoyo
                 auto decl = var->second.second;
                 auto t = decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
                 t->is_lvalue = true;
+                return t;
             }
         }
         return std::nullopt;
