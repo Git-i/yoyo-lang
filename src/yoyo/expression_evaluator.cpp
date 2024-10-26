@@ -237,10 +237,21 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(PostfixOperation*) {}
     llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)
     {
-        if(auto dot = dynamic_cast<BinaryOperation*>(op->callee.get()); dot && dot->op.type == TokenType::Dot)
+        auto t = std::visit(ExpressionTypeChecker{irgen}, op->callee->toVariant());
+        if(!t || !t->is_function()) return nullptr;
+        auto fn = reinterpret_cast<FunctionType&>(*t);
+        if(fn.is_bound)
         {
 
         }
+        auto* callee = llvm::dyn_cast<llvm::Function>(std::visit(*this, op->callee->toVariant()));
+        if(!callee) return nullptr;
+        std::vector<llvm::Value*> args(op->arguments.size());
+        std::ranges::transform(op->arguments, args.begin(), [this](std::unique_ptr<Expression>& v)
+        {
+            return std::visit(*this, v->toVariant());
+        });
+        return irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
     }
     llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation*) {}
 }
