@@ -1,5 +1,7 @@
 #include "ir_gen.h"
 
+#include <set>
+
 namespace Yoyo
 {
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
@@ -20,6 +22,7 @@ namespace Yoyo
                 return t->second.first;
             }
         }
+        if(auto t = module->classes.find(type.name); t != module->classes.end()) return t->second.first;
         error();
         return nullptr;
     }
@@ -35,7 +38,13 @@ namespace Yoyo
         auto return_t = ToLLVMType(sig.returnType, sig.return_is_ref);
         return llvm::FunctionType::get(return_t, args, false);
     }
-
+    llvm::AllocaInst* IRGenerator::Alloca(std::string_view name, llvm::Type* type)
+    {
+        auto entry_block = &builder->GetInsertBlock()->getParent()->getEntryBlock();
+        llvm::IRBuilder<> temp(entry_block,
+                 entry_block->begin());
+        return temp.CreateAlloca(type, nullptr, name);
+    }
     bool IRGenerator::isShadowing(const std::string& name) const
     {
         for(auto& map : variables)
@@ -60,6 +69,8 @@ namespace Yoyo
         block_hash = name + "__";
         pushScope();
         std::visit(*this, decl->body->toVariant());
+        popScope();
+        block_hash = old_hash;
     }
     void IRGenerator::operator()(ExpressionStatement* stat)
     {
@@ -69,18 +80,12 @@ namespace Yoyo
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
         std::string name(decl->identifier.text);
-        std::vector<llvm::Type*> args(decl->vars.size());
         if(isShadowing(name))
         {
             error();
             return;
         }
-        std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
-            [this](const ClassVariable& p)
-            {
-                return ToLLVMType(p.type, false);
-            });
-        types.back()[name] = {llvm::StructType::get(context, args), decl};
+        types.back()[name] = {hanldeClassDeclaration(decl, true), decl};
     }
     void IRGenerator::operator()(VariableDeclaration* decl)
     {
@@ -90,18 +95,16 @@ namespace Yoyo
         {
             error(); return;
         }
-        auto entry_block = &builder->GetInsertBlock()->getParent()->getEntryBlock();
-        llvm::IRBuilder<> temp(entry_block,
-                 entry_block->begin());
         auto type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
         if(!type)
         {
             error();
             return;
         }
-        auto alloc = temp.CreateAlloca(ToLLVMType(type.value(), false), nullptr, decl->identifier.text);
+        auto alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         if(decl->initializer)
         {
+            //TODO actual initialization
             builder->CreateStore(std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant()), alloc);
         }
         variables.back()[name] = {alloc, decl};
@@ -109,10 +112,11 @@ namespace Yoyo
     void IRGenerator::operator()(BlockStatement* stat)
     {
         pushScope();
-        for(auto& stat : stat->statements)
+        for(auto& sub_stat : stat->statements)
         {
-            std::visit(*this, stat->toVariant());
+            std::visit(*this, sub_stat->toVariant());
         }
+        popScope();
     }
     void IRGenerator::operator()(ForStatement*)
     {
@@ -159,10 +163,11 @@ namespace Yoyo
         }
         auto then_bb = llvm::BasicBlock::Create(context, "then", fn);
         llvm::BasicBlock* else_bb = nullptr;
-        if(stat->else_stat) else_bb = llvm::BasicBlock::Create(context, "else");
-        auto merge_bb = llvm::BasicBlock::Create(context, "ifcont");
+        if(stat->else_stat) else_bb = llvm::BasicBlock::Create(context, "else", fn);
+        auto merge_bb = llvm::BasicBlock::Create(context, "ifcont", fn);
         builder->CreateCondBr(
-            std::visit(ExpressionEvaluator{this}, stat->condition->toVariant()), then_bb, else_bb);
+            std::visit(ExpressionEvaluator{this}, stat->condition->toVariant()), then_bb,
+            else_bb ? else_bb : merge_bb);
         builder->SetInsertPoint(then_bb);
         std::visit(*this, stat->then_stat->toVariant());
         builder->CreateBr(merge_bb);
@@ -173,6 +178,40 @@ namespace Yoyo
             builder->CreateBr(merge_bb);
         }
         builder->SetInsertPoint(merge_bb);
+    }
+
+    llvm::StructType* IRGenerator::hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon)
+    {
+        std::vector<std::string> var_names(decl->vars.size());
+        std::vector<std::string> fn_names(decl->methods.size());
+        std::transform(decl->vars.begin(), decl->vars.end(), var_names.begin(), [](ClassVariable* var)
+        {
+            return var->name;
+        });
+        std::transform(decl->methods.begin(), decl->methods.end(), fn_names.begin(), [](ClassMethod* method)
+        {
+            return method->name;
+        });
+        for(const auto& name: var_names)
+        {
+            if(std::ranges::find(fn_names, name) != fn_names.end()){error(); return nullptr;}
+            if(std::ranges::find(var_names, name) != var_names.end()){error(); return nullptr;}
+        }
+        for(const auto& name: fn_names)
+            if(std::ranges::find(fn_names, name) != fn_names.end()){error(); return nullptr;}
+
+        std::vector<llvm::Type*> args(decl->vars.size());
+        std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
+            [this](const ClassVariable& p)
+            {
+                return ToLLVMType(p.type, false);
+            });
+        if(is_anon)
+        {
+            return llvm::StructType::get(context, args);
+        }
+        std::string name(decl->identifier.text);
+        return llvm::StructType::create(context, args, name);
     }
 
     Module IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements)
@@ -188,7 +227,10 @@ namespace Yoyo
         pushScope();
         for(auto& stat : statements)
         {
-            std::visit(*this, stat->toVariant());
+            std::variant<ClassDeclaration*, FunctionDeclaration*> vnt;
+            if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get())) vnt = ptr;
+            if(auto ptr = dynamic_cast<FunctionDeclaration*>(stat.get())) vnt = ptr;
+            std::visit(TopLevelVisitor{this}, vnt);
         }
         builder = nullptr;
         return md;

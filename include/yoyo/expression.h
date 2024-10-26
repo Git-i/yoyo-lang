@@ -50,6 +50,7 @@ namespace Yoyo
         Token token;
         explicit BooleanLiteral(const Token& tk) : token(tk) {}
         ExpressionVariant toVariant() override;
+
     };
     class TupleLiteral : public Expression {
     public:

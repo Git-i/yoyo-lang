@@ -221,7 +221,16 @@ namespace Yoyo
         else if(tk->type == TokenType::This)
         {
             Get();
-            sig.parameters.push_back(FunctionParameter{Type{"This", {}}, ParamType::InOut, "this"});
+            auto conv = ParamType::In;
+            if(discard(TokenType::Colon))
+            {
+                auto conv_token = Peek();
+                if(!conv_token) return std::nullopt;
+                if(conv_token->type == TokenType::In){Get(); conv = ParamType::In;}
+                else if(conv_token->type == TokenType::InOut){Get();conv = ParamType::InOut;}
+                else error("Expected 'in' or 'inout'", conv_token);
+            }
+            sig.parameters.push_back(FunctionParameter{Type{"This", {}}, conv, "this"});
         }
         while(discard(TokenType::Comma))
         {
@@ -386,7 +395,7 @@ namespace Yoyo
             {
                 if(is_static) error("'static' cannot be applied to methods", next_tk);//static doesn't apply to functions
                 auto stat = parseFunctionDeclaration(iden);
-                methods.push_back(ClassMethod{.function_decl = std::move(stat), .access = spec});
+                methods.push_back(ClassMethod{.name=std::string{iden.text}, .function_decl = std::move(stat), .access = spec});
                 std::ignore = discard(TokenType::Comma); //comma is optional after function
             }
             else

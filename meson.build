@@ -7,6 +7,7 @@ sources = [
     'src/yoyo/ir_gen.cpp',
     'src/yoyo/expression_type_checker.cpp',
     'src/yoyo/expression.cpp',
+    'src/yoyo/type.cpp',
     'src/yoyo/top_level_visitor.cpp',
     'src/yoyo/expression_evaluator.cpp',
     'src/yoyo/parselets/infix_parselets.cpp',

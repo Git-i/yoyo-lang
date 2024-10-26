@@ -4,9 +4,16 @@
 TEST_CASE("Test IR")
 {
     std::string source = R"(
+lol: class = {
+        a: i32,
+    }
 main: () -> f64 = {
+
+    d: lol;
     a: f64 = 0.0;
     b := 10.4;
+    if(a > b) return b;
+    else if(a == b) return a;
     return a + b;
 }
 )";

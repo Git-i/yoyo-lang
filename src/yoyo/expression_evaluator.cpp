@@ -1,7 +1,49 @@
 #include "ir_gen.h"
 namespace Yoyo
 {
-
+    llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
+    {
+        if(!left_type.is_lvalue()) return nullptr;
+        if(left_type.is_integral() || left_type.is_floating_point())
+        {
+            irgen->builder->CreateStore(lhs, rhs);
+        }
+        return nullptr;
+    }
+    llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
+    {
+        if(auto cls = left_type.get_decl_if_class(irgen))
+        {
+            if(auto* name_expr = dynamic_cast<NameExpression*>(rhs))
+            {
+                std::string name(name_expr->token.text);
+                if(auto var = std::ranges::find_if(cls->vars, [&name](ClassVariable& v)
+                {
+                    return name == v.name;
+                }); var != cls->vars.end())
+                {
+                    auto llvm_t = irgen->ToLLVMType(left_type, false);
+                    auto out_t = irgen->ToLLVMType(var->type, false);
+                    llvm::Value* ptr;
+                    auto idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), std::distance(var, cls->vars.begin()));
+                    auto zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+                    if(left_type.is_lvalue)
+                    {
+                        auto lalloc = std::visit(LValueEvaluator{irgen}, lhs->toVariant());
+                        ptr = irgen->builder->CreateGEP(llvm_t, lalloc, {zero, idx});
+                    }
+                    else
+                    {
+                        auto alloc = irgen->Alloca("memaccess_temp", llvm_t);
+                        auto lexpr = std::visit(*this, lhs->toVariant());
+                        doAssign(alloc, lexpr, left_type, right_type);
+                        ptr = irgen->builder->CreateGEP(llvm_t, alloc, {idx, zero});
+                    }
+                    return irgen->builder->CreateLoad(out_t, ptr, var->name);
+                }
+            }
+        }
+    }
     llvm::Value* ExpressionEvaluator::doAddition(
         llvm::Value* lhs,
         llvm::Value* rhs,
@@ -113,6 +155,7 @@ namespace Yoyo
         }
         return nullptr;
     }
+
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
         auto t = std::visit(ExpressionTypeChecker{irgen}, std::variant<IntegerLiteral*>{lit});
         if(t->is_signed_integral())
@@ -156,13 +199,18 @@ namespace Yoyo
 
         auto l_as_var = op->lhs->toVariant();
         auto r_as_var = op->rhs->toVariant();
-        auto lhs = std::visit(*this, l_as_var);
-        auto rhs = std::visit(*this, r_as_var);
+
+        llvm::Value* lhs;
+        llvm::Value* rhs;
+        if(op->op.type != TokenType::Dot)
+        {
+            rhs = std::visit(*this, r_as_var);
+            lhs = std::visit(*this, l_as_var);
+        }
 
         auto left_t = std::visit(type_checker, l_as_var);
         auto right_t = std::visit(type_checker, r_as_var);
 
-        if(!left_t || !right_t) return nullptr;
         switch(op->op.type)
         {
             using enum TokenType;
@@ -173,10 +221,11 @@ namespace Yoyo
         case Percent: return doRem(lhs, rhs, *left_t, *right_t);
         case Greater: return doCmp(GT, lhs, rhs, *left_t, *right_t);
         case Less: return doCmp(LT, lhs, rhs, *left_t, *right_t);
-        case GreaterEqual: doCmp(EQ_GT, lhs, rhs, *left_t, *right_t);
-        case LessEqual: doCmp(EQ_LT, lhs, rhs, *left_t, *right_t);
-        case BangEqual: doCmp(NE, lhs, rhs, *left_t, *right_t);
-        case DoubleEqual: doCmp(EQ, lhs, rhs, *left_t, *right_t);
+        case GreaterEqual: return doCmp(EQ_GT, lhs, rhs, *left_t, *right_t);
+        case LessEqual: return doCmp(EQ_LT, lhs, rhs, *left_t, *right_t);
+        case BangEqual: return doCmp(NE, lhs, rhs, *left_t, *right_t);
+        case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t);
+        case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t, *right_t);
         }
         return nullptr;
     }
@@ -186,6 +235,12 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::operator()(LogicalOperation*) {}
     llvm::Value* ExpressionEvaluator::operator()(PostfixOperation*) {}
-    llvm::Value* ExpressionEvaluator::operator()(CallOperation*) {}
+    llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)
+    {
+        if(auto dot = dynamic_cast<BinaryOperation*>(op->callee.get()); dot && dot->op.type == TokenType::Dot)
+        {
+
+        }
+    }
     llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation*) {}
 }

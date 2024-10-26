@@ -20,6 +20,7 @@ namespace Yoyo
     };
     struct ClassMethod
     {
+        std::string name;
         std::unique_ptr<Statement> function_decl;
         AccessSpecifier access;
     };

@@ -53,6 +53,7 @@ namespace Yoyo
             if(a.is_equal(b)) return Type{"bool", {}};
             return std::nullopt;
         }
+        return std::nullopt;
     }
     static std::optional<Type> checkBitOr(const Type &a, const Type &b)
     {
@@ -112,9 +113,10 @@ namespace Yoyo
     std::optional<Type> ExpressionTypeChecker::operator()(BinaryOperation* expr)
     {
         auto lhs = std::visit(*this, expr->lhs->toVariant());
-        auto rhs = std::visit(*this, expr->rhs->toVariant());
+        std::optional<Type> rhs;
+        if(expr->op.type != TokenType::Dot) rhs = std::visit(*this, expr->rhs->toVariant());
         //builtin operators
-        if(!lhs || !rhs) return std::nullopt;
+        if(expr->op.type != TokenType::Dot && (!lhs || !rhs)) return std::nullopt;
         switch(expr->op.type)
         {
             using enum TokenType;
@@ -128,10 +130,49 @@ namespace Yoyo
         case LessEqual: [[fallthrough]];
         case Less: [[fallthrough]];
         case Greater: [[fallthrough]];
-        case BangEqual: checkCmp(*lhs, *rhs);
+        case BangEqual: return checkCmp(*lhs, *rhs);
         case Pipe: return checkBitOr(*lhs, *rhs);
         case Caret: return checkBitXor(*lhs, *rhs);
         case Ampersand: return checkBitAnd(*lhs, *rhs);
+        case Dot:
+            {
+                if(auto cls = lhs->get_decl_if_class(irgen))
+                {
+                    if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
+                    {
+                        std::string name(name_expr->token.text);
+                        if(auto var = std::ranges::find_if(cls->vars, [&name](ClassVariable& v)
+                        {
+                            return name == v.name;
+                        }); var != cls->vars.end())
+                        {
+                            return var->type;
+                        }
+                        if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
+                        {
+                            return name == m.name;
+                        }); var != cls->methods.end())
+                        {
+                            auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
+                            if(decl->signature.parameters[0].type.name != "This")
+                            {
+                                return std::nullopt;
+                            }
+                            return FunctionType{decl, true};
+                        }
+                    }
+                }
+                rhs = std::visit(*this, expr->rhs->toVariant());
+                if(!rhs || !rhs->is_function()) return std::nullopt;
+                auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
+                if(as_function.is_bound) return std::nullopt;
+                if(!as_function.decl->signature.parameters[0].type.is_equal(*lhs))
+                {
+                    return std::nullopt;
+                }
+                as_function.is_bound = true;
+                return as_function;
+            }
         }
         //TODO
     }
@@ -148,7 +189,8 @@ namespace Yoyo
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
                 auto decl = var->second.second;
-                return decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
+                auto t = decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
+                t->is_lvalue = true;
             }
         }
         return std::nullopt;

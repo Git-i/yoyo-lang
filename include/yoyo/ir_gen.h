@@ -19,6 +19,7 @@ namespace Yoyo
 
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
+        llvm::AllocaInst* Alloca(std::string_view name, llvm::Type* type);
         bool isShadowing(const std::string&) const;
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
@@ -32,13 +33,14 @@ namespace Yoyo
 
         void error();
         void pushScope() {variables.emplace_back(); types.emplace_back();}
+        void popScope() {variables.pop_back(); types.pop_back();}
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
-        void HandleFunctionDeclaration(FunctionDeclaration* decl);
+        llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);
         Module GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements);
     };
     struct TopLevelVisitor
     {
-        Module* mod;
+        IRGenerator* irgen;
         //return true on success
         bool operator()(FunctionDeclaration*);
         bool operator()(ClassDeclaration*);
@@ -76,13 +78,22 @@ namespace Yoyo
             EQ, GT, LT, EQ_GT, EQ_LT, NE
         };
         explicit ExpressionEvaluator(IRGenerator* gen) : irgen(gen) {}
-        llvm::Value* ExpressionEvaluator::doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
+        llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
+        llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type);
+        llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
         llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doRem(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type) const;
         llvm::Value* doCmp(ComparsionPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
                            const Type& right_type) const;
+        struct LValueEvaluator
+        {
+            IRGenerator* irgen;
+            llvm::Value* operator()(NameExpression*);
+            llvm::Value* operator()(BinaryOperation*);
+            llvm::Value* operator()(Expression*);
+        };
         llvm::Value* operator()(IntegerLiteral*);
         llvm::Value* operator()(BooleanLiteral*);
         llvm::Value* operator()(TupleLiteral*);
