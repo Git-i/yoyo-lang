@@ -1,6 +1,86 @@
 #include "ir_gen.h"
 namespace Yoyo
 {
+    static std::optional<Type> checkAddition(const Type &a, const Type &b)
+    {
+        if(a.is_integral() || a.is_floating_point())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkMinus(const Type &a, const Type &b)
+    {
+        if(a.is_integral() || a.is_floating_point())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkStar(const Type &a, const Type &b)
+    {
+        if(a.is_integral() || a.is_floating_point())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkDivide(const Type &a, const Type &b)
+    {
+        if(a.is_integral() || a.is_floating_point())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkPercent(const Type &a, const Type &b)
+    {
+        if(a.is_integral())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkCmp(const Type& a, const Type& b)
+    {
+        if(a.is_integral() || a.is_floating_point())
+        {
+            if(a.is_equal(b)) return Type{"bool", {}};
+            return std::nullopt;
+        }
+    }
+    static std::optional<Type> checkBitOr(const Type &a, const Type &b)
+    {
+        if(a.is_integral())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkBitXor(const Type &a, const Type &b)
+    {
+        if(a.is_integral())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    static std::optional<Type> checkBitAnd(const Type &a, const Type &b)
+    {
+        if(a.is_integral())
+        {
+            if(a.is_equal(b)) return a;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
     static std::optional<Type> unaryNegateResult(Module* mod, const Type& typ)
     {
         if(typ.is_unsigned_integral()) return std::nullopt;
@@ -35,19 +115,23 @@ namespace Yoyo
         auto rhs = std::visit(*this, expr->rhs->toVariant());
         //builtin operators
         if(!lhs || !rhs) return std::nullopt;
-        auto left_int_width = lhs->integer_width();
-        auto right_int_width = rhs->integer_width();
-        auto left_float_width = lhs->float_width();
         switch(expr->op.type)
         {
             using enum TokenType;
-        case Plus:
-            {
-                if(left_int_width && right_int_width) //both integers
-                {
-                    //7:13(shet up)
-                }
-            }
+        case Plus: return checkAddition(*lhs, *rhs);
+        case Star: return checkStar(*lhs, *rhs);
+        case Minus: return checkMinus(*lhs, *rhs);
+        case Slash: return checkDivide(*lhs, *rhs);
+        case Percent: return checkPercent(*lhs, *rhs);
+        case DoubleEqual: [[fallthrough]];
+        case GreaterEqual: [[fallthrough]];
+        case LessEqual: [[fallthrough]];
+        case Less: [[fallthrough]];
+        case Greater: [[fallthrough]];
+        case BangEqual: checkCmp(*lhs, *rhs);
+        case Pipe: return checkBitOr(*lhs, *rhs);
+        case Caret: return checkBitXor(*lhs, *rhs);
+        case Ampersand: return checkBitAnd(*lhs, *rhs);
         }
         //TODO
     }

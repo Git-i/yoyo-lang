@@ -71,8 +71,18 @@ namespace Yoyo
     {
         IRGenerator* irgen;
     public:
+        enum ComparsionPredicate
+        {
+            EQ, GT, LT, EQ_GT, EQ_LT, NE
+        };
         explicit ExpressionEvaluator(IRGenerator* gen) : irgen(gen) {}
-        llvm::Value* doAddition(BinaryOperation* op);
+        llvm::Value* ExpressionEvaluator::doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
+        llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
+        llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
+        llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
+        llvm::Value* doRem(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type) const;
+        llvm::Value* doCmp(ComparsionPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
+                           const Type& right_type) const;
         llvm::Value* operator()(IntegerLiteral*);
         llvm::Value* operator()(BooleanLiteral*);
         llvm::Value* operator()(TupleLiteral*);
