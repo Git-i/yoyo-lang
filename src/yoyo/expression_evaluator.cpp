@@ -3,7 +3,7 @@ namespace Yoyo
 {
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
-        if(!left_type.is_lvalue()) return nullptr;
+        if(!left_type.is_lvalue) return nullptr;
         if(left_type.is_integral() || left_type.is_floating_point())
         {
             irgen->builder->CreateStore(lhs, rhs);
@@ -154,6 +154,21 @@ namespace Yoyo
             return irgen->builder->CreateFCmp(pred, lhs, rhs, "cmptmp");
         }
         return nullptr;
+    }
+
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(NameExpression*)
+    {
+        //TODO
+    }
+
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation*)
+    {
+        //TODO
+    }
+
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(Expression*)
+    {
+        //TODO
     }
 
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
