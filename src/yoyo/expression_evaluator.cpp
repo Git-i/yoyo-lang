@@ -108,7 +108,7 @@ namespace Yoyo
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::doCmp(
-        ComparsionPredicate p,
+        ComparisonPredicate p,
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
@@ -268,7 +268,8 @@ namespace Yoyo
         {
 
         }
-        auto* callee = llvm::dyn_cast<llvm::Function>(std::visit(*this, op->callee->toVariant()));
+        auto callee_val = std::visit(*this, op->callee->toVariant());
+        auto* callee = llvm::dyn_cast_or_null<llvm::Function>(callee_val);
         if(!callee) return nullptr;
         std::vector<llvm::Value*> args(op->arguments.size());
         std::ranges::transform(op->arguments, args.begin(), [this](std::unique_ptr<Expression>& v)

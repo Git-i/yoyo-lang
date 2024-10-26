@@ -1,4 +1,5 @@
 #pragma once
+#include <fn_type.h>
 #include <statement.h>
 
 #include "llvm/IR/Module.h"
@@ -54,26 +55,28 @@ namespace Yoyo
         IRGenerator* irgen;
     public:
         explicit ExpressionTypeChecker(IRGenerator* gen) : irgen(gen) {}
-        std::optional<Type> operator()(IntegerLiteral*);
-        std::optional<Type> operator()(BooleanLiteral*);
-        std::optional<Type> operator()(TupleLiteral*);
-        std::optional<Type> operator()(ArrayLiteral*);
-        std::optional<Type> operator()(RealLiteral*);
-        std::optional<Type> operator()(StringLiteral*);
-        std::optional<Type> operator()(NameExpression*);
-        std::optional<Type> operator()(PrefixOperation*);
-        std::optional<Type> operator()(BinaryOperation*);
-        std::optional<Type> operator()(GroupingExpression*);
-        std::optional<Type> operator()(LogicalOperation*);
-        std::optional<Type> operator()(PostfixOperation*);
-        std::optional<Type> operator()(CallOperation*);
-        std::optional<Type> operator()(SubscriptOperation*);
+        /// We return FunctionType because it's a subclass of Type and some
+        /// expressions ( @c NameExpression and @c BinaryExpression ) can be a function
+        std::optional<FunctionType> operator()(IntegerLiteral*);
+        std::optional<FunctionType> operator()(BooleanLiteral*);
+        std::optional<FunctionType> operator()(TupleLiteral*);
+        std::optional<FunctionType> operator()(ArrayLiteral*);
+        std::optional<FunctionType> operator()(RealLiteral*);
+        std::optional<FunctionType> operator()(StringLiteral*);
+        std::optional<FunctionType> operator()(NameExpression*);
+        std::optional<FunctionType> operator()(PrefixOperation*);
+        std::optional<FunctionType> operator()(BinaryOperation*);
+        std::optional<FunctionType> operator()(GroupingExpression*);
+        std::optional<FunctionType> operator()(LogicalOperation*);
+        std::optional<FunctionType> operator()(PostfixOperation*);
+        std::optional<FunctionType> operator()(CallOperation*);
+        std::optional<FunctionType> operator()(SubscriptOperation*);
     };
     class ExpressionEvaluator
     {
         IRGenerator* irgen;
     public:
-        enum ComparsionPredicate
+        enum ComparisonPredicate
         {
             EQ, GT, LT, EQ_GT, EQ_LT, NE
         };
@@ -85,7 +88,7 @@ namespace Yoyo
         llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doRem(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type) const;
-        llvm::Value* doCmp(ComparsionPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
+        llvm::Value* doCmp(ComparisonPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
                            const Type& right_type) const;
         struct LValueEvaluator
         {

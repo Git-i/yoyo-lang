@@ -98,7 +98,8 @@ namespace Yoyo
             return fn->returnType;
         return std::nullopt;
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(ArrayLiteral* lit)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(ArrayLiteral* lit)
     {
         Type t{.name = "__arr", .subtypes = {}};
         Type subtype;
@@ -111,7 +112,7 @@ namespace Yoyo
         return subtype;
     }
 
-    std::optional<Type> ExpressionTypeChecker::operator()(BinaryOperation* expr)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(BinaryOperation* expr)
     {
         auto lhs = std::visit(*this, expr->lhs->toVariant());
         std::optional<Type> rhs;
@@ -177,11 +178,13 @@ namespace Yoyo
         }
         //TODO
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(LogicalOperation*)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(LogicalOperation*)
     {
         //TODO
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(NameExpression* expr)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(NameExpression* expr)
     {
         std::string name(expr->token.text);
         for(size_t i = irgen->variables.size(); i > 0; --i)
@@ -201,30 +204,34 @@ namespace Yoyo
         }
         return std::nullopt;
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(PostfixOperation*)
-    {
 
-    }
-    std::optional<Type> ExpressionTypeChecker::operator()(SubscriptOperation*)
-    {
-
-    }
-    std::optional<Type> ExpressionTypeChecker::operator()(TupleLiteral*)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(PostfixOperation*)
     {
 
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(SubscriptOperation*)
+    {
+
+    }
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral*)
+    {
+
+    }
 
 
-    std::optional<Type> ExpressionTypeChecker::operator()(BooleanLiteral*)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(BooleanLiteral*)
     {
         return Type{.name = "bool", .subtypes = {}};
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(GroupingExpression* expr)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(GroupingExpression* expr)
     {
         return std::visit(*this, expr->toVariant());
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(IntegerLiteral* lit)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral* lit)
     {
         if(lit->token.text[0] == '-')
         {
@@ -239,8 +246,7 @@ namespace Yoyo
     }
 
 
-
-    std::optional<Type> ExpressionTypeChecker::operator()(PrefixOperation* op)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(PrefixOperation* op)
     {
         auto op_type_opt = std::visit(*this, op->operand->toVariant());
         if(!op_type_opt) return std::nullopt;
@@ -255,7 +261,7 @@ namespace Yoyo
 
     }
 
-    std::optional<Type> ExpressionTypeChecker::operator()(CallOperation* op)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(CallOperation* op)
     {
         auto callee_ty = std::visit(*this, op->callee->toVariant());
         if(!callee_ty) return std::nullopt;
@@ -268,11 +274,13 @@ namespace Yoyo
         }
         return as_fn.sig.returnType;
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(RealLiteral*)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(RealLiteral*)
     {
         return Type{.name = "f64", .subtypes = {}};
     }
-    std::optional<Type> ExpressionTypeChecker::operator()(StringLiteral*)
+
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(StringLiteral*)
     {
         return Type{.name = "string", .subtypes = {}};
     }
