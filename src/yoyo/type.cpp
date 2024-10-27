@@ -39,10 +39,10 @@ namespace Yoyo
             auto idx = i - 1;
             if(auto t = gen->types[idx].find(name); t != gen->types[idx].end())
             {
-                return t->second.second;
+                return std::get<2>(t->second);
             }
         }
-        if(auto t = gen->module->classes.find(name); t != gen->module->classes.end()) return t->second.second;
+        if(auto t = gen->module->classes.find(name); t != gen->module->classes.end()) return std::get<2>(t->second);
         return nullptr;
     }
 

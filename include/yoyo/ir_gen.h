@@ -10,14 +10,17 @@ namespace Yoyo
     class IRGenerator
     {
     public:
+        Type this_t;
+        bool in_class = false;
         llvm::LLVMContext& context;
         Module* module;
         llvm::Module* code;
         llvm::IRBuilder<>* builder;
         std::vector<std::unordered_map<std::string, std::pair<llvm::AllocaInst*, VariableDeclaration*>>> variables;
-        std::vector<std::unordered_map<std::string, std::pair<llvm::StructType*, ClassDeclaration*>>> types;
+        std::vector<std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, ClassDeclaration*>>> types;
         std::string block_hash;
 
+        std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* findType(const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
         llvm::AllocaInst* Alloca(std::string_view name, llvm::Type* type);

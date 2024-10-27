@@ -213,6 +213,10 @@ namespace Yoyo
                 return irgen->builder->CreateLoad(var->second.first->getAllocatedType(), var->second.first, name);
             }
         }
+        if(auto fn = irgen->code->getFunction(name))
+        {
+            return fn;
+        }
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::operator()(PrefixOperation*) {}
@@ -266,7 +270,46 @@ namespace Yoyo
         auto fn = reinterpret_cast<FunctionType&>(*t);
         if(fn.is_bound)
         {
-
+            //callee is a binary dot expr
+            auto expr = reinterpret_cast<BinaryOperation*>(op->callee.get());
+            auto left_t = std::visit(ExpressionTypeChecker{irgen}, expr->lhs->toVariant());
+            if(auto cls = left_t->get_decl_if_class(irgen))
+            {
+                if(auto rhs = dynamic_cast<NameExpression*>(expr->rhs.get()))
+                {
+                    std::string name(rhs->token.text);
+                    if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
+                        {
+                            return name == m.name;
+                        }); var != cls->methods.end())
+                    {
+                        auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
+                        if(auto found = irgen->findType(name))
+                        {
+                            auto function_name  = std::get<0>(*found) + name;
+                            auto callee = irgen->code->getFunction(function_name);
+                            std::vector<llvm::Value*> args(op->arguments.size());
+                            args[0] = std::visit(*this, expr->lhs->toVariant());
+                            std::ranges::transform(op->arguments, args.begin() + 1, [this](std::unique_ptr<Expression>& v)
+                            {
+                                return std::visit(*this, v->toVariant());
+                            });
+                            return irgen->builder->CreateCall(callee, args);
+                        }
+                        return nullptr;
+                    }
+                    return nullptr;
+                }
+            }
+            std::vector<llvm::Value*> args(op->arguments.size());
+            args[0] = std::visit(*this, expr->lhs->toVariant());
+            std::ranges::transform(op->arguments, args.begin() + 1, [this](std::unique_ptr<Expression>& v)
+            {
+                return std::visit(*this, v->toVariant());
+            });
+            auto* callee = llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
+            if(!callee) return nullptr;
+            return irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
         }
         auto callee_val = std::visit(*this, op->callee->toVariant());
         auto* callee = llvm::dyn_cast_or_null<llvm::Function>(callee_val);

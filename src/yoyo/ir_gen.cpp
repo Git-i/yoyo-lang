@@ -4,6 +4,19 @@
 
 namespace Yoyo
 {
+    std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* IRGenerator::findType(const std::string& name)
+    {
+        for(size_t i = types.size(); i > 0; i--)
+        {
+            auto idx = i - 1;
+            if(auto t = types[idx].find(name); t != types[idx].end())
+            {
+                return &t->second;
+            }
+        }
+        if(auto t = module->classes.find(name); t != module->classes.end()) return &t->second;
+        return nullptr;
+    }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
         if(type.is_integral())
@@ -14,15 +27,16 @@ namespace Yoyo
             return llvm::Type::getInt1Ty(context);
         if(type.name == "void")
             return llvm::Type::getVoidTy(context);
+        if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         for(size_t i = types.size(); i > 0; i--)
         {
             auto idx = i - 1;
             if(auto t = types[idx].find(type.name); t != types[idx].end())
             {
-                return t->second.first;
+                return std::get<1>(t->second);
             }
         }
-        if(auto t = module->classes.find(type.name); t != module->classes.end()) return t->second.first;
+        if(auto t = module->classes.find(type.name); t != module->classes.end()) return std::get<1>(t->second);
         error();
         return nullptr;
     }
@@ -85,7 +99,7 @@ namespace Yoyo
             error();
             return;
         }
-        types.back()[name] = {hanldeClassDeclaration(decl, true), decl};
+        types.back()[name] = {block_hash, hanldeClassDeclaration(decl, true), decl};
     }
     void IRGenerator::operator()(VariableDeclaration* decl)
     {

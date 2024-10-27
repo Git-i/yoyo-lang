@@ -5,10 +5,14 @@ TEST_CASE("Test IR")
 {
     std::string source = R"(
 lol: class = {
-        a: f64,
+    a: f64,
+    damm: (this) -> f64 = {
+        return this.a;
     }
-dome: () -> f64 = {
-    return 0.5;
+}
+dome: () -> lol = {
+    a: lol;
+    return a;
 }
 main: () -> f64 = {
     d: lol;
@@ -16,7 +20,7 @@ main: () -> f64 = {
     b := 10.4;
     if(a > b) return b;
     else if(a == b) return a;
-    return a + d.a + dome();
+    return a + d.a + dome().damm();
 }
 )";
     Yoyo::Parser p1(std::move(source));
