@@ -271,7 +271,7 @@ namespace Yoyo
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
         for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
         {
-            if(std::visit(*this, op->arguments[i]->toVariant())->is_equal(as_fn.sig.parameters[i].type)) return std::nullopt;
+            if(!std::visit(*this, op->arguments[i]->toVariant())->is_equal(as_fn.sig.parameters[i].type)) return std::nullopt;
         }
         return as_fn.sig.returnType;
     }

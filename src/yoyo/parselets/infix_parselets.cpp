@@ -31,7 +31,6 @@ namespace Yoyo
             auto arg = parser.parseExpression(0);
             arguments.push_back(std::move(arg));
         }
-        if(!parser.discard(TokenType::RParen)) return nullptr;
         return std::make_unique<CallOperation>(std::move(left), std::move(arguments));
     }
 
