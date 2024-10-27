@@ -267,6 +267,7 @@ namespace Yoyo
         if(!callee_ty) return std::nullopt;
         if(!callee_ty->is_function()) return std::nullopt;
         auto& as_fn = reinterpret_cast<FunctionType&>(*callee_ty);
+        //If the function is bound (something.function()) we skip checking the first args type
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
         for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
         {

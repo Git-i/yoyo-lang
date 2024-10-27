@@ -284,11 +284,11 @@ namespace Yoyo
                         }); var != cls->methods.end())
                     {
                         auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                        if(auto found = irgen->findType(name))
+                        if(auto found = irgen->findType(left_t->name))
                         {
                             auto function_name  = std::get<0>(*found) + name;
                             auto callee = irgen->code->getFunction(function_name);
-                            std::vector<llvm::Value*> args(op->arguments.size());
+                            std::vector<llvm::Value*> args(op->arguments.size() + 1); // +1 because its bound
                             args[0] = std::visit(*this, expr->lhs->toVariant());
                             std::ranges::transform(op->arguments, args.begin() + 1, [this](std::unique_ptr<Expression>& v)
                             {

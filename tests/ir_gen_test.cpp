@@ -29,5 +29,5 @@ main: () -> f64 = {
     llvm::LLVMContext context;
     Yoyo::IRGenerator gen(context);
     auto mod = gen.GenerateIR("MOO", std::move(decl));
-    mod.code->print(llvm::errs(), nullptr);
+    mod.code->print(llvm::outs(), nullptr);
 }
