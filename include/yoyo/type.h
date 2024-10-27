@@ -43,11 +43,14 @@ namespace Yoyo
 
         [[nodiscard]] bool is_floating_point() const;
 
+        [[nodiscard]] bool is_void() const {return name == "void"; }
+
         [[nodiscard]] std::optional<uint32_t> integer_width() const;
 
         [[nodiscard]] std::optional<uint32_t> float_width() const;
 
         [[nodiscard]] bool is_function() const {return name == "__fn";}
+        [[nodiscard]] bool is_primitive() const {return is_integral() || is_floating_point() ||  is_boolean() || is_void();}
 
     };
 

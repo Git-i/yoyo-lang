@@ -1,5 +1,6 @@
 #include "ir_gen.h"
 
+#include <csignal>
 #include <set>
 
 namespace Yoyo
@@ -43,13 +44,23 @@ namespace Yoyo
     llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)
     {
         std::vector<llvm::Type*> args(sig.parameters.size());
+        //Non primitives are passed via pointers and returned via pointers(sret)
         std::transform(sig.parameters.begin(), sig.parameters.end(), args.begin(),
             [this](const FunctionParameter& p)
             {
-                return ToLLVMType(p.type, p.convention == ParamType::InOut);
+                auto t = ToLLVMType(p.type, p.convention == ParamType::InOut);
+                if(!p.type.is_primitive())
+                    t = t->getPointerTo();
+                return t;
             });
+
         for(auto arg : args) if(!arg) return nullptr;
         auto return_t = ToLLVMType(sig.returnType, sig.return_is_ref);
+        if(!sig.returnType.is_primitive())
+        {
+            args.push_back(return_t->getPointerTo());
+            return_t = llvm::Type::getVoidTy(context);
+        }
         return llvm::FunctionType::get(return_t, args, false);
     }
     llvm::AllocaInst* IRGenerator::Alloca(std::string_view name, llvm::Type* type)
@@ -132,8 +143,9 @@ namespace Yoyo
         auto alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         if(decl->initializer)
         {
-            //TODO actual initialization
-            builder->CreateStore(std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant()), alloc);
+            auto expr_type = std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
+            type->is_lvalue = true;
+            ExpressionEvaluator{this}.doAssign(alloc, std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant()), *type, *expr_type);
         }
         variables.back()[name] = {alloc, decl};
     }
@@ -170,7 +182,7 @@ namespace Yoyo
     }
     void IRGenerator::error()
     {
-        throw std::runtime_error("IRGenerator error");
+        raise(SIGTRAP);
     }
 
     void IRGenerator::operator()(ReturnStatement* stat)
