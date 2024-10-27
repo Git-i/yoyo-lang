@@ -267,8 +267,8 @@ namespace Yoyo
         if(!callee_ty) return std::nullopt;
         if(!callee_ty->is_function()) return std::nullopt;
         auto& as_fn = reinterpret_cast<FunctionType&>(*callee_ty);
-        if(op->arguments.size() != as_fn.sig.parameters.size()) return std::nullopt;
-        for(size_t i = 0; i < as_fn.sig.parameters.size(); ++i)
+        if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
+        for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
         {
             if(std::visit(*this, op->arguments[i]->toVariant())->is_equal(as_fn.sig.parameters[i].type)) return std::nullopt;
         }

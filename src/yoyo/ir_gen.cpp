@@ -82,6 +82,20 @@ namespace Yoyo
         auto old_hash = block_hash;
         block_hash = name + "__";
         pushScope();
+        std::vector<std::unique_ptr<VariableDeclaration>> declarations;
+        for(auto& param : decl->signature.parameters)
+        {
+            if(!param.name.empty())
+            {
+                auto type = param.type;
+                if(in_class && type.name == "This") type = this_t;
+                declarations.push_back(std::make_unique<VariableDeclaration>(Token{}, type, nullptr));
+                variables.back()[param.name] = {
+                    Alloca(param.name, ToLLVMType(param.type, param.convention == ParamType::InOut)),
+                    declarations.back().get()
+                };
+            }
+        }
         std::visit(*this, decl->body->toVariant());
         popScope();
         block_hash = old_hash;

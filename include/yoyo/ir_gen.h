@@ -85,7 +85,7 @@ namespace Yoyo
         };
         explicit ExpressionEvaluator(IRGenerator* gen) : irgen(gen) {}
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
-        llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type);
+        llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type);
         llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
         llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;

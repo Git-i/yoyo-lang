@@ -24,7 +24,7 @@ namespace Yoyo {
         {"pub", TokenType::Pub},
         {"mod", TokenType::Mod},
         {"static", TokenType::Static},
-        {"for", TokenType::For}
+        {"this", TokenType::This}
 
     })
     {

@@ -18,6 +18,7 @@ namespace Yoyo
         prefixParselets[TokenType::RealLiteral] = std::make_shared<RealLiteralParselet>();
         prefixParselets[TokenType::StringLiteral] = std::make_shared<StringLiteralParselet>();
         prefixParselets[TokenType::Identifier] = name_parselet;
+        prefixParselets[TokenType::This] = name_parselet;
         prefixParselets[TokenType::SPIdentifier] = name_parselet;
         prefixParselets[TokenType::LParen] = std::make_shared<GroupParselet>();
         prefixParselets[TokenType::True] = bool_parselet;

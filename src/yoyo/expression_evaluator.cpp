@@ -11,7 +11,7 @@ namespace Yoyo
         }
         return nullptr;
     }
-    llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
+    llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type)
     {
         if(auto cls = left_type.get_decl_if_class(irgen))
         {
@@ -37,7 +37,7 @@ namespace Yoyo
                     {
                         auto alloc = irgen->Alloca("memaccess_temp", llvm_t);
                         auto lexpr = std::visit(*this, lhs->toVariant());
-                        doAssign(alloc, lexpr, left_type, right_type);
+                        doAssign(alloc, lexpr, left_type, left_type);
                         ptr = irgen->builder->CreateGEP(llvm_t, alloc, {idx, zero});
                     }
                     return irgen->builder->CreateLoad(out_t, ptr, var->name);
@@ -253,7 +253,7 @@ namespace Yoyo
         case LessEqual: return doCmp(EQ_LT, lhs, rhs, *left_t, *right_t);
         case BangEqual: return doCmp(NE, lhs, rhs, *left_t, *right_t);
         case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t);
-        case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t, *right_t);
+        case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
         }
         return nullptr;
     }
