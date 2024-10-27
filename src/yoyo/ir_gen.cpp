@@ -43,24 +43,25 @@ namespace Yoyo
     }
     llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)
     {
-        std::vector<llvm::Type*> args(sig.parameters.size());
+        bool use_sret = !sig.returnType.is_primitive();
+        std::vector<llvm::Type*> args(sig.parameters.size() + use_sret);
         //Non primitives are passed via pointers and returned via pointers(sret)
-        std::transform(sig.parameters.begin(), sig.parameters.end(), args.begin(),
-            [this](const FunctionParameter& p)
-            {
-                auto t = ToLLVMType(p.type, p.convention == ParamType::InOut);
-                if(!p.type.is_primitive())
-                    t = t->getPointerTo();
-                return t;
-            });
-
-        for(auto arg : args) if(!arg) return nullptr;
         auto return_t = ToLLVMType(sig.returnType, sig.return_is_ref);
-        if(!sig.returnType.is_primitive())
+        if(use_sret)
         {
-            args.push_back(return_t->getPointerTo());
+            args[0] = return_t->getPointerTo();
             return_t = llvm::Type::getVoidTy(context);
         }
+        std::ranges::transform(sig.parameters, args.begin() + use_sret, [this](const FunctionParameter& p)
+        {
+            auto t = ToLLVMType(p.type, p.convention == ParamType::InOut);
+            if(!p.type.is_primitive())
+                t = t->getPointerTo();
+            return t;
+        });
+
+        for(auto arg : args) if(!arg) return nullptr;
+
         return llvm::FunctionType::get(return_t, args, false);
     }
     llvm::AllocaInst* IRGenerator::Alloca(std::string_view name, llvm::Type* type)
@@ -88,6 +89,10 @@ namespace Yoyo
             return;
         }
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
+        if(!decl->signature.returnType.is_primitive())
+        {
+            func->addAttributeAtIndex(0, llvm::Attribute::get(context, llvm::Attribute::StructRet));
+        }
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         builder->SetInsertPoint(bb);
         auto old_hash = block_hash;

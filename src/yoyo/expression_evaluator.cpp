@@ -68,7 +68,7 @@ namespace Yoyo
                     auto lalloc = std::visit(*this, lhs->toVariant());
                     ptr = irgen->builder->CreateGEP(llvm_t, lalloc, {zero, idx});
 
-                    if(var->type.is_primitive()) irgen->builder->CreateLoad(out_t, ptr, var->name);
+                    if(var->type.is_primitive()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
                     return ptr;
                 }
             }
@@ -321,44 +321,66 @@ namespace Yoyo
                             llvm::Value* return_value = nullptr;
                             auto function_name  = std::get<0>(*found) + name;
                             auto callee = irgen->code->getFunction(function_name);
-                            std::vector<llvm::Value*> args(op->arguments.size() + 1); // +1 because its bound
-                            args[0] = std::visit(*this, expr->lhs->toVariant());
-                            std::ranges::transform(op->arguments, args.begin() + 1, [this](std::unique_ptr<Expression>& v)
-                            {
-                                return std::visit(*this, v->toVariant());
-                            });
-                            if(!decl->signature.returnType.is_primitive())
+                            bool uses_sret = callee->hasStructRetAttr();
+                            std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret); // +1 because its bound
+                            if(uses_sret)
                             {
                                 auto ret_t = irgen->ToLLVMType(decl->signature.returnType, false);
                                 return_value = irgen->Alloca("return_temp", ret_t);
+                                args[0] = return_value;
                             }
+                            args[uses_sret] = std::visit(*this, expr->lhs->toVariant());
+                            std::ranges::transform(op->arguments, args.begin() + 1 + uses_sret, [this](std::unique_ptr<Expression>& v)
+                            {
+                                return std::visit(*this, v->toVariant());
+                            });
                             auto call_val = irgen->builder->CreateCall(callee, args);
-                            if(decl->signature.returnType.is_primitive()) return_value = call_val;
+                            if(!uses_sret) return_value = call_val;
                             return return_value;
                         }
                         return nullptr;
                     }
                 }
             }
-            std::vector<llvm::Value*> args(op->arguments.size());
-            args[0] = std::visit(*this, expr->lhs->toVariant());
-            std::ranges::transform(op->arguments, args.begin() + 1, [this](std::unique_ptr<Expression>& v)
+            llvm::Value* return_value;
+            auto* callee = llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
+            if(!callee) return nullptr;
+            bool uses_sret = callee->hasStructRetAttr();
+            std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
+            if(uses_sret)
+            {
+                auto ret_t = irgen->ToLLVMType(fn.sig.returnType, false);
+                return_value = irgen->Alloca("return_temp", ret_t);
+                args[0] = return_value;
+            }
+            args[uses_sret] = std::visit(*this, expr->lhs->toVariant());
+            std::ranges::transform(op->arguments, args.begin() + 1 + uses_sret, [this](std::unique_ptr<Expression>& v)
             {
                 return std::visit(*this, v->toVariant());
             });
-            auto* callee = llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
-            if(!callee) return nullptr;
-            return irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
+            auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
+            if(!uses_sret) return_value = call_val;
+            return return_value;
         }
+        llvm::Value* return_value;
         auto callee_val = std::visit(*this, op->callee->toVariant());
         auto* callee = llvm::dyn_cast_or_null<llvm::Function>(callee_val);
         if(!callee) return nullptr;
-        std::vector<llvm::Value*> args(op->arguments.size());
-        std::ranges::transform(op->arguments, args.begin(), [this](std::unique_ptr<Expression>& v)
+        bool uses_sret = callee->hasStructRetAttr();
+        std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
+        if(uses_sret)
+        {
+            auto ret_t = irgen->ToLLVMType(fn.sig.returnType, false);
+            return_value = irgen->Alloca("return_temp", ret_t);
+            args[0] = return_value;
+        }
+        std::ranges::transform(op->arguments, args.begin() + uses_sret, [this](std::unique_ptr<Expression>& v)
         {
             return std::visit(*this, v->toVariant());
         });
-        return irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
+        auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
+        if(!uses_sret) return_value = call_val;
+        return return_value;
     }
     llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation*) {}
 }
