@@ -94,18 +94,31 @@ namespace Yoyo
         block_hash = name + "__";
         pushScope();
         std::vector<std::unique_ptr<VariableDeclaration>> declarations;
+        size_t idx = 0;
         for(auto& param : decl->signature.parameters)
         {
             if(!param.name.empty())
             {
+                auto param_type = func->getFunctionType()->getFunctionParamType(idx);
                 auto type = param.type;
                 if(in_class && type.name == "This") type = this_t;
                 declarations.push_back(std::make_unique<VariableDeclaration>(Token{}, type, nullptr));
+                llvm::Value* var;
+                if(type.is_primitive())
+                {
+                    var = Alloca(param.name, param_type);
+                    builder->CreateStore(func->getArg(idx), var);
+                }
+                else
+                {
+                    var = func->getArg(idx);
+                }
                 variables.back()[param.name] = {
-                    Alloca(param.name, ToLLVMType(param.type, param.convention == ParamType::InOut)),
+                    var,
                     declarations.back().get()
                 };
             }
+            idx++;
         }
         std::visit(*this, decl->body->toVariant());
         popScope();

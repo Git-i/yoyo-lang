@@ -16,7 +16,7 @@ namespace Yoyo
         Module* module;
         llvm::Module* code;
         llvm::IRBuilder<>* builder;
-        std::vector<std::unordered_map<std::string, std::pair<llvm::AllocaInst*, VariableDeclaration*>>> variables;
+        std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, VariableDeclaration*>>> variables;
         std::vector<std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, ClassDeclaration*>>> types;
         std::string block_hash;
 

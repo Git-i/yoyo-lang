@@ -239,7 +239,9 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                return irgen->builder->CreateLoad(var->second.first->getAllocatedType(), var->second.first, name);
+                auto alloc = llvm::dyn_cast_or_null<llvm::AllocaInst>(var->second.first);
+                if(alloc) irgen->builder->CreateLoad(alloc->getAllocatedType(), var->second.first, name);
+                return var->second.first;
             }
         }
         if(auto fn = irgen->code->getFunction(name))
