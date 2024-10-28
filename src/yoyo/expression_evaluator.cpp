@@ -266,8 +266,8 @@ namespace Yoyo
         llvm::Value* rhs;
         if(op->op.type != TokenType::Dot)
         {
-            rhs = std::visit(*this, r_as_var);
             lhs = std::visit(*this, l_as_var);
+            rhs = std::visit(*this, r_as_var);
         }
 
         auto left_t = std::visit(type_checker, l_as_var);
