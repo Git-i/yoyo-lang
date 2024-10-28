@@ -89,10 +89,9 @@ namespace Yoyo
             return;
         }
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
-        if(!decl->signature.returnType.is_primitive())
-        {
+        bool uses_sret = !decl->signature.returnType.is_primitive();
+        if(uses_sret)
             func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet));
-        }
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         builder->SetInsertPoint(bb);
         auto old_hash = block_hash;
@@ -112,11 +111,11 @@ namespace Yoyo
                 if(type.is_primitive() && param.convention != ParamType::InOut)
                 {
                     var = Alloca(param.name, param_type);
-                    builder->CreateStore(func->getArg(idx), var);
+                    builder->CreateStore(func->getArg(idx + uses_sret), var);
                 }
                 else
                 {
-                    var = func->getArg(idx);
+                    var = func->getArg(idx + uses_sret);
                 }
                 variables.back()[param.name] = {
                     var,
