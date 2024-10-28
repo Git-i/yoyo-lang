@@ -240,7 +240,10 @@ namespace Yoyo
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
                 auto alloc = llvm::dyn_cast_or_null<llvm::AllocaInst>(var->second.first);
-                if(alloc) irgen->builder->CreateLoad(alloc->getAllocatedType(), var->second.first, name);
+                if(alloc)
+                {
+                    if(var->second.second->type->is_primitive()) return irgen->builder->CreateLoad(alloc->getAllocatedType(), var->second.first, name);
+                }
                 return var->second.first;
             }
         }

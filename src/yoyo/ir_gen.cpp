@@ -91,7 +91,7 @@ namespace Yoyo
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
         if(!decl->signature.returnType.is_primitive())
         {
-            func->addAttributeAtIndex(0, llvm::Attribute::get(context, llvm::Attribute::StructRet));
+            func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet));
         }
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         builder->SetInsertPoint(bb);
@@ -158,6 +158,7 @@ namespace Yoyo
             error();
             return;
         }
+        decl->type = type;
         auto alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         if(decl->initializer)
         {
