@@ -6,6 +6,7 @@ namespace Yoyo
     /// I don't know where to place this, but all structural types are pointers
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
+        if(!left_type.is_equal(right_type)) return nullptr;
         if(!left_type.is_lvalue) {irgen->error(); return nullptr;}
         if(left_type.is_primitive())
         {
@@ -14,17 +15,14 @@ namespace Yoyo
         }
         //Copy for non primitives is memberwise, but can be explicitly
         //overloaded with the __copy method for classes
-        //__copy is always (this: inout, other: in Other_ty) -> void
-        //copy is mangled as __class__<source>____copy_with__class__<dest>
+        //__copy is always (this: inout, other: in This) -> void
+        //copy is mangled as __class__<source>____copy
         auto l_data = irgen->findType(left_type.name);
         if(!l_data) {irgen->error(); return nullptr;}
-        std::string cp_name = std::get<0>(*l_data) + "__copy_with";
-        auto r_data = irgen->findType(right_type.name);
-        cp_name += std::get<0>(*r_data);
+        std::string cp_name = std::get<0>(*l_data) + "__copy";
         auto cp_fn = irgen->code->getFunction(cp_name);
         if(cp_fn)
         {
-            //if right is a structure it's a pointer, otherwise it is a value
             irgen->builder->CreateCall(cp_fn, {lhs, rhs});
         }
         else
@@ -47,7 +45,7 @@ namespace Yoyo
         }
         return nullptr;
     }
-    llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type)
+    llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
         if(auto cls = left_type.get_decl_if_class(irgen))
         {
@@ -68,12 +66,14 @@ namespace Yoyo
                     auto lalloc = std::visit(*this, lhs->toVariant());
                     ptr = irgen->builder->CreateGEP(llvm_t, lalloc, {zero, idx});
 
-                    if(var->type.is_primitive()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
+                    if(load_primitive && var->type.is_primitive()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
                     return ptr;
                 }
             }
         }
+        return nullptr;
     }
+
     llvm::Value* ExpressionEvaluator::doAddition(
         llvm::Value* lhs,
         llvm::Value* rhs,
@@ -194,14 +194,20 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
+                if(!var->second.second->is_mut) return nullptr;
                 return var->second.first;
             }
         }
     }
 
-    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation*)
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation* bop)
     {
-        //TODO
+        //Dot operations can also be lvalue'd
+        if(bop->op.type != TokenType::Dot) return nullptr;
+        auto left_t = std::visit(ExpressionTypeChecker{irgen}, bop->lhs->toVariant());
+        if(!left_t) return nullptr;
+        if(!left_t->is_lvalue) return nullptr;
+        return ExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
     }
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(Expression*)
@@ -264,7 +270,7 @@ namespace Yoyo
 
         llvm::Value* lhs;
         llvm::Value* rhs;
-        if(op->op.type != TokenType::Dot)
+        if(op->op.type != TokenType::Dot && !op->op.is_assignment())
         {
             lhs = std::visit(*this, l_as_var);
             rhs = std::visit(*this, r_as_var);
@@ -288,6 +294,9 @@ namespace Yoyo
         case BangEqual: return doCmp(NE, lhs, rhs, *left_t, *right_t);
         case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t);
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
+
+        case Equal:
+                return doAssign(std::visit(LValueEvaluator{irgen}, op->lhs->toVariant()), std::visit(*this, op->rhs->toVariant()), *left_t, *right_t);
         }
         return nullptr;
     }
@@ -333,10 +342,13 @@ namespace Yoyo
                                 args[0] = return_value;
                             }
                             args[uses_sret] = std::visit(*this, expr->lhs->toVariant());
-                            std::ranges::transform(op->arguments, args.begin() + 1 + uses_sret, [this](std::unique_ptr<Expression>& v)
+                            for(size_t i = 0; i < op->arguments.size(); i++)
                             {
-                                return std::visit(*this, v->toVariant());
-                            });
+                                if(fn.sig.parameters[i + 1].convention == ParamType::InOut)
+                                    args[i + 1 + uses_sret] = std::visit(LValueEvaluator{irgen}, op->arguments[i]->toVariant());
+                                else
+                                    args[i + 1 + uses_sret] = std::visit(*this, op->arguments[i]->toVariant());
+                            }
                             auto call_val = irgen->builder->CreateCall(callee, args);
                             if(!uses_sret) return_value = call_val;
                             return return_value;
@@ -357,10 +369,13 @@ namespace Yoyo
                 args[0] = return_value;
             }
             args[uses_sret] = std::visit(*this, expr->lhs->toVariant());
-            std::ranges::transform(op->arguments, args.begin() + 1 + uses_sret, [this](std::unique_ptr<Expression>& v)
+            for(size_t i = 0; i < op->arguments.size(); i++)
             {
-                return std::visit(*this, v->toVariant());
-            });
+                if(fn.sig.parameters[i + 1].convention == ParamType::InOut)
+                    args[i + 1 + uses_sret] = std::visit(LValueEvaluator{irgen}, op->arguments[i]->toVariant());
+                else
+                    args[i + 1 + uses_sret] = std::visit(*this, op->arguments[i]->toVariant());
+            }
             auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
             if(!uses_sret) return_value = call_val;
             return return_value;
@@ -377,10 +392,13 @@ namespace Yoyo
             return_value = irgen->Alloca("return_temp", ret_t);
             args[0] = return_value;
         }
-        std::ranges::transform(op->arguments, args.begin() + uses_sret, [this](std::unique_ptr<Expression>& v)
+        for(size_t i = 0; i < op->arguments.size(); i++)
         {
-            return std::visit(*this, v->toVariant());
-        });
+            if(fn.sig.parameters[i].convention == ParamType::InOut)
+                args[i + uses_sret] = std::visit(LValueEvaluator{irgen}, op->arguments[i]->toVariant());
+            else
+                args[i + uses_sret] = std::visit(*this, op->arguments[i]->toVariant());
+        }
         auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
         if(!uses_sret) return_value = call_val;
         return return_value;

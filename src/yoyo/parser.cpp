@@ -325,6 +325,7 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseVariableDeclaration(Token identifier)
     {
+        bool is_mut = discard(TokenType::Mut);
         auto tk = Peek();
         if(!tk) return nullptr;
         if(tk->type == TokenType::Underscore)
@@ -333,14 +334,14 @@ namespace Yoyo
             if(!discard(TokenType::Equal)) error("Expected '='", Peek());
             auto initializer = parseExpression(0);
             if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
-            return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer));
+            return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut);
         }
         if(tk->type == TokenType::Equal)
         {
             Get();
             auto initializer = parseExpression(0);
             if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
-            return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer));
+            return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut);
         }
         auto type = parseType(0);
         if(!type) synchronizeTo({{TokenType::Equal, TokenType::SemiColon}});
@@ -350,7 +351,7 @@ namespace Yoyo
             init = parseExpression(0);
         }
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
-        return std::make_unique<VariableDeclaration>(identifier, type, std::move(init));
+        return std::make_unique<VariableDeclaration>(identifier, type, std::move(init), is_mut);
     }
     std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier)
     {

@@ -10,17 +10,19 @@ lol: class = {
         return this.a;
     }
 }
-dome: (b: f64) -> lol = {
+dome: (b: inout f64) -> lol = {
     a: lol;
+    b = 100.0;
     return a;
 }
 main: () -> f64 = {
     d: lol;
     a: f64 = 0.0;
-    b := 10.4;
+    b : mut = 10.4;
+    b = 20.5;
     if(a > b) return b;
     else if(a == b) return a;
-    return a + d.a + dome(10.0).damm();
+    return a + d.a + dome(b).damm();
 }
 )";
     Yoyo::Parser p1(std::move(source));

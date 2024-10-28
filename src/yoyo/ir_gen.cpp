@@ -55,7 +55,7 @@ namespace Yoyo
         std::ranges::transform(sig.parameters, args.begin() + use_sret, [this](const FunctionParameter& p)
         {
             auto t = ToLLVMType(p.type, p.convention == ParamType::InOut);
-            if(!p.type.is_primitive())
+            if(!p.type.is_primitive() || p.convention == ParamType::InOut)
                 t = t->getPointerTo();
             return t;
         });
@@ -107,9 +107,9 @@ namespace Yoyo
                 auto param_type = func->getFunctionType()->getFunctionParamType(idx);
                 auto type = param.type;
                 if(in_class && type.name == "This") type = this_t;
-                declarations.push_back(std::make_unique<VariableDeclaration>(Token{}, type, nullptr));
+                declarations.push_back(std::make_unique<VariableDeclaration>(Token{}, type, nullptr,param.convention == ParamType::InOut));
                 llvm::Value* var;
-                if(type.is_primitive())
+                if(type.is_primitive() && param.convention != ParamType::InOut)
                 {
                     var = Alloca(param.name, param_type);
                     builder->CreateStore(func->getArg(idx), var);

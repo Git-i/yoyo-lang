@@ -11,6 +11,15 @@ namespace Yoyo
         }
         return std::nullopt;
     }
+    static std::optional<Type> checkAssign(const Type &a, const Type &b)
+    {
+        if(!a.is_lvalue) return std::nullopt;
+        if(a != b)
+        {
+            return std::nullopt;
+        }
+        return Type{"void"};
+    }
     static std::optional<Type> checkMinus(const Type &a, const Type &b)
     {
         if(a.is_integral() || a.is_floating_point())
@@ -148,7 +157,8 @@ namespace Yoyo
                             return name == v.name;
                         }); var != cls->vars.end())
                         {
-                            return var->type;
+                            //accessing an l-value struct yields an l-value
+                            return Type{.name = var->type.name, .subtypes = var->type.subtypes, .is_lvalue = lhs->is_lvalue};
                         }
                         if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
                         {
@@ -157,9 +167,9 @@ namespace Yoyo
                         {
                             auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
                             if(decl->signature.parameters[0].type.name != "This")
-                            {
                                 return std::nullopt;
-                            }
+                            if(decl->signature.parameters[0].convention == ParamType::InOut && !lhs->is_lvalue)
+                                return std::nullopt;
                             return FunctionType{decl->signature, true};
                         }
                     }
@@ -172,11 +182,12 @@ namespace Yoyo
                 {
                     return std::nullopt;
                 }
+                if(as_function.sig.parameters[0].convention == ParamType::InOut && !lhs->is_lvalue) return std::nullopt;
                 as_function.is_bound = true;
                 return as_function;
             }
+        case Equal: return checkAssign(*lhs, *rhs);
         }
-        //TODO
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(LogicalOperation*)
@@ -194,7 +205,7 @@ namespace Yoyo
             {
                 auto decl = var->second.second;
                 auto t = decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
-                t->is_lvalue = true;
+                t->is_lvalue = decl->is_mut;
                 return t;
             }
         }

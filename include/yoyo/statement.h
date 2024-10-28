@@ -46,8 +46,9 @@ namespace Yoyo
         std::optional<Type> type;
         Token identifier;
         std::unique_ptr<Expression> initializer;
-        VariableDeclaration(Token iden, std::optional<Type> t, std::unique_ptr<Expression> init)
-            : type(std::move(t)), identifier(iden), initializer(std::move(init)) {}
+        bool is_mut;
+        VariableDeclaration(Token iden, std::optional<Type> t, std::unique_ptr<Expression> init, bool mut)
+            : type(std::move(t)), identifier(iden), initializer(std::move(init)), is_mut(mut) {};
         StatementVaraint toVariant() override;
     };
     class FunctionDeclaration : public Statement
