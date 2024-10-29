@@ -89,11 +89,16 @@ namespace Yoyo
             return;
         }
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
+        return_t = decl->signature.returnType;
+        return_t.is_lvalue = true;
         bool uses_sret = !decl->signature.returnType.is_primitive();
         if(uses_sret)
             func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet));
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
+        returnBlock = llvm::BasicBlock::Create(context, "return", func);
         builder->SetInsertPoint(bb);
+        currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
+            static_cast<llvm::Value*>(Alloca("return_address", ToLLVMType(return_t, false)));
         auto old_hash = block_hash;
         block_hash = name + "__";
         pushScope();
@@ -126,6 +131,9 @@ namespace Yoyo
         }
         std::visit(*this, decl->body->toVariant());
         popScope();
+        builder->SetInsertPoint(returnBlock);
+        if(uses_sret) builder->CreateRetVoid();
+        else builder->CreateRet(builder->CreateLoad(reinterpret_cast<llvm::AllocaInst*>(currentReturnAddress)->getAllocatedType(), currentReturnAddress));
         block_hash = old_hash;
     }
     void IRGenerator::operator()(ExpressionStatement* stat)
@@ -206,9 +214,15 @@ namespace Yoyo
     void IRGenerator::operator()(ReturnStatement* stat)
     {
         if(stat->expression)
-            builder->CreateRet(std::visit(ExpressionEvaluator{this}, stat->expression->toVariant()));
+        {
+            auto t = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant());
+            if(!t) {error(); return;}
+            auto value = std::visit(ExpressionEvaluator{this}, stat->expression->toVariant());
+            ExpressionEvaluator{this}.doAssign(currentReturnAddress, value, return_t, *t);
+            builder->CreateBr(returnBlock);
+        }
         else
-            builder->CreateRetVoid();
+            builder->CreateBr(returnBlock);
     }
 
     void IRGenerator::operator()(IfStatement* stat)
@@ -219,10 +233,10 @@ namespace Yoyo
         {
             error(); return;
         }
-        auto then_bb = llvm::BasicBlock::Create(context, "then", fn);
+        auto then_bb = llvm::BasicBlock::Create(context, "then", fn, returnBlock);
         llvm::BasicBlock* else_bb = nullptr;
-        if(stat->else_stat) else_bb = llvm::BasicBlock::Create(context, "else", fn);
-        auto merge_bb = llvm::BasicBlock::Create(context, "ifcont", fn);
+        if(stat->else_stat) else_bb = llvm::BasicBlock::Create(context, "else", fn, returnBlock);
+        auto merge_bb = llvm::BasicBlock::Create(context, "ifcont", fn, returnBlock);
         builder->CreateCondBr(
             std::visit(ExpressionEvaluator{this}, stat->condition->toVariant()), then_bb,
             else_bb ? else_bb : merge_bb);

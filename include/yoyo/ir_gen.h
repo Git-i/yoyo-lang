@@ -10,7 +10,10 @@ namespace Yoyo
     class IRGenerator
     {
     public:
+        llvm::Value* currentReturnAddress;
         Type this_t;
+        Type return_t;
+        llvm::BasicBlock* returnBlock;
         bool in_class = false;
         llvm::LLVMContext& context;
         Module* module;

@@ -37,9 +37,12 @@ namespace Yoyo
             {
                 auto mem_idx = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), idx);
                 llvm::Value* mem_wise_rhs = irgen->builder->CreateGEP(llvm_t, rhs, {zero, mem_idx});
+                llvm::Value* mem_wise_lhs = irgen->builder->CreateGEP(llvm_t, lhs, {zero, mem_idx});
                 auto mem_wise_type = irgen->ToLLVMType(var.type, false);
                 if(var.type.is_primitive()) mem_wise_rhs = irgen->builder->CreateLoad(mem_wise_type, mem_wise_rhs);
-                doAssign(lhs, rhs, var.type, var.type);
+                auto as_lvalue = var.type;
+                as_lvalue.is_lvalue = true;
+                doAssign(mem_wise_lhs, mem_wise_rhs, as_lvalue, var.type);
                 idx++;
             }
         }
