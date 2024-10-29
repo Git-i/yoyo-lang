@@ -26,7 +26,7 @@ main: () -> f64 = {
     a: f64 = 0.0;
     b : mut = 10.4;
     b = 20.5;
-    if(a < b) return b;
+    if(a > b) return b;
     else if(a == b) return a;
     return a + d.a + dome(b).damm();
 }
@@ -51,7 +51,7 @@ main: () -> f64 = {
     llvm::ExitOnError ExitOnErr;
 
     auto j = llvm::orc::LLJITBuilder().create();
-    j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.code), std::move(context)));
+    std::ignore = j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.code), std::move(context)));
     auto addr = j.get()->lookup("main").get();
     double(*fn)() = addr.toPtr<double()>();
     std::cout << fn();

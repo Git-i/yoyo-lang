@@ -90,15 +90,16 @@ namespace Yoyo
         }
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
         return_t = decl->signature.returnType;
+        auto return_as_llvm_type = ToLLVMType(return_t, false);
         return_t.is_lvalue = true;
         bool uses_sret = !decl->signature.returnType.is_primitive();
         if(uses_sret)
-            func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet));
+            func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         returnBlock = llvm::BasicBlock::Create(context, "return", func);
         builder->SetInsertPoint(bb);
         currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
-            static_cast<llvm::Value*>(Alloca("return_address", ToLLVMType(return_t, false)));
+            static_cast<llvm::Value*>(Alloca("return_address", return_as_llvm_type));
         auto old_hash = block_hash;
         block_hash = name + "__";
         pushScope();

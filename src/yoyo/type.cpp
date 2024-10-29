@@ -110,4 +110,22 @@ namespace Yoyo
         std::string size(name.begin() + 1, name.end());
         return std::stoul(size);
     }
+
+    size_t Type::bitsize(IRGenerator* irgen) const
+    {
+        if(auto int_w = integer_width()) return *int_w;
+        if(auto float_w = float_width()) return *float_w;
+        if(is_void()) return 0;
+        if(is_boolean()) return 1;
+        if(auto decl = get_decl_if_class(irgen))
+        {
+            size_t sz = 0;
+            for(auto& var : decl->vars)
+            {
+                sz += var.type.bitsize(irgen);
+            }
+            return sz;
+        }
+        return 0;
+    }
 }

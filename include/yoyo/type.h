@@ -52,6 +52,8 @@ namespace Yoyo
         [[nodiscard]] bool is_function() const {return name == "__fn";}
         [[nodiscard]] bool is_primitive() const {return is_integral() || is_floating_point() ||  is_boolean() || is_void();}
 
+        [[nodiscard]] size_t bitsize(IRGenerator* irgen) const;
+
     };
 
 
