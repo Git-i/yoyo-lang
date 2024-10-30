@@ -205,7 +205,7 @@ namespace Yoyo
         builder->CreateCondBr(value, then_bb, cont_bb);
         builder->SetInsertPoint(then_bb);
         std::visit(*this, expr->body->toVariant());
-        builder->CreateBr(while_bb);
+        if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(while_bb);
         builder->SetInsertPoint(cont_bb);
     }
     void IRGenerator::error()
@@ -244,12 +244,12 @@ namespace Yoyo
             else_bb ? else_bb : merge_bb);
         builder->SetInsertPoint(then_bb);
         std::visit(*this, stat->then_stat->toVariant());
-        builder->CreateBr(merge_bb);
+        if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
         if(stat->else_stat)
         {
             builder->SetInsertPoint(else_bb);
             std::visit(*this, stat->else_stat->toVariant());
-            builder->CreateBr(merge_bb);
+            if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
         }
         builder->SetInsertPoint(merge_bb);
     }
