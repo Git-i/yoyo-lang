@@ -248,10 +248,9 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                auto alloc = llvm::dyn_cast_or_null<llvm::AllocaInst>(var->second.first);
-                if(alloc)
+                if(var->second.second->type->is_primitive())
                 {
-                    if(var->second.second->type->is_primitive()) return irgen->builder->CreateLoad(alloc->getAllocatedType(), var->second.first, name);
+                    return irgen->builder->CreateLoad(irgen->ToLLVMType(*var->second.second->type, false), var->second.first, name);
                 }
                 return var->second.first;
             }
@@ -299,7 +298,7 @@ namespace Yoyo
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
 
         case Equal:
-                return doAssign(std::visit(LValueEvaluator{irgen}, op->lhs->toVariant()), std::visit(*this, op->rhs->toVariant()), *left_t, *right_t);
+                return doAssign(std::visit(LValueEvaluator{irgen}, l_as_var), std::visit(*this, r_as_var), *left_t, *right_t);
         }
         return nullptr;
     }

@@ -49,7 +49,7 @@ main: () -> f64 = {
     Yoyo::IRGenerator gen(*context);
     auto mod = gen.GenerateIR("MOO", std::move(decl));
     mod.code->print(llvm::outs(), nullptr);
-    if(!verifyModule(*mod.code, &llvm::errs())) raise(SIGTRAP);
+    if(verifyModule(*mod.code, &llvm::errs())) raise(SIGTRAP);
 
     llvm::ExitOnError ExitOnErr;
     auto j = llvm::orc::LLJITBuilder().create();
