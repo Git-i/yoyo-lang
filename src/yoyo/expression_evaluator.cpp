@@ -32,10 +32,10 @@ namespace Yoyo
             llvm::Type* llvm_t = irgen->ToLLVMType(left_type, false);
             auto as_class = left_type.get_decl_if_class(irgen);
             size_t idx = 0;
-            auto zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0);
+            auto zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
             for(auto& var : as_class->vars)
             {
-                auto mem_idx = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), idx);
+                auto mem_idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
                 llvm::Value* mem_wise_rhs = irgen->builder->CreateGEP(llvm_t, rhs, {zero, mem_idx});
                 llvm::Value* mem_wise_lhs = irgen->builder->CreateGEP(llvm_t, lhs, {zero, mem_idx});
                 auto mem_wise_type = irgen->ToLLVMType(var.type, false);

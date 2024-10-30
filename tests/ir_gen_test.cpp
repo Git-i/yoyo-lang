@@ -30,7 +30,7 @@ main: () -> f64 = {
     b = 20.5;
     if(a > b) return b;
     else if(a == b) return a;
-    return a;
+    return a + d.a + dome(b).damm();
 }
 )";
 
