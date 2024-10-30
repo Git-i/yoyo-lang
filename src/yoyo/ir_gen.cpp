@@ -182,6 +182,7 @@ namespace Yoyo
         for(auto& sub_stat : stat->statements)
         {
             std::visit(*this, sub_stat->toVariant());
+            if(dynamic_cast<ReturnStatement*>(sub_stat.get())) break;
         }
         popScope();
     }

@@ -1,8 +1,10 @@
+#include <csignal>
 #include <iostream>
 #include <ir_gen.h>
 #include <parser.h>
 #include <catch2/catch_test_macros.hpp>
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 TEST_CASE("Test IR")
@@ -28,7 +30,7 @@ main: () -> f64 = {
     b = 20.5;
     if(a > b) return b;
     else if(a == b) return a;
-    return a + d.a + dome(b).damm();
+    return a;
 }
 )";
 
@@ -47,9 +49,9 @@ main: () -> f64 = {
     Yoyo::IRGenerator gen(*context);
     auto mod = gen.GenerateIR("MOO", std::move(decl));
     mod.code->print(llvm::outs(), nullptr);
+    if(!verifyModule(*mod.code, &llvm::errs())) raise(SIGTRAP);
 
     llvm::ExitOnError ExitOnErr;
-
     auto j = llvm::orc::LLJITBuilder().create();
     std::ignore = j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.code), std::move(context)));
     auto addr = j.get()->lookup("main").get();
