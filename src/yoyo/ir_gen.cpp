@@ -112,7 +112,7 @@ namespace Yoyo
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         returnBlock = llvm::BasicBlock::Create(context, "return", func);
         builder->SetInsertPoint(bb);
-        currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
+        if(!return_t.is_void()) currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
             static_cast<llvm::Value*>(Alloca("return_address", return_as_llvm_type));
         auto old_hash = block_hash;
         block_hash = name + "__";

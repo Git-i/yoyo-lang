@@ -189,6 +189,7 @@ namespace Yoyo
         return nullptr;
     }
 
+
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
     {
         std::string name(nm->token.text);
@@ -311,7 +312,8 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)
     {
         auto t = std::visit(ExpressionTypeChecker{irgen}, op->callee->toVariant());
-        if(!t || !t->is_function()) return nullptr;
+        if(!t || !(t->is_function() || t->is_lambda())) return nullptr;
+        bool is_lambda = t->is_lambda();
         auto fn = reinterpret_cast<FunctionType&>(*t);
         if(fn.is_bound)
         {
@@ -360,7 +362,10 @@ namespace Yoyo
                 }
             }
             llvm::Value* return_value;
-            auto* callee = llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
+            auto right_t = std::visit(ExpressionTypeChecker{irgen}, expr->rhs->toVariant());
+            auto* callee = is_lambda ?
+                irgen->code->getFunction(irgen->block_hash + right_t->name) :
+                llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
             if(!callee) return nullptr;
             bool uses_sret = callee->hasStructRetAttr();
             std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
@@ -378,13 +383,16 @@ namespace Yoyo
                 else
                     args[i + 1 + uses_sret] = std::visit(*this, op->arguments[i]->toVariant());
             }
+            if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
             auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
             if(!uses_sret) return_value = call_val;
             return return_value;
         }
         llvm::Value* return_value;
         auto callee_val = std::visit(*this, op->callee->toVariant());
-        auto* callee = llvm::dyn_cast_or_null<llvm::Function>(callee_val);
+        auto* callee = is_lambda ?
+            irgen->code->getFunction(irgen->block_hash + t->name) :
+            llvm::dyn_cast_or_null<llvm::Function>(callee_val);
         if(!callee) return nullptr;
         bool uses_sret = callee->hasStructRetAttr();
         std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
@@ -401,6 +409,7 @@ namespace Yoyo
             else
                 args[i + uses_sret] = std::visit(*this, op->arguments[i]->toVariant());
         }
+        if(is_lambda) args.push_back(callee_val);
         auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
         if(!uses_sret) return_value = call_val;
         return return_value;
@@ -418,10 +427,30 @@ namespace Yoyo
             NameExpression name(tk);
             auto type = ExpressionTypeChecker{irgen}(&name);
             if(type->is_function()) { irgen->error(); return nullptr; }
+            if(capture.second == ParamType::InOut && !type->is_lvalue) { irgen->error(); return nullptr; }
             llvm::Type* tp = irgen->ToLLVMType(*type, false);
             context_types.push_back(capture.second == ParamType::In ? tp : tp->getPointerTo());
         }
         auto context = llvm::StructType::get(irgen->context, context_types);
+        auto ctx_object = irgen->Alloca("lambda_context", context);
+        //copy types into the context
+        size_t idx = 0;
+        auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+        for(auto& capture : expr->captures)
+        {
+            auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
+            Token tk{.type = TokenType::Identifier, .text = capture.first};
+            NameExpression name(tk);
+            auto type = ExpressionTypeChecker{irgen}(&name);
+            type->is_lvalue = true;
+            llvm::Value* val = capture.second == ParamType::InOut ?
+                LValueEvaluator{irgen}(&name) :
+                (*this)(&name);
+            llvm::Value* lhs = irgen->builder->CreateGEP(context, ctx_object, {zero_const, idx_const});
+            if(capture.second == ParamType::InOut) irgen->builder->CreateStore(val, lhs);
+            else doAssign(lhs, val, *type, *type);
+            idx++;
+        }
         std::string name = "__lambda" + expr->hash;
         Token tk{.type = TokenType::Identifier, .text = name};
         irgen->lambdas[name] = {&expr->captures, context};
@@ -430,6 +459,6 @@ namespace Yoyo
         sig.parameters.push_back(FunctionParameter{.type = Type{name}, .convention = ParamType::InOut});
         FunctionDeclaration decl(tk,std::move(sig), std::move(expr->body));
         (*irgen)(&decl);
-        return nullptr;
+        return ctx_object;
     }
 }

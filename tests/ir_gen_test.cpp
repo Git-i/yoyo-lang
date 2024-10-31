@@ -28,7 +28,7 @@ main: () -> f64 = {
     a: f64 = 0.0;
     b : mut = 10.4;
     b = 20.5;
-    |b| -> i32 {return b;};
+    |b: inout| -> void { b = -2.0; }();
     if(a > b) return b;
     else if(a == b) return a;
     return a + d.a + dome(b).damm();

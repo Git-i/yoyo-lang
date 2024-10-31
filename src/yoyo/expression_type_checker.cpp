@@ -226,8 +226,9 @@ namespace Yoyo
 
     }
 
-    std::optional<FunctionType> ExpressionTypeChecker::operator()(LambdaExpression*)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(LambdaExpression* lmd)
     {
+        return Type{.name = "__lambda" + lmd->hash, .subtypes = {}};
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral*)
