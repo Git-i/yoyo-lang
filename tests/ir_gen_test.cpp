@@ -25,10 +25,11 @@ dome: (b: inout f64) -> lol = {
 main: () -> f64 = {
     d: mut lol;
     d.a = 10.0;
-    a: f64 = 0.0;
+    a: f64 = 5.0;
     b : mut = 10.4;
     b = 20.5;
-    |b: inout| -> void { b = -2.0; }();
+    lambda:= |b: inout| -> void { b = 2.0; };
+    lambda();
     if(a > b) return b;
     else if(a == b) return a;
     return a + d.a + dome(b).damm();

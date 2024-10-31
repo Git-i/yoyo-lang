@@ -171,8 +171,10 @@ namespace Yoyo
         }
         std::visit(*this, decl->body->toVariant());
         popScope();
+        if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br)
+            builder->CreateBr(returnBlock);
         builder->SetInsertPoint(returnBlock);
-        if(uses_sret) builder->CreateRetVoid();
+        if(uses_sret || return_t.is_void()) builder->CreateRetVoid();
         else builder->CreateRet(builder->CreateLoad(reinterpret_cast<llvm::AllocaInst*>(currentReturnAddress)->getAllocatedType(), currentReturnAddress));
         block_hash = old_hash;
         if(oldBuilder) builder.swap(oldBuilder);
@@ -210,12 +212,16 @@ namespace Yoyo
             return;
         }
         decl->type = type;
-        auto alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
+        //TODO probably consider copying lambda contexts??
+        llvm::Value* alloc;
+        if(!type->is_lambda()) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
             type->is_lvalue = true;
-            ExpressionEvaluator{this}.doAssign(alloc, std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant()), *type, *expr_type);
+            auto init = std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant());
+            if(!type->is_lambda()) ExpressionEvaluator{this}.doAssign(alloc, init, *type, *expr_type);
+            else alloc = init;
         }
         variables.back()[name] = {alloc, decl};
     }
