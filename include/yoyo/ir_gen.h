@@ -99,6 +99,8 @@ namespace Yoyo
         llvm::Value* doRem(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type) const;
         llvm::Value* doCmp(ComparisonPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
                            const Type& right_type) const;
+        llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
+            std::vector<std::unique_ptr<Expression>>& exprs);
         struct LValueEvaluator
         {
             IRGenerator* irgen;

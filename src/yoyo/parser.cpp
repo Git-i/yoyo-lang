@@ -1,5 +1,4 @@
 #include "parser.h"
-
 #include <iostream>
 #include <precedences.h>
 #include "statement.h"
@@ -194,6 +193,14 @@ namespace Yoyo
             {
                 t = ParamType::InOut;
                 Get();
+            }
+            //param is a function
+            else if(tk->type == TokenType::Called)
+            {
+                auto sig = parseFunctionSignature();
+                auto signature = std::make_unique<FunctionSignature>(std::move(*sig));
+                Type t{.name = "__called_fn", .subtypes = {}, .signature = std::move(signature), .is_lvalue = false};
+                return FunctionParameter{.type = t, .convention = ParamType::In, .name = std::move(name)};
             }
             auto type = parseType(0);
             return FunctionParameter{std::move(type).value_or(Type{}), t, std::move(name)};

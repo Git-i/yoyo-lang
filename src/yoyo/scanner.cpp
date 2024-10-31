@@ -26,6 +26,7 @@ namespace Yoyo {
         {"static", TokenType::Static},
         {"this", TokenType::This},
         {"mut", TokenType::Mut},
+        {"called", TokenType::Called},
 
     })
     {

@@ -1,27 +1,32 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+
 namespace Yoyo
 {
+    struct FunctionSignature;
     class ClassDeclaration;
     class IRGenerator;
     struct Type
     {
         std::string name;
         std::vector<Type> subtypes;
+        //shared ptr because I want the object to be copyable, its mostly nullptr anyway
+        //this is to store the signature for callable and storable functions
+        std::shared_ptr<FunctionSignature> signature;
         bool is_lvalue = false;
         bool operator==(const Type& other) const
         {
             return is_equal(other);
         }
-        [[nodiscard]] bool is_equal(const Type& other) const
-        {
-            return name == other.name && subtypes == other.subtypes;
-        }
+        [[nodiscard]] bool is_assignable_from(const Type& other) const;
+        [[nodiscard]] bool is_equal(const Type& other) const;
+
         [[nodiscard]] bool is_shallow_equal(const Type& other) const
         {
             return name == other.name;

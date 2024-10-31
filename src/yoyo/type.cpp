@@ -1,8 +1,33 @@
 #include "type.h"
 #include "ir_gen.h"
 #include "statement.h"
+#include "fn_type.h"
 namespace Yoyo
 {
+    bool Type::is_assignable_from(const Type& other) const
+    {
+        if(is_equal(other)) return true;
+        if(name == "__callable_fn" && other.is_function() || other.is_lambda())
+        {
+            const auto& as_fn = reinterpret_cast<const FunctionType&>(other);
+            if(signature->parameters.size() != as_fn.signature->parameters.size()) return false;
+            for(size_t i = 0; i < signature->parameters.size(); ++i)
+            {
+                if(signature->parameters[i].type != as_fn.signature->parameters[i].type) return false;
+                if(signature->parameters[i].convention != as_fn.signature->parameters[i].convention) return false;
+            }
+            if(signature->return_is_ref != as_fn.signature->return_is_ref) return false;
+            if(signature->returnType != as_fn.signature->returnType) return false;
+            return true;
+        }
+        return false;
+    }
+
+    bool Type::is_equal(const Type& other) const
+    {
+        return name == other.name && subtypes == other.subtypes;
+    }
+
     Type Type::variant_merge(Type a, Type b)
     {
         if(a.is_equal(b)) return a;

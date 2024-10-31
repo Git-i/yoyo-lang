@@ -31,6 +31,12 @@ namespace Yoyo
             return llvm::Type::getVoidTy(context);
         if(type.is_opaque_pointer())
             return llvm::PointerType::get(context, 0);
+        if(type.name == "__called_fn")
+        {
+            auto ptr_ty = llvm::PointerType::get(context, 0);
+            //called functions are always struct{void* context, void* function}
+            return llvm::StructType::get(context, {ptr_ty, ptr_ty});
+        }
         if(type.is_lambda())
         {
             if(auto t = lambdas.find(type.name); t != lambdas.end())

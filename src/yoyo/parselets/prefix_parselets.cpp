@@ -120,7 +120,10 @@ namespace Yoyo
             sig = FunctionSignature{.returnType = std::move(ty).value_or(Type{}), .return_is_ref = false, .parameters = {}};
         }
         auto stat = parser.parseStatement();
-        return std::make_unique<LambdaExpression>(std::move(captures), std::move(sig), std::move(stat));
+        auto expr = std::make_unique<LambdaExpression>(std::move(captures), std::move(sig), std::move(stat));
+        //lambda hash depends on the pointer from `make_unique`
+        expr->hash = std::to_string(reinterpret_cast<std::uintptr_t>(expr.get()));
+        return expr;
     }
 
 

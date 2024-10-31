@@ -22,14 +22,17 @@ dome: (b: inout f64) -> lol = {
     a.a = b;
     return a;
 }
+call_callable: (fn: callable () -> f64) -> f64 = {
+    return 0.0;
+}
 main: () -> f64 = {
     d: mut lol;
     d.a = 10.0;
     a: f64 = 5.0;
     b : mut = 10.4;
     b = 20.5;
-    lambda:= |b: inout| -> void { b = 2.0; };
-    lambda();
+    lambda:= |b: inout| -> f64 { return b; };
+    call_callable(b);
     if(a > b) return b;
     else if(a == b) return a;
     return a + d.a + dome(b).damm();
