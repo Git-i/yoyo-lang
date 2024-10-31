@@ -11,6 +11,7 @@ namespace Yoyo
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
         auto name_parselet = std::make_shared<NameParselet>();
         auto bool_parselet = std::make_shared<BoolLiteralParselet>();
+        auto lambda_parselet = std::make_shared<LambdaParselet>();
         prefixParselets[TokenType::Minus] = prefix_op_parselet;
         prefixParselets[TokenType::Bang] = prefix_op_parselet;
         prefixParselets[TokenType::Tilde] = prefix_op_parselet;
@@ -24,6 +25,8 @@ namespace Yoyo
         prefixParselets[TokenType::True] = bool_parselet;
         prefixParselets[TokenType::False] = bool_parselet;
         prefixParselets[TokenType::LSquare] = std::make_shared<ArrayLiteralParselet>();
+        prefixParselets[TokenType::Pipe] = lambda_parselet;
+        prefixParselets[TokenType::DoublePipe] = lambda_parselet;
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);
@@ -162,6 +165,8 @@ namespace Yoyo
     std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
     {
         auto sig = parseFunctionSignature();
+        //functions must specify explicit return types
+        if(sig->returnType.name == "__inferred") sig->returnType.name = "void";
         if(!sig) synchronizeTo({{TokenType::Equal}});
         if(!discard(TokenType::Equal))
         {
@@ -263,7 +268,7 @@ namespace Yoyo
         }
         if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
         sig.return_is_ref = false;
-        sig.returnType = Type{"void", {}};
+        sig.returnType = Type{"__inferred", {}};
         if(discard(TokenType::Arrow))
         {
             auto ref_tk = Peek();

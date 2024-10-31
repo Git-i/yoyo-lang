@@ -1,5 +1,7 @@
 #include "parselets/prefix_parselets.h"
 
+#include <ranges>
+
 
 #include "parser.h"
 #include "precedences.h"
@@ -75,6 +77,50 @@ namespace Yoyo
     std::unique_ptr<Expression> BoolLiteralParselet::parse(Parser& parser, Token tk)
     {
         return std::make_unique<BooleanLiteral>(tk);
+    }
+    auto print(int);
+    std::unique_ptr<Expression> LambdaParselet::parse(Parser& parser, Token tok)
+    {
+        std::vector<std::pair<std::string, ParamType>> captures;
+        if(tok.type == TokenType::Pipe)
+        {
+            do
+            {
+                auto tk = parser.Peek();
+                if(!tk) return nullptr;
+                if(tk->type == TokenType::Identifier)
+                {
+                    parser.Get();
+                    std::string name(tk->text);
+                    auto t = ParamType::In;
+                    if(parser.discard(TokenType::Colon))
+                    {
+                        tk = parser.Peek();
+                        if(!tk) return nullptr;
+                        if(tk->type == TokenType::In) parser.Get();
+                        else if(tk->type == TokenType::InOut)
+                        {
+                            parser.Get();
+                            t = ParamType::InOut;
+                        }
+                    }
+                    captures.emplace_back(name, t);
+                }
+            } while(parser.discard(TokenType::Comma));
+            if(!parser.discard(TokenType::Pipe)) parser.error("Expected '|'", parser.Peek());
+        }
+        auto tk = parser.Peek();
+        if(!tk) return nullptr;
+        FunctionSignature sig;
+        if(tk->type == TokenType::LParen) sig = *parser.parseFunctionSignature();
+        else if(tk->type == TokenType::Arrow)
+        {
+            parser.Get();
+            auto ty = parser.parseType(0);
+            sig = FunctionSignature{.returnType = std::move(ty).value_or(Type{}), .return_is_ref = false, .parameters = {}};
+        }
+        auto stat = parser.parseStatement();
+        return std::make_unique<LambdaExpression>(std::move(captures), std::move(sig), std::move(stat));
     }
 
 

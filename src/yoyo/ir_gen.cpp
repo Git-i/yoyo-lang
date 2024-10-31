@@ -1,6 +1,7 @@
 #include "ir_gen.h"
 
 #include <csignal>
+#include <list>
 #include <set>
 
 namespace Yoyo
@@ -28,6 +29,13 @@ namespace Yoyo
             return llvm::Type::getInt1Ty(context);
         if(type.name == "void")
             return llvm::Type::getVoidTy(context);
+        if(type.is_opaque_pointer())
+            return llvm::PointerType::get(context, 0);
+        if(type.is_lambda())
+        {
+            if(auto t = lambdas.find(type.name); t != lambdas.end())
+                return t->second.second;
+        }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         for(size_t i = types.size(); i > 0; i--)
         {
@@ -82,6 +90,12 @@ namespace Yoyo
 
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
+        std::unique_ptr<llvm::IRBuilder<>> oldBuilder;
+        auto old_return = return_t;
+        auto old_ret_addr = currentReturnAddress;
+        auto old_ret_block = returnBlock;
+
+        if(builder->GetInsertBlock()) oldBuilder = std::make_unique<llvm::IRBuilder<>>(builder->GetInsertBlock(), builder->GetInsertPoint());
         auto name = block_hash + std::string{decl->identifier.text};
         if(code->getFunction(name))
         {
@@ -103,7 +117,7 @@ namespace Yoyo
         auto old_hash = block_hash;
         block_hash = name + "__";
         pushScope();
-        std::vector<std::unique_ptr<VariableDeclaration>> declarations;
+        std::list<VariableDeclaration> declarations;
         size_t idx = 0;
         for(auto& param : decl->signature.parameters)
         {
@@ -112,7 +126,7 @@ namespace Yoyo
                 auto param_type = func->getFunctionType()->getFunctionParamType(idx);
                 auto type = param.type;
                 if(in_class && type.name == "This") type = this_t;
-                declarations.push_back(std::make_unique<VariableDeclaration>(Token{}, type, nullptr,param.convention == ParamType::InOut));
+                declarations.emplace_back(Token{}, type, nullptr,param.convention == ParamType::InOut);
                 llvm::Value* var;
                 if(type.is_primitive() && param.convention != ParamType::InOut)
                 {
@@ -125,8 +139,33 @@ namespace Yoyo
                 }
                 variables.back()[param.name] = {
                     var,
-                    declarations.back().get()
+                    &declarations.back()
                 };
+            }
+            //make lambda context visible
+            if(param.type.is_lambda())
+            {
+                if(!lambdas.contains(param.type.name)) {error(); return;}
+                auto llvm_type = lambdas[param.type.name].second;
+                auto caps = lambdas[param.type.name].first;
+                size_t capture_idx = 0;
+                auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
+                for(auto& capture: *caps)
+                {
+                    auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), capture_idx);
+                    Token tk{.type = TokenType::Identifier, .text = capture.first};
+                    NameExpression nexpr(tk);
+                    auto type = ExpressionTypeChecker{this}(&nexpr);
+                    declarations.emplace_back(Token{}, *type, nullptr, capture.second == ParamType::InOut);
+                    auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture.first);
+                    if(type->is_primitive() && capture.second == ParamType::InOut)
+                        var = builder->CreateLoad(llvm::PointerType::get(context, 0), var);
+                    variables.back()[capture.first] = {
+                        var,
+                        &declarations.back()
+                    };
+                    capture_idx++;
+                }
             }
             idx++;
         }
@@ -136,6 +175,10 @@ namespace Yoyo
         if(uses_sret) builder->CreateRetVoid();
         else builder->CreateRet(builder->CreateLoad(reinterpret_cast<llvm::AllocaInst*>(currentReturnAddress)->getAllocatedType(), currentReturnAddress));
         block_hash = old_hash;
+        if(oldBuilder) builder.swap(oldBuilder);
+        return_t = old_return;
+        currentReturnAddress = old_ret_addr;
+        returnBlock = old_ret_block;
     }
     void IRGenerator::operator()(ExpressionStatement* stat)
     {
@@ -310,8 +353,7 @@ namespace Yoyo
         };
         module = &md;
         code = md.code.get();
-        auto bld = std::make_unique<llvm::IRBuilder<>>(context);
-        builder = bld.get();
+        builder = std::make_unique<llvm::IRBuilder<>>(context);
         pushScope();
         for(auto& stat : statements)
         {

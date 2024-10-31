@@ -1,8 +1,16 @@
 #pragma once
+#include <func_sig.h>
+
 #include "token.h"
 #include <memory>
 #include <vector>
 #include <variant>
+
+namespace Yoyo
+{
+    class Statement;
+}
+
 namespace Yoyo
 {
     class SubscriptOperation;
@@ -19,6 +27,7 @@ namespace Yoyo
     class TupleLiteral;
     class BooleanLiteral;
     class IntegerLiteral;
+    class LambdaExpression;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -33,7 +42,8 @@ namespace Yoyo
         LogicalOperation*,
         PostfixOperation*,
         CallOperation*,
-        SubscriptOperation*>;
+        SubscriptOperation*,
+        LambdaExpression*>;
     class Expression {
     public:
         virtual ~Expression() = default;
@@ -134,6 +144,15 @@ namespace Yoyo
         std::unique_ptr<Expression> index;
         SubscriptOperation(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> idx)
             : object(std::move(obj)), index(std::move(idx)) {}
+        ExpressionVariant toVariant() override;
+    };
+    class LambdaExpression : public Expression {
+    public:
+        std::vector<std::pair<std::string, ParamType>> captures;
+        FunctionSignature sig;
+        std::unique_ptr<Statement> body;
+        std::string hash;
+        LambdaExpression(std::vector<std::pair<std::string, ParamType>> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
         ExpressionVariant toVariant() override;
     };
 }

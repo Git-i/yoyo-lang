@@ -406,4 +406,30 @@ namespace Yoyo
         return return_value;
     }
     llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation*) {}
+
+    llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
+    {
+        //TODO: check for capture/parameter duplicates
+        //irgen->inferReturnType(expr->body.get());
+        std::vector<llvm::Type*> context_types;
+        for(auto& capture : expr->captures)
+        {
+            Token tk{.type = TokenType::Identifier, .text = capture.first};
+            NameExpression name(tk);
+            auto type = ExpressionTypeChecker{irgen}(&name);
+            if(type->is_function()) { irgen->error(); return nullptr; }
+            llvm::Type* tp = irgen->ToLLVMType(*type, false);
+            context_types.push_back(capture.second == ParamType::In ? tp : tp->getPointerTo());
+        }
+        auto context = llvm::StructType::get(irgen->context, context_types);
+        std::string name = "__lambda" + expr->hash;
+        Token tk{.type = TokenType::Identifier, .text = name};
+        irgen->lambdas[name] = {&expr->captures, context};
+        FunctionSignature sig = expr->sig;
+        //insert a pointer to the context at the end of the signature
+        sig.parameters.push_back(FunctionParameter{.type = Type{name}, .convention = ParamType::InOut});
+        FunctionDeclaration decl(tk,std::move(sig), std::move(expr->body));
+        (*irgen)(&decl);
+        return nullptr;
+    }
 }

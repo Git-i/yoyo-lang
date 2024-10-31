@@ -18,9 +18,10 @@ namespace Yoyo
         llvm::LLVMContext& context;
         Module* module;
         llvm::Module* code;
-        llvm::IRBuilder<>* builder;
+        std::unique_ptr<llvm::IRBuilder<>> builder;
         std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, VariableDeclaration*>>> variables;
         std::vector<std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, ClassDeclaration*>>> types;
+        std::unordered_map<std::string, std::pair<std::vector<std::pair<std::string, ParamType>>*, llvm::StructType*>> lambdas;
         std::string block_hash;
 
         std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* findType(const std::string& name);
@@ -41,6 +42,7 @@ namespace Yoyo
         void error();
         void pushScope() {variables.emplace_back(); types.emplace_back();}
         void popScope() {variables.pop_back(); types.pop_back();}
+        FunctionType inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);
         Module GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements);
@@ -77,6 +79,7 @@ namespace Yoyo
         std::optional<FunctionType> operator()(PostfixOperation*);
         std::optional<FunctionType> operator()(CallOperation*);
         std::optional<FunctionType> operator()(SubscriptOperation*);
+        std::optional<FunctionType> operator()(LambdaExpression*);
     };
     class ExpressionEvaluator
     {
@@ -117,5 +120,6 @@ namespace Yoyo
         llvm::Value* operator()(PostfixOperation*);
         llvm::Value* operator()(CallOperation*);
         llvm::Value* operator()(SubscriptOperation*);
+        llvm::Value* operator()(LambdaExpression*);
     };
 }

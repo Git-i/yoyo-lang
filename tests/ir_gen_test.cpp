@@ -28,12 +28,12 @@ main: () -> f64 = {
     a: f64 = 0.0;
     b : mut = 10.4;
     b = 20.5;
+    |b| -> i32 {return b;};
     if(a > b) return b;
     else if(a == b) return a;
     return a + d.a + dome(b).damm();
 }
 )";
-
     int argc = 1;
     const char* argv[] = {"foo"};
     const char** lol = argv;

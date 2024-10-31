@@ -4,7 +4,8 @@ namespace Yoyo
 {
     enum class ParamType
     {
-        In, InOut
+        In, //const&
+        InOut //&
     };
     struct FunctionParameter
     {

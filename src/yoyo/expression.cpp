@@ -1,4 +1,5 @@
 #include "expression.h"
+#include "statement.h"
 namespace Yoyo
 {
     ExpressionVariant IntegerLiteral::toVariant()
@@ -70,4 +71,12 @@ namespace Yoyo
     {
         return this;
     }
+    ExpressionVariant LambdaExpression::toVariant()
+    {
+        return this;
+    }
+    LambdaExpression::LambdaExpression(std::vector<std::pair<std::string, ParamType>> captures, FunctionSignature sig, std::unique_ptr<Statement> body)
+    : captures(std::move(captures)), sig(std::move(sig)), body(std::move(body)) {}
+
+
 }

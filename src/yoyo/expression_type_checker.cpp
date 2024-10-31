@@ -226,6 +226,10 @@ namespace Yoyo
 
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(LambdaExpression*)
+    {
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral*)
     {
 
@@ -244,12 +248,6 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral* lit)
     {
-        if(lit->token.text[0] == '-')
-        {
-            auto l = std::stoll(std::string{lit->token.text});
-            if(l <= std::numeric_limits<int32_t>::max()) return Type{.name = "i32", .subtypes = {}};
-            return Type{.name = "i64", .subtypes = {}};
-        }
         auto ul = std::stoull(std::string{lit->token.text});
         if(ul <= std::numeric_limits<int32_t>::max()) return Type{.name = "i32", .subtypes = {}};
         if(ul <= std::numeric_limits<int64_t>::max()) return Type{.name = "i64", .subtypes = {}};
