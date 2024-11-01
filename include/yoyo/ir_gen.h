@@ -45,7 +45,7 @@ namespace Yoyo
         void error();
         void pushScope() {variables.emplace_back(); types.emplace_back();}
         void popScope() {variables.pop_back(); types.pop_back();}
-        FunctionType inferReturnType(Statement* stat);
+        std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);
         Module GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements);

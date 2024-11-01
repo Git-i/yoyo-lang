@@ -119,6 +119,10 @@ namespace Yoyo
             auto ty = parser.parseType(0);
             sig = FunctionSignature{.returnType = std::move(ty).value_or(Type{}), .return_is_ref = false, .parameters = {}};
         }
+        else
+        {
+            sig = FunctionSignature{.returnType = Type{.name="__inferred"}, .return_is_ref = false, .parameters = {}};
+        }
         auto stat = parser.parseStatement();
         auto expr = std::make_unique<LambdaExpression>(std::move(captures), std::move(sig), std::move(stat));
         //lambda hash depends on the pointer from `make_unique`

@@ -353,7 +353,9 @@ namespace Yoyo
         {
             Get();
             auto initializer = parseExpression(0);
-            if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
+            //';' is implicit if a variable is initialized with a lambda
+            if(!discard(TokenType::SemiColon) && !dynamic_cast<LambdaExpression*>(initializer.get()))
+                error("Expected ';'", Peek());
             return std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut);
         }
         auto type = parseType(0);

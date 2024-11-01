@@ -327,6 +327,46 @@ namespace Yoyo
         builder->SetInsertPoint(merge_bb);
     }
 
+    bool canReturn(Statement* stat)
+    {
+        if(auto res = dynamic_cast<ReturnStatement*>(stat))
+            return true;
+        if(auto res = dynamic_cast<IfStatement*>(stat))
+            return canReturn(res->then_stat.get()) || (res->else_stat && canReturn(res->else_stat.get()));
+        if(auto res = dynamic_cast<WhileStatement*>(stat))
+            return canReturn(res->body.get());
+        if(auto res = dynamic_cast<ForStatement*>(stat))
+            return canReturn(res->body.get());
+        if(auto res = dynamic_cast<BlockStatement*>(stat))
+        {
+            for(auto& sub_stat : res->statements)
+            {
+                if(canReturn(sub_stat.get())) return true;
+            }
+        }
+        return false;
+    }
+    //The resultant return type is the type of the first return statement encountered
+    std::optional<Type> IRGenerator::inferReturnType(Statement* stat)
+    {
+        if(!canReturn(stat)) return Type{.name = "void"};
+        if(auto res = dynamic_cast<ReturnStatement*>(stat))
+            return std::visit(ExpressionTypeChecker{this}, res->expression->toVariant());
+        if(auto res = dynamic_cast<IfStatement*>(stat))
+            if(canReturn(res->then_stat.get())) return inferReturnType(res->then_stat.get());
+            else return inferReturnType(res->else_stat.get());
+        if(auto res = dynamic_cast<WhileStatement*>(stat))
+            return inferReturnType(res->body.get());
+        if(auto res = dynamic_cast<BlockStatement*>(stat))
+        {
+            for(auto& sub_stat : res->statements)
+            {
+                if(canReturn(sub_stat.get())) return inferReturnType(sub_stat.get());
+            }
+        }
+        return std::nullopt;
+    }
+
     llvm::StructType* IRGenerator::hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon)
     {
         std::vector<std::string> var_names(decl->vars.size());

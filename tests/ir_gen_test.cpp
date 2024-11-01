@@ -17,10 +17,7 @@ main: () -> f64 = {
     b : mut = 10.0;
     b = 20;
     c := a > b;
-    lambda:= |b: inout| -> f64 {
-        b = 0.0;
-        return b;
-    };
+    lambda:= |b: inout| { return b; }
     lol:= (10, 20, 30);
     test_impl_conv(10);
     call_callable(lambda);

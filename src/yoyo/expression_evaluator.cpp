@@ -560,7 +560,11 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
     {
         //TODO: check for capture/parameter duplicates
-        //irgen->inferReturnType(expr->body.get());
+        if(expr->sig.returnType.name == "__inferred")
+        {
+            auto t = irgen->inferReturnType(expr->body.get());;
+            expr->sig.returnType = *t;
+        }
         std::vector<llvm::Type*> context_types;
         for(auto& capture : expr->captures)
         {
