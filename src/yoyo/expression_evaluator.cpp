@@ -8,6 +8,7 @@ namespace Yoyo
         llvm::Type* dest = irgen->ToLLVMType(dst, false);
         if(dst.is_unsigned_integral())
         {
+
             if(!dst.is_equal(src)) val = irgen->builder->CreateZExt(val, dest, "assign_zext");
         }
         else if(dst.is_signed_integral())
@@ -89,6 +90,23 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
+        if(left_type.is_tuple())
+        {
+            if(auto idx = dynamic_cast<IntegerLiteral*>(rhs))
+            {
+                auto idx_int = std::stoul(std::string{idx->token.text});
+                auto out_type = left_type.subtypes[idx_int];
+
+                auto llvm_t = irgen->ToLLVMType(left_type, false);
+                auto llvm_idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx_int);
+                auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+                auto left_ptr = std::visit(*this, lhs->toVariant());
+                auto ptr = irgen->builder->CreateGEP(llvm_t, left_ptr, {zero_const, llvm_idx});
+                if(load_primitive && out_type.is_primitive())
+                    return irgen->builder->CreateLoad(irgen->ToLLVMType(out_type, false), ptr);
+                return ptr;
+            }
+        }
         if(auto cls = left_type.get_decl_if_class(irgen))
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(rhs))

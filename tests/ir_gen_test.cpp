@@ -16,12 +16,12 @@ main: () -> f64 = {
     a: f64 = 5.0;
     b : mut = 10.0;
     b = 20;
-    c := a > b;
-    lambda:= |b: inout| { return b; }
+    lambda:= |b: inout| return b;
     lol:= (10, 20, 30);
+    b = lol.0;
     test_impl_conv(10);
     call_callable(lambda);
-    if(a > b) return b;
+    if(a < b) return b;
     else if(a == b) return a;
     return 0.0;
 }
@@ -49,7 +49,7 @@ main: () -> f64 = {
     auto addr = j.get()->lookup("main").get();
     double(*fn)() = addr.toPtr<double()>();
     auto res = fn();
-    REQUIRE(res == 0);
+    REQUIRE(res == 10.0);
     std::cout << res;
 }
 

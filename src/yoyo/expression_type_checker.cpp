@@ -137,6 +137,14 @@ namespace Yoyo
             }
             return std::nullopt;
         }
+        if(lhs.name == "__tup")
+        {
+            if(auto idx = dynamic_cast<IntegerLiteral*>(expr->rhs.get()))
+            {
+                return lhs.subtypes[std::stol(std::string{idx->token.text})];
+            }
+            return std::nullopt;
+        }
         if(auto cls = lhs.get_decl_if_class(irgen))
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
