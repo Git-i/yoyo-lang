@@ -1,3 +1,5 @@
+#include <csignal>
+
 #include "ir_gen.h"
 #include "fn_type.h"
 namespace Yoyo
@@ -121,6 +123,60 @@ namespace Yoyo
         return subtype;
     }
 
+    std::optional<FunctionType> checkDot(BinaryOperation* expr, const Type& lhs, IRGenerator* irgen)
+    {
+        //called and stored functions can be called via object.invoke()
+        if(lhs.name == "__called_fn")
+        {
+            if(auto nm = dynamic_cast<NameExpression*>(expr->rhs.get()))
+            {
+                if(nm->token.text == "invoke")
+                {
+                    return FunctionType{*lhs.signature, false};
+                }
+            }
+            return std::nullopt;
+        }
+        if(auto cls = lhs.get_decl_if_class(irgen))
+        {
+            if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
+            {
+                std::string name(name_expr->token.text);
+                if(auto var = std::ranges::find_if(cls->vars, [&name](ClassVariable& v)
+                {
+                    return name == v.name;
+                }); var != cls->vars.end())
+                {
+                    //accessing an l-value struct yields an l-value
+                    return Type{.name = var->type.name, .subtypes = var->type.subtypes, .is_lvalue = lhs.is_lvalue};
+                }
+                if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
+                {
+                    return name == m.name;
+                }); var != cls->methods.end())
+                {
+                    auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
+                    if(decl->signature.parameters[0].type.name != "This")
+                        return std::nullopt;
+                    if(decl->signature.parameters[0].convention == ParamType::InOut && !lhs.is_lvalue)
+                        return std::nullopt;
+                    return FunctionType{decl->signature, true};
+                }
+            }
+        }
+        auto rhs = std::visit(ExpressionTypeChecker{irgen}, expr->rhs->toVariant());
+        if(!rhs || !rhs->is_function()) return std::nullopt;
+        auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
+        if(as_function.is_bound) return std::nullopt;
+        if(!as_function.sig.parameters[0].type.is_equal(lhs))
+        {
+            return std::nullopt;
+        }
+        if(as_function.sig.parameters[0].convention == ParamType::InOut && !lhs.is_lvalue) return std::nullopt;
+        as_function.is_bound = true;
+        return as_function;
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(BinaryOperation* expr)
     {
         auto lhs = std::visit(*this, expr->lhs->toVariant());
@@ -145,49 +201,10 @@ namespace Yoyo
         case Pipe: return checkBitOr(*lhs, *rhs);
         case Caret: return checkBitXor(*lhs, *rhs);
         case Ampersand: return checkBitAnd(*lhs, *rhs);
-        case Dot:
-            {
-                if(auto cls = lhs->get_decl_if_class(irgen))
-                {
-                    if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
-                    {
-                        std::string name(name_expr->token.text);
-                        if(auto var = std::ranges::find_if(cls->vars, [&name](ClassVariable& v)
-                        {
-                            return name == v.name;
-                        }); var != cls->vars.end())
-                        {
-                            //accessing an l-value struct yields an l-value
-                            return Type{.name = var->type.name, .subtypes = var->type.subtypes, .is_lvalue = lhs->is_lvalue};
-                        }
-                        if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
-                        {
-                            return name == m.name;
-                        }); var != cls->methods.end())
-                        {
-                            auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                            if(decl->signature.parameters[0].type.name != "This")
-                                return std::nullopt;
-                            if(decl->signature.parameters[0].convention == ParamType::InOut && !lhs->is_lvalue)
-                                return std::nullopt;
-                            return FunctionType{decl->signature, true};
-                        }
-                    }
-                }
-                rhs = std::visit(*this, expr->rhs->toVariant());
-                if(!rhs || !rhs->is_function()) return std::nullopt;
-                auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
-                if(as_function.is_bound) return std::nullopt;
-                if(!as_function.sig.parameters[0].type.is_equal(*lhs))
-                {
-                    return std::nullopt;
-                }
-                if(as_function.sig.parameters[0].convention == ParamType::InOut && !lhs->is_lvalue) return std::nullopt;
-                as_function.is_bound = true;
-                return as_function;
-            }
+        case Dot: return checkDot(expr, *lhs, irgen);
         case Equal: return checkAssign(*lhs, *rhs);
         }
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(LogicalOperation*)
@@ -205,6 +222,10 @@ namespace Yoyo
             {
                 auto decl = var->second.second;
                 auto t = decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
+                if(t->is_lambda())
+                {
+                    return std::visit(*this, decl->initializer->toVariant());
+                }
                 t->is_lvalue = decl->is_mut;
                 return t;
             }
@@ -228,7 +249,9 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(LambdaExpression* lmd)
     {
-        return Type{.name = "__lambda" + lmd->hash, .subtypes = {}};
+        auto fn_t = FunctionType(lmd->sig, false);
+        fn_t.name = "__lambda" + lmd->hash;
+        return fn_t;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral*)
@@ -275,7 +298,7 @@ namespace Yoyo
     {
         auto callee_ty = std::visit(*this, op->callee->toVariant());
         if(!callee_ty) return std::nullopt;
-        if(!callee_ty->is_function()) return std::nullopt;
+        if(!callee_ty->is_function() && !callee_ty->is_lambda()) return std::nullopt;
         auto& as_fn = reinterpret_cast<FunctionType&>(*callee_ty);
         //If the function is bound (something.function()) we skip checking the first args type
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;

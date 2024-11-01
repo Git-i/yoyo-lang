@@ -10,32 +10,22 @@
 TEST_CASE("Test IR")
 {
     std::string source = R"(
-lol: class = {
-    a: f64,
-    damm: (this) -> f64 = {
-        return this.a;
-    }
-}
-dome: (b: inout f64) -> lol = {
-    a: mut lol;
-    b = 100.0;
-    a.a = b;
-    return a;
-}
-call_callable: (fn: callable () -> f64) -> f64 = {
-    return 0.0;
-}
+call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
+
 main: () -> f64 = {
     d: mut lol;
     d.a = 10.0;
     a: f64 = 5.0;
     b : mut = 10.4;
     b = 20.5;
-    lambda:= |b: inout| -> f64 { return b; };
-    call_callable(b);
+    lambda:= |b: inout| -> f64 {
+        b = 0.0;
+        return b;
+    };
+    call_callable(lambda);
     if(a > b) return b;
     else if(a == b) return a;
-    return a + d.a + dome(b).damm();
+    return 0.0;
 }
 )";
     int argc = 1;

@@ -129,7 +129,7 @@ namespace Yoyo {
     Token Scanner::ScanIdentifier()
     {
         size_t iden_begin = position - 1;
-        while (!IsEof() && std::isalnum(Peek())) std::ignore = Get();
+        while (!IsEof() && (std::isalnum(Peek()) || Peek() == '_')) std::ignore = Get();
         auto view = std::string_view(source.begin() + iden_begin, source.begin() + position);
         if (const auto kw = keywords.find(view); kw != keywords.end())
         {

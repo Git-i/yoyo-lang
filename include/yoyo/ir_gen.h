@@ -22,6 +22,7 @@ namespace Yoyo
         std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, VariableDeclaration*>>> variables;
         std::vector<std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, ClassDeclaration*>>> types;
         std::unordered_map<std::string, std::pair<std::vector<std::pair<std::string, ParamType>>*, llvm::StructType*>> lambdas;
+        std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::string block_hash;
 
         std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* findType(const std::string& name);
@@ -101,6 +102,7 @@ namespace Yoyo
                            const Type& right_type) const;
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
+        llvm::Value* doInvoke(CallOperation* op, const Type&);
         struct LValueEvaluator
         {
             IRGenerator* irgen;

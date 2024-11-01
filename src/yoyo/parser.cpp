@@ -197,9 +197,10 @@ namespace Yoyo
             //param is a function
             else if(tk->type == TokenType::Called)
             {
+                Get();
                 auto sig = parseFunctionSignature();
-                auto signature = std::make_unique<FunctionSignature>(std::move(*sig));
-                Type t{.name = "__called_fn", .subtypes = {}, .signature = std::move(signature), .is_lvalue = false};
+                auto signature = std::make_shared<FunctionSignature>(*sig);
+                Type t{.name = "__called_fn", .subtypes = {}, .signature = signature, .is_lvalue = false};
                 return FunctionParameter{.type = t, .convention = ParamType::In, .name = std::move(name)};
             }
             auto type = parseType(0);

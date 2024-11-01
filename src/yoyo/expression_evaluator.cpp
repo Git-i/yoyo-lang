@@ -330,12 +330,17 @@ namespace Yoyo
             {
                 auto arg = std::visit(*this, exprs[i]->toVariant());
                 auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
-                if(sig.parameters[i + is_bound].type.name == "__callable_fn")
+                if(sig.parameters[i + is_bound].type.name == "__called_fn")
                 {
                     auto llvm_t = irgen->ToLLVMType(sig.parameters[i + is_bound].type, false);
-                    auto buffer = irgen->Alloca("callable_fn_buffer", llvm_t);
+                    auto buffer = irgen->Alloca("called_fn_buffer", llvm_t);
                     if(tp->is_function())
                     {
+                        irgen->builder->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(irgen->context, 0)),
+                            irgen->builder->CreateGEP(llvm_t, buffer, {
+                                llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
+                                llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
+                            }));
                         irgen->builder->CreateStore(arg,
                             irgen->builder->CreateGEP(llvm_t, buffer, {
                                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
@@ -355,22 +360,92 @@ namespace Yoyo
                                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 1),
                             }));
                     }
+                    args[i + is_bound + uses_sret] = buffer;
                 }
                 else args[i + is_bound + uses_sret] = arg;
             }
         }
         return return_value;
     }
+
+    llvm::Value* ExpressionEvaluator::doInvoke(CallOperation* op, const Type& left_t)
+    {
+        auto expr = reinterpret_cast<BinaryOperation*>(op->callee.get());
+        auto fn_store = std::visit(*this, expr->lhs->toVariant());
+        auto const_zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+        auto as_llvm_t = irgen->ToLLVMType(left_t, false);
+        auto ctx_ptr = irgen->builder->CreateGEP(as_llvm_t, fn_store, {const_zero,const_zero}, "fn_context_ptr_ptr");
+        auto fn_ptr = irgen->builder->CreateGEP(as_llvm_t, fn_store, {const_zero,
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 1)}, "fn_ptr_ptr");
+
+        auto ptr_ty = llvm::PointerType::get(irgen->context, 0);
+        auto ctx = irgen->builder->CreateLoad(ptr_ty, ctx_ptr, "fn_ctx");
+        auto fn = irgen->builder->CreateLoad(ptr_ty, fn_ptr, "fn_ptr");
+
+        bool uses_sret = false;
+        if(!left_t.signature->returnType.is_primitive()) uses_sret = true;
+        std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
+        auto args_w_lambda = args;
+        args_w_lambda.push_back(ctx);
+        auto return_val = fillArgs(uses_sret, *left_t.signature, args, nullptr, op->arguments);
+        auto ctx_as_int = irgen->builder->CreatePtrToInt(ctx, llvm::Type::getInt64Ty(irgen->context), "fn_ctx_as_int");
+        auto zero64 = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0);
+        auto is_lambda = irgen->builder->CreateICmpEQ(ctx_as_int, zero64, "is_lambda");
+        auto current_fn = irgen->builder->GetInsertBlock()->getParent();
+        auto then_bb = llvm::BasicBlock::Create(irgen->context, "lambda_call", current_fn, irgen->returnBlock);
+        auto else_bb = llvm::BasicBlock::Create(irgen->context, "fn_call", current_fn, irgen->returnBlock);
+        auto cont_bb = llvm::BasicBlock::Create(irgen->context, "after_call", current_fn, irgen->returnBlock);
+        irgen->builder->CreateCondBr(is_lambda, then_bb, else_bb);
+
+        auto fn_t = irgen->ToLLVMSignature(*left_t.signature);
+        FunctionSignature sig = *left_t.signature;
+        sig.parameters.push_back(FunctionParameter{.type = Type{"__ptr"}, .convention = ParamType::InOut});
+        auto lambda_t = irgen->ToLLVMSignature(sig);
+
+        auto return_as_llvm = irgen->ToLLVMType(left_t.signature->returnType, false);
+
+        irgen->builder->SetInsertPoint(then_bb);
+        auto call_resl = irgen->builder->CreateCall(lambda_t, fn, args_w_lambda);
+
+        irgen->builder->CreateBr(cont_bb);
+
+        irgen->builder->SetInsertPoint(else_bb);
+        auto call_resf = irgen->builder->CreateCall(fn_t, fn, args);
+        irgen->builder->CreateBr(cont_bb);
+
+        irgen->builder->SetInsertPoint(cont_bb);
+        if(!uses_sret && !left_t.signature->returnType.is_void())
+        {
+            auto PN = irgen->builder->CreatePHI(return_as_llvm, 2, "invoke_result");
+            PN->addIncoming(call_resl, then_bb);
+            PN->addIncoming(call_resf, else_bb);
+            return_val = PN;
+        }
+
+
+        return return_val;
+    }
+
     llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)
     {
-        auto t = std::visit(ExpressionTypeChecker{irgen}, op->callee->toVariant());
-        if(!t || !(t->is_function() || t->is_lambda())) return nullptr;
+        ExpressionTypeChecker type_checker{irgen};
+        auto t = std::visit(type_checker, op->callee->toVariant());
+        if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(); return nullptr;}
+        if(!std::visit(type_checker, op->toVariant()))
+            {irgen->error(); return nullptr;}
         bool is_lambda = t->is_lambda();
         auto fn = reinterpret_cast<FunctionType&>(*t);
+        auto expr = dynamic_cast<BinaryOperation*>(op->callee.get());
+        std::optional<FunctionType> left_ty;
+        if(expr) left_ty = std::visit(type_checker, expr->lhs->toVariant());
+        if(left_ty && left_ty->name == "__called_fn")
+        {
+            return doInvoke(op, *left_ty);
+        }
         if(fn.is_bound)
         {
+            //expr is guaranteed to be valid if the function is bound
             //callee is a binary dot expr
-            auto expr = reinterpret_cast<BinaryOperation*>(op->callee.get());
             auto left_t = std::visit(ExpressionTypeChecker{irgen}, expr->lhs->toVariant());
             if(auto cls = left_t->get_decl_if_class(irgen))
             {
@@ -463,6 +538,7 @@ namespace Yoyo
         std::string name = "__lambda" + expr->hash;
         Token tk{.type = TokenType::Identifier, .text = name};
         irgen->lambdas[name] = {&expr->captures, context};
+        irgen->lambdaSigs[name] = expr->sig;
         FunctionSignature sig = expr->sig;
         //insert a pointer to the context at the end of the signature
         sig.parameters.push_back(FunctionParameter{.type = Type{name}, .convention = ParamType::InOut});
