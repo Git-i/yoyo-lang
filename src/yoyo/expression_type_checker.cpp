@@ -254,9 +254,24 @@ namespace Yoyo
         return fn_t;
     }
 
-    std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral*)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
-
+        //target type can modify the type of tuple literals
+        bool consider_target = target && target->is_tuple() && target->subtypes.size() == tup->elements.size();
+        Type tp{"__tup"};
+        for(size_t i = 0; i < tup->elements.size(); ++i)
+        {
+            auto type_i = std::visit(ExpressionTypeChecker{irgen}, tup->elements[i]->toVariant());
+            if(!type_i) return std::nullopt;
+            //if we can implicit convert to the target type we use that
+            if(consider_target && target->subtypes[i].is_assignable_from(*type_i))
+            {
+                tp.subtypes.push_back(target->subtypes[i]);
+                continue;
+            }
+            tp.subtypes.push_back(*type_i);
+        }
+        return tp;
     }
 
 

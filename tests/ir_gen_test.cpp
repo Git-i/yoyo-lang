@@ -13,8 +13,6 @@ TEST_CASE("Test IR")
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 
 main: () -> f64 = {
-    d: mut lol;
-    d.a = 10.0;
     a: f64 = 5.0;
     b : mut = 10.4;
     b = 20.5;
@@ -22,6 +20,7 @@ main: () -> f64 = {
         b = 0.0;
         return b;
     };
+    lol:= (10, 20, 30);
     call_callable(lambda);
     if(a > b) return b;
     else if(a == b) return a;

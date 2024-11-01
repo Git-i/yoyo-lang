@@ -2,6 +2,8 @@
 #include <fn_type.h>
 #include <statement.h>
 
+#include <utility>
+
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
 #include "module.h"
@@ -62,8 +64,10 @@ namespace Yoyo
     class ExpressionTypeChecker
     {
         IRGenerator* irgen;
+        std::optional<Type> target;
     public:
-        explicit ExpressionTypeChecker(IRGenerator* gen) : irgen(gen) {}
+        explicit ExpressionTypeChecker(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
+            target(std::move(target)) {}
         /// We return FunctionType because it's a subclass of Type and some
         /// expressions ( @c NameExpression and @c BinaryExpression ) can be a function
         std::optional<FunctionType> operator()(IntegerLiteral*);
@@ -85,12 +89,14 @@ namespace Yoyo
     class ExpressionEvaluator
     {
         IRGenerator* irgen;
+        std::optional<Type> target;
     public:
         enum ComparisonPredicate
         {
             EQ, GT, LT, EQ_GT, EQ_LT, NE
         };
-        explicit ExpressionEvaluator(IRGenerator* gen) : irgen(gen) {}
+        explicit ExpressionEvaluator(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
+            target(std::move(target)) {}
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
         llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;

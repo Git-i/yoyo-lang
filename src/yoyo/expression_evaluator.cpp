@@ -6,12 +6,29 @@ namespace Yoyo
     /// I don't know where to place this, but all structural types are pointers
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
-        if(!left_type.is_equal(right_type)) return nullptr;
+        if(!left_type.is_assignable_from(right_type)) return nullptr;
         if(!left_type.is_lvalue) {irgen->error(); return nullptr;}
         if(left_type.is_primitive())
         {
             if(!left_type.is_equal(right_type)) {irgen->error(); return nullptr;}
             return irgen->builder->CreateStore(rhs, lhs);
+        }
+        if(left_type.is_tuple())
+        {
+            auto as_llvm = irgen->ToLLVMType(left_type, false);
+            if(!left_type.is_equal(right_type)) {irgen->error(); return nullptr;}
+            auto zero_const = llvm::ConstantInt::get(irgen->builder->getInt32Ty(), 0);
+            size_t idx = 0;
+            for(auto& sub : left_type.subtypes)
+            {
+                auto idx_const = llvm::ConstantInt::get(irgen->builder->getInt32Ty(), idx);
+                auto ptr = irgen->builder->CreateGEP(as_llvm, lhs, {zero_const, idx_const});
+                Type tp = sub;
+                tp.is_lvalue = true;
+                doAssign(ptr, rhs, tp, tp);
+                idx++;
+            }
+            return nullptr;
         }
         //Copy for non primitives is memberwise, but can be explicitly
         //overloaded with the __copy method for classes
@@ -234,7 +251,25 @@ namespace Yoyo
         if(lit->token.text == "true") return llvm::ConstantInt::getTrue(irgen->context);
         return llvm::ConstantInt::getFalse(irgen->context);
     }
-    llvm::Value* ExpressionEvaluator::operator()(TupleLiteral*) {}
+    llvm::Value* ExpressionEvaluator::operator()(TupleLiteral* tup)
+    {
+        auto tuple_t = ExpressionTypeChecker{irgen, target}(tup);
+        if(!tuple_t) { irgen->error(); return nullptr; }
+        auto llvm_t = irgen->ToLLVMType(*tuple_t, false);
+        auto tuple_tmp = irgen->Alloca("tuple_lit", llvm_t);
+        auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+        size_t idx = 0;
+        for(auto& expr: tup->elements)
+        {
+            auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
+            auto idx_ptr = irgen->builder->CreateGEP(llvm_t, tuple_tmp, {zero_const, idx_const}, "tuple_elem");
+            auto type = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
+            tuple_t->subtypes[idx].is_lvalue = true;
+            doAssign(idx_ptr, std::visit(*this, expr->toVariant()), tuple_t->subtypes[idx], *type);
+            idx++;
+        }
+        return tuple_tmp;
+    }
     llvm::Value* ExpressionEvaluator::operator()(ArrayLiteral*) {}
     llvm::Value* ExpressionEvaluator::operator()(RealLiteral* lit)
     {

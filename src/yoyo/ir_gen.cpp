@@ -42,6 +42,15 @@ namespace Yoyo
             if(auto t = lambdas.find(type.name); t != lambdas.end())
                 return t->second.second;
         }
+        if(type.is_tuple())
+        {
+            std::vector<llvm::Type*> args;
+            for(auto& subtype : type.subtypes)
+            {
+                args.push_back(ToLLVMType(subtype, false));
+            }
+            return llvm::StructType::get(context, args);
+        }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         for(size_t i = types.size(); i > 0; i--)
         {
@@ -225,7 +234,7 @@ namespace Yoyo
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
             type->is_lvalue = true;
-            auto init = std::visit(ExpressionEvaluator{this}, decl->initializer->toVariant());
+            auto init = std::visit(ExpressionEvaluator{this, type}, decl->initializer->toVariant());
             if(!type->is_lambda()) ExpressionEvaluator{this}.doAssign(alloc, init, *type, *expr_type);
             else alloc = init;
         }
