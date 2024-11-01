@@ -8,15 +8,15 @@ namespace Yoyo
     {
         if(a.is_integral() || a.is_floating_point())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
     }
     static std::optional<Type> checkAssign(const Type &a, const Type &b)
     {
-        if(!a.is_lvalue) return std::nullopt;
-        if(a != b)
+        if(!a.is_mutable) return std::nullopt;
+        if(!a.is_assignable_from(b))
         {
             return std::nullopt;
         }
@@ -26,7 +26,7 @@ namespace Yoyo
     {
         if(a.is_integral() || a.is_floating_point())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -35,7 +35,7 @@ namespace Yoyo
     {
         if(a.is_integral() || a.is_floating_point())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -44,7 +44,7 @@ namespace Yoyo
     {
         if(a.is_integral() || a.is_floating_point())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -53,7 +53,7 @@ namespace Yoyo
     {
         if(a.is_integral())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -71,7 +71,7 @@ namespace Yoyo
     {
         if(a.is_integral())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -80,7 +80,7 @@ namespace Yoyo
     {
         if(a.is_integral())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -89,7 +89,7 @@ namespace Yoyo
     {
         if(a.is_integral())
         {
-            if(a.is_equal(b)) return a;
+            if(a.is_equal(b)) return a.strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -97,7 +97,7 @@ namespace Yoyo
     static std::optional<Type> unaryNegateResult(Module* mod, const Type& typ)
     {
         if(typ.is_unsigned_integral()) return std::nullopt;
-        if(typ.is_signed_integral() || typ.is_floating_point()) return typ;
+        if(typ.is_signed_integral() || typ.is_floating_point()) return typ.strip_lvalue();
         if(auto fn = mod->findFunction("__op_unary_negate__" + typ.name))
             return fn->returnType;
         return std::nullopt;
@@ -148,7 +148,10 @@ namespace Yoyo
                 }); var != cls->vars.end())
                 {
                     //accessing an l-value struct yields an l-value
-                    return Type{.name = var->type.name, .subtypes = var->type.subtypes, .is_lvalue = lhs.is_lvalue};
+                    return Type{
+                        .name = var->type.name, .subtypes = var->type.subtypes, .is_mutable = lhs.is_mutable,
+                        .is_lvalue = lhs.is_lvalue
+                    };
                 }
                 if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
                 {
@@ -158,7 +161,7 @@ namespace Yoyo
                     auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
                     if(decl->signature.parameters[0].type.name != "This")
                         return std::nullopt;
-                    if(decl->signature.parameters[0].convention == ParamType::InOut && !lhs.is_lvalue)
+                    if(decl->signature.parameters[0].convention == ParamType::InOut && !lhs.is_mutable)
                         return std::nullopt;
                     return FunctionType{decl->signature, true};
                 }
@@ -172,7 +175,7 @@ namespace Yoyo
         {
             return std::nullopt;
         }
-        if(as_function.sig.parameters[0].convention == ParamType::InOut && !lhs.is_lvalue) return std::nullopt;
+        if(as_function.sig.parameters[0].convention == ParamType::InOut && !lhs.is_mutable) return std::nullopt;
         as_function.is_bound = true;
         return as_function;
     }
@@ -226,7 +229,8 @@ namespace Yoyo
                 {
                     return std::visit(*this, decl->initializer->toVariant());
                 }
-                t->is_lvalue = decl->is_mut;
+                t->is_mutable = decl->is_mut;
+                t->is_lvalue = true;
                 return t;
             }
         }

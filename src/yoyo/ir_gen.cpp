@@ -120,7 +120,7 @@ namespace Yoyo
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
         return_t = decl->signature.returnType;
         auto return_as_llvm_type = ToLLVMType(return_t, false);
-        return_t.is_lvalue = true;
+        return_t.is_mutable = true;
         bool uses_sret = !decl->signature.returnType.is_primitive();
         if(uses_sret)
             func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
@@ -229,15 +229,24 @@ namespace Yoyo
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc;
-        if(!type->is_lambda()) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
-            type->is_lvalue = true;
             auto init = std::visit(ExpressionEvaluator{this, type}, decl->initializer->toVariant());
-            if(!type->is_lambda()) ExpressionEvaluator{this}.doAssign(alloc, init, *type, *expr_type);
-            else alloc = init;
+            //instead of copying we move
+            if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive()))
+            {
+                alloc = init;
+            }
+            else
+            {
+                alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
+                type->is_mutable = true;
+                ExpressionEvaluator{this}.doAssign(alloc, init, *type, *expr_type);
+            }
+
         }
+        if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         variables.back()[name] = {alloc, decl};
     }
     void IRGenerator::operator()(BlockStatement* stat)

@@ -19,11 +19,13 @@ namespace Yoyo
         //shared ptr because I want the object to be copyable, its mostly nullptr anyway
         //this is to store the signature for callable and storable functions
         std::shared_ptr<FunctionSignature> signature;
+        bool is_mutable = false;
         bool is_lvalue = false;
         bool operator==(const Type& other) const
         {
             return is_equal(other);
         }
+        [[nodiscard]] Type strip_lvalue() const {return {.name = name, .signature = signature, .is_mutable = false, .is_lvalue = false};}
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
 

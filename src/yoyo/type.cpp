@@ -7,6 +7,25 @@ namespace Yoyo
     bool Type::is_assignable_from(const Type& other) const
     {
         if(is_equal(other)) return true;
+        if(is_unsigned_integral())
+        {
+            if(!other.is_unsigned_integral()) return false;
+            if(*other.integer_width() > *integer_width()) return false;
+            return true;
+        }
+        if(is_signed_integral())
+        {
+            if(other.is_unsigned_integral()) return *integer_width() > *other.integer_width();
+            if(!other.is_signed_integral()) return false;
+            if(*other.integer_width() > *integer_width()) return false;
+            return true;
+        }
+        if(is_floating_point())
+        {
+            if(other.is_floating_point()) return *float_width() >= *other.float_width();
+            if(!other.is_integral()) return false;
+            return *float_width() > *other.integer_width();
+        }
         if(name == "__called_fn" && other.is_function() || other.is_lambda())
         {
             const auto& as_fn = reinterpret_cast<const FunctionType&>(other);

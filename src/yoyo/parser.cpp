@@ -200,7 +200,7 @@ namespace Yoyo
                 Get();
                 auto sig = parseFunctionSignature();
                 auto signature = std::make_shared<FunctionSignature>(*sig);
-                Type t{.name = "__called_fn", .subtypes = {}, .signature = signature, .is_lvalue = false};
+                Type t{.name = "__called_fn", .subtypes = {}, .signature = signature, .is_mutable = false};
                 return FunctionParameter{.type = t, .convention = ParamType::In, .name = std::move(name)};
             }
             auto type = parseType(0);

@@ -7,10 +7,27 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
         if(!left_type.is_assignable_from(right_type)) return nullptr;
-        if(!left_type.is_lvalue) {irgen->error(); return nullptr;}
+        if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(left_type.is_primitive())
         {
-            if(!left_type.is_equal(right_type)) {irgen->error(); return nullptr;}
+            llvm::Type* dest = irgen->ToLLVMType(left_type, false);
+            if(left_type.is_unsigned_integral())
+            {
+                if(!left_type.is_equal(right_type)) rhs = irgen->builder->CreateZExt(rhs, dest, "assign_zext");
+            }
+            if(left_type.is_signed_integral())
+            {
+                if(!left_type.is_equal(right_type))
+                    if(right_type.is_signed_integral()) rhs = irgen->builder->CreateSExt(rhs, dest, "assign_sext");
+                    else if(right_type.is_unsigned_integral()) rhs = irgen->builder->CreateZExt(rhs, dest, "assign_zext");
+            }
+            if(left_type.is_floating_point())
+            {
+                if(!left_type.is_equal(right_type))
+                    if(right_type.is_floating_point()) rhs = irgen->builder->CreateFPExt(rhs, dest, "assign_fpext");
+                    else if(right_type.is_unsigned_integral()) rhs = irgen->builder->CreateUIToFP(rhs, dest, "assign_uitofp");
+                    else if(right_type.is_signed_integral()) rhs = irgen->builder->CreateSIToFP(rhs, dest, "assign_uitofp");
+            }
             return irgen->builder->CreateStore(rhs, lhs);
         }
         if(left_type.is_tuple())
@@ -24,7 +41,7 @@ namespace Yoyo
                 auto idx_const = llvm::ConstantInt::get(irgen->builder->getInt32Ty(), idx);
                 auto ptr = irgen->builder->CreateGEP(as_llvm, lhs, {zero_const, idx_const});
                 Type tp = sub;
-                tp.is_lvalue = true;
+                tp.is_mutable = true;
                 doAssign(ptr, rhs, tp, tp);
                 idx++;
             }
@@ -58,7 +75,7 @@ namespace Yoyo
                 auto mem_wise_type = irgen->ToLLVMType(var.type, false);
                 if(var.type.is_primitive()) mem_wise_rhs = irgen->builder->CreateLoad(mem_wise_type, mem_wise_rhs);
                 auto as_lvalue = var.type;
-                as_lvalue.is_lvalue = true;
+                as_lvalue.is_mutable = true;
                 doAssign(mem_wise_lhs, mem_wise_rhs, as_lvalue, var.type);
                 idx++;
             }
@@ -227,7 +244,7 @@ namespace Yoyo
         if(bop->op.type != TokenType::Dot) return nullptr;
         auto left_t = std::visit(ExpressionTypeChecker{irgen}, bop->lhs->toVariant());
         if(!left_t) return nullptr;
-        if(!left_t->is_lvalue) return nullptr;
+        if(!left_t->is_mutable) return nullptr;
         return ExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
     }
 
@@ -264,7 +281,7 @@ namespace Yoyo
             auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
             auto idx_ptr = irgen->builder->CreateGEP(llvm_t, tuple_tmp, {zero_const, idx_const}, "tuple_elem");
             auto type = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
-            tuple_t->subtypes[idx].is_lvalue = true;
+            tuple_t->subtypes[idx].is_mutable = true;
             doAssign(idx_ptr, std::visit(*this, expr->toVariant()), tuple_t->subtypes[idx], *type);
             idx++;
         }
@@ -546,7 +563,7 @@ namespace Yoyo
             NameExpression name(tk);
             auto type = ExpressionTypeChecker{irgen}(&name);
             if(type->is_function()) { irgen->error(); return nullptr; }
-            if(capture.second == ParamType::InOut && !type->is_lvalue) { irgen->error(); return nullptr; }
+            if(capture.second == ParamType::InOut && !type->is_mutable) { irgen->error(); return nullptr; }
             llvm::Type* tp = irgen->ToLLVMType(*type, false);
             context_types.push_back(capture.second == ParamType::In ? tp : tp->getPointerTo());
         }
@@ -561,7 +578,7 @@ namespace Yoyo
             Token tk{.type = TokenType::Identifier, .text = capture.first};
             NameExpression name(tk);
             auto type = ExpressionTypeChecker{irgen}(&name);
-            type->is_lvalue = true;
+            type->is_mutable = true;
             llvm::Value* val = capture.second == ParamType::InOut ?
                 LValueEvaluator{irgen}(&name) :
                 (*this)(&name);
