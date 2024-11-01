@@ -14,8 +14,8 @@ call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 
 main: () -> f64 = {
     a: f64 = 5.0;
-    b : mut = 10.4;
-    b = 20.5;
+    b : mut = 10.0;
+    b = 20;
     lambda:= |b: inout| -> f64 {
         b = 0.0;
         return b;

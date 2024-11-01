@@ -6,7 +6,7 @@ namespace Yoyo
     /// I don't know where to place this, but all structural types are pointers
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
-        if(!left_type.is_assignable_from(right_type)) return nullptr;
+        if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(left_type.is_primitive())
         {
@@ -318,7 +318,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(BinaryOperation* op)
     {
         auto type_checker = ExpressionTypeChecker{irgen};
-        if(!std::visit(type_checker, op->toVariant())) return nullptr;
+        if(!std::visit(type_checker, op->toVariant())) {irgen->error(); return nullptr;}
 
         auto l_as_var = op->lhs->toVariant();
         auto r_as_var = op->rhs->toVariant();
