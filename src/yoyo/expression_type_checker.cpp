@@ -323,7 +323,14 @@ namespace Yoyo
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
         for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
         {
-            if(!as_fn.sig.parameters[i].type.is_assignable_from(*std::visit(*this, op->arguments[i]->toVariant()))) return std::nullopt;
+            //inout parameters cannot be implicitly converted
+            if(as_fn.sig.parameters[i].convention == ParamType::InOut)
+            {
+                auto arg = std::visit(*this, op->arguments[i]->toVariant());
+                bool is_valid = arg && arg->is_lvalue && arg->is_equal(as_fn.sig.parameters[i].type);
+                if(!is_valid) return std::nullopt;
+            }
+            else if(!as_fn.sig.parameters[i].type.is_assignable_from(*std::visit(*this, op->arguments[i]->toVariant()))) return std::nullopt;
         }
         return as_fn.sig.returnType;
     }

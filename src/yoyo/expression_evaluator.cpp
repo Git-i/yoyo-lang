@@ -2,7 +2,30 @@
 #include "fn_type.h"
 namespace Yoyo
 {
-    /// IMPORTANT:
+    llvm::Value* implicitConvert(llvm::Value* val, const Type& src, const Type& dst, IRGenerator* irgen)
+    {
+        if(!dst.is_assignable_from(src)) {irgen->error(); return nullptr;}
+        llvm::Type* dest = irgen->ToLLVMType(dst, false);
+        if(dst.is_unsigned_integral())
+        {
+            if(!dst.is_equal(src)) val = irgen->builder->CreateZExt(val, dest, "assign_zext");
+        }
+        else if(dst.is_signed_integral())
+        {
+            if(!dst.is_equal(src))
+                if(src.is_signed_integral()) val = irgen->builder->CreateSExt(val, dest, "assign_sext");
+                else if(src.is_unsigned_integral()) val = irgen->builder->CreateZExt(val, dest, "assign_zext");
+        }
+        else if(dst.is_floating_point())
+        {
+            if(!dst.is_equal(src))
+                if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dest, "assign_fpext");
+                else if(src.is_unsigned_integral()) val = irgen->builder->CreateUIToFP(val, dest, "assign_uitofp");
+                else if(src.is_signed_integral()) val = irgen->builder->CreateSIToFP(val, dest, "assign_uitofp");
+        }
+        return val;
+    }
+    /// IMPORTANT:\n
     /// I don't know where to place this, but all structural types are pointers
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
@@ -10,25 +33,7 @@ namespace Yoyo
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(left_type.is_primitive())
         {
-            llvm::Type* dest = irgen->ToLLVMType(left_type, false);
-            if(left_type.is_unsigned_integral())
-            {
-                if(!left_type.is_equal(right_type)) rhs = irgen->builder->CreateZExt(rhs, dest, "assign_zext");
-            }
-            if(left_type.is_signed_integral())
-            {
-                if(!left_type.is_equal(right_type))
-                    if(right_type.is_signed_integral()) rhs = irgen->builder->CreateSExt(rhs, dest, "assign_sext");
-                    else if(right_type.is_unsigned_integral()) rhs = irgen->builder->CreateZExt(rhs, dest, "assign_zext");
-            }
-            if(left_type.is_floating_point())
-            {
-                if(!left_type.is_equal(right_type))
-                    if(right_type.is_floating_point()) rhs = irgen->builder->CreateFPExt(rhs, dest, "assign_fpext");
-                    else if(right_type.is_unsigned_integral()) rhs = irgen->builder->CreateUIToFP(rhs, dest, "assign_uitofp");
-                    else if(right_type.is_signed_integral()) rhs = irgen->builder->CreateSIToFP(rhs, dest, "assign_uitofp");
-            }
-            return irgen->builder->CreateStore(rhs, lhs);
+            return irgen->builder->CreateStore(implicitConvert(rhs, right_type, left_type, irgen), lhs);
         }
         if(left_type.is_tuple())
         {
@@ -254,7 +259,7 @@ namespace Yoyo
     }
 
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
-        auto t = std::visit(ExpressionTypeChecker{irgen}, std::variant<IntegerLiteral*>{lit});
+        auto t = ExpressionTypeChecker{irgen}(lit);
         if(t->is_signed_integral())
         {
             const auto ll = std::stoll(std::string{lit->token.text});
@@ -414,7 +419,7 @@ namespace Yoyo
                     }
                     args[i + is_bound + uses_sret] = buffer;
                 }
-                else args[i + is_bound + uses_sret] = arg;
+                else args[i + is_bound + uses_sret] = implicitConvert(arg, *tp, sig.parameters[i + is_bound].type, irgen);
             }
         }
         return return_value;

@@ -11,16 +11,18 @@ TEST_CASE("Test IR")
 {
     std::string source = R"(
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
-
+test_impl_conv: (a: i64) -> i64 = return a;
 main: () -> f64 = {
     a: f64 = 5.0;
     b : mut = 10.0;
     b = 20;
+    c := a > b;
     lambda:= |b: inout| -> f64 {
         b = 0.0;
         return b;
     };
     lol:= (10, 20, 30);
+    test_impl_conv(10);
     call_callable(lambda);
     if(a > b) return b;
     else if(a == b) return a;

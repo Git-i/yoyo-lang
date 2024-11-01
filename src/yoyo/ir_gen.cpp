@@ -231,10 +231,10 @@ namespace Yoyo
         llvm::Value* alloc;
         if(decl->initializer)
         {
-            auto expr_type = std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
+            auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
             auto init = std::visit(ExpressionEvaluator{this, type}, decl->initializer->toVariant());
             //instead of copying we move
-            if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive()))
+            if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive() && expr_type->is_equal(*type)))
             {
                 alloc = init;
             }
