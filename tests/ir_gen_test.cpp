@@ -11,7 +11,7 @@ TEST_CASE("Test IR")
 {
     std::string source = R"(
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
-test_impl_conv: (a: i64) -> i64 = return a;
+test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
 main: () -> f64 = {
     a: f64 = 5.0;
     b : mut = 10.0;
@@ -51,6 +51,8 @@ main: () -> f64 = {
     std::ignore = j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.code), std::move(context)));
     auto addr = j.get()->lookup("main").get();
     double(*fn)() = addr.toPtr<double()>();
-    std::cout << fn();
+    auto res = fn();
+    REQUIRE(res == 0);
+    std::cout << res;
 }
 

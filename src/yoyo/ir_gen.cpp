@@ -290,9 +290,9 @@ namespace Yoyo
     {
         if(stat->expression)
         {
-            auto t = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant());
+            auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant());
             if(!t) {error(); return;}
-            auto value = std::visit(ExpressionEvaluator{this}, stat->expression->toVariant());
+            auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());
             ExpressionEvaluator{this}.doAssign(currentReturnAddress, value, return_t, *t);
             builder->CreateBr(returnBlock);
         }
