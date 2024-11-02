@@ -9,12 +9,14 @@ namespace Yoyo
         if(is_equal(other)) return true;
         if(is_unsigned_integral())
         {
+            if(other.name == "ilit") return true;
             if(!other.is_unsigned_integral()) return false;
             if(*other.integer_width() > *integer_width()) return false;
             return true;
         }
         if(is_signed_integral())
         {
+            if(other.name == "ilit") return true;
             if(other.is_unsigned_integral()) return *integer_width() > *other.integer_width();
             if(!other.is_signed_integral()) return false;
             if(*other.integer_width() > *integer_width()) return false;
@@ -22,6 +24,8 @@ namespace Yoyo
         }
         if(is_floating_point())
         {
+            if(other.name == "ilit") return true;
+            if(other.name == "flit") return true;
             if(other.is_floating_point()) return *float_width() >= *other.float_width();
             if(!other.is_integral()) return false;
             return *float_width() > *other.integer_width();
@@ -92,11 +96,7 @@ namespace Yoyo
 
     bool Type::is_builtin() const
     {
-        return
-            name == "__arr"
-            || name == "__var"
-            || name == "__tup"
-            || name == "i8"
+        return name == "i8"
             || name == "i16"
             || name == "i32"
             || name == "i64"
@@ -106,7 +106,9 @@ namespace Yoyo
             || name == "u64"
             || name == "f32"
             || name == "f64"
-            || name == "bool";
+            || name == "bool"
+            || name == "ilit"
+            || name == "flit";
     }
 
     bool Type::is_signed_integral() const
@@ -132,13 +134,14 @@ namespace Yoyo
 
     bool Type::is_integral() const
     {
-        return is_signed_integral() || is_unsigned_integral();
+        return is_signed_integral() || is_unsigned_integral() || name == "ilit";
     }
 
     bool Type::is_floating_point() const
     {
         return name == "f32"
-            || name == "f64";
+            || name == "f64"
+            || name == "flit";
     }
 
     std::optional<uint32_t> Type::integer_width() const

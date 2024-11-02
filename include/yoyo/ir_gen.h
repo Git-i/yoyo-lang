@@ -34,6 +34,7 @@ namespace Yoyo
         bool isShadowing(const std::string&) const;
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
+        Type reduceLiteral(const Type& src, llvm::Value* val);
         void operator()(VariableDeclaration*);
         void operator()(IfStatement*);
         void operator()(WhileStatement*);
@@ -91,6 +92,7 @@ namespace Yoyo
         IRGenerator* irgen;
         std::optional<Type> target;
     public:
+        Type lastDeducedType;
         enum ComparisonPredicate
         {
             EQ, GT, LT, EQ_GT, EQ_LT, NE
@@ -99,13 +101,13 @@ namespace Yoyo
             target(std::move(target)) {}
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
-        llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
-        llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doRem(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type) const;
+        llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&, const Type&) const;
+        llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
+        llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
+        llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
+        llvm::Value* doRem(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
         llvm::Value* doCmp(ComparisonPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
-                           const Type& right_type) const;
+                           const Type& right_type, const Type&) const;
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);

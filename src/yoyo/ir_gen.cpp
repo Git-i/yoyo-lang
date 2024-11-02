@@ -212,6 +212,27 @@ namespace Yoyo
         }
         types.back()[name] = {block_hash, hanldeClassDeclaration(decl, true), decl};
     }
+    Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
+    {
+        if(src.name == "ilit")
+        {
+            auto as_int = llvm::dyn_cast<llvm::ConstantInt>(val);
+            if(as_int->isNegative())
+            {
+                int64_t int_val = as_int->getSExtValue();
+                if(int_val >= std::numeric_limits<int32_t>::min() && int_val <= std::numeric_limits<int32_t>::max())
+                    return Type{.name="i32"};
+                return Type{.name="i64"};
+            }
+            uint64_t int_val = as_int->getZExtValue();
+            if(int_val <= std::numeric_limits<int32_t>::max()) return Type{.name="i32"};
+            if(int_val <= std::numeric_limits<uint32_t>::max()) return Type{.name="u32"};
+            if(int_val <= std::numeric_limits<int64_t>::max()) return Type{.name="i64"};
+            return Type{.name="u64"};
+        }
+        if(src.name == "flit") return Type{.name = "f64"};
+        //unreachble
+    }
     void IRGenerator::operator()(VariableDeclaration* decl)
     {
         //TODO implicit conversion and validation
@@ -232,7 +253,8 @@ namespace Yoyo
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
-            auto init = std::visit(ExpressionEvaluator{this, type}, decl->initializer->toVariant());
+            auto eval = ExpressionEvaluator{this, type};
+            auto init = std::visit(eval, decl->initializer->toVariant());
             //instead of copying we move
             if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive() && expr_type->is_equal(*type)))
             {
@@ -240,6 +262,12 @@ namespace Yoyo
             }
             else
             {
+                //at this point the type may be a literal
+                if(decl->type->name == "ilit" || decl->type->name == "flit")
+                {
+                    decl->type = reduceLiteral(*decl->type, init);
+                    type = decl->type;
+                }
                 alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
                 type->is_mutable = true;
                 ExpressionEvaluator{this}.doAssign(alloc, init, *type, *expr_type);

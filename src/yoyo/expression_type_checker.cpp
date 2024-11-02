@@ -4,11 +4,27 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    std::optional<Type> canBinOpLiteral(const Type &a, const Type &b)
+    {
+        if(a.name == "ilit")
+        {
+            if(b.is_integral() || b.is_floating_point()) return b;
+        }
+        if(a.name == "flit")
+        {
+            if(b.is_floating_point()) return b;
+        }
+        if(b.name == "ilit" || b.name == "flit")
+            return canBinOpLiteral(a, b);
+        return std::nullopt;
+    }
     static std::optional<Type> checkAddition(const Type &a, const Type &b)
     {
         if(a.is_integral() || a.is_floating_point())
         {
             if(a.is_equal(b)) return a.strip_lvalue();
+            auto res = canBinOpLiteral(a, b);
+            if(res) return res->strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -27,6 +43,8 @@ namespace Yoyo
         if(a.is_integral() || a.is_floating_point())
         {
             if(a.is_equal(b)) return a.strip_lvalue();
+            auto res = canBinOpLiteral(a, b);
+            if(res) return res->strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -36,6 +54,8 @@ namespace Yoyo
         if(a.is_integral() || a.is_floating_point())
         {
             if(a.is_equal(b)) return a.strip_lvalue();
+            auto res = canBinOpLiteral(a, b);
+            if(res) return res->strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -45,6 +65,8 @@ namespace Yoyo
         if(a.is_integral() || a.is_floating_point())
         {
             if(a.is_equal(b)) return a.strip_lvalue();
+            auto res = canBinOpLiteral(a, b);
+            if(res) return res->strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -54,6 +76,9 @@ namespace Yoyo
         if(a.is_integral())
         {
             if(a.is_equal(b)) return a.strip_lvalue();
+            auto res = canBinOpLiteral(a, b);
+            if(res && res->is_floating_point()) return std::nullopt;
+            if(res) return res->strip_lvalue();
             return std::nullopt;
         }
         return std::nullopt;
@@ -63,6 +88,8 @@ namespace Yoyo
         if(a.is_integral() || a.is_floating_point())
         {
             if(a.is_equal(b)) return Type{"bool", {}};
+            auto res = canBinOpLiteral(a, b);
+            if(res) return Type{"bool", {}};
             return std::nullopt;
         }
         return std::nullopt;
@@ -281,6 +308,12 @@ namespace Yoyo
                 tp.subtypes.push_back(target->subtypes[i]);
                 continue;
             }
+            //IMPORTANT: Normally we cant evaluate expression when type checking, but tuples need to resolve literals
+            if(type_i->name == "ilit" || type_i->name == "flit")
+            {
+                auto val = std::visit(ExpressionEvaluator{irgen}, tup->elements[i]->toVariant());
+                type_i = irgen->reduceLiteral(*type_i, val);
+            }
             tp.subtypes.push_back(*type_i);
         }
         return tp;
@@ -299,10 +332,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral* lit)
     {
-        auto ul = std::stoull(std::string{lit->token.text});
-        if(ul <= std::numeric_limits<int32_t>::max()) return Type{.name = "i32", .subtypes = {}};
-        if(ul <= std::numeric_limits<int64_t>::max()) return Type{.name = "i64", .subtypes = {}};
-        return Type{.name = "u64", .subtypes = {}};
+        return Type{.name = "ilit", .subtypes = {}};
     }
 
 
@@ -345,7 +375,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(RealLiteral*)
     {
-        return Type{.name = "f64", .subtypes = {}};
+        return Type{.name = "flit", .subtypes = {}};
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(StringLiteral*)

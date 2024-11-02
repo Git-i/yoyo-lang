@@ -1,14 +1,143 @@
+#include <cmath>
+
 #include "ir_gen.h"
 #include "fn_type.h"
 namespace Yoyo
 {
+    int64_t getIntMinOf(const Type& type)
+    {
+        if(type.is_signed_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<int8_t>::min();
+            case 16: return std::numeric_limits<int16_t>::min();
+            case 32: return std::numeric_limits<int32_t>::min();
+            case 64: return std::numeric_limits<int64_t>::min();
+                default: return 0;/*unreachable*/
+            }
+        }
+        if(type.is_unsigned_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<uint8_t>::min();
+            case 16: return std::numeric_limits<uint16_t>::min();
+            case 32: return std::numeric_limits<uint32_t>::min();
+            case 64: return std::numeric_limits<uint64_t>::min();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if(type.is_floating_point())
+        {
+            if(*type.float_width() == 32) return -std::pow(2, 24);
+            if(*type.float_width() == 64) return -std::pow(2, 53);
+        }
+        return 0;
+    }
+    uint64_t getIntMaxOf(const Type& type)
+    {
+        if(type.is_signed_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<int8_t>::max();
+            case 16: return std::numeric_limits<int16_t>::max();
+            case 32: return std::numeric_limits<int32_t>::max();
+            case 64: return std::numeric_limits<int64_t>::max();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if(type.is_unsigned_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<uint8_t>::max();
+            case 16: return std::numeric_limits<uint16_t>::max();
+            case 32: return std::numeric_limits<uint32_t>::max();
+            case 64: return std::numeric_limits<uint64_t>::max();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if(type.is_floating_point())
+        {
+            if(*type.float_width() == 32) return std::pow(2, 24);
+            if(*type.float_width() == 64) return std::pow(2, 53);
+        }
+        return 0;
+    }
+    double getFloatMinOf(const Type& type)
+    {
+        if(type.is_floating_point())
+        {
+            if(*type.float_width() == 32) return std::numeric_limits<float>::min();
+            if(*type.float_width() == 64) return std::numeric_limits<double>::min();
+        }
+        return 0;
+    }
+
+    double getFloatMaxOf(const Type& type)
+    {
+        if(type.is_floating_point())
+        {
+            if(*type.float_width() == 32) return std::numeric_limits<float>::max();
+            if(*type.float_width() == 64) return std::numeric_limits<double>::max();
+        }
+        return 0;
+    }
     llvm::Value* implicitConvert(llvm::Value* val, const Type& src, const Type& dst, IRGenerator* irgen)
     {
         if(!dst.is_assignable_from(src)) {irgen->error(); return nullptr;}
         llvm::Type* dest = irgen->ToLLVMType(dst, false);
+        if(src.name == "ilit")
+        {
+            auto as_int = llvm::dyn_cast<llvm::ConstantInt>(val);
+            int64_t min_bound = getIntMinOf(dst);
+            uint64_t max_bound = getIntMaxOf(dst);
+            if(dst.is_integral())
+            {
+                if(as_int->isNegative())
+                {
+                    if(as_int->getSExtValue() >= min_bound && as_int->getSExtValue() <= max_bound)
+                        return irgen->builder->CreateSExtOrTrunc(val, dest);
+                    irgen->error();
+                    return nullptr;
+                }
+                if(as_int->getZExtValue() <= max_bound)
+                    return irgen->builder->CreateZExtOrTrunc(val, dest);
+                irgen->error();
+                return nullptr;
+            }
+            if(dst.is_floating_point())
+            {
+                if(as_int->isNegative())
+                {
+                    if(as_int->getSExtValue() >= min_bound && as_int->getSExtValue() <= max_bound)
+                        return irgen->builder->CreateSIToFP(val, dest);
+                    irgen->error();
+                    return nullptr;
+                }
+                if(as_int->getZExtValue() <= max_bound)
+                    return irgen->builder->CreateUIToFP(val, dest);
+                irgen->error();
+                return nullptr;
+            }
+        }
+        if(src.name == "flit")
+        {
+            auto as_float = llvm::dyn_cast<llvm::ConstantFP>(val);
+            double min_bound = getFloatMinOf(dst);
+            double max_bound = getFloatMaxOf(dst);
+            double value = as_float->getValue().convertToDouble();
+            if(dst.is_floating_point())
+            {
+                if(*dst.float_width() == 64) return val;
+                if(value >= min_bound && value <= max_bound)
+                    return irgen->builder->CreateFPTrunc(val, dest);
+            }
+        }
         if(dst.is_unsigned_integral())
         {
-
             if(!dst.is_equal(src)) val = irgen->builder->CreateZExt(val, dest, "assign_zext");
         }
         else if(dst.is_signed_integral())
@@ -134,66 +263,160 @@ namespace Yoyo
         return nullptr;
     }
 
+
+    /*
+     * Implicit conversion is not done in expression except literals
+     * ilit op ilit = ilit
+     * ilit op flit = flit
+     * ilit op int = int
+     * ilit op float = float
+     *
+     * flit op float = float
+     * flit op flit = flit
+     */
+    void convertLiterals(llvm::Value** lhs,
+        llvm::Value** rhs,
+        const Type& left_type,
+        const Type& right_type, IRGenerator* irgen)
+    {
+        if(left_type.name == "ilit")
+        {
+            auto as_int = llvm::dyn_cast<llvm::ConstantInt>(*lhs);
+            if(right_type.name == "ilit") return;
+            if(right_type.name == "filt")
+            {
+                if(as_int->isNegative()) *lhs = irgen->builder->CreateSIToFP(*lhs, llvm::Type::getDoubleTy(irgen->context));
+                else *lhs = irgen->builder->CreateUIToFP(*lhs, llvm::Type::getDoubleTy(irgen->context));
+                return;
+            }
+            *lhs = implicitConvert(*lhs, left_type, right_type, irgen);
+            return;
+        }
+        if(left_type.name == "flit")
+        {
+            if(right_type.name == "flit") return;
+            *lhs = implicitConvert(*lhs, left_type, right_type, irgen);
+            return;
+        }
+        if(right_type.name == "ilit" || right_type.name == "flit")
+            convertLiterals(rhs, lhs, right_type, left_type, irgen);
+    }
     llvm::Value* ExpressionEvaluator::doAddition(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type,
+        const Type& result_type) const
     {
-        if(left_type.is_integral())
+        //integral result can come from overloaded operators
+        if(result_type.is_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateAdd(lhs, rhs, "addtmp");
-        if(left_type.is_floating_point())
+        }
+        //left can be an integer literal
+        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateFAdd(lhs, rhs, "addtmp");
+        }
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::doMinus(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type,
+        const Type& result_type) const
     {
-        if(left_type.is_integral())
+        if(result_type.is_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateAdd(lhs, rhs, "addtmp");
-        if(left_type.is_floating_point())
+        }
+        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateFAdd(lhs, rhs, "addtmp");
+        }
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::doMult(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type,
+        const Type& result_type) const
     {
-        if(left_type.is_integral())
+        if(result_type.is_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateMul(lhs, rhs, "multmp");
-        if(left_type.is_floating_point())
+        }
+        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateFMul(lhs, rhs, "multmp");
+        }
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::doDiv(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type,
+        const Type& result_type) const
     {
-        if(left_type.is_signed_integral())
+        if(result_type.is_signed_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateSDiv(lhs, rhs, "divtmp");
-        if(left_type.is_unsigned_integral())
+        }
+        if(result_type.is_unsigned_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateUDiv(lhs, rhs, "divtmp");
-        if(left_type.is_floating_point())
+        }
+        if(result_type.is_integral()) //integer literal
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
+            auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+            if(lhs_int->isNegative() || rhs_int->isNegative()) return irgen->builder->CreateSDiv(lhs, rhs, "divtmp");
+            return irgen->builder->CreateUDiv(lhs, rhs, "divtmp");
+        }
+        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateFDiv(lhs, rhs, "divtmp");
+        }
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::doRem(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type,
+        const Type& result_type) const
     {
-        if(left_type.is_signed_integral())
+        if(left_type.is_signed_integral()  && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateSRem(lhs, rhs, "divtmp");
-        if(left_type.is_unsigned_integral())
+        }
+        if(left_type.is_unsigned_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             return irgen->builder->CreateURem(lhs, rhs, "divtmp");
+        }
+        if(result_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
+            auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+            if(lhs_int->isNegative() || rhs_int->isNegative()) return irgen->builder->CreateSRem(lhs, rhs, "divtmp");
+            return irgen->builder->CreateURem(lhs, rhs, "divtmp");
+        }
         return nullptr;
     }
     llvm::Value* ExpressionEvaluator::doCmp(
@@ -201,37 +424,57 @@ namespace Yoyo
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type,
+        const Type& result_type) const
     {
         llvm::CmpInst::Predicate pred{};
-        if(left_type.is_signed_integral())
+        auto get_int_cmp_pred = [](const bool is_signed, ComparisonPredicate p)
         {
-            switch(p)
-            {
-            case EQ: pred = llvm::CmpInst::ICMP_EQ; break;
-            case GT: pred = llvm::CmpInst::ICMP_SGT; break;
-            case LT: pred = llvm::CmpInst::ICMP_SLT; break;
-            case EQ_GT: pred = llvm::CmpInst::ICMP_SGE; break;
-            case EQ_LT: pred = llvm::CmpInst::ICMP_SLE; break;
-            case NE: pred = llvm::CmpInst::ICMP_NE; break;
-            }
+            if(is_signed)
+                switch(p)
+                {
+                case EQ: return llvm::CmpInst::ICMP_EQ;
+                case GT: return llvm::CmpInst::ICMP_SGT;
+                case LT: return llvm::CmpInst::ICMP_SLT;
+                case EQ_GT: return llvm::CmpInst::ICMP_SGE;
+                case EQ_LT: return llvm::CmpInst::ICMP_SLE;
+                case NE: return llvm::CmpInst::ICMP_NE;
+                }
+            else
+                switch(p)
+                {
+                case EQ: return llvm::CmpInst::ICMP_EQ;
+                case GT: return llvm::CmpInst::ICMP_UGT;
+                case LT: return llvm::CmpInst::ICMP_ULT;
+                case EQ_GT: return llvm::CmpInst::ICMP_UGE;
+                case EQ_LT: return llvm::CmpInst::ICMP_ULE;
+                case NE: return llvm::CmpInst::ICMP_NE;
+                }
+            return llvm::CmpInst::BAD_ICMP_PREDICATE;
+        };
+        if(result_type.is_signed_integral() && left_type.is_integral())
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            pred = get_int_cmp_pred(true, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
-        if(left_type.is_unsigned_integral())
+        if(result_type.is_unsigned_integral() && left_type.is_integral())
         {
-            switch(p)
-            {
-            case EQ: pred = llvm::CmpInst::ICMP_EQ; break;
-            case GT: pred = llvm::CmpInst::ICMP_UGT; break;
-            case LT: pred = llvm::CmpInst::ICMP_ULT; break;
-            case EQ_GT: pred = llvm::CmpInst::ICMP_UGE; break;
-            case EQ_LT: pred = llvm::CmpInst::ICMP_ULE; break;
-            case NE: pred = llvm::CmpInst::ICMP_NE; break;
-            }
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            pred = get_int_cmp_pred(false, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
-        if(left_type.is_floating_point())
+        if(result_type.is_integral())
         {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
+            auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+            if(lhs_int->isNegative() || rhs_int->isNegative()) return irgen->builder->CreateSRem(lhs, rhs, "divtmp");
+            return irgen->builder->CreateURem(lhs, rhs, "divtmp");
+        }
+        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
+        {
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             switch(p)
             {
             case EQ: pred = llvm::CmpInst::FCMP_OEQ; break;
@@ -277,14 +520,8 @@ namespace Yoyo
     }
 
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
-        auto t = ExpressionTypeChecker{irgen}(lit);
-        if(t->is_signed_integral())
-        {
-            const auto ll = std::stoll(std::string{lit->token.text});
-            return llvm::ConstantInt::getSigned(irgen->ToLLVMType(*t, false), ll);
-        }
         const auto ul = std::stoull(std::string{lit->token.text});
-        return llvm::ConstantInt::get(irgen->ToLLVMType(*t, false), ul);
+        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), ul);
     }
     llvm::Value* ExpressionEvaluator::operator()(BooleanLiteral* lit)
     {
@@ -295,6 +532,14 @@ namespace Yoyo
     {
         auto tuple_t = ExpressionTypeChecker{irgen, target}(tup);
         if(!tuple_t) { irgen->error(); return nullptr; }
+        std::vector<llvm::Value*> values;
+        values.reserve(tuple_t->subtypes.size());
+        for(size_t i = 0; i < tup->elements.size(); i++){
+            values.push_back(std::visit(*this, tup->elements[i]->toVariant()));
+            if(tuple_t->subtypes[i].name == "ilit" || tuple_t->subtypes[i].name == "flit")
+                tuple_t->subtypes[i] = irgen->reduceLiteral(tuple_t->subtypes[i], values.back());
+        }
+        lastDeducedType = static_cast<Type>(*tuple_t);
         auto llvm_t = irgen->ToLLVMType(*tuple_t, false);
         auto tuple_tmp = irgen->Alloca("tuple_lit", llvm_t);
         auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
@@ -305,7 +550,7 @@ namespace Yoyo
             auto idx_ptr = irgen->builder->CreateGEP(llvm_t, tuple_tmp, {zero_const, idx_const}, "tuple_elem");
             auto type = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
             tuple_t->subtypes[idx].is_mutable = true;
-            doAssign(idx_ptr, std::visit(*this, expr->toVariant()), tuple_t->subtypes[idx], *type);
+            doAssign(idx_ptr, values[idx], tuple_t->subtypes[idx], *type);
             idx++;
         }
         return tuple_tmp;
@@ -341,7 +586,8 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(BinaryOperation* op)
     {
         auto type_checker = ExpressionTypeChecker{irgen};
-        if(!std::visit(type_checker, op->toVariant())) {irgen->error(); return nullptr;}
+        auto res = std::visit(type_checker, op->toVariant());
+        if(!res) {irgen->error(); return nullptr;}
 
         auto l_as_var = op->lhs->toVariant();
         auto r_as_var = op->rhs->toVariant();
@@ -360,17 +606,17 @@ namespace Yoyo
         switch(op->op.type)
         {
             using enum TokenType;
-        case Plus: return doAddition(lhs, rhs, *left_t, *right_t);
-        case Minus: return doMinus(lhs, rhs, *left_t, *right_t);
-        case Star: return doMult(lhs, rhs, *left_t, *right_t);
-        case Slash: return doDiv(lhs, rhs, *left_t, *right_t);
-        case Percent: return doRem(lhs, rhs, *left_t, *right_t);
-        case Greater: return doCmp(GT, lhs, rhs, *left_t, *right_t);
-        case Less: return doCmp(LT, lhs, rhs, *left_t, *right_t);
-        case GreaterEqual: return doCmp(EQ_GT, lhs, rhs, *left_t, *right_t);
-        case LessEqual: return doCmp(EQ_LT, lhs, rhs, *left_t, *right_t);
-        case BangEqual: return doCmp(NE, lhs, rhs, *left_t, *right_t);
-        case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t);
+        case Plus: return doAddition(lhs, rhs, *left_t, *right_t, *res);
+        case Minus: return doMinus(lhs, rhs, *left_t, *right_t, *res);
+        case Star: return doMult(lhs, rhs, *left_t, *right_t, *res);
+        case Slash: return doDiv(lhs, rhs, *left_t, *right_t, *res);
+        case Percent: return doRem(lhs, rhs, *left_t, *right_t, *res);
+        case Greater: return doCmp(GT, lhs, rhs, *left_t, *right_t, *res);
+        case Less: return doCmp(LT, lhs, rhs, *left_t, *right_t, *res);
+        case GreaterEqual: return doCmp(EQ_GT, lhs, rhs, *left_t, *right_t, *res);
+        case LessEqual: return doCmp(EQ_LT, lhs, rhs, *left_t, *right_t, *res);
+        case BangEqual: return doCmp(NE, lhs, rhs, *left_t, *right_t, *res);
+        case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t, *res);
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
 
         case Equal:
