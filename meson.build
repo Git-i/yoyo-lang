@@ -12,6 +12,8 @@ sources = [
     'src/yoyo/expression_evaluator.cpp',
     'src/yoyo/parselets/infix_parselets.cpp',
     'src/yoyo/parselets/prefix_parselets.cpp',
+    'src/yoyo/engine.cpp',
+    'src/yoyo/module.cpp',
 ]
 yoyo_lib = library('yoyo', sources, include_directories: 'include/yoyo',dependencies: dependency('llvm'))
 yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: dependency('llvm'))

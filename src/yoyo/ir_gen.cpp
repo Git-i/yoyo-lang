@@ -21,22 +21,8 @@ namespace Yoyo
     }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
-        if(type.is_integral())
-            return llvm::Type::getIntNTy(context, *type.integer_width());
-        if(type.is_floating_point())
-            return *type.float_width() == 32 ? llvm::Type::getFloatTy(context) : llvm::Type::getDoubleTy(context);
-        if(type.is_boolean())
-            return llvm::Type::getInt1Ty(context);
-        if(type.name == "void")
-            return llvm::Type::getVoidTy(context);
-        if(type.is_opaque_pointer())
-            return llvm::PointerType::get(context, 0);
-        if(type.name == "__called_fn")
-        {
-            auto ptr_ty = llvm::PointerType::get(context, 0);
-            //called functions are always struct{void* context, void* function}
-            return llvm::StructType::get(context, {ptr_ty, ptr_ty});
-        }
+        auto t = module->ToLLVMType(type, is_ref);
+        if(t) return t;
         if(type.is_lambda())
         {
             if(auto t = lambdas.find(type.name); t != lambdas.end())
@@ -444,14 +430,11 @@ namespace Yoyo
         return llvm::StructType::create(context, args, name);
     }
 
-    Module IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements)
+    void IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md)
     {
-        Module md
-        {
-            .code = std::make_unique<llvm::Module>(name, context)
-        };
-        module = &md;
-        code = md.code.get();
+        md->code = std::make_unique<llvm::Module>(name, context);
+        module = md;
+        code = md->code.get();
         builder = std::make_unique<llvm::IRBuilder<>>(context);
         pushScope();
         for(auto& stat : statements)
@@ -462,7 +445,6 @@ namespace Yoyo
             std::visit(TopLevelVisitor{this}, vnt);
         }
         builder = nullptr;
-        return md;
     }
 
 }

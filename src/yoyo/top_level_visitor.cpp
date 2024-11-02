@@ -3,9 +3,7 @@ namespace Yoyo
 {
     bool TopLevelVisitor::operator()(FunctionDeclaration* decl)
     {
-        std::string mangled_name = std::string{decl->identifier.text};
-        if(irgen->module->functions.contains(mangled_name)) return false;
-        irgen->module->functions[mangled_name] = decl->signature;
+
         (*irgen)(decl);
         return true;
     }

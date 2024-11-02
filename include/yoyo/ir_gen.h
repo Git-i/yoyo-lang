@@ -1,7 +1,7 @@
 #pragma once
 #include <fn_type.h>
 #include <statement.h>
-
+#include "engine.h"
 #include <utility>
 
 #include "llvm/IR/Module.h"
@@ -49,7 +49,7 @@ namespace Yoyo
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);
-        Module GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements);
+        void GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md);
     };
     struct TopLevelVisitor
     {

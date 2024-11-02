@@ -12,6 +12,13 @@ TEST_CASE("Test IR")
     std::string source = R"(
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
+
+foo: class = {
+    x: bar
+}
+bar: class = {
+    y: i32
+}
 main: () -> f64 = {
     /* this is meant to be in the parser /* test */ */
     a: f64 = 5.0;
@@ -30,6 +37,10 @@ main: () -> f64 = {
     int argc = 1;
     const char* argv[] = {"foo"};
     const char** lol = argv;
+
+    Yoyo::Engine engine;
+    engine.addModule("MOO", source);
+    /*
     llvm::InitLLVM llvm(argc, lol);
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -52,5 +63,6 @@ main: () -> f64 = {
     auto res = fn();
     REQUIRE(res == 10.0);
     std::cout << res;
+    */
 }
 

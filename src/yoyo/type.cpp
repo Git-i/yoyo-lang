@@ -4,6 +4,25 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    //TODO: move to util header !??
+    std::vector<std::string_view> split(std::string_view str, std::string_view delim)
+    {
+        // ab::lol
+        std::vector<std::string_view> result;
+        size_t left = 0;
+        for (size_t it = 0; it < str.size() - delim.size(); ++it)
+        {
+            std::string_view curr(str.begin() + it, str.begin() + it + delim.size());
+            if (curr == delim)
+            {
+                result.emplace_back(str.begin() + left, str.begin() + it);
+                it += delim.size();
+                left = it;
+            }
+        }
+        result.emplace_back(str.begin() + left, str.end());
+        return result;
+    }
     bool Type::is_assignable_from(const Type& other) const
     {
         if(is_equal(other)) return true;
@@ -30,7 +49,7 @@ namespace Yoyo
             if(!other.is_integral()) return false;
             return *float_width() > *other.integer_width();
         }
-        if(name == "__called_fn" && other.is_function() || other.is_lambda())
+        if((name == "__called_fn") && other.is_function() || other.is_lambda())
         {
             const auto& as_fn = reinterpret_cast<const FunctionType&>(other);
             if(signature->parameters.size() != as_fn.sig.parameters.size()) return false;
@@ -48,7 +67,30 @@ namespace Yoyo
 
     bool Type::is_equal(const Type& other) const
     {
-        return name == other.name && subtypes == other.subtypes;
+        return name == other.name && subtypes == other.subtypes && module == other.module;
+    }
+
+    Type Type::saturated(Module* src) const
+    {
+        Type tp = *this;
+        tp.saturate(src);
+        return tp;
+    }
+
+    void Type::saturate(Module* src)
+    {
+        auto module_path = split(name, "::");
+        if(module_path.size() == 1) module = src;
+        if(module_path.size() > 1)
+        {
+            Module* mod = src->modules.at(std::string(module_path[0]));
+            for(size_t i = 1; i < module_path.size() - 1; ++i)
+            {
+                mod = mod->modules.at(std::string(module_path[i]));
+            }
+            name = module_path.back();
+            module = mod;
+        }
     }
 
     Type Type::variant_merge(Type a, Type b)

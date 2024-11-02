@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
+#include <engine.h>
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,6 +10,7 @@
 
 namespace Yoyo
 {
+    struct Module;
     struct FunctionSignature;
     class ClassDeclaration;
     class IRGenerator;
@@ -19,6 +21,7 @@ namespace Yoyo
         //shared ptr because I want the object to be copyable, its mostly nullptr anyway
         //this is to store the signature for callable and storable functions
         std::shared_ptr<FunctionSignature> signature;
+        Module* module;
         bool is_mutable = false;
         bool is_lvalue = false;
         bool operator==(const Type& other) const
@@ -28,6 +31,9 @@ namespace Yoyo
         [[nodiscard]] Type strip_lvalue() const {return {.name = name, .signature = signature, .is_mutable = false, .is_lvalue = false};}
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
+        //reduce a type to a pure string and a Module*(also resolves aliases)
+        [[nodiscard]] Type saturated(Module* src) const;
+        void saturate(Module* src);
 
         [[nodiscard]] bool is_shallow_equal(const Type& other) const
         {
