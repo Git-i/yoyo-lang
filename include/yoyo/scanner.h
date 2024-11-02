@@ -18,6 +18,8 @@ namespace Yoyo {
         [[nodiscard]] bool IsEof() const;
         [[nodiscard]] Token ScanIdentifier();
         [[nodiscard]] Token ScanNumber();
+        void handleLineComment();
+        void handleBlockComment();
         size_t position = 0;
         size_t line = 1;
         std::string_view source;

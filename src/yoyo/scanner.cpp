@@ -1,4 +1,6 @@
 #include "scanner.h"
+
+#include <cstdint>
 #include <locale>
 #include <optional>
 
@@ -49,7 +51,20 @@ namespace Yoyo {
                     return Token{TokenType::Minus};
                 }
             case '*': return NextIs('=') ? Token{TokenType::StarEqual} : Token{TokenType::Star};
-            case '/': return NextIs('=') ? Token{TokenType::SlashEqual} : Token{TokenType::Slash}; //todo: comments
+            case '/':
+                {
+                    if(NextIs('/'))
+                    {
+                        handleLineComment();
+                        break;
+                    }
+                    if (NextIs('*'))
+                    {
+                        handleBlockComment();
+                        break;
+                    }
+                    return NextIs('=') ? Token{TokenType::SlashEqual} : Token{TokenType::Slash};
+                }
             case '!': return NextIs('=') ? Token{TokenType::BangEqual} : Token{TokenType::Bang};
             case '&':
                 {
@@ -150,6 +165,31 @@ namespace Yoyo {
         return {TokenType::RealLiteral,
             std::string_view(source.begin() + number_begin, source.begin() + position)};
     }
+
+    void Scanner::handleLineComment()
+    {
+        while(!IsEof() && Peek() != '\n') std::ignore = Get();
+        if(!IsEof()) Get(); //discard the new-line
+    }
+
+    void Scanner::handleBlockComment()
+    {
+        uint32_t nest_level = 1;
+        while(!IsEof() && nest_level > 0)
+        {
+            char next = Get();
+            if(next == '/' && !IsEof() && Peek() == '*')
+            {
+                std::ignore = Get(); nest_level++;
+            }
+            if(next == '*' && !IsEof() && Peek() == '/')
+            {
+                std::ignore = Get(); nest_level--;
+            }
+        }
+    }
+
+
     char Scanner::Get()
     {
         return source[position++];

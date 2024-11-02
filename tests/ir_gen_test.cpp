@@ -13,15 +13,16 @@ TEST_CASE("Test IR")
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
 main: () -> f64 = {
+    /* this is meant to be in the parser /* test */ */
     a: f64 = 5.0;
     b : mut = 10.0;
     b = 20;
     lambda:= |b: inout| return b;
     lol:= (10, 20, 30);
-    b = lol.0;
+    //b = lol.0;
     test_impl_conv(10);
     call_callable(lambda);
-    if(a < b) return b;
+    if(a < 10) return b;
     else if(a == b) return a;
     return 0.0;
 }
