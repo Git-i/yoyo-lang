@@ -452,27 +452,27 @@ namespace Yoyo
                 }
             return llvm::CmpInst::BAD_ICMP_PREDICATE;
         };
-        if(result_type.is_signed_integral() && left_type.is_integral())
+        if(left_type.is_signed_integral() && right_type.is_signed_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             pred = get_int_cmp_pred(true, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
-        if(result_type.is_unsigned_integral() && left_type.is_integral())
+        if(right_type.is_unsigned_integral() && left_type.is_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             pred = get_int_cmp_pred(false, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
-        if(result_type.is_integral())
+        if(left_type.is_integral() && right_type.is_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
             auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
-            if(lhs_int->isNegative() || rhs_int->isNegative()) return irgen->builder->CreateSRem(lhs, rhs, "divtmp");
-            return irgen->builder->CreateURem(lhs, rhs, "divtmp");
+            pred = get_int_cmp_pred(lhs_int->isNegative() || rhs_int->isNegative(), p);
+            return irgen->builder->CreateICmp(pred, lhs, rhs, "divtmp");
         }
-        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
+        if(left_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             switch(p)
@@ -532,14 +532,6 @@ namespace Yoyo
     {
         auto tuple_t = ExpressionTypeChecker{irgen, target}(tup);
         if(!tuple_t) { irgen->error(); return nullptr; }
-        std::vector<llvm::Value*> values;
-        values.reserve(tuple_t->subtypes.size());
-        for(size_t i = 0; i < tup->elements.size(); i++){
-            values.push_back(std::visit(*this, tup->elements[i]->toVariant()));
-            if(tuple_t->subtypes[i].name == "ilit" || tuple_t->subtypes[i].name == "flit")
-                tuple_t->subtypes[i] = irgen->reduceLiteral(tuple_t->subtypes[i], values.back());
-        }
-        lastDeducedType = static_cast<Type>(*tuple_t);
         auto llvm_t = irgen->ToLLVMType(*tuple_t, false);
         auto tuple_tmp = irgen->Alloca("tuple_lit", llvm_t);
         auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
@@ -550,7 +542,7 @@ namespace Yoyo
             auto idx_ptr = irgen->builder->CreateGEP(llvm_t, tuple_tmp, {zero_const, idx_const}, "tuple_elem");
             auto type = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
             tuple_t->subtypes[idx].is_mutable = true;
-            doAssign(idx_ptr, values[idx], tuple_t->subtypes[idx], *type);
+            doAssign(idx_ptr, std::visit(*this, expr->toVariant()), tuple_t->subtypes[idx], *type);
             idx++;
         }
         return tuple_tmp;

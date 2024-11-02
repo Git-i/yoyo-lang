@@ -258,6 +258,7 @@ namespace Yoyo
             //instead of copying we move
             if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive() && expr_type->is_equal(*type)))
             {
+                init->setName(decl->identifier.text);
                 alloc = init;
             }
             else
