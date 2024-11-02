@@ -15,7 +15,7 @@ namespace Yoyo
             if(b.is_floating_point()) return b;
         }
         if(b.name == "ilit" || b.name == "flit")
-            return canBinOpLiteral(a, b);
+            return canBinOpLiteral(b, a);
         return std::nullopt;
     }
     static std::optional<Type> checkAddition(const Type &a, const Type &b)
