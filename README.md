@@ -113,13 +113,13 @@ because `arr` is used as a reference twice in the same function. What if the cas
 was like this:
 ```
 foo: struct = {...}
-change_arr_and_val(arr: inout [i32], val: foo) = {
-    arr.push(90); // can invalidate references to the array
+change_arr_and_val(arr: inout [foo], val: foo) = {
+    arr.push(90);
     val = 10; 
 }
 /*  call site  */
 arr := [foo{...}, foo{...}]
-change_arr_and_val(arr, arr[0]); // write to invalid memory
+change_arr_and_val(arr, arr[0]); // write to invalid memory is arr[0] is passed by ref
 ```
 Since we've already mutably referenced array once, we're forced to copy
 the parameter(I'm not writing a borrow checker).
