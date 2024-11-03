@@ -268,11 +268,13 @@ namespace Yoyo
                 }
                 t->is_mutable = decl->is_mut;
                 t->is_lvalue = true;
+                t->saturate(irgen->module);
                 return t;
             }
         }
         if(auto fn = irgen->module->findFunction(irgen->module->module_hash + name))
         {
+            irgen->saturateSignature(*fn, irgen->module);
             return FunctionType{*fn, false};
         }
         return std::nullopt;
@@ -375,14 +377,21 @@ namespace Yoyo
                 if(method.name == name)
                 {
                     auto decl = reinterpret_cast<FunctionDeclaration*>(method.function_decl.get());
-                    return FunctionType{decl->signature, false};
+                    irgen->saturateSignature(decl->signature, module);
+                    auto ret_val = FunctionType{decl->signature, false};
+                    ret_val.module = module;
+                    return std::move(ret_val);
                 }
             }
             return std::nullopt;
         }
         if(auto fn = module->findFunction(module->module_hash + std::string{name}))
         {
-            return FunctionType{*fn, false};
+            //it should already be saturated at this point
+            irgen->saturateSignature(*fn, module);
+            auto ret_val = FunctionType{*fn, false};
+            ret_val.module = module;
+            return std::move(ret_val);
         }
     }
 

@@ -21,7 +21,10 @@ namespace Yoyo
     }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
-        auto t = module->ToLLVMType(type, is_ref, {});
+        //type is not required not have a module (built-ins)
+        auto t = type.module ?
+            type.module->ToLLVMType(type, is_ref, {}):
+            module->ToLLVMType(type, is_ref, {});
         if(t) return t;
         if(type.is_lambda())
         {
@@ -50,12 +53,12 @@ namespace Yoyo
         error();
         return nullptr;
     }
-    void saturateSignature(FunctionSignature& sig, Module* src)
+    void IRGenerator::saturateSignature(FunctionSignature& sig, Module* module)
     {
-        sig.returnType.saturate(src);
+        sig.returnType.saturate(module);
         for(auto& param: sig.parameters)
         {
-            param.type.saturate(src);
+            param.type.saturate(module);
         }
     }
     llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)

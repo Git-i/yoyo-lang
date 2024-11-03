@@ -29,6 +29,7 @@ namespace Yoyo
 
         std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* findType(const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
+        void saturateSignature(FunctionSignature& sig, Module* md);
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
         llvm::AllocaInst* Alloca(std::string_view name, llvm::Type* type);
         bool isShadowing(const std::string&) const;

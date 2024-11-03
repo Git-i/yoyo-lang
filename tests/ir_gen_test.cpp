@@ -18,6 +18,7 @@ baz: class = {
 
 takes_foo: (param: lol::foo) -> i32 = {
     lol::test_impl_conv(50);
+    c:= lol::returns_foo();
     a: baz;
     return 5;
 }
@@ -31,6 +32,10 @@ foo: class = {
 }
 bar: class = {
     y: i32
+}
+returns_foo: () -> foo = {
+    a: foo;
+    return a;
 }
 main: () -> f64 = {
     /* this is meant to be in the parser /* test */ */
@@ -57,17 +62,22 @@ main: () -> f64 = {
     engine.addModule("MOO2", src2);
     engine.compile();
 
+    uint32_t idx = 3;
     for(auto& mod: engine.modules)
     {
-        std::cout << mod.first << " --------------------------------------------------"<< "\n";
+        idx += 1;
+        idx %= 8;
+        auto str = "\033[1;3" + std::to_string(idx) + "m";
+        std::cout <<  str << std::flush;
         mod.second->code->print(llvm::outs(), nullptr);
-        std::cout << "----------------------------------------------------------------" << "\n";
+        std::cout << "\033[0m" << std::flush;
+        if(verifyModule(*mod.second->code, &llvm::errs())) raise(SIGTRAP);
     }
     /*
     llvm::InitLLVM llvm(argc, lol);
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    
+
 
     Yoyo::Parser p1(std::move(source));
     auto decl = p1.parseProgram();
@@ -76,7 +86,6 @@ main: () -> f64 = {
     Yoyo::IRGenerator gen(*context);
     auto mod = gen.GenerateIR("MOO", std::move(decl));
     mod.code->print(llvm::outs(), nullptr);
-    if(verifyModule(*mod.code, &llvm::errs())) raise(SIGTRAP);
 
     llvm::ExitOnError ExitOnErr;
     auto j = llvm::orc::LLJITBuilder().create();

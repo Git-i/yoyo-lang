@@ -26,7 +26,6 @@ namespace Yoyo
         prefixParselets[TokenType::LSquare] = std::make_shared<ArrayLiteralParselet>();
         prefixParselets[TokenType::Pipe] = lambda_parselet;
         prefixParselets[TokenType::DoublePipe] = lambda_parselet;
-        prefixParselets[TokenType::DoubleColon] = std::make_shared<ScopeOperationParselet>();
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);
@@ -66,6 +65,8 @@ namespace Yoyo
 
         infixParselets[TokenType::Bang] = std::make_shared<PostfixOperationParselet>(Precedences::InvalidPropagate);
         infixParselets[TokenType::LParen] = std::make_shared<CallOperationParselet>(Precedences::Call);
+
+        infixParselets[TokenType::DoubleColon] = std::make_shared<ScopeOperationParselet>(Precedences::ScopeResolve);
     }
     PrefixParselet* Parser::GetPrefixParselet(TokenType t)
     {

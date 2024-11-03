@@ -865,8 +865,46 @@ namespace Yoyo
         return ctx_object;
     }
 
-    llvm::Value* ExpressionEvaluator::operator()(ScopeOperation*)
+    llvm::Value* ExpressionEvaluator::operator()(ScopeOperation* op)
     {
-        raise(SIGTRAP);
+        auto ty = ExpressionTypeChecker{irgen}(op);
+        if(!ty) {irgen->error();return nullptr;}
+        //either a function or global var
+        if(ty->is_function())
+        {
+            if(ty->module == irgen->module)
+            {
+                if(ty->module->classes.contains(op->type.name))
+                {
+                    auto class_entry = ty->module->classes.at(op->type.name);
+                    std::string mangled_name = std::get<0>(class_entry) + op->name;
+                    return irgen->code->getFunction(mangled_name);
+                }
+                std::string mangled_name = ty->module->module_hash + op->name;
+                return irgen->code->getFunction(mangled_name);
+            }
+            else
+            {
+                std::string mangled_name;
+                if(ty->module->classes.contains(op->type.name))
+                {
+                    auto class_entry = ty->module->classes.at(op->type.name);
+                    mangled_name = std::get<0>(class_entry) + op->name;
+                }
+                mangled_name = ty->module->module_hash + op->name;
+                auto fn = irgen->code->getFunction(mangled_name);
+                if(fn) return fn;
+                fn = llvm::Function::Create(irgen->ToLLVMSignature(ty->sig), llvm::GlobalValue::ExternalLinkage,
+                    mangled_name, irgen->code);
+                if(!ty->sig.returnType.is_builtin())
+                {
+                    auto return_as_llvm_type = irgen->ToLLVMType(ty->sig.returnType, false);
+                    fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm_type));
+                }
+                return fn;
+            }
+        }
+
+        return nullptr;
     }
 }
