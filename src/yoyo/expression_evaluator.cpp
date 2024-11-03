@@ -1,4 +1,5 @@
 #include <cmath>
+#include <csignal>
 
 #include "ir_gen.h"
 #include "fn_type.h"
@@ -862,5 +863,10 @@ namespace Yoyo
         FunctionDeclaration decl(tk,std::move(sig), std::move(expr->body));
         (*irgen)(&decl);
         return ctx_object;
+    }
+
+    llvm::Value* ExpressionEvaluator::operator()(ScopeOperation*)
+    {
+        raise(SIGTRAP);
     }
 }

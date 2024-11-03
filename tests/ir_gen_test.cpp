@@ -17,6 +17,7 @@ baz: class = {
 }
 
 takes_foo: (param: lol::foo) -> i32 = {
+    lol::test_impl_conv(50);
     a: baz;
     return 5;
 }

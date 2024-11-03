@@ -68,6 +68,7 @@ namespace Yoyo
         IRGenerator* irgen;
         std::optional<Type> target;
     public:
+        std::optional<FunctionType> checkNameWithin(Module*, ClassDeclaration* type, std::string_view name);
         explicit ExpressionTypeChecker(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
         /// We return FunctionType because it's a subclass of Type and some
@@ -87,6 +88,7 @@ namespace Yoyo
         std::optional<FunctionType> operator()(CallOperation*);
         std::optional<FunctionType> operator()(SubscriptOperation*);
         std::optional<FunctionType> operator()(LambdaExpression*);
+        std::optional<FunctionType> operator()(ScopeOperation*);
     };
     class ExpressionEvaluator
     {
@@ -134,5 +136,6 @@ namespace Yoyo
         llvm::Value* operator()(CallOperation*);
         llvm::Value* operator()(SubscriptOperation*);
         llvm::Value* operator()(LambdaExpression*);
+        llvm::Value* operator()(ScopeOperation*);
     };
 }

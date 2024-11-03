@@ -28,6 +28,7 @@ namespace Yoyo
     class BooleanLiteral;
     class IntegerLiteral;
     class LambdaExpression;
+    class ScopeOperation;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -43,7 +44,8 @@ namespace Yoyo
         PostfixOperation*,
         CallOperation*,
         SubscriptOperation*,
-        LambdaExpression*>;
+        LambdaExpression*,
+        ScopeOperation*>;
     class Expression {
     public:
         virtual ~Expression() = default;
@@ -154,5 +156,29 @@ namespace Yoyo
         std::string hash;
         LambdaExpression(std::vector<std::pair<std::string, ParamType>> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
         ExpressionVariant toVariant() override;
+    };
+    class ScopeOperation : public Expression
+    {
+    public:
+        /// Lexicographically(or whatever) every scope operation is basically a type
+        /// name::name::name(possible template args) is the exact same format for a type with @c ::
+        /// for a valid scope operation however, all the "subtypes" must be identifier, with only the
+        /// second to last or last being actual types(types can't have subtypes)
+        /// - second to last for @code <other-things>::Type::member_function @endcode
+        /// - second to last also applies for enum and unions
+        /// - last for initialization expressions @code <other-things>::Type{...} @endcode
+        ///
+        /// Considerations:
+        /// - For init expression we can completely eliminate the need for this type by
+        /// surrendering it to the expr
+        Type type;
+        std::string scope;
+        std::string name;
+        explicit ScopeOperation(Type second_to_last, std::string scope, std::string last)
+            : type(std::move(second_to_last)),
+              scope(std::move(scope)),
+              name(std::move(last)){}
+        ExpressionVariant toVariant() override;
+
     };
 }

@@ -4,6 +4,8 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    //defined in type.cpp
+    extern std::vector<std::string_view> split(std::string_view str, std::string_view delim);
     std::optional<Type> canBinOpLiteral(const Type &a, const Type &b)
     {
         if(a.name == "ilit")
@@ -293,6 +295,39 @@ namespace Yoyo
         return fn_t;
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(ScopeOperation* scp)
+    {
+        //Everything till the second to last must be a module
+        Module* md = irgen->module;
+        if(!scp->scope.empty())
+        {
+            auto split_name = split(scp->scope, "::");
+            for(size_t i = 0; i < split_name.size() - 2; i++)
+            {
+                auto str = std::string{split_name[i]};
+                if(!md->modules.contains(str)) irgen->error();
+                md = md->modules.at(str);
+            }
+
+        }
+        ClassDeclaration* decl = nullptr;
+        if(md->modules.contains(scp->type.name))
+        {
+            md = md->modules.at(scp->type.name);
+        }
+        else if(md->classes.contains(scp->type.name))
+        {
+            decl = std::get<2>(md->classes.at(scp->type.name));
+        }
+        //check types in scope
+        else if(md == irgen->module)
+        {
+            //TODO
+        }
+
+        return checkNameWithin(md, decl,scp->name);
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals
@@ -328,6 +363,27 @@ namespace Yoyo
     std::optional<FunctionType> ExpressionTypeChecker::operator()(GroupingExpression* expr)
     {
         return std::visit(*this, expr->toVariant());
+    }
+
+    std::optional<FunctionType> ExpressionTypeChecker::checkNameWithin(Module* module, ClassDeclaration* type,
+        std::string_view name)
+    {
+        if(type)
+        {
+            for(auto& method : type->methods)
+            {
+                if(method.name == name)
+                {
+                    auto decl = reinterpret_cast<FunctionDeclaration*>(method.function_decl.get());
+                    return FunctionType{decl->signature, false};
+                }
+            }
+            return std::nullopt;
+        }
+        if(auto fn = module->findFunction(module->module_hash + std::string{name}))
+        {
+            return FunctionType{*fn, false};
+        }
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral* lit)
