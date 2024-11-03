@@ -16,12 +16,11 @@ baz: class = {
     x: lol::foo
 }
 
-takes_foo: (param: lol::foo) -> i32 = {
-    lol::test_impl_conv(50);
+takes_foo: (param: i32) -> f64 = {
+    lol::test_impl_conv(param);
     damm: mut baz;
     damm.x = lol::returns_foo();
-    a: baz;
-    return 5;
+    return damm.x.x.y;
 }
 )";
     std::string source = R"(
@@ -32,10 +31,11 @@ foo: class = {
     x: bar
 }
 bar: class = {
-    y: i32
+    y: f64
 }
 returns_foo: () -> foo = {
-    a: foo;
+    a: mut foo;
+    a.x.y = 300.0;
     return a;
 }
 main: () -> f64 = {
@@ -74,7 +74,6 @@ main: () -> f64 = {
         std::cout << "\033[0m" << std::flush;
         if(verifyModule(*mod.second->code, &llvm::errs())) raise(SIGTRAP);
     }
-    /*
     llvm::InitLLVM llvm(argc, lol);
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -83,19 +82,20 @@ main: () -> f64 = {
     Yoyo::Parser p1(std::move(source));
     auto decl = p1.parseProgram();
     REQUIRE(!p1.failed());
-    auto context = std::make_unique<llvm::LLVMContext>();
-    Yoyo::IRGenerator gen(*context);
-    auto mod = gen.GenerateIR("MOO", std::move(decl));
-    mod.code->print(llvm::outs(), nullptr);
 
     llvm::ExitOnError ExitOnErr;
     auto j = llvm::orc::LLJITBuilder().create();
-    std::ignore = j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.code), std::move(context)));
-    auto addr = j.get()->lookup("main").get();
-    double(*fn)() = addr.toPtr<double()>();
-    auto res = fn();
-    REQUIRE(res == 10.0);
+    auto llvm_ctx = std::unique_ptr<llvm::LLVMContext>(static_cast<llvm::LLVMContext*>(engine.llvm_context));
+    auto ctx = llvm::orc::ThreadSafeContext(std::move(llvm_ctx));
+    for(auto& mod: engine.modules)
+    {
+        std::ignore = j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.second->code), ctx));
+    }
+    std::string unmangled_name = engine.modules["MOO2"]->module_hash + "takes_foo";
+    auto addr = j.get()->lookup(unmangled_name).get();
+    double(*fn)(int) = addr.toPtr<double(int)>();
+    auto res = fn(30);
+    REQUIRE(300.0 == 10.0);
     std::cout << res;
-    */
 }
 
