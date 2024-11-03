@@ -42,6 +42,7 @@ namespace Yoyo
         void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
+        void operator()(ModuleImport*){};
 
         void error();
         void pushScope() {variables.emplace_back(); types.emplace_back();}

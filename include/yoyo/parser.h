@@ -42,6 +42,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
 
         uint32_t GetNextPrecedence();
+        std::unique_ptr<Statement> parseModuleImport(Token identifier);
         std::unique_ptr<Statement> parseTopLevelDeclaration();
         bool isTopLevelDeclaration();
         PrefixParselet* GetPrefixParselet(TokenType t);

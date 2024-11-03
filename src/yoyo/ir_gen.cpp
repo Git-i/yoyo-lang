@@ -21,7 +21,7 @@ namespace Yoyo
     }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
-        auto t = module->ToLLVMType(type, is_ref);
+        auto t = module->ToLLVMType(type, is_ref, {});
         if(t) return t;
         if(type.is_lambda())
         {
@@ -49,6 +49,14 @@ namespace Yoyo
         if(auto t = module->classes.find(type.name); t != module->classes.end()) return std::get<1>(t->second);
         error();
         return nullptr;
+    }
+    void saturateSignature(FunctionSignature& sig, Module* src)
+    {
+        sig.returnType.saturate(src);
+        for(auto& param: sig.parameters)
+        {
+            param.type.saturate(src);
+        }
     }
     llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)
     {
@@ -103,6 +111,7 @@ namespace Yoyo
             error();
             return;
         }
+        saturateSignature(decl->signature, module);
         llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
         return_t = decl->signature.returnType;
         auto return_as_llvm_type = ToLLVMType(return_t, false);
@@ -235,7 +244,7 @@ namespace Yoyo
         }
         decl->type = type;
         //TODO probably consider copying lambda contexts??
-        llvm::Value* alloc;
+        llvm::Value* alloc = nullptr;
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
@@ -261,6 +270,7 @@ namespace Yoyo
             }
 
         }
+        type->saturate(module);
         if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         variables.back()[name] = {alloc, decl};
     }
@@ -432,6 +442,7 @@ namespace Yoyo
 
     void IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md)
     {
+        block_hash = md->module_hash;
         md->code = std::make_unique<llvm::Module>(name, context);
         module = md;
         code = md->code.get();
@@ -441,7 +452,8 @@ namespace Yoyo
         {
             std::variant<ClassDeclaration*, FunctionDeclaration*> vnt;
             if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get())) vnt = ptr;
-            if(auto ptr = dynamic_cast<FunctionDeclaration*>(stat.get())) vnt = ptr;
+            else if(auto fn_ptr = dynamic_cast<FunctionDeclaration*>(stat.get())) vnt = fn_ptr;
+            else continue;
             std::visit(TopLevelVisitor{this}, vnt);
         }
         builder = nullptr;

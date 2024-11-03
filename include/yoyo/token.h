@@ -18,7 +18,7 @@ namespace Yoyo {
         IntegerLiteral, RealLiteral, StringLiteral, True, False,
         TemplateOpen, /// ::<
         DoubleGreater, DoubleLess,
-        Class, Struct, Enum, EnumFlag, Union, Scheme, Interface,
+        Class, Struct, Enum, EnumFlag, Union, Scheme, Interface, Module,
         SemiColon, In, InOut, This, Ref, Return, Called, Tilde, Pub, Static, Mod,
         Underscore, Mut,
     };

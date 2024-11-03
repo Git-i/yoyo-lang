@@ -9,6 +9,18 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 TEST_CASE("Test IR")
 {
+    std::string src2 = R"(
+lol: module = MOO
+
+baz: class = {
+    x: lol::foo
+}
+
+takes_foo: (param: lol::foo) -> i32 = {
+    a: baz;
+    return 5;
+}
+)";
     std::string source = R"(
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
@@ -21,6 +33,7 @@ bar: class = {
 }
 main: () -> f64 = {
     /* this is meant to be in the parser /* test */ */
+    d: foo;
     a: f64 = 5.0;
     b : mut = 10.0;
     b = 20;
@@ -40,6 +53,15 @@ main: () -> f64 = {
 
     Yoyo::Engine engine;
     engine.addModule("MOO", source);
+    engine.addModule("MOO2", src2);
+    engine.compile();
+
+    for(auto& mod: engine.modules)
+    {
+        std::cout << mod.first << " --------------------------------------------------"<< "\n";
+        mod.second->code->print(llvm::outs(), nullptr);
+        std::cout << "----------------------------------------------------------------" << "\n";
+    }
     /*
     llvm::InitLLVM llvm(argc, lol);
     llvm::InitializeNativeTarget();

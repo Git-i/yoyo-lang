@@ -5,6 +5,11 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVaraint ModuleImport::toVariant()
+    {
+        return this;
+    }
+
     StatementVaraint VariableDeclaration::toVariant()
     {
         return this;

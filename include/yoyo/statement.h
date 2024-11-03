@@ -17,6 +17,7 @@ namespace Yoyo
     class BlockStatement;
     class ClassDeclaration;
     class ForStatement;
+    class ModuleImport;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -26,7 +27,8 @@ namespace Yoyo
         ReturnStatement*,
         FunctionDeclaration*,
         VariableDeclaration*,
-        ExpressionStatement*> StatementVaraint;
+        ExpressionStatement*,
+        ModuleImport*> StatementVaraint;
     class Statement
     {
     public:
@@ -38,6 +40,15 @@ namespace Yoyo
     public:
         std::unique_ptr<Expression> expression;
         explicit ExpressionStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {};
+        StatementVaraint toVariant() override;
+    };
+    class ModuleImport : public Statement
+    {
+    public:
+        std::string module_name;
+        std::string module_path;
+        ModuleImport(std::string name, std::string path) : module_name(std::move(name)),
+            module_path(std::move(path)) {};
         StatementVaraint toVariant() override;
     };
     class VariableDeclaration : public Statement

@@ -29,6 +29,7 @@ namespace Yoyo {
         {"this", TokenType::This},
         {"mut", TokenType::Mut},
         {"called", TokenType::Called},
+        {"module", TokenType::Module},
 
     })
     {

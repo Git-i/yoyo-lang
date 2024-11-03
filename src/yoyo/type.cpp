@@ -79,8 +79,14 @@ namespace Yoyo
 
     void Type::saturate(Module* src)
     {
+        if(module) return; //avoid double saturation
         auto module_path = split(name, "::");
-        if(module_path.size() == 1) module = src;
+
+        if(module_path.size() == 1)
+        {
+            if(!(is_builtin() || is_tuple() || name == "__called_fn"))
+                module = src;
+        }
         if(module_path.size() > 1)
         {
             Module* mod = src->modules.at(std::string(module_path[0]));
@@ -91,6 +97,7 @@ namespace Yoyo
             name = module_path.back();
             module = mod;
         }
+        for(auto& sub: subtypes) sub.saturate(src);
     }
 
     Type Type::variant_merge(Type a, Type b)

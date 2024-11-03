@@ -87,6 +87,17 @@ namespace Yoyo
         return parselet->precedence();
     }
 
+    std::unique_ptr<Statement> Parser::parseModuleImport(Token identifier)
+    {
+        Get();
+        if(!discard(TokenType::Equal)) error("Expected '='", Peek());
+        std::string name(identifier.text);
+        auto iden = Get();
+        if(!iden) return nullptr;
+        if(iden->type != TokenType::Identifier) error("Expected identifier", Peek());
+        return std::make_unique<ModuleImport>(std::move(name), std::string{iden->text});
+    }
+
     std::unique_ptr<Statement> Parser::parseTopLevelDeclaration()
     {
         auto iden = Get();
@@ -103,6 +114,8 @@ namespace Yoyo
         case TokenType::Enum:;//TODO
         case TokenType::EnumFlag:;//TODO
         case TokenType::Union:;//TODO
+        case TokenType::Module: return parseModuleImport(iden.value());
+
         default: return parseVariableDeclaration(iden.value());
         }
     }
@@ -555,6 +568,7 @@ namespace Yoyo
     static constexpr uint32_t PipePrecedence = 1;
     static constexpr uint32_t AmpersandPrecedence = 2;
     static constexpr uint32_t TemplatePrecedence = 3;
+    static constexpr uint32_t ScopePrecedence = 4;
     uint32_t Parser::GetNextTypePrecedence()
     {
         auto tk = Peek();
@@ -564,6 +578,7 @@ namespace Yoyo
         case TokenType::Ampersand: return AmpersandPrecedence;
         case TokenType::Pipe: return PipePrecedence;
         case TokenType::TemplateOpen: return TemplatePrecedence;
+        case TokenType::DoubleColon: return ScopePrecedence;
         default: return 0;
         }
     }
@@ -629,6 +644,12 @@ namespace Yoyo
             case TokenType::Ampersand: t = parseAmpTypeExpr(*this, std::move(t).value()); break;
             case TokenType::Pipe: t = parsePipeTypeExpr(*this, std::move(t).value()); break;
             case TokenType::TemplateOpen: t = parseTemplateTypeExpr(*this, std::move(t).value()); break;
+            case TokenType::DoubleColon:
+                {
+                    auto tp = parseType(precedence);
+                    tp->name = t->name + "::" + tp->name;
+                    t = std::move(tp);
+                }
             default: /*unreachable*/;
             }
         }

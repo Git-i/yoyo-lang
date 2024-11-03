@@ -4,6 +4,14 @@
 #include <fn_type.h>
 namespace Yoyo
 {
+    struct ForwardDeclaratorPass2
+    {
+        Module* md;
+        //to prevent infinitely looping we stop when we see a name already here
+        std::vector<Type> encountered_names;
+        bool operator()(ClassDeclaration* decl);
+        bool operator()(Statement*);
+    };
     FunctionSignature* Module::findFunction(const std::string& name)
     {
         if(auto fn = functions.find(name); fn != functions.end())
@@ -13,7 +21,7 @@ namespace Yoyo
         return nullptr;
     }
 
-    llvm::Type* Module::ToLLVMType(const Type& type, bool is_ref)
+    llvm::Type* Module::ToLLVMType(const Type& type, bool is_ref, const std::vector<Type>& disallowed_types)
     {
         auto& context = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
         if(type.is_integral())
@@ -37,15 +45,25 @@ namespace Yoyo
             std::vector<llvm::Type*> args;
             for(auto& subtype : type.subtypes)
             {
-                auto ty = ToLLVMType(subtype, false);
+                auto ty = ToLLVMType(subtype, false, disallowed_types);
                 if(!ty) return nullptr;
                 args.push_back(ty);
             }
             return llvm::StructType::get(context, args);
         }
-        //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
 
-        if(auto t = classes.find(type.name); t != classes.end()) return std::get<1>(t->second);
+        //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
+        if(type.is_lambda()) return nullptr;
+        if(auto t = type.module->classes.find(type.name); t != classes.end())
+        {
+            auto& ptr = std::get<1>(t->second);
+            if(ptr) return ptr;
+            //class is not yet defined but is recursive
+            if(auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
+                return nullptr;
+            ForwardDeclaratorPass2{type.module, disallowed_types}(std::get<2>(t->second));
+            return ptr;
+        }
         return nullptr;
     }
 }

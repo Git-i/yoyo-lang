@@ -568,7 +568,7 @@ namespace Yoyo
                 return var->second.first;
             }
         }
-        if(auto fn = irgen->code->getFunction(name))
+        if(auto fn = irgen->code->getFunction(irgen->module->module_hash + name))
         {
             return fn;
         }
@@ -744,7 +744,7 @@ namespace Yoyo
         ExpressionTypeChecker type_checker{irgen};
         auto t = std::visit(type_checker, op->callee->toVariant());
         if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(); return nullptr;}
-        if(!std::visit(type_checker, op->toVariant()))
+        if(!type_checker(op))
             {irgen->error(); return nullptr;}
         bool is_lambda = t->is_lambda();
         auto fn = reinterpret_cast<FunctionType&>(*t);

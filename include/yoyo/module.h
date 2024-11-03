@@ -19,6 +19,6 @@ namespace Yoyo
         std::string module_hash;
         FunctionSignature* findFunction(const std::string& name);
 
-        llvm::Type* ToLLVMType(const Type& type, bool is_ref);
+        llvm::Type* ToLLVMType(const Type& type, bool is_ref, const std::vector<Type>& disallowed_types);
     };
 }

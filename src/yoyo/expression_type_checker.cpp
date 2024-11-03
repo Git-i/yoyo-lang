@@ -269,7 +269,7 @@ namespace Yoyo
                 return t;
             }
         }
-        if(auto fn = irgen->module->findFunction(name))
+        if(auto fn = irgen->module->findFunction(irgen->module->module_hash + name))
         {
             return FunctionType{*fn, false};
         }
