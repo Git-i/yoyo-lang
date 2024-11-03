@@ -186,8 +186,9 @@ namespace Yoyo
                 {
                     //accessing an l-value struct yields an l-value
                     return Type{
-                        .name = var->type.name, .subtypes = var->type.subtypes, .is_mutable = lhs.is_mutable,
-                        .is_lvalue = lhs.is_lvalue
+                        .name = var->type.name, .subtypes = var->type.subtypes, .module = var->type.module,
+                        .is_mutable = lhs.is_mutable,
+                        .is_lvalue = lhs.is_lvalue,
                     };
                 }
                 if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)

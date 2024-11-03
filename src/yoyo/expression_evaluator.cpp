@@ -5,6 +5,16 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    auto findType(const std::string& name, IRGenerator* irgen, Module* mod) ->
+        std::tuple<std::string, llvm::StructType*, ClassDeclaration*>*
+    {
+        if(mod == irgen->module) return irgen->findType(name);
+        if(mod->classes.contains(name))
+        {
+            return &mod->classes.at(name);
+        }
+        return nullptr;
+    }
     int64_t getIntMinOf(const Type& type)
     {
         if(type.is_signed_integral())
@@ -187,7 +197,7 @@ namespace Yoyo
         //overloaded with the __copy method for classes
         //__copy is always (this: inout, other: in This) -> void
         //copy is mangled as __class__<source>____copy
-        auto l_data = irgen->findType(left_type.name);
+        auto l_data = findType(left_type.name, irgen, left_type.module);
         if(!l_data) {irgen->error(); return nullptr;}
         std::string cp_name = std::get<0>(*l_data) + "__copy";
         auto cp_fn = irgen->code->getFunction(cp_name);
@@ -579,7 +589,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(BinaryOperation* op)
     {
         auto type_checker = ExpressionTypeChecker{irgen};
-        auto res = std::visit(type_checker, op->toVariant());
+        auto res =  type_checker(op);
         if(!res) {irgen->error(); return nullptr;}
 
         auto l_as_var = op->lhs->toVariant();

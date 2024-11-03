@@ -131,6 +131,11 @@ namespace Yoyo
 
     ClassDeclaration* Type::get_decl_if_class(IRGenerator* gen) const
     {
+        if(module && module != gen->module)
+        {
+            if(module->classes.contains(name))
+                return std::get<2>(module->classes.at(name));
+        }
         for(size_t i = gen->types.size(); i > 0; i--)
         {
             auto idx = i - 1;
