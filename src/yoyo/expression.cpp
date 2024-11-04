@@ -75,6 +75,12 @@ namespace Yoyo
     {
         return this;
     }
+
+    ExpressionVariant ObjectLiteral::toVariant()
+    {
+        return this;
+    }
+
     ExpressionVariant ScopeOperation::toVariant()
     {
         return this;

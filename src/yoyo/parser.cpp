@@ -446,7 +446,32 @@ namespace Yoyo
         }
         return std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods));
     }
-
+    //For this fn, the type has already been discarded
+    /// Syntax:
+    /// {.name1 = value1, .name2 = value2}
+    std::unordered_map<std::string, std::unique_ptr<Expression>> Parser::parseObjectLiteral()
+    {
+        Get(); //discard '{'
+        if(discard(TokenType::RCurly)) return {}; //empty initialization, should this be allowed!??
+        std::unordered_map<std::string, std::unique_ptr<Expression>> result;
+        while(!discard(TokenType::RCurly))
+        {
+            if(!discard(TokenType::Dot)) error("Expected '.'", Peek());
+            auto iden = Peek();
+            if(!iden) error("Invalid Token", iden);
+            if(iden->type != TokenType::Identifier) error("Expected identifier", iden);
+            std::string name(iden->text);
+            if(result.contains(name)) error("Duplicate initialization of " + name, iden);
+            result[name] = parseExpression(0);
+            //must be a comma or '}' and trailing commas are allowed
+            if(!discard(TokenType::Comma))
+            {
+                if(!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());
+                else break;
+            }
+        }
+        return result;
+    }
     std::unique_ptr<Statement> Parser::parseDeclaration()
     {
         if(isTopLevelDeclaration())

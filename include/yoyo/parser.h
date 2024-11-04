@@ -17,6 +17,7 @@ namespace Yoyo
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
         std::unique_ptr<Statement> parseVariableDeclaration(Token identifier);
         std::unique_ptr<Statement> parseClassDeclaration(Token identifier);
+        std::unordered_map<std::string, std::unique_ptr<Expression>> parseObjectLiteral();
         std::unique_ptr<Statement> parseDeclaration();
         std::unique_ptr<Statement> parseReturnStatement();
         std::unique_ptr<Statement> parseExpressionStatement();

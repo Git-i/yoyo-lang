@@ -3,6 +3,7 @@
 
 #include "token.h"
 #include <memory>
+#include <utility>
 #include <vector>
 #include <variant>
 
@@ -29,6 +30,7 @@ namespace Yoyo
     class IntegerLiteral;
     class LambdaExpression;
     class ScopeOperation;
+    class ObjectLiteral;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -45,7 +47,8 @@ namespace Yoyo
         CallOperation*,
         SubscriptOperation*,
         LambdaExpression*,
-        ScopeOperation*>;
+        ScopeOperation*,
+        ObjectLiteral*>;
     class Expression {
     public:
         virtual ~Expression() = default;
@@ -155,6 +158,15 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         std::string hash;
         LambdaExpression(std::vector<std::pair<std::string, ParamType>> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
+        ExpressionVariant toVariant() override;
+    };
+    class ObjectLiteral : public Expression
+    {
+    public:
+        Type t;
+        std::unordered_map<std::string, std::unique_ptr<Expression>> values;
+        ObjectLiteral(Type t, std::unordered_map<std::string, std::unique_ptr<Expression>> values)
+            : t(std::move(t)), values(std::move(values)) {}
         ExpressionVariant toVariant() override;
     };
     class ScopeOperation : public Expression

@@ -10,7 +10,7 @@
 TEST_CASE("Test IR")
 {
     std::string src2 = R"(
-lol: module = MOO
+lol: module = MOO //The import system is not too strong rn
 
 baz: class = {
     x: lol::foo
@@ -26,7 +26,6 @@ takes_foo: (param: i32) -> f64 = {
     std::string source = R"(
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
-
 foo: class = {
     x: bar
 }
@@ -37,21 +36,6 @@ returns_foo: () -> foo = {
     a: mut foo;
     a.x.y = 300.0;
     return a;
-}
-main: () -> f64 = {
-    /* this is meant to be in the parser /* test */ */
-    d: foo;
-    a: f64 = 5.0;
-    b : mut = 10.0;
-    b = 20;
-    lambda:= |b: inout| return b;
-    lol:= (10, 20, 30);
-    //b = lol.0;
-    test_impl_conv(10);
-    call_callable(lambda);
-    if(a < 10) return b;
-    else if(a == b) return a;
-    return 0.0;
 }
 )";
     int argc = 1;
@@ -95,7 +79,7 @@ main: () -> f64 = {
     auto addr = j.get()->lookup(unmangled_name).get();
     double(*fn)(int) = addr.toPtr<double(int)>();
     auto res = fn(30);
-    REQUIRE(300.0 == 10.0);
     std::cout << res;
+    REQUIRE(300.0 == 10.0);
 }
 

@@ -245,6 +245,7 @@ namespace Yoyo
             error();
             return;
         }
+
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc = nullptr;

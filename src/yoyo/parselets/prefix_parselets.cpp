@@ -27,6 +27,12 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> NameParselet::parse(Parser& parser, Token tk)
     {
+        auto curly = parser.Peek();
+        if(curly && curly->type == TokenType::LCurly)
+        {
+            auto body = parser.parseObjectLiteral();
+            return std::make_unique<ObjectLiteral>(Type{.name = std::string{tk.text}}, std::move(body));
+        }
         return std::make_unique<NameExpression>(tk);
     }
     std::unique_ptr<Expression> GroupParselet::parse(Parser& parser, Token tk)

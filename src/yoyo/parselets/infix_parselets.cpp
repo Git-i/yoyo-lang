@@ -46,7 +46,8 @@ namespace Yoyo
         }
         auto expr = parser.parseExpression(prec);
         auto expr_as_name = dynamic_cast<NameExpression*>(expr.get());
-        if(!expr_as_name)
+        auto expr_as_init = dynamic_cast<ObjectLiteral*>(expr.get());
+        if(!expr_as_name && !expr_as_init)
         {
             parser.error("Right of '::' must be a name", tk);
             return nullptr;
@@ -54,10 +55,21 @@ namespace Yoyo
 
         if(as_name)
         {
+            if(expr_as_init)
+            {
+                expr_as_init->t.name = std::string{as_name->token.text} + "::" + expr_as_init->t.name;
+                return expr;
+            }
             return std::make_unique<ScopeOperation>(Type{.name= std::string{as_name->token.text}}, "", std::string{expr_as_name->token.text});
         }
         if(as_scope)
         {
+            if(expr_as_init)
+            {
+                std::string prefix = as_scope->scope.empty() ? "" : as_scope->scope + "::";
+                expr_as_init->t.name =  prefix + as_scope->type.name + "::" + as_scope->name + "::" + expr_as_init->t.name;
+                return expr;
+            }
             as_scope->scope += "::" + as_scope->type.name;
             as_scope->type.name = as_scope->name;
             as_scope->name = std::string{expr_as_name->token.text};
