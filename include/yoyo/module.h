@@ -1,4 +1,5 @@
 #pragma once
+
 #include <type.h>
 #include <unordered_map>
 #include <llvm/IR/Module.h>
@@ -7,6 +8,7 @@
 
 namespace Yoyo
 {
+    class Engine;
     struct Module
     {
         std::unique_ptr<llvm::Module> code;

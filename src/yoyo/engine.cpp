@@ -112,6 +112,17 @@ namespace Yoyo
         //delete static_cast<llvm::LLVMContext*>(llvm_context);
     }
 
+    AppModule* Engine::addAppModule(const std::string& name)
+    {
+        auto& ctx = *static_cast<llvm::LLVMContext*>(llvm_context);
+        if(modules.contains(name)) return nullptr;
+        auto& md = modules[name];
+        md = std::make_unique<AppModule>();
+        md->engine = this;
+        md->code = std::make_unique<llvm::Module>(name, ctx);
+        return reinterpret_cast<AppModule*>(md.get());
+    }
+
     void Engine::addModule(const std::string& module_name, std::string source)
     {
         auto p = new Parser (std::move(source));

@@ -7,19 +7,27 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
+
+int32_t func(int32_t arg)
+{
+    std::cout << "Called from yoyo: " << arg << std::endl;
+    return 0;
+}
 TEST_CASE("Test IR")
 {
     std::string src2 = R"(
 lol: module = MOO //The import system is not too strong rn
-
+app: module = APP
 baz: class = {
-    x: lol::foo
+    x: lol::foo,
+    y: i32 & f64
 }
 
 takes_foo: (param: i32) -> f64 = {
+    app::func(10);
+    damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
-    //damm:= baz{ .x = lol::returns_foo() };
-    damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
+    //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
 }
 )";
@@ -38,11 +46,25 @@ returns_foo: () -> foo = {
     return a;
 }
 )";
+    /*
+     * GetComponent: (this)::<T> -> ref T;
+     * e: Entity;
+     * with transform as e.GetComponent::<TransformComponent>() {
+     *  //stuff you do with transform
+     *     transform.x = 10;
+     *     transform.y = 20;
+     * }
+     * APP120__class_entity_GetComponent__APP120TransformComponent() {
+     *
+     * }
+     */
     int argc = 1;
     const char* argv[] = {"foo"};
     const char** lol = argv;
 
     Yoyo::Engine engine;
+    auto md = engine.addAppModule("APP");
+    md->addFunction("(x: i32) -> i32", (void*)&func, "func");
     engine.addModule("MOO", source);
     engine.addModule("MOO2", src2);
     engine.compile();

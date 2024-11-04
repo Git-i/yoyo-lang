@@ -2,6 +2,8 @@
 
 #include <type.h>
 #include <fn_type.h>
+#include <statement.h>
+#include "engine.h"
 namespace Yoyo
 {
     struct ForwardDeclaratorPass2
