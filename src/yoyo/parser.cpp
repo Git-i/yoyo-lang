@@ -462,6 +462,8 @@ namespace Yoyo
             if(iden->type != TokenType::Identifier) error("Expected identifier", iden);
             std::string name(iden->text);
             if(result.contains(name)) error("Duplicate initialization of " + name, iden);
+            Get(); //get the identifier
+            if(!discard(TokenType::Equal)) error("Expected '='", Peek());
             result[name] = parseExpression(0);
             //must be a comma or '}' and trailing commas are allowed
             if(!discard(TokenType::Comma))

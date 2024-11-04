@@ -18,8 +18,8 @@ baz: class = {
 
 takes_foo: (param: i32) -> f64 = {
     lol::test_impl_conv(param);
-    damm: mut baz;
-    damm.x = lol::returns_foo();
+    //damm:= baz{ .x = lol::returns_foo() };
+    damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
 }
 )";
@@ -80,6 +80,6 @@ returns_foo: () -> foo = {
     double(*fn)(int) = addr.toPtr<double(int)>();
     auto res = fn(30);
     std::cout << res;
-    REQUIRE(300.0 == 10.0);
+    REQUIRE(res == 10.0);
 }
 

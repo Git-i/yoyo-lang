@@ -917,4 +917,28 @@ namespace Yoyo
 
         return nullptr;
     }
+
+    llvm::Value* ExpressionEvaluator::operator()(ObjectLiteral* lit)
+    {
+        auto t = ExpressionTypeChecker{irgen}(lit);
+        if(!t) {irgen->error();return nullptr;}
+        auto as_llvm_type = irgen->ToLLVMType(*t, false);
+        auto decl = t->get_decl_if_class(irgen);
+        auto value = irgen->Alloca("obj_lit",as_llvm_type);
+
+        auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+        for(size_t i = 0; i < decl->vars.size(); i++)
+        {
+            auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i);
+            auto& var = decl->vars[i];
+            auto val_ty = std::visit(ExpressionTypeChecker{irgen, var.type}, lit->values[var.name]->toVariant());
+            auto val = std::visit(ExpressionEvaluator{irgen, var.type}, lit->values[var.name]->toVariant());
+
+            auto mem_ptr = irgen->builder->CreateGEP(as_llvm_type, value, {zero_const, idx_const});
+            auto as_mut = var.type;
+            as_mut.is_mutable = true; as_mut.is_lvalue = true;
+            doAssign(mem_ptr, val, as_mut, *val_ty);
+        }
+        return value;
+    }
 }

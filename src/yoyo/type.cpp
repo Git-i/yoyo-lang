@@ -135,6 +135,7 @@ namespace Yoyo
         {
             if(module->classes.contains(name))
                 return std::get<2>(module->classes.at(name));
+            return nullptr;
         }
         for(size_t i = gen->types.size(); i > 0; i--)
         {

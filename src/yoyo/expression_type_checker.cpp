@@ -331,6 +331,26 @@ namespace Yoyo
         return checkNameWithin(md, decl,scp->name);
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(ObjectLiteral* obj)
+    {
+        obj->t.saturate(irgen->module);
+        auto decl = obj->t.get_decl_if_class(irgen);
+        if(!decl) return std::nullopt;
+        if(obj->values.size() != decl->vars.size()) return std::nullopt;
+        //TODO: access specifier checking
+        for(auto& var : decl->vars)
+        {
+            if(!obj->values.contains(var.name)) return std::nullopt;
+            auto& expr = obj->values.at(var.name);
+            auto expr_t = std::visit(ExpressionTypeChecker{irgen, var.type}, expr->toVariant());
+            if(!expr_t) return std::nullopt;
+            auto as_mut = var.type;
+            as_mut.is_mutable = true; as_mut.is_lvalue = true;
+            if(!as_mut.is_assignable_from(*expr_t)) return std::nullopt;
+        }
+        return obj->t;
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals
