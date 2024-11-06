@@ -383,6 +383,52 @@ namespace Yoyo
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
         return std::make_unique<VariableDeclaration>(identifier, type, std::move(init), is_mut);
     }
+
+    std::unique_ptr<Statement> Parser::parseEnumDeclaration(Token identifier)
+    {
+        //Unspecified values cannot equal to specified values unlike in c++
+        std::vector<int32_t> usedIntegers;
+        std::unordered_map<std::string, int32_t> values;
+        int32_t nextValue = 0;
+        Get(); //skip "enum"
+        if(!discard(TokenType::Equal)) error("Expected '='", Peek());
+        if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
+        while(!discard(TokenType::RCurly))
+        {
+            auto name_tk = Get();
+            if(name_tk->type != TokenType::Identifier) { error("Expected identifier", Peek()); continue; }
+            std::string name(name_tk->text);
+            if(values.contains(name)) error("Duplicate enum values", Peek());
+
+            int32_t value = nextValue;
+            bool is_explicit_value = false;
+            //explicit value specified
+            if(discard(TokenType::Equal))
+            {
+                auto value_tk = Peek();
+                if(value_tk->type != TokenType::IntegerLiteral) { error("Expected integer", Peek()); }
+                else
+                {
+                    is_explicit_value = true;
+                    value = std::stoi(std::string{value_tk->text});
+                }
+            }
+            if(is_explicit_value)
+            {
+                auto pos = std::ranges::find(usedIntegers, value);
+                while(pos != usedIntegers.end())
+                    pos = std::ranges::find(usedIntegers, ++value);
+            }
+            nextValue = value + 1;
+            values[name] = value;
+            if(!discard(TokenType::Comma))
+            {
+                if(!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());
+                else break;
+            }
+        }
+        return std::make_unique<EnumDeclaration>(identifier, std::move(values));
+    }
     std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier)
     {
         std::vector<ClassMethod> methods;

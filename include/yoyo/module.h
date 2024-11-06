@@ -1,5 +1,6 @@
 #pragma once
 
+#include <statement.h>
 #include <type.h>
 #include <unordered_map>
 #include <llvm/IR/Module.h>
@@ -14,6 +15,7 @@ namespace Yoyo
         std::unique_ptr<llvm::Module> code;
         std::unordered_map<std::string, FunctionSignature> functions;
         std::unordered_map<std::string, std::tuple<std::string,llvm::StructType*, ClassDeclaration*>> classes;
+        std::unordered_map<std::string, EnumDeclaration*> enums;
         std::unordered_map<std::string, Type> aliases;
         std::unordered_map<std::string, Module*> modules;
 

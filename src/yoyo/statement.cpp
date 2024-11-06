@@ -42,10 +42,9 @@ namespace Yoyo
     {
         return this;
     }
-
-
-
-
-
+    StatementVaraint EnumDeclaration::toVariant()
+    {
+        return this;
+    }
 
 }

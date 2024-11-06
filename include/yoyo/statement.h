@@ -18,6 +18,7 @@ namespace Yoyo
     class ClassDeclaration;
     class ForStatement;
     class ModuleImport;
+    class EnumDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -28,7 +29,8 @@ namespace Yoyo
         FunctionDeclaration*,
         VariableDeclaration*,
         ExpressionStatement*,
-        ModuleImport*> StatementVaraint;
+        ModuleImport*,
+        EnumDeclaration*> StatementVaraint;
     class Statement
     {
     public:
@@ -126,5 +128,13 @@ namespace Yoyo
             : iterable(std::move(expr)), names(std::move(names)), body(std::move(body)) {}
         StatementVaraint toVariant() override;
     };
-
+    class EnumDeclaration : public Statement
+    {
+    public:
+        Token identifier;
+        std::unordered_map<std::string, int32_t> values;
+        EnumDeclaration(Token iden, std::unordered_map<std::string, int32_t> vals)
+            : identifier(iden), values(std::move(vals)) {}
+        StatementVaraint toVariant() override;
+    };
 }

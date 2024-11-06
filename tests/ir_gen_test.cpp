@@ -32,6 +32,14 @@ takes_foo: (param: i32) -> f64 = {
 }
 )";
     std::string source = R"(
+newton_method: (f: called (:f64)->f64, df: called (:f64)->f64, tol: f64, a: f64) -> f64 = {
+
+}
+main: () = {
+    val: f64 = std::input().get::<f64>();
+    sqrt_val:= newton_method(|val|(x: f64) return x*x - val;, ||(x: f64) return 2*x; 0.005, 2);
+    std::print("Square root of ${val} is approx. ${sqrt_val}");
+}
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
 foo: class = {
@@ -78,6 +86,9 @@ returns_foo: () -> foo = {
         std::cout <<  str << std::flush;
         mod.second->code->print(llvm::outs(), nullptr);
         std::cout << "\033[0m" << std::flush;
+        auto lt = mod.second->code->getDataLayout().getStructLayout(std::get<1>(mod.second->classes[""]));
+        uint64_t l = lt->getElementOffset(0);
+        
         if(verifyModule(*mod.second->code, &llvm::errs())) raise(SIGTRAP);
     }
     llvm::InitLLVM llvm(argc, lol);
