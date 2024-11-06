@@ -27,10 +27,13 @@ values: enum = {
     Two = 2
 }
 
+takes_enum: (val: values) = return;
+
 takes_foo: (param: i32) -> f64 = {
     damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
     val:= values::One;
+    takes_enum(values::One);
     //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
 }
