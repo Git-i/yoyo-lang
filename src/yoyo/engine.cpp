@@ -37,6 +37,11 @@ namespace Yoyo
             md->modules[imp->module_name] = md->engine->modules[imp->module_path].get();
             return true;
         }
+        bool operator()(EnumDeclaration* decl)
+        {
+            md->enums[std::string{decl->identifier.text}] = decl;
+            return true;
+        }
         bool operator()(Statement*) {return false;};
     };
     struct ForwardDeclaratorPass2

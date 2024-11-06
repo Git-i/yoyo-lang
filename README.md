@@ -27,7 +27,7 @@ langauge, written in (and primarily for) C++20.
 - [ ] Structs
 - [ ] Interfaces
 - [ ] Schemes
-- [ ] Enums
+- [x] Enums
 - [ ] Unions
 
 *With statement is discussed under the memory model

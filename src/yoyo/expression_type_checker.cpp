@@ -244,6 +244,7 @@ namespace Yoyo
         case Ampersand: return checkBitAnd(*lhs, *rhs);
         case Dot: return checkDot(expr, *lhs, irgen);
         case Equal: return checkAssign(*lhs, *rhs);
+        default: ;//TODO
         }
         return std::nullopt;
     }
@@ -251,6 +252,7 @@ namespace Yoyo
     std::optional<FunctionType> ExpressionTypeChecker::operator()(LogicalOperation*)
     {
         //TODO
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(NameExpression* expr)
@@ -283,12 +285,12 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(PostfixOperation*)
     {
-
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(SubscriptOperation*)
     {
-
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(LambdaExpression* lmd)
@@ -315,20 +317,24 @@ namespace Yoyo
         }
         ClassDeclaration* decl = nullptr;
         if(md->modules.contains(scp->type.name))
-        {
             md = md->modules.at(scp->type.name);
-        }
         else if(md->classes.contains(scp->type.name))
-        {
             decl = std::get<2>(md->classes.at(scp->type.name));
+        else if(md->enums.contains(scp->type.name))
+        {
+            if(!md->enums.at(scp->type.name)->values.contains(scp->name)) return std::nullopt;
+            Type ty = scp->type;
+            ty.module = md;
+            return ty;
         }
+
         //check types in scope
         else if(md == irgen->module)
         {
             //TODO
         }
 
-        return checkNameWithin(md, decl,scp->name);
+        return checkNameWithinClassOrModule(md, decl,scp->name);
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ObjectLiteral* obj)
@@ -388,7 +394,7 @@ namespace Yoyo
         return std::visit(*this, expr->toVariant());
     }
 
-    std::optional<FunctionType> ExpressionTypeChecker::checkNameWithin(Module* module, ClassDeclaration* type,
+    std::optional<FunctionType> ExpressionTypeChecker::checkNameWithinClassOrModule(Module* module, ClassDeclaration* type,
         std::string_view name)
     {
         if(type)
@@ -414,6 +420,7 @@ namespace Yoyo
             ret_val.module = module;
             return std::move(ret_val);
         }
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral* lit)

@@ -17,29 +17,25 @@ TEST_CASE("Test IR")
 {
     std::string src2 = R"(
 lol: module = MOO //The import system is not too strong rn
-app: module = APP
 baz: class = {
     x: lol::foo,
     y: i32 & f64
 }
 
+values: enum = {
+    One = 1,
+    Two = 2
+}
+
 takes_foo: (param: i32) -> f64 = {
-    app::func(10);
     damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
+    val:= values::One;
     //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
 }
 )";
     std::string source = R"(
-newton_method: (f: called (:f64)->f64, df: called (:f64)->f64, tol: f64, a: f64) -> f64 = {
-
-}
-main: () = {
-    val: f64 = std::input().get::<f64>();
-    sqrt_val:= newton_method(|val|(x: f64) return x*x - val;, ||(x: f64) return 2*x; 0.005, 2);
-    std::print("Square root of ${val} is approx. ${sqrt_val}");
-}
 call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
 foo: class = {
@@ -86,8 +82,6 @@ returns_foo: () -> foo = {
         std::cout <<  str << std::flush;
         mod.second->code->print(llvm::outs(), nullptr);
         std::cout << "\033[0m" << std::flush;
-        auto lt = mod.second->code->getDataLayout().getStructLayout(std::get<1>(mod.second->classes[""]));
-        uint64_t l = lt->getElementOffset(0);
         
         if(verifyModule(*mod.second->code, &llvm::errs())) raise(SIGTRAP);
     }

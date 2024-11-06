@@ -63,7 +63,7 @@ namespace Yoyo
     }
     llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)
     {
-        bool use_sret = !sig.returnType.is_primitive();
+        bool use_sret = sig.returnType.should_sret();
         std::vector<llvm::Type*> args(sig.parameters.size() + use_sret);
         //Non primitives are passed via pointers and returned via pointers(sret)
         auto return_t = ToLLVMType(sig.returnType, sig.return_is_ref);
@@ -119,7 +119,7 @@ namespace Yoyo
         return_t = decl->signature.returnType;
         auto return_as_llvm_type = ToLLVMType(return_t, false);
         return_t.is_mutable = true;
-        bool uses_sret = !decl->signature.returnType.is_primitive();
+        bool uses_sret = decl->signature.returnType.should_sret();
         if(uses_sret)
             func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
@@ -230,6 +230,7 @@ namespace Yoyo
         }
         if(src.name == "flit") return Type{.name = "f64"};
         //unreachble
+        return Type{};
     }
     void IRGenerator::operator()(VariableDeclaration* decl)
     {
@@ -255,7 +256,7 @@ namespace Yoyo
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
             //instead of copying we move
-            if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive() && expr_type->is_equal(*type)))
+            if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive() && !expr_type->is_enum() && expr_type->is_equal(*type)))
             {
                 init->setName(decl->identifier.text);
                 alloc = init;
@@ -358,7 +359,7 @@ namespace Yoyo
 
     bool canReturn(Statement* stat)
     {
-        if(auto res = dynamic_cast<ReturnStatement*>(stat))
+        if(dynamic_cast<ReturnStatement*>(stat))
             return true;
         if(auto res = dynamic_cast<IfStatement*>(stat))
             return canReturn(res->then_stat.get()) || (res->else_stat && canReturn(res->else_stat.get()));
@@ -382,8 +383,10 @@ namespace Yoyo
         if(auto res = dynamic_cast<ReturnStatement*>(stat))
             return std::visit(ExpressionTypeChecker{this}, res->expression->toVariant());
         if(auto res = dynamic_cast<IfStatement*>(stat))
+        {
             if(canReturn(res->then_stat.get())) return inferReturnType(res->then_stat.get());
             else return inferReturnType(res->else_stat.get());
+        }
         if(auto res = dynamic_cast<WhileStatement*>(stat))
             return inferReturnType(res->body.get());
         if(auto res = dynamic_cast<BlockStatement*>(stat))

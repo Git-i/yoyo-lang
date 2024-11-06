@@ -53,6 +53,10 @@ namespace Yoyo
 
         [[nodiscard]] bool is_boolean() const;
 
+        [[nodiscard]] bool is_enum() const;
+
+        [[nodiscard]] bool should_sret() const;
+
         [[nodiscard]] bool is_integral() const;
 
         [[nodiscard]] bool is_floating_point() const;

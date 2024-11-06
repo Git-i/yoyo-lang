@@ -43,6 +43,7 @@ namespace Yoyo
         void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
+        void operator()(EnumDeclaration*){}; //TODO
         void operator()(ModuleImport*){};
 
         void error();
@@ -69,7 +70,8 @@ namespace Yoyo
         IRGenerator* irgen;
         std::optional<Type> target;
     public:
-        std::optional<FunctionType> checkNameWithin(Module*, ClassDeclaration* type, std::string_view name);
+        std::optional<FunctionType> checkNameWithinClassOrModule(Module*, ClassDeclaration* type, std::string_view name);
+        std::optional<FunctionType> checkNameWithinEnum(EnumDeclaration* type, std::string_view name);
         explicit ExpressionTypeChecker(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
         /// We return FunctionType because it's a subclass of Type and some

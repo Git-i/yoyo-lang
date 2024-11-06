@@ -193,6 +193,10 @@ namespace Yoyo
             }
             return nullptr;
         }
+        if(left_type.is_enum())
+        {
+            return irgen->builder->CreateStore(rhs, lhs);
+        }
         //Copy for non primitives is memberwise, but can be explicitly
         //overloaded with the __copy method for classes
         //__copy is always (this: inout, other: in This) -> void
@@ -624,6 +628,7 @@ namespace Yoyo
 
         case Equal:
                 return doAssign(std::visit(LValueEvaluator{irgen}, l_as_var), std::visit(*this, r_as_var), *left_t, *right_t);
+        default:; //TODO
         }
         return nullptr;
     }
@@ -706,8 +711,7 @@ namespace Yoyo
         auto ctx = irgen->builder->CreateLoad(ptr_ty, ctx_ptr, "fn_ctx");
         auto fn = irgen->builder->CreateLoad(ptr_ty, fn_ptr, "fn_ptr");
 
-        bool uses_sret = false;
-        if(!left_t.signature->returnType.is_primitive()) uses_sret = true;
+        bool uses_sret = left_t.signature->returnType.should_sret();
         std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
         auto args_w_lambda = args;
         args_w_lambda.push_back(ctx);
@@ -879,7 +883,7 @@ namespace Yoyo
     {
         auto ty = ExpressionTypeChecker{irgen}(op);
         if(!ty) {irgen->error();return nullptr;}
-        //either a function or global var
+        //either a function or global var or enum
         if(ty->is_function())
         {
             if(ty->module == irgen->module)
@@ -901,7 +905,7 @@ namespace Yoyo
                     auto class_entry = ty->module->classes.at(op->type.name);
                     mangled_name = std::get<0>(class_entry) + op->name;
                 }
-                mangled_name = ty->module->module_hash + op->name;
+                else mangled_name = ty->module->module_hash + op->name;
                 auto fn = irgen->code->getFunction(mangled_name);
                 if(fn) return fn;
                 fn = llvm::Function::Create(irgen->ToLLVMSignature(ty->sig), llvm::GlobalValue::ExternalLinkage,
@@ -914,7 +918,11 @@ namespace Yoyo
                 return fn;
             }
         }
-
+        if(ty->is_enum())
+        {
+            auto decl = ty->module->enums[op->type.name];
+            return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), decl->values.at(op->name));
+        }
         return nullptr;
     }
 

@@ -6,6 +6,7 @@
 #include "expression.h"
 #include "class_entry.h"
 #include <optional>
+#include <cstdint>
 namespace Yoyo
 {
     class ExpressionStatement;

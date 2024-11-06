@@ -49,7 +49,7 @@ namespace Yoyo
             if(!other.is_integral()) return false;
             return *float_width() > *other.integer_width();
         }
-        if((name == "__called_fn") && other.is_function() || other.is_lambda())
+        if(name == "__called_fn" && (other.is_function() || other.is_lambda()))
         {
             const auto& as_fn = reinterpret_cast<const FunctionType&>(other);
             if(signature->parameters.size() != as_fn.sig.parameters.size()) return false;
@@ -185,6 +185,17 @@ namespace Yoyo
     bool Type::is_boolean() const
     {
         return name == "bool";
+    }
+
+    bool Type::is_enum() const
+    {
+        if(!module) return false;
+        return module->enums.contains(name);
+    }
+
+    bool Type::should_sret() const
+    {
+        return !is_primitive() && !is_enum();
     }
 
     bool Type::is_integral() const

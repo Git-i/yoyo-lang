@@ -113,7 +113,7 @@ namespace Yoyo
         case TokenType::LParen: return parseFunctionDeclaration(iden.value());
         case TokenType::Class: return parseClassDeclaration(iden.value());
         case TokenType::Struct:;//TODO
-        case TokenType::Enum:;//TODO
+        case TokenType::Enum: return parseEnumDeclaration(iden.value());
         case TokenType::EnumFlag:;//TODO
         case TokenType::Union:;//TODO
         case TokenType::Module: return parseModuleImport(iden.value());
@@ -406,9 +406,14 @@ namespace Yoyo
             if(discard(TokenType::Equal))
             {
                 auto value_tk = Peek();
-                if(value_tk->type != TokenType::IntegerLiteral) { error("Expected integer", Peek()); }
+                if(value_tk->type != TokenType::IntegerLiteral)
+                {
+                    error("Expected integer", Peek());
+                    synchronizeTo({{TokenType::Comma, TokenType::RCurly}});
+                }
                 else
                 {
+                    Get();
                     is_explicit_value = true;
                     value = std::stoi(std::string{value_tk->text});
                 }

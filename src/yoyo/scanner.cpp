@@ -170,7 +170,7 @@ namespace Yoyo {
     void Scanner::handleLineComment()
     {
         while(!IsEof() && Peek() != '\n') std::ignore = Get();
-        if(!IsEof()) Get(); //discard the new-line
+        if(!IsEof()) std::ignore = Get(); //discard the new-line
     }
 
     void Scanner::handleBlockComment()
@@ -210,7 +210,7 @@ namespace Yoyo {
         if(IsEof()) return false;
         if (Peek() == c)
         {
-            Get(); return true;
+            std::ignore = Get(); return true;
         }
         return false;
     }

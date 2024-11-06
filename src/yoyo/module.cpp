@@ -53,6 +53,10 @@ namespace Yoyo
             }
             return llvm::StructType::get(context, args);
         }
+        if(type.is_enum())
+        {
+            return llvm::Type::getInt32Ty(context);
+        }
 
         //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         if(type.is_lambda()) return nullptr;
