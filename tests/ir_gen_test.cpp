@@ -8,15 +8,18 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 
-int32_t func(int32_t arg)
+Yoyo::AppModule* md;
+
+int32_t func(void* arg)
 {
-    std::cout << "Called from yoyo: " << arg << std::endl;
+    std::cout << md->viewString(arg) << std::endl;
     return 0;
 }
 TEST_CASE("Test IR")
 {
     std::string src2 = R"(
 lol: module = MOO //The import system is not too strong rn
+app: module = APP
 baz: class = {
     x: lol::foo,
     y: i32 & f64
@@ -32,6 +35,7 @@ takes_foo: (param: i32) -> f64 = {
     damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
     val:= "test string";
+    app::func(val);
     //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
 }
@@ -68,8 +72,8 @@ returns_foo: () -> foo = {
     const char** lol = argv;
 
     Yoyo::Engine engine;
-    auto md = engine.addAppModule("APP");
-    md->addFunction("(x: i32) -> i32", (void*)&func, "func");
+    md = engine.addAppModule("APP");
+    md->addFunction("(x: str) -> i32", (void*)&func, "func");
     engine.addModule("MOO", source);
     engine.addModule("MOO2", src2);
     engine.compile();

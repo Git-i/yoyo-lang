@@ -84,7 +84,7 @@ namespace Yoyo
 
         if(module_path.size() == 1)
         {
-            if(!(is_builtin() || is_tuple() || name == "__called_fn"))
+            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn"))
                 module = src;
         }
         if(module_path.size() > 1)
