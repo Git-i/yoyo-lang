@@ -23,7 +23,36 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> StringLiteralParselet::parse(Parser& parser, Token tk)
     {
-        return std::make_unique<StringLiteral>(tk);
+        std::vector<std::variant<std::string, std::unique_ptr<Expression>>> values;
+        size_t pos = 0;
+        size_t current_pos = 0;
+        while(pos != tk.text.npos)
+        {
+            pos = tk.text.find_first_of('$', pos);
+            if(pos == tk.text.npos) break;
+            if(tk.text[pos + 1] != '{') { pos++; continue; }
+            if(current_pos != pos)
+            {
+                values.emplace_back(std::string{tk.text.begin() + current_pos, tk.text.begin() + pos});
+            }
+            pos += 2; //skip the ${
+            std::string str(tk.text.begin() + pos, tk.text.end());
+            Parser subparser(std::move(str));
+            auto expr = subparser.parseExpression(0);
+            if(subparser.failed()) parser.error("Failed to parse sub expression in string literal", std::nullopt);
+            auto rbrace = subparser.Peek(); // has to be a '}'
+            if(!rbrace) return nullptr;
+            if(rbrace->type != TokenType::RCurly) parser.error("Expected '}", rbrace);
+            auto offset = rbrace->text.data() - subparser.getSource().data();
+            values.emplace_back(std::move(expr));
+            pos += offset + 1;
+            current_pos = pos;
+        }
+        if(current_pos != tk.text.size() - 1)
+        {
+            values.emplace_back(std::string{tk.text.begin() + current_pos, tk.text.end()});
+        }
+        return std::make_unique<StringLiteral>(std::move(values));
     }
     std::unique_ptr<Expression> NameParselet::parse(Parser& parser, Token tk)
     {

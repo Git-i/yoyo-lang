@@ -88,8 +88,8 @@ namespace Yoyo
     };
     class StringLiteral : public Expression {
     public:
-        Token token;
-        explicit StringLiteral(const Token& tk) : token(tk) {}
+        std::vector<std::variant<std::string, std::unique_ptr<Expression>>> literal;
+        explicit StringLiteral(decltype(literal) value) : literal(std::move(value)) {}
         ExpressionVariant toVariant() override;
     };
     class NameExpression : public Expression {

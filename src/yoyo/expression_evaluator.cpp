@@ -570,11 +570,11 @@ namespace Yoyo
     //str is of type {ptr, int64, int64} for buffer, size, capacity
     llvm::Value* ExpressionEvaluator::operator()(StringLiteral* lit)
     {
-        auto gvar = irgen->builder->CreateGlobalString(lit->token.text);
+        auto gvar = irgen->builder->CreateGlobalString("lol");//lit->token.text);
         auto llvm_t = llvm::dyn_cast<llvm::StructType>(irgen->ToLLVMType(Type{"str"}, false));
         auto string = irgen->Alloca("str_lit", llvm_t);
         auto buffer_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
-        auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,lit->token.text.size());
+        auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,0);//lit->token.text.size());
 
         auto memory = irgen->Malloc("string_buffer", str_size);
         irgen->builder->CreateStore(

@@ -94,7 +94,7 @@ namespace Yoyo {
             case '(': return Token{TokenType::LParen};
             case ')': return Token{TokenType::RParen};
             case '{': return Token{TokenType::LCurly};
-            case '}': return Token{TokenType::RCurly};
+            case '}': return Token{TokenType::RCurly, {source.begin() + position -1, 1}};
             case '[': return Token{TokenType::LSquare};
             case ']': return Token{TokenType::RSquare};
             case '.': return Token{TokenType::Dot};
@@ -171,14 +171,36 @@ namespace Yoyo {
         return {TokenType::RealLiteral,
             std::string_view(source.begin() + number_begin, source.begin() + position)};
     }
-
-    Token Scanner::ScanStringLiteral()
+    std::optional<Token> Scanner::ScanStringLiteral()
     {
         size_t iden_begin = position;
-        while (!IsEof() && Peek() != '"') std::ignore = Get();
+        uint32_t num_open_braces = 0;
+        bool in_sub_string = false;
+        while (!IsEof())
+        {
+            char c = Get();
+            if(c == '"')
+            {
+                if(num_open_braces == 0) break;
+                in_sub_string = !in_sub_string;
+            }
+            else if(c == '$')
+            {
+                if(IsEof()) return std::nullopt;
+                if(Get() == '{') { num_open_braces++; in_sub_string = false; }
+            }
+            else if(c == '{')
+            {
+                if(num_open_braces && !in_sub_string) num_open_braces++;
+            }
+            else if(c == '}')
+            {
+                if(num_open_braces && !in_sub_string) num_open_braces--;
+            }
+        }
         auto view = std::string_view(source.begin() + iden_begin, source.begin() + position);
         std::ignore = Get();
-        return {TokenType::StringLiteral, view};
+        return Token{TokenType::StringLiteral, view};
     }
 
     void Scanner::handleLineComment()

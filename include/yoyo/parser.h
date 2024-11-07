@@ -39,6 +39,8 @@ namespace Yoyo
         std::optional<Token> Peek();
         std::optional<Token> Get();
         std::optional<FunctionSignature> parseFunctionSignature();
+        const Scanner& getScanner() const { return scn; };
+        const std::string& getSource() const { return source; };
     private:
         bool has_error = false;
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);

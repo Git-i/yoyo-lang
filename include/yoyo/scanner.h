@@ -10,6 +10,7 @@ namespace Yoyo {
 
         std::optional<Token> NextToken();
         size_t GetLine();
+        [[nodiscard]] size_t GetOffset() const {return position;}
     private:
         [[nodiscard]] char Get();
         [[nodiscard]] char Peek() const;
@@ -18,7 +19,7 @@ namespace Yoyo {
         [[nodiscard]] bool IsEof() const;
         [[nodiscard]] Token ScanIdentifier();
         [[nodiscard]] Token ScanNumber();
-        [[nodiscard]] Token ScanStringLiteral();
+        [[nodiscard]] std::optional<Token> ScanStringLiteral();
         void handleLineComment();
         void handleBlockComment();
         size_t position = 0;

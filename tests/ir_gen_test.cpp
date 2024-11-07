@@ -34,7 +34,7 @@ values: enum = {
 takes_foo: (param: i32) -> f64 = {
     damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
-    val:= "test string";
+    val:= "test string ${10} a";
     app::func(val);
     //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
@@ -73,7 +73,7 @@ returns_foo: () -> foo = {
 
     Yoyo::Engine engine;
     md = engine.addAppModule("APP");
-    md->addFunction("(x: str) -> i32", (void*)&func, "func");
+    md->addFunction("(x: str) -> i32", reinterpret_cast<void*>(&func), "func");
     engine.addModule("MOO", source);
     engine.addModule("MOO2", src2);
     engine.compile();
