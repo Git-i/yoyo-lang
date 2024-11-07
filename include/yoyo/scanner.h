@@ -18,6 +18,7 @@ namespace Yoyo {
         [[nodiscard]] bool IsEof() const;
         [[nodiscard]] Token ScanIdentifier();
         [[nodiscard]] Token ScanNumber();
+        [[nodiscard]] Token ScanStringLiteral();
         void handleLineComment();
         void handleBlockComment();
         size_t position = 0;

@@ -423,7 +423,7 @@ namespace Yoyo
         return std::nullopt;
     }
 
-    std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral* lit)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral*)
     {
         return Type{.name = "ilit", .subtypes = {}};
     }
@@ -473,7 +473,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(StringLiteral*)
     {
-        return Type{.name = "string", .subtypes = {}};
+        return Type{.name = "str", .subtypes = {}};
     }
 
 

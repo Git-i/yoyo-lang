@@ -567,7 +567,28 @@ namespace Yoyo
     {
         return llvm::ConstantFP::get(llvm::Type::getDoubleTy(irgen->context), lit->token.text);
     }
-    llvm::Value* ExpressionEvaluator::operator()(StringLiteral*) {}
+    //str is of type {ptr, int64, int64} for buffer, size, capacity
+    llvm::Value* ExpressionEvaluator::operator()(StringLiteral* lit)
+    {
+        auto gvar = irgen->builder->CreateGlobalString(lit->token.text);
+        auto llvm_t = llvm::dyn_cast<llvm::StructType>(irgen->ToLLVMType(Type{"str"}, false));
+        auto string = irgen->Alloca("str_lit", llvm_t);
+        auto buffer_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
+        auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,lit->token.text.size());
+
+        auto memory = irgen->Malloc("string_buffer", str_size);
+        irgen->builder->CreateStore(
+            memory,
+            buffer_ptr
+        );
+        auto size_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 1);
+        auto cap_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 2);
+        irgen->builder->CreateStore(str_size, size_ptr);
+        irgen->builder->CreateStore(str_size, cap_ptr);
+        irgen->builder->CreateMemCpy(memory, std::nullopt, gvar, std::nullopt, str_size);
+        return string;
+
+    }
     llvm::Value* ExpressionEvaluator::operator()(NameExpression* nm)
     {
         std::string name(nm->token.text);

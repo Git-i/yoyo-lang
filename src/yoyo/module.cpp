@@ -53,6 +53,13 @@ namespace Yoyo
             }
             return llvm::StructType::get(context, args);
         }
+        if(type.is_str())
+        {
+            std::array<llvm::Type*, 3> args{};
+            args[0] = llvm::PointerType::get(context, 0);
+            for(auto& sub_t : std::ranges::subrange(args.begin() + 1, args.end())) sub_t = llvm::Type::getInt64Ty(context);
+            return llvm::StructType::get(context, args);
+        }
         if(type.is_enum())
         {
             return llvm::Type::getInt32Ty(context);

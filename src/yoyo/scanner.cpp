@@ -131,6 +131,11 @@ namespace Yoyo {
                     if (NextIs('=')) return Token{TokenType::DoubleEqual};
                     return Token{TokenType::Equal};
                 }
+            case '"':
+                {
+                    return ScanStringLiteral();
+                }
+            
             default:
                 {
                     if(std::isdigit(c)) return ScanNumber();
@@ -165,6 +170,15 @@ namespace Yoyo {
         while (std::isdigit(Peek())) std::ignore = Get();
         return {TokenType::RealLiteral,
             std::string_view(source.begin() + number_begin, source.begin() + position)};
+    }
+
+    Token Scanner::ScanStringLiteral()
+    {
+        size_t iden_begin = position;
+        while (!IsEof() && Peek() != '"') std::ignore = Get();
+        auto view = std::string_view(source.begin() + iden_begin, source.begin() + position - 1);
+
+        return {TokenType::StringLiteral, view};
     }
 
     void Scanner::handleLineComment()

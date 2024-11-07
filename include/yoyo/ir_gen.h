@@ -32,6 +32,7 @@ namespace Yoyo
         void saturateSignature(FunctionSignature& sig, Module* md);
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
         llvm::AllocaInst* Alloca(std::string_view name, llvm::Type* type);
+        llvm::Value* Malloc(std::string_view name, llvm::Value* size);
         bool isShadowing(const std::string&) const;
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);

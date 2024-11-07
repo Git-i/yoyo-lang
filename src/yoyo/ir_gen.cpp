@@ -91,6 +91,18 @@ namespace Yoyo
                  entry_block->begin());
         return temp.CreateAlloca(type, nullptr, name);
     }
+
+    llvm::Value* IRGenerator::Malloc(std::string_view name, llvm::Value* size)
+    {
+        auto malloc_fn = code->getFunction("malloc");
+        if(!malloc_fn)
+        {
+            auto malloc_sig = llvm::FunctionType::get(llvm::PointerType::get(context, 0), {llvm::Type::getInt64Ty(context)}, false);
+            malloc_fn = llvm::Function::Create(malloc_sig, llvm::GlobalValue::ExternalLinkage, "malloc", code);
+        }
+        return builder->CreateCall(malloc_fn, {size});
+    }
+
     bool IRGenerator::isShadowing(const std::string& name) const
     {
         for(auto& map : variables)

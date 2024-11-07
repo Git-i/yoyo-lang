@@ -40,6 +40,7 @@ namespace Yoyo
         }
 
         [[nodiscard]] bool is_tuple() const {return name == "__tup";}
+        [[nodiscard]] bool is_str() const {return name == "str";}
         /// Merges the types into one variant type or returns one of them if they're equal
         /// if @c a is already a variant it adds @c b to the list(if @c b is not already there)
         /// if @c b is a variant is does the same
