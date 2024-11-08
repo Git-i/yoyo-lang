@@ -178,4 +178,11 @@ namespace Yoyo
             }
         }
     }
+
+    std::string_view Engine::viewString(void* str)
+    {
+        struct String{char* data; uint64_t len; uint64_t cap;};
+        auto arg_as_str = static_cast<String*>(str);
+        return std::string_view{arg_as_str->data, arg_as_str->len};
+    }
 }

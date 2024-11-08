@@ -33,6 +33,7 @@ namespace Yoyo
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
         llvm::AllocaInst* Alloca(std::string_view name, llvm::Type* type);
         llvm::Value* Malloc(std::string_view name, llvm::Value* size);
+        void Free(llvm::Value* value);
         bool isShadowing(const std::string&) const;
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
@@ -44,7 +45,7 @@ namespace Yoyo
         void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
-        void operator()(EnumDeclaration*){}; //TODO
+        void operator()(EnumDeclaration*){}
         void operator()(ModuleImport*){};
 
         void error();
@@ -75,6 +76,7 @@ namespace Yoyo
         std::optional<FunctionType> checkNameWithinEnum(EnumDeclaration* type, std::string_view name);
         explicit ExpressionTypeChecker(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
+        bool hasToStr(const Type& t);
         /// We return FunctionType because it's a subclass of Type and some
         /// expressions ( @c NameExpression and @c BinaryExpression ) can be a function
         std::optional<FunctionType> operator()(IntegerLiteral*);
@@ -119,6 +121,8 @@ namespace Yoyo
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);
+        //the malloc and the size
+        std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator
         {
             IRGenerator* irgen;

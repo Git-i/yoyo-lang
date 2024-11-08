@@ -103,6 +103,17 @@ namespace Yoyo
         return builder->CreateCall(malloc_fn, {size});
     }
 
+    void IRGenerator::Free(llvm::Value* value)
+    {
+        auto free_fn = code->getFunction("free");
+        if(!free_fn)
+        {
+            auto free_sig = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {llvm::PointerType::get(context, 0)}, false);
+            free_fn = llvm::Function::Create(free_sig, llvm::GlobalValue::ExternalLinkage, "free", code);
+        }
+        builder->CreateCall(free_fn, {value});
+    }
+
     bool IRGenerator::isShadowing(const std::string& name) const
     {
         for(auto& map : variables)

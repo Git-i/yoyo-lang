@@ -12,7 +12,7 @@ Yoyo::AppModule* md;
 
 int32_t func(void* arg)
 {
-    std::cout << md->viewString(arg) << std::endl;
+    std::cout << Yoyo::Engine::viewString(arg) << std::endl;
     return 0;
 }
 TEST_CASE("Test IR")
@@ -34,7 +34,9 @@ values: enum = {
 takes_foo: (param: i32) -> f64 = {
     damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
-    val:= "test string ${10} a";
+
+    integer: i32 = 10;
+    val:= "test string ${integer + 20} a";
     app::func(val);
     //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;
@@ -101,6 +103,7 @@ returns_foo: () -> foo = {
 
     llvm::ExitOnError ExitOnErr;
     auto j = llvm::orc::LLJITBuilder().create();
+
     auto llvm_ctx = std::unique_ptr<llvm::LLVMContext>(static_cast<llvm::LLVMContext*>(engine.llvm_context));
     auto ctx = llvm::orc::ThreadSafeContext(std::move(llvm_ctx));
     for(auto& mod: engine.modules)

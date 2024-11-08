@@ -1,5 +1,6 @@
 #include <cmath>
 #include <csignal>
+#include <llvm/Support/Error.h>
 
 #include "ir_gen.h"
 #include "fn_type.h"
@@ -570,22 +571,53 @@ namespace Yoyo
     //str is of type {ptr, int64, int64} for buffer, size, capacity
     llvm::Value* ExpressionEvaluator::operator()(StringLiteral* lit)
     {
-        auto gvar = irgen->builder->CreateGlobalString("lol");//lit->token.text);
-        auto llvm_t = llvm::dyn_cast<llvm::StructType>(irgen->ToLLVMType(Type{"str"}, false));
-        auto string = irgen->Alloca("str_lit", llvm_t);
-        auto buffer_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
-        auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,0);//lit->token.text.size());
+        ExpressionTypeChecker type_checker{irgen};
+        if(!type_checker(lit)) {irgen->error(); return nullptr;}
+        std::vector<std::pair<llvm::Value*, llvm::Value*>> substrings;
+        for(auto& substr: lit->literal)
+        {
+            if(std::holds_alternative<std::string>(substr))
+            {
+                auto& as_str = std::get<std::string>(substr);
+                auto gvar = irgen->builder->CreateGlobalString(as_str);
 
-        auto memory = irgen->Malloc("string_buffer", str_size);
-        irgen->builder->CreateStore(
-            memory,
-            buffer_ptr
-        );
-        auto size_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 1);
-        auto cap_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 2);
-        irgen->builder->CreateStore(str_size, size_ptr);
-        irgen->builder->CreateStore(str_size, cap_ptr);
-        irgen->builder->CreateMemCpy(memory, std::nullopt, gvar, std::nullopt, str_size);
+                auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,as_str.size());
+                substrings.emplace_back(irgen->Malloc("tmp_string_buffer", str_size), str_size);
+
+                irgen->builder->CreateMemCpy(substrings.back().first, std::nullopt, gvar, std::nullopt, str_size);
+            }
+            else //if(std::holds_alternative<std::unique_ptr<Expression>>)
+            {
+                auto& as_expr = std::get<1>(substr);
+                auto type = std::visit(type_checker, as_expr->toVariant());
+                auto value = std::visit(*this, as_expr->toVariant());
+                substrings.push_back(doToStr(value, *type));
+            }
+        }
+        llvm::Value* final_len = substrings.front().second;
+        //combine all the strings into one buffer
+        for(auto& pair : std::ranges::subrange(substrings.begin() + 1, substrings.end()))
+            final_len = irgen->builder->CreateAdd(final_len, pair.second);
+        llvm::Value* final_buffer = irgen->Malloc("string_buffer", final_len);
+        llvm::Value* offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0);
+        for(auto& pair : substrings)
+        {
+            auto current_pointer = irgen->builder->CreateGEP(llvm::Type::getInt8Ty(irgen->context), final_buffer, {offset});
+            irgen->builder->CreateMemCpy(current_pointer, std::nullopt, pair.first, std::nullopt, pair.second);
+            irgen->Free(pair.first);
+            offset = irgen->builder->CreateAdd(offset, pair.second);
+        }
+        auto llvm_t = irgen->ToLLVMType(Type{"str"}, false);
+        auto string = irgen->Alloca("str_obj", llvm_t);
+
+        auto buffer_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
+        auto size_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
+        auto cap_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
+
+        irgen->builder->CreateStore(final_buffer, buffer_ptr);
+        irgen->builder->CreateStore(final_len, size_ptr);
+        irgen->builder->CreateStore(final_len, cap_ptr);
+
         return string;
 
     }

@@ -423,6 +423,18 @@ namespace Yoyo
         return std::nullopt;
     }
 
+    bool ExpressionTypeChecker::hasToStr(const Type& t)
+    {
+        if(t.is_builtin()) return true;
+        if(t.is_tuple())
+        {
+            for(const auto& t : t.subtypes) if(!hasToStr(t)) return false;
+            return true;
+        }
+        if(t.is_enum()) return true;
+        return false;
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral*)
     {
         return Type{.name = "ilit", .subtypes = {}};
@@ -471,8 +483,18 @@ namespace Yoyo
         return Type{.name = "flit", .subtypes = {}};
     }
 
-    std::optional<FunctionType> ExpressionTypeChecker::operator()(StringLiteral*)
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(StringLiteral* lit)
     {
+        for(auto& val: lit->literal)
+        {
+            if(std::holds_alternative<std::unique_ptr<Expression>>(val))
+            {
+                auto& expr = std::get<std::unique_ptr<Expression>>(val);
+                auto ty = std::visit(*this, expr->toVariant());
+                if(!ty) return std::nullopt;
+                if(!hasToStr(*ty)) return std::nullopt;
+            }
+        }
         return Type{.name = "str", .subtypes = {}};
     }
 

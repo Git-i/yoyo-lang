@@ -7,6 +7,5 @@ namespace Yoyo
     {
     public:
         void addFunction(std::string sig, void* func, std::string name);
-        std::string_view viewString(void* str);
     };
 }

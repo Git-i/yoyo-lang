@@ -22,6 +22,7 @@ namespace Yoyo {
         void compile();
         std::unordered_map<std::string, std::unique_ptr<Module>> modules;
         std::unordered_map<std::string, std::vector<std::unique_ptr<Statement>>> sources;
+        static std::string_view viewString(void* str);
         void* llvm_context;
     };
 }
