@@ -398,7 +398,7 @@ namespace Yoyo
             auto name_tk = Get();
             if(name_tk->type != TokenType::Identifier) { error("Expected identifier", Peek()); continue; }
             std::string name(name_tk->text);
-            if(values.contains(name)) error("Duplicate enum values", Peek());
+            if(values.contains(name)) error("Duplicate enum names", Peek());
 
             int32_t value = nextValue;
             bool is_explicit_value = false;
@@ -416,6 +416,7 @@ namespace Yoyo
                     Get();
                     is_explicit_value = true;
                     value = std::stoi(std::string{value_tk->text});
+                    if(std::ranges::find(usedIntegers, value) != usedIntegers.end()) error("Duplicate enum values", Peek());
                 }
             }
             if(is_explicit_value)

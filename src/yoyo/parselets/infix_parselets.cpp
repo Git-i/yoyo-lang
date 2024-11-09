@@ -57,10 +57,10 @@ namespace Yoyo
         {
             if(expr_as_init)
             {
-                expr_as_init->t.name = std::string{as_name->token.text} + "::" + expr_as_init->t.name;
+                expr_as_init->t.name = std::string{as_name->text} + "::" + expr_as_init->t.name;
                 return expr;
             }
-            return std::make_unique<ScopeOperation>(Type{.name= std::string{as_name->token.text}}, "", std::string{expr_as_name->token.text});
+            return std::make_unique<ScopeOperation>(Type{.name= std::string{as_name->text}}, "", std::string{expr_as_name->text});
         }
         if(as_scope)
         {
@@ -72,7 +72,7 @@ namespace Yoyo
             }
             as_scope->scope += "::" + as_scope->type.name;
             as_scope->type.name = as_scope->name;
-            as_scope->name = std::string{expr_as_name->token.text};
+            as_scope->name = std::string{expr_as_name->text};
             return left;
         }
         return nullptr;

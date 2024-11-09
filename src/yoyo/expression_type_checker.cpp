@@ -159,7 +159,7 @@ namespace Yoyo
         {
             if(auto nm = dynamic_cast<NameExpression*>(expr->rhs.get()))
             {
-                if(nm->token.text == "invoke")
+                if(nm->text == "invoke")
                 {
                     return FunctionType{*lhs.signature, false};
                 }
@@ -170,7 +170,7 @@ namespace Yoyo
         {
             if(auto idx = dynamic_cast<IntegerLiteral*>(expr->rhs.get()))
             {
-                return lhs.subtypes[std::stol(std::string{idx->token.text})];
+                return lhs.subtypes[std::stol(std::string{idx->text})];
             }
             return std::nullopt;
         }
@@ -178,7 +178,7 @@ namespace Yoyo
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
             {
-                std::string name(name_expr->token.text);
+                std::string name(name_expr->text);
                 if(auto var = std::ranges::find_if(cls->vars, [&name](ClassVariable& v)
                 {
                     return name == v.name;
@@ -257,7 +257,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(NameExpression* expr)
     {
-        std::string name(expr->token.text);
+        std::string name(expr->text);
         for(size_t i = irgen->variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;

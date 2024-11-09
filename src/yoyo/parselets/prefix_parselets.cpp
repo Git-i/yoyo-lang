@@ -15,7 +15,7 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> IntLiteralParselet::parse(Parser& parser, Token tk)
     {
-        return std::make_unique<IntegerLiteral>(tk);
+        return std::make_unique<IntegerLiteral>(tk.text);
     }
     std::unique_ptr<Expression> RealLiteralParselet::parse(Parser& parser, Token tk)
     {
@@ -62,7 +62,7 @@ namespace Yoyo
             auto body = parser.parseObjectLiteral();
             return std::make_unique<ObjectLiteral>(Type{.name = std::string{tk.text}}, std::move(body));
         }
-        return std::make_unique<NameExpression>(tk);
+        return std::make_unique<NameExpression>(std::string(tk.text));
     }
     std::unique_ptr<Expression> GroupParselet::parse(Parser& parser, Token tk)
     {

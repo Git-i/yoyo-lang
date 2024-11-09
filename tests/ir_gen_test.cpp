@@ -12,7 +12,8 @@ Yoyo::AppModule* md;
 
 int32_t func(void* arg)
 {
-    std::cout << Yoyo::Engine::viewString(arg) << std::endl;
+    std::string_view sv =  Yoyo::Engine::viewString(arg);
+    std::cout << sv << std::endl;
     return 0;
 }
 TEST_CASE("Test IR")
@@ -25,18 +26,16 @@ baz: class = {
     y: i32 & f64
 }
 
-values: enum = {
-    One = 1,
-    Two = 2
+val: enum = {
+    abcd, efgh
 }
-
-
 takes_foo: (param: i32) -> f64 = {
     damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
     lol::test_impl_conv(param);
 
-    integer: i32 = 10;
-    val:= "test string ${integer + 20} a";
+    integer: u32 = 10;
+    enm:= val::abcd;
+    val:= "test string ${integer + 20} and ${enm} a";
     app::func(val);
     //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
     return damm.x.x.y;

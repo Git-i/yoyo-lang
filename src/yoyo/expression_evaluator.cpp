@@ -239,7 +239,7 @@ namespace Yoyo
         {
             if(auto idx = dynamic_cast<IntegerLiteral*>(rhs))
             {
-                auto idx_int = std::stoul(std::string{idx->token.text});
+                auto idx_int = std::stoul(std::string{idx->text});
                 auto out_type = left_type.subtypes[idx_int];
 
                 auto llvm_t = irgen->ToLLVMType(left_type, false);
@@ -256,7 +256,7 @@ namespace Yoyo
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(rhs))
             {
-                std::string name(name_expr->token.text);
+                std::string name(name_expr->text);
                 if(auto var = std::ranges::find_if(cls->vars, [&name](ClassVariable& v)
                 {
                     return name == v.name;
@@ -508,7 +508,7 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
     {
-        std::string name(nm->token.text);
+        std::string name(nm->text);
         for(size_t i = irgen->variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;
@@ -536,7 +536,7 @@ namespace Yoyo
     }
 
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
-        const auto ul = std::stoull(std::string{lit->token.text});
+        const auto ul = std::stoull(std::string{lit->text});
         return llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), ul);
     }
     llvm::Value* ExpressionEvaluator::operator()(BooleanLiteral* lit)
@@ -611,8 +611,8 @@ namespace Yoyo
         auto string = irgen->Alloca("str_obj", llvm_t);
 
         auto buffer_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
-        auto size_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
-        auto cap_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
+        auto size_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 1);
+        auto cap_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 2);
 
         irgen->builder->CreateStore(final_buffer, buffer_ptr);
         irgen->builder->CreateStore(final_len, size_ptr);
@@ -623,7 +623,7 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::operator()(NameExpression* nm)
     {
-        std::string name(nm->token.text);
+        std::string name(nm->text);
         for(size_t i = irgen->variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;
@@ -833,7 +833,7 @@ namespace Yoyo
                 //handle member functions
                 if(auto rhs = dynamic_cast<NameExpression*>(expr->rhs.get()))
                 {
-                    std::string name(rhs->token.text);
+                    std::string name(rhs->text);
                     if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
                         {
                             return name == m.name;
@@ -893,7 +893,7 @@ namespace Yoyo
         for(auto& capture : expr->captures)
         {
             Token tk{.type = TokenType::Identifier, .text = capture.first};
-            NameExpression name(tk);
+            NameExpression name(std::string(tk.text));
             auto type = ExpressionTypeChecker{irgen}(&name);
             if(type->is_function()) { irgen->error(); return nullptr; }
             if(capture.second == ParamType::InOut && !type->is_mutable) { irgen->error(); return nullptr; }
@@ -909,7 +909,7 @@ namespace Yoyo
         {
             auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
             Token tk{.type = TokenType::Identifier, .text = capture.first};
-            NameExpression name(tk);
+            NameExpression name(std::string(tk.text));
             auto type = ExpressionTypeChecker{irgen}(&name);
             type->is_mutable = true;
             llvm::Value* val = capture.second == ParamType::InOut ?

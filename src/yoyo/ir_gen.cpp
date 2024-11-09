@@ -190,7 +190,7 @@ namespace Yoyo
                 {
                     auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), capture_idx);
                     Token tk{.type = TokenType::Identifier, .text = capture.first};
-                    NameExpression nexpr(tk);
+                    NameExpression nexpr(std::string(tk.text));
                     auto type = ExpressionTypeChecker{this}(&nexpr);
                     declarations.emplace_back(Token{}, *type, nullptr, capture.second == ParamType::InOut);
                     auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture.first);

@@ -57,8 +57,9 @@ namespace Yoyo
     };
     class IntegerLiteral : public Expression {
     public:
-        Token token;
-        explicit IntegerLiteral(const Token& tk) : token(tk) {}
+        std::string text;
+        explicit IntegerLiteral(std::string tk) : text(std::move(tk)) {}
+        explicit IntegerLiteral(const std::string_view tk) : text(tk) {}
         ExpressionVariant toVariant() override;
     };
     class BooleanLiteral : public Expression {
@@ -94,8 +95,8 @@ namespace Yoyo
     };
     class NameExpression : public Expression {
     public:
-        Token token;
-        explicit NameExpression(const Token& tk) : token(tk) {}
+        std::string text;
+        explicit NameExpression(std::string tk) : text(std::move(tk)) {}
         ExpressionVariant toVariant() override;
     };
     class PrefixOperation : public Expression {

@@ -198,8 +198,7 @@ namespace Yoyo {
                 if(num_open_braces && !in_sub_string) num_open_braces--;
             }
         }
-        auto view = std::string_view(source.begin() + iden_begin, source.begin() + position);
-        std::ignore = Get();
+        auto view = std::string_view(source.begin() + iden_begin, source.begin() + position - 1);
         return Token{TokenType::StringLiteral, view};
     }
 
