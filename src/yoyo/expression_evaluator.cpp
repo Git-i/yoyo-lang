@@ -7,7 +7,7 @@
 namespace Yoyo
 {
     auto findType(const std::string& name, IRGenerator* irgen, Module* mod) ->
-        std::tuple<std::string, llvm::StructType*, ClassDeclaration*>*
+        std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>*
     {
         if(mod == irgen->module) return irgen->findType(name);
         if(mod->classes.contains(name))
@@ -943,7 +943,7 @@ namespace Yoyo
             {
                 if(ty->module->classes.contains(op->type.name))
                 {
-                    auto class_entry = ty->module->classes.at(op->type.name);
+                    auto& class_entry = ty->module->classes.at(op->type.name);
                     std::string mangled_name = std::get<0>(class_entry) + op->name;
                     return irgen->code->getFunction(mangled_name);
                 }
@@ -955,7 +955,7 @@ namespace Yoyo
                 std::string mangled_name;
                 if(ty->module->classes.contains(op->type.name))
                 {
-                    auto class_entry = ty->module->classes.at(op->type.name);
+                    auto& class_entry = ty->module->classes.at(op->type.name);
                     mangled_name = std::get<0>(class_entry) + op->name;
                 }
                 else mangled_name = ty->module->module_hash + op->name;
@@ -973,7 +973,7 @@ namespace Yoyo
         }
         if(ty->is_enum())
         {
-            auto decl = ty->module->enums[op->type.name];
+            auto decl = ty->module->enums[op->type.name].get();
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), decl->values.at(op->name));
         }
         return nullptr;

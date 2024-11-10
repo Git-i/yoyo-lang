@@ -6,7 +6,8 @@
 
 namespace Yoyo
 {
-    std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* IRGenerator::findType(const std::string& name)
+    std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>* IRGenerator::findType(
+        const std::string& name)
     {
         for(size_t i = types.size(); i > 0; i--)
         {
@@ -205,6 +206,7 @@ namespace Yoyo
             }
             idx++;
         }
+        current_Statement = &decl->body;
         std::visit(*this, decl->body->toVariant());
         popScope();
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br)
@@ -231,7 +233,9 @@ namespace Yoyo
             error();
             return;
         }
-        types.back()[name] = {block_hash, hanldeClassDeclaration(decl, true), decl};
+        auto ptr = current_Statement->release();
+        assert(ptr == decl);
+        types.back()[name] = {block_hash, hanldeClassDeclaration(decl, true), std::unique_ptr<ClassDeclaration>{decl}};
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
     {
@@ -307,6 +311,7 @@ namespace Yoyo
         pushScope();
         for(auto& sub_stat : stat->statements)
         {
+            current_Statement = &sub_stat;
             std::visit(*this, sub_stat->toVariant());
             if(dynamic_cast<ReturnStatement*>(sub_stat.get())) break;
         }
@@ -330,6 +335,8 @@ namespace Yoyo
         auto value = std::visit(ExpressionEvaluator{this}, expr->condition->toVariant());
         builder->CreateCondBr(value, then_bb, cont_bb);
         builder->SetInsertPoint(then_bb);
+
+        current_Statement = &expr->body;
         std::visit(*this, expr->body->toVariant());
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(while_bb);
         builder->SetInsertPoint(cont_bb);
@@ -369,12 +376,18 @@ namespace Yoyo
             std::visit(ExpressionEvaluator{this}, stat->condition->toVariant()), then_bb,
             else_bb ? else_bb : merge_bb);
         builder->SetInsertPoint(then_bb);
+
+        current_Statement = &stat->then_stat;
         std::visit(*this, stat->then_stat->toVariant());
+
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
         if(stat->else_stat)
         {
             builder->SetInsertPoint(else_bb);
+
+            current_Statement = &stat->else_stat;
             std::visit(*this, stat->else_stat->toVariant());
+
             if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
         }
         builder->SetInsertPoint(merge_bb);
@@ -480,11 +493,19 @@ namespace Yoyo
         pushScope();
         for(auto& stat : statements)
         {
-            std::variant<ClassDeclaration*, FunctionDeclaration*> vnt;
-            if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get())) vnt = ptr;
-            else if(auto fn_ptr = dynamic_cast<FunctionDeclaration*>(stat.get())) vnt = fn_ptr;
+            std::variant<std::unique_ptr<ClassDeclaration>, std::unique_ptr<FunctionDeclaration>> vnt;
+            if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get()))
+            {
+                std::ignore = stat.release();
+                vnt = std::unique_ptr<ClassDeclaration>(ptr);
+            }
+            else if(auto fn_ptr = dynamic_cast<FunctionDeclaration*>(stat.get()))
+            {
+                std::ignore = stat.release();
+                vnt = std::unique_ptr<FunctionDeclaration>(fn_ptr);
+            }
             else continue;
-            std::visit(TopLevelVisitor{this}, vnt);
+            std::visit(TopLevelVisitor{this}, std::move(vnt));
         }
         builder = nullptr;
     }

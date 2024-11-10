@@ -21,13 +21,16 @@ namespace Yoyo
         Module* module;
         llvm::Module* code;
         std::unique_ptr<llvm::IRBuilder<>> builder;
+        std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
         std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, VariableDeclaration*>>> variables;
-        std::vector<std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, ClassDeclaration*>>> types;
+        std::vector<
+            std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration
+        >>>> types;
         std::unordered_map<std::string, std::pair<std::vector<std::pair<std::string, ParamType>>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::string block_hash;
 
-        std::tuple<std::string, llvm::StructType*, ClassDeclaration*>* findType(const std::string& name);
+        std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>* findType(const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
         void saturateSignature(FunctionSignature& sig, Module* md);
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
@@ -35,9 +38,9 @@ namespace Yoyo
         llvm::Value* Malloc(std::string_view name, llvm::Value* size);
         void Free(llvm::Value* value);
         bool isShadowing(const std::string&) const;
+        Type reduceLiteral(const Type& src, llvm::Value* val);
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
-        Type reduceLiteral(const Type& src, llvm::Value* val);
         void operator()(VariableDeclaration*);
         void operator()(IfStatement*);
         void operator()(WhileStatement*);
@@ -60,12 +63,8 @@ namespace Yoyo
     {
         IRGenerator* irgen;
         //return true on success
-        bool operator()(FunctionDeclaration*);
-        bool operator()(ClassDeclaration*);
-        bool operator()(VariableDeclaration*);
-        bool operator()(IfStatement*);
-        bool operator()(WhileStatement*);
-        bool operator()(ForStatement*);
+        bool operator()(std::unique_ptr<FunctionDeclaration>);
+        bool operator()(std::unique_ptr<ClassDeclaration>);
     };
     class ExpressionTypeChecker
     {

@@ -134,7 +134,7 @@ namespace Yoyo
         if(module && module != gen->module)
         {
             if(module->classes.contains(name))
-                return std::get<2>(module->classes.at(name));
+                return std::get<2>(module->classes.at(name)).get();
             return nullptr;
         }
         for(size_t i = gen->types.size(); i > 0; i--)
@@ -142,10 +142,10 @@ namespace Yoyo
             auto idx = i - 1;
             if(auto t = gen->types[idx].find(name); t != gen->types[idx].end())
             {
-                return std::get<2>(t->second);
+                return std::get<2>(t->second).get();
             }
         }
-        if(auto t = gen->module->classes.find(name); t != gen->module->classes.end()) return std::get<2>(t->second);
+        if(auto t = gen->module->classes.find(name); t != gen->module->classes.end()) return std::get<2>(t->second).get();
         return nullptr;
     }
 

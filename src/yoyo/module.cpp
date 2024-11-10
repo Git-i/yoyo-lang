@@ -74,7 +74,7 @@ namespace Yoyo
             //class is not yet defined but is recursive
             if(auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
                 return nullptr;
-            ForwardDeclaratorPass2{type.module, disallowed_types}(std::get<2>(t->second));
+            ForwardDeclaratorPass2{type.module, disallowed_types}(std::get<2>(t->second).get());
             return ptr;
         }
         return nullptr;

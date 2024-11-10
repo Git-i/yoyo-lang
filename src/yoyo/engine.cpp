@@ -15,6 +15,7 @@ namespace Yoyo
     struct ForwardDeclaratorPass1
     {
         Module* md;
+        std::unique_ptr<Statement>& stmt;
         bool operator()(FunctionDeclaration* decl)
         {
             std::string mangled_name = md->module_hash + std::string{decl->identifier.text};
@@ -28,7 +29,11 @@ namespace Yoyo
             std::string mangled_name_prefix = md->module_hash + "__class__" + name + "__";
             if(md->classes.contains(name)) return false;
 
-            md->classes[name] = {mangled_name_prefix, nullptr, decl};
+            md->classes[name] = {
+                mangled_name_prefix,
+                nullptr,
+                std::unique_ptr<ClassDeclaration>{decl}
+            };
             return true;
         }
         bool operator()(ModuleImport* imp)
@@ -39,7 +44,8 @@ namespace Yoyo
         }
         bool operator()(EnumDeclaration* decl)
         {
-            md->enums[std::string{decl->identifier.text}] = decl;
+            std::ignore = stmt.release();
+            md->enums[std::string{decl->identifier.text}] = std::unique_ptr<EnumDeclaration>(decl);
             return true;
         }
         bool operator()(Statement*) {return false;};
@@ -140,7 +146,7 @@ namespace Yoyo
         md->module_hash = "__" + module_name + std::to_string(reinterpret_cast<std::uintptr_t>(md.get()));
         for(auto& stat : prog)
         {
-            if (!std::visit(ForwardDeclaratorPass1{md.get()}, stat->toVariant()))
+            if (!std::visit(ForwardDeclaratorPass1{md.get(), stat}, stat->toVariant()))
             {
                 modules.erase(module_name);
                 break;
@@ -161,6 +167,7 @@ namespace Yoyo
             {
                 for(auto& stat : sources[module_name])
                 {
+                    if(!stat) continue; //by this point some statements have already been handled(enums)
                     if (!std::visit(ForwardDeclaratorPass2{modules[module_name].get()}, stat->toVariant()))
                     {
                         modules.erase(module_name);

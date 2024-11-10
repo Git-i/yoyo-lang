@@ -319,7 +319,7 @@ namespace Yoyo
         if(md->modules.contains(scp->type.name))
             md = md->modules.at(scp->type.name);
         else if(md->classes.contains(scp->type.name))
-            decl = std::get<2>(md->classes.at(scp->type.name));
+            decl = std::get<2>(md->classes.at(scp->type.name)).get();
         else if(md->enums.contains(scp->type.name))
         {
             if(!md->enums.at(scp->type.name)->values.contains(scp->name)) return std::nullopt;

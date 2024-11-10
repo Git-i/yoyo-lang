@@ -20,17 +20,16 @@ namespace Yoyo
             std::to_chars(buffer, buffer + *buffer_length + 1, value);
             return buffer;
         }
-        char* YOYO_to_string_enum_dont_use_name(int32_t value, std::unordered_map<std::string, int32_t>* values, size_t* buffer_length)
+        char* YOYO_to_string_enum_dont_use_name(int32_t value, EnumDeclaration* decl, size_t* buffer_length)
         {
             auto& size = *buffer_length;
             std::string str = "<unknown>";
-            auto it = std::ranges::find_if(*values,
+            auto it = std::ranges::find_if(decl->values,
                 [value](std::pair<const std::string, int32_t>& val){ return val.second ==  value; });
-            if (it != values->end()) str = it->first;
+            if (it != decl->values.end()) str = it->first;
             size = str.size();
             auto buffer = static_cast<char*>(malloc(size));
             memcpy(buffer, str.data(), size);
-            delete values;
             return buffer;
         }
     }
@@ -88,12 +87,11 @@ namespace Yoyo
         }
         if(tp.is_enum())
         {
-            auto decl = tp.module->enums[tp.name];
-            auto map_cpy = new std::unordered_map(decl->values); //this is very likely to leak TODO
+            auto decl = tp.module->enums[tp.name].get();
             auto size = irgen->Alloca("enum_to_str_size", llvm::Type::getInt64Ty(irgen->context));
             auto fn = enum_to_string_fn(irgen);
             auto llvm_decl = irgen->builder->CreateIntToPtr(
-                llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), reinterpret_cast<std::uintptr_t>(map_cpy)),
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), reinterpret_cast<std::uintptr_t>(decl)),
                 llvm::PointerType::get(irgen->context, 0)
             );
             return {
