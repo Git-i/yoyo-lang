@@ -111,8 +111,8 @@ namespace Yoyo
         switch (look_ahead->type)
         {
         case TokenType::LParen: return parseFunctionDeclaration(iden.value());
-        case TokenType::Class: return parseClassDeclaration(iden.value());
-        case TokenType::Struct:;//TODO
+        case TokenType::Class: return parseClassDeclaration(iden.value(), false);
+        case TokenType::Struct: return parseClassDeclaration(iden.value(), true);
         case TokenType::Enum: return parseEnumDeclaration(iden.value());
         case TokenType::EnumFlag:;//TODO
         case TokenType::Union:;//TODO
@@ -435,17 +435,18 @@ namespace Yoyo
         }
         return std::make_unique<EnumDeclaration>(identifier, std::move(values));
     }
-    std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier)
+    //struct and classes are virtually the same, except structs dont have access specs and cant implement interfaces
+    std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct)
     {
         std::vector<ClassMethod> methods;
         std::vector<ClassVariable> vars;
-        Get(); //skip the "class" keyword
+        Get(); //skip the "class" or "struct" keyword
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
         {
             bool is_static = false;
-            AccessSpecifier spec = AccessSpecifier::Private;
+            AccessSpecifier spec = isStruct ? AccessSpecifier::Public : AccessSpecifier::Private;
             while(true)
             {
                 auto tk = Peek();
@@ -458,12 +459,14 @@ namespace Yoyo
                 }
                 else if(tk->type == TokenType::Pub)
                 {
+                    //pub is redundant for structs but allowed
                     if(spec != AccessSpecifier::Private) error("Multiple access specifiers on one object", tk);
                     spec = AccessSpecifier::Public;
                     Get();
                 }
                 else if(tk->type == TokenType::Mod)
                 {
+                    if(isStruct) error("Cannot specify module-level access for a struct", tk);
                     if(spec != AccessSpecifier::Private) error("Multiple access specifiers on one object", tk);
                     spec = AccessSpecifier::Module;
                     Get();

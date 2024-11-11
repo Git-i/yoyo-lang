@@ -1,0 +1,16 @@
+//stolen from the rust docs
+/// unions are just tagged unions, so they can function
+/// kind of like rust enums, accessing could be done through some
+/// expansion mechanism (match?)
+/// unions also allow void types (and can be implies by ommission)
+/// This means unions can function as enums but without the ability to specify values
+Message: union = {
+    Quit: void,
+    Start, //implicit : void
+    Move: i32 & i32, //named members are nor supported like {x: i32, y: i32} in rust
+    Write: str,
+    ChangeColor: i32 & i32 & i32
+    
+    //member functions are also allowed in unions
+    broadcast: (this, b: Broadcaster) -> void! = return b.perform_broadcast(this);
+}
