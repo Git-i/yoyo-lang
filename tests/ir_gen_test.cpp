@@ -30,15 +30,8 @@ val: enum = {
     abcd, efgh
 }
 takes_foo: (param: i32) -> f64 = {
-    damm:= baz{ .x = lol::returns_foo(), .y = (param, param), };
-    lol::test_impl_conv(param);
- c
-    integer: u32 = 10;
-    enm:= val::abcd;
-    val:= "test string ${integer + 20} and ${enm} a";
-    app::func(val);
-    //damm:= baz{ .x = lol::foo{ .x = lol::bar{ .y = 90 } } };
-    return damm.x.x.y;
+    option: mut int? = null;
+    option = 10;
 }
 )";
     std::string source = R"(

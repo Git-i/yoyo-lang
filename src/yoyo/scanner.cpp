@@ -30,7 +30,7 @@ namespace Yoyo {
         {"mut", TokenType::Mut},
         {"called", TokenType::Called},
         {"module", TokenType::Module},
-
+        {"null", TokenType::Null}
     })
     {
 
@@ -122,6 +122,7 @@ namespace Yoyo {
                     }
                     return Token{TokenType::Underscore};
                 }
+            case '?': return Token{TokenType::Question};
             case '\t': [[fallthrough]];
             case ' ': [[fallthrough]];
             case '\r': break;

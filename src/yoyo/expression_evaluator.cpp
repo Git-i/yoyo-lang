@@ -206,9 +206,16 @@ namespace Yoyo
             if(right_type.name == "__null")
             {
                 auto has_value = irgen->builder->CreateStructGEP(opt_ty, lhs, 1);
-                irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), has_value);
+                return irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), has_value);
             }
-
+            //subtype implicit conversion
+            if(!right_type.is_equal(left_type))
+            {
+                Type tp = left_type.subtypes[0];
+                tp.is_mutable = true;
+                doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), rhs, tp, tp);
+                return irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
+            }
             auto right_has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
                 irgen->builder->CreateStructGEP(opt_ty, rhs, 1));
             auto fn = irgen->builder->GetInsertBlock()->getParent();
@@ -235,6 +242,7 @@ namespace Yoyo
             irgen->builder->CreateBr(opt_assign_cont);
 
             irgen->builder->SetInsertPoint(opt_assign_cont);
+            return nullptr;
         }
         //Copy for non primitives is memberwise, but can be explicitly
         //overloaded with the __copy method for classes

@@ -64,7 +64,7 @@ namespace Yoyo
         }
         if(is_optional())
         {
-            return other.name == "__null" || is_equal(other);
+            return other.name == "__null" || other.is_equal(subtypes[0]) || is_equal(other);
         }
 
         return false;

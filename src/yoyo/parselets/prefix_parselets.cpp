@@ -165,6 +165,8 @@ namespace Yoyo
         return expr;
     }
 
-
-
+    std::unique_ptr<Expression> NullLiteralParselet::parse(Parser& parser, Token tk)
+    {
+        return std::make_unique<NullLiteral>();
+    }
 }

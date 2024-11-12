@@ -1,0 +1,41 @@
+Composite: struct = {
+    value1: i32,
+    value2: f32
+}
+main: () = {
+    opt: mut Composite? = null; // `?` denotes optional and can be initialized with null
+    // `?.` null propagation operator for member access retuns MemberTy?
+    the_val := opt?.value1; //the_val is of type i32?
+    //other wise you'd pattern match to get the value, this also prevents mutating the optional
+    //match is just statements
+
+    expanded = opt or { return; }
+
+    opt.value(); //returns a `ref Composite` and dies on failure
+    match (opt) {
+        Some(val) -> { /* val is mutable and opt is const */ std::print("${val}")} //Some and None is still being decided
+        None -> {}
+    }
+
+    // is operator support (similar to cppfront)
+    // is this even necessary, we could just do `is_null` and `has_value`
+    if (opt !is null) {
+        //you can safely call value and friends
+    }
+
+    //probably consider $"text {expr1} text {expr2}" as an alternative to "text ${expr1} text ${expr2}"
+}
+
+//optional references
+access_array_no_panic: (arr: inout [i32], idx: usize) -> {ref i32}? = {
+    if (idx >= arr.size()) return null;
+    return arr[idx];
+}
+//basically optional refs are useless and must be expanded
+in_fn: () = {
+    arr : mut = [10, 20];
+    result := access_array_no_panic(arr, 1); //error cannot store reference
+    match access_array_no_panic(arr, 1) {
+        Some(val) -> {/* res is now const and val is mutable */}
+    }
+}
