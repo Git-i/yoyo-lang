@@ -7,7 +7,7 @@ List: class = {
     first: Node^?
 }
 
-iter: default fw_iterator::<cref i32> for List = {
+iter: default fw_iterator::<&i32> for List = {
     current_node: Node^?
     //container is a special value holding either a ref or const ref to the container object
     //ref for iterator_mut and const ref for iterator
@@ -16,7 +16,6 @@ iter: default fw_iterator::<cref i32> for List = {
     value: (this) -> cref i32 = return this.current_node.value; //skipped the optional cuz ive not decided optional semantics
     advance: (this: inout) = this.current_node = this.current_node.next;
 }
-
 
 num_digits: (x: u32) -> u32 = {...};
 nth_digit: (x: u32, n: u32) -> u32 = {...};

@@ -15,6 +15,7 @@ namespace Yoyo
 
 namespace Yoyo
 {
+    class NullLiteral;
     class SubscriptOperation;
     class CallOperation;
     class PostfixOperation;
@@ -49,7 +50,8 @@ namespace Yoyo
         SubscriptOperation*,
         LambdaExpression*,
         ScopeOperation*,
-        ObjectLiteral*>;
+        ObjectLiteral*,
+        NullLiteral*>;
     class Expression {
     public:
         virtual ~Expression() = default;
@@ -69,6 +71,7 @@ namespace Yoyo
         ExpressionVariant toVariant() override;
 
     };
+    class NullLiteral : public Expression { ExpressionVariant toVariant() override {return this;}};
     class TupleLiteral : public Expression {
     public:
         std::vector<std::unique_ptr<Expression>> elements;

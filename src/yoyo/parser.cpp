@@ -708,6 +708,11 @@ namespace Yoyo
         }
         return left;
     }
+    std::optional<Type> parsePostfixTypeExpr(Parser& p, Type left, Token t)
+    {
+        if(t.type == TokenType::Pipe) return Type{ .name = "__opt", .subtypes = {std::move(left)}};
+        return std::nullopt;
+    }
     std::optional<Type> Parser::parseType(uint32_t precedence)
     {
         auto tk = Peek();

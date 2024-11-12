@@ -95,6 +95,7 @@ namespace Yoyo
         std::optional<FunctionType> operator()(LambdaExpression*);
         std::optional<FunctionType> operator()(ScopeOperation*);
         std::optional<FunctionType> operator()(ObjectLiteral*);
+        std::optional<FunctionType> operator()(NullLiteral*);
     };
     class ExpressionEvaluator
     {
@@ -146,5 +147,6 @@ namespace Yoyo
         llvm::Value* operator()(LambdaExpression*);
         llvm::Value* operator()(ScopeOperation*);
         llvm::Value* operator()(ObjectLiteral*);
+        llvm::Value* operator()(NullLiteral*);
     };
 }

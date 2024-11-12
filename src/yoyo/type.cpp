@@ -62,6 +62,11 @@ namespace Yoyo
             if(signature->returnType != as_fn.sig.returnType) return false;
             return true;
         }
+        if(is_optional())
+        {
+            return other.name == "__null" || is_equal(other);
+        }
+
         return false;
     }
 
@@ -84,7 +89,7 @@ namespace Yoyo
 
         if(module_path.size() == 1)
         {
-            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn"))
+            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional()))
                 module = src;
         }
         if(module_path.size() > 1)

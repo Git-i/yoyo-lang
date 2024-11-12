@@ -198,6 +198,44 @@ namespace Yoyo
         {
             return irgen->builder->CreateStore(rhs, lhs);
         }
+        if(left_type.is_optional())
+        {
+            auto opt_ty = irgen->ToLLVMType(left_type, false);
+            //opt is {data, bool}
+            //TODO destroy data if exists
+            if(right_type.name == "__null")
+            {
+                auto has_value = irgen->builder->CreateStructGEP(opt_ty, lhs, 1);
+                irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), has_value);
+            }
+
+            auto right_has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
+                irgen->builder->CreateStructGEP(opt_ty, rhs, 1));
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto r_is_valid = llvm::BasicBlock::Create(irgen->context, "opt_valid_assign", fn, irgen->returnBlock);
+            auto r_is_invalid = llvm::BasicBlock::Create(irgen->context, "opt_invalid_assign", fn, irgen->returnBlock);
+            auto opt_assign_cont = llvm::BasicBlock::Create(irgen->context, "opt_assign_cont", fn, irgen->returnBlock);
+            irgen->builder->CreateCondBr(right_has_value, r_is_valid, r_is_invalid);
+
+            irgen->builder->SetInsertPoint(r_is_valid);
+            auto value_rhs = irgen->builder->CreateStructGEP(opt_ty, rhs, 0);
+            if(!right_type.subtypes[0].should_sret())
+            {
+                auto subtype = llvm::dyn_cast<llvm::StructType>(opt_ty)->getElementType(0);
+                value_rhs = irgen->builder->CreateLoad(subtype, value_rhs);
+            }
+            Type tp = left_type.subtypes[0];
+            tp.is_mutable = true;
+            doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), value_rhs, tp, tp);
+            irgen->builder->CreateBr(opt_assign_cont);
+
+            irgen->builder->SetInsertPoint(r_is_invalid);
+            auto has_value = irgen->builder->CreateStructGEP(opt_ty, lhs, 1);
+            irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), has_value);
+            irgen->builder->CreateBr(opt_assign_cont);
+
+            irgen->builder->SetInsertPoint(opt_assign_cont);
+        }
         //Copy for non primitives is memberwise, but can be explicitly
         //overloaded with the __copy method for classes
         //__copy is always (this: inout, other: in This) -> void
@@ -224,7 +262,7 @@ namespace Yoyo
                 llvm::Value* mem_wise_rhs = irgen->builder->CreateGEP(llvm_t, rhs, {zero, mem_idx});
                 llvm::Value* mem_wise_lhs = irgen->builder->CreateGEP(llvm_t, lhs, {zero, mem_idx});
                 auto mem_wise_type = irgen->ToLLVMType(var.type, false);
-                if(var.type.is_primitive()) mem_wise_rhs = irgen->builder->CreateLoad(mem_wise_type, mem_wise_rhs);
+                if(!var.type.should_sret()) mem_wise_rhs = irgen->builder->CreateLoad(mem_wise_type, mem_wise_rhs);
                 auto as_lvalue = var.type;
                 as_lvalue.is_mutable = true;
                 doAssign(mem_wise_lhs, mem_wise_rhs, as_lvalue, var.type);
