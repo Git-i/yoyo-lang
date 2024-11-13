@@ -213,7 +213,7 @@ namespace Yoyo
             {
                 Type tp = left_type.subtypes[0];
                 tp.is_mutable = true;
-                doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), rhs, tp, tp);
+                doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), rhs, tp, right_type);
                 return irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
             }
             auto right_has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
@@ -1047,5 +1047,10 @@ namespace Yoyo
             doAssign(mem_ptr, val, as_mut, *val_ty);
         }
         return value;
+    }
+
+    llvm::Value* ExpressionEvaluator::operator()(NullLiteral*)
+    {
+        return nullptr;
     }
 }

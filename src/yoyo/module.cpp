@@ -53,6 +53,13 @@ namespace Yoyo
             }
             return llvm::StructType::get(context, args);
         }
+        if(type.is_optional())
+        {
+            std::array<llvm::Type*, 2> args{};
+            args[0] = ToLLVMType(type.subtypes[0], false, disallowed_types);
+            args[1] = llvm::Type::getInt1Ty(context);
+            return llvm::StructType::get(context, args);
+        }
         if(type.is_str())
         {
             std::array<llvm::Type*, 3> args{};

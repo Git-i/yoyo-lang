@@ -650,10 +650,12 @@ namespace Yoyo
         if(!parser.discard(TokenType::RCurly)) parser.error("Expected '}'", parser.Peek());
         return std::move(next).value_or(Type{});
     }
+    //TODO reconsider this table
     static constexpr uint32_t PipePrecedence = 1;
     static constexpr uint32_t AmpersandPrecedence = 2;
-    static constexpr uint32_t TemplatePrecedence = 3;
-    static constexpr uint32_t ScopePrecedence = 4;
+    static constexpr uint32_t OptionalPreference = 3;
+    static constexpr uint32_t TemplatePrecedence = 4;
+    static constexpr uint32_t ScopePrecedence = 5;
     uint32_t Parser::GetNextTypePrecedence()
     {
         auto tk = Peek();
@@ -664,6 +666,7 @@ namespace Yoyo
         case TokenType::Pipe: return PipePrecedence;
         case TokenType::TemplateOpen: return TemplatePrecedence;
         case TokenType::DoubleColon: return ScopePrecedence;
+        case TokenType::Question: return OptionalPreference;
         default: return 0;
         }
     }
@@ -711,7 +714,7 @@ namespace Yoyo
     }
     std::optional<Type> parsePostfixTypeExpr(Parser& p, Type left, Token t)
     {
-        if(t.type == TokenType::Pipe) return Type{ .name = "__opt", .subtypes = {std::move(left)}};
+        if(t.type == TokenType::Question) return Type{ .name = "__opt", .subtypes = {std::move(left)}};
         return std::nullopt;
     }
     std::optional<Type> Parser::parseType(uint32_t precedence)
@@ -734,6 +737,7 @@ namespace Yoyo
             case TokenType::Ampersand: t = parseAmpTypeExpr(*this, std::move(t).value()); break;
             case TokenType::Pipe: t = parsePipeTypeExpr(*this, std::move(t).value()); break;
             case TokenType::TemplateOpen: t = parseTemplateTypeExpr(*this, std::move(t).value()); break;
+            case TokenType::Question: t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk); break;
             case TokenType::DoubleColon:
                 {
                     auto tp = parseType(precedence);

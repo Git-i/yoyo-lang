@@ -357,6 +357,11 @@ namespace Yoyo
         return obj->t;
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(NullLiteral* null)
+    {
+        return Type{"__null"};
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals

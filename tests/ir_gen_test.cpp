@@ -30,7 +30,7 @@ val: enum = {
     abcd, efgh
 }
 takes_foo: (param: i32) -> f64 = {
-    option: mut int? = null;
+    option: mut i32? = null;
     option = 10;
 }
 )";
