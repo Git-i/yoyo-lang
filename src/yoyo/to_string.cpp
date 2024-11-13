@@ -99,6 +99,48 @@ namespace Yoyo
                 irgen->builder->CreateLoad(llvm::Type::getInt64Ty(irgen->context), size)
             };
         }
+        if(tp.is_optional())
+        {
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto as_llvm = irgen->ToLLVMType(tp, false);
+            auto if_null = llvm::BasicBlock::Create(irgen->context, "opt_is_null", fn, irgen->returnBlock);
+            auto if_valid = llvm::BasicBlock::Create(irgen->context, "opt_is_valid", fn, irgen->returnBlock);
+            auto cont = llvm::BasicBlock::Create(irgen->context, "opt_str_cont", fn, irgen->returnBlock);
+
+            auto is_valid = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
+                irgen->builder->CreateStructGEP(as_llvm, val, 1));
+
+
+            irgen->builder->CreateCondBr(is_valid, if_valid, if_null);
+            irgen->builder->SetInsertPoint(if_valid);
+            auto sub_val = irgen->builder->CreateStructGEP(as_llvm, val, 0);
+            if(!tp.subtypes[0].should_sret())
+            {
+                auto subtype = llvm::dyn_cast<llvm::StructType>(as_llvm)->getElementType(0);
+                sub_val = irgen->builder->CreateLoad(subtype, sub_val);
+            }
+            auto [ptr_v, size_v] = doToStr(sub_val, tp.subtypes[0]);
+            irgen->builder->CreateBr(cont);
+
+            irgen->builder->SetInsertPoint(if_null);
+            static auto null_str = irgen->builder->CreateGlobalString("null");
+            auto size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 4);
+            auto ptr = irgen->Malloc("null_str", size);
+            irgen->builder->CreateMemCpy(ptr, std::nullopt, null_str, std::nullopt, size);
+            irgen->builder->CreateBr(cont);
+
+            irgen->builder->SetInsertPoint(cont);
+            auto ptr_phi = irgen->builder->CreatePHI(llvm::PointerType::get(irgen->context, 0), 2);
+            auto value_phi = irgen->builder->CreatePHI(llvm::Type::getInt64Ty(irgen->context), 2);
+
+            ptr_phi->addIncoming(ptr_v, if_valid);
+            ptr_phi->addIncoming(ptr, if_null);
+
+            value_phi->addIncoming(size_v, if_valid);
+            value_phi->addIncoming(size, if_null);
+
+            return {ptr_phi, value_phi};
+        }
         raise(SIGTRAP);
     }
 }

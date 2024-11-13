@@ -31,7 +31,10 @@ val: enum = {
 }
 takes_foo: (param: i32) -> f64 = {
     option: mut i32? = null;
+    app::func("${option} is an optional");
     option = 10;
+    app::func("${option}");
+    return param;
 }
 )";
     std::string source = R"(
@@ -49,18 +52,7 @@ returns_foo: () -> foo = {
     return a;
 }
 )";
-    /*
-     * GetComponent: (this)::<T> -> ref T;
-     * e: Entity;
-     * with transform as e.GetComponent::<TransformComponent>() {
-     *  //stuff you do with transform
-     *     transform.x = 10;
-     *     transform.y = 20;
-     * }
-     * APP120__class_entity_GetComponent__APP120TransformComponent() {
-     *
-     * }
-     */
+
     int argc = 1;
     const char* argv[] = {"foo"};
     const char** lol = argv;

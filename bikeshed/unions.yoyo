@@ -14,3 +14,13 @@ Message: union = {
     //member functions are also allowed in unions
     broadcast: (this, b: Broadcaster) -> void! = return b.perform_broadcast(this);
 }
+
+main: () = {
+    lol: mut Message = Message::Quit;
+    if |move_data: &{i32 & i32}| (lol as Message::Move) {
+        
+    }
+    if (lol is Message::Quit) {
+
+    }
+}

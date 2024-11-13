@@ -705,7 +705,6 @@ namespace Yoyo
             lhs = std::visit(*this, l_as_var);
             rhs = std::visit(*this, r_as_var);
         }
-
         auto left_t = std::visit(type_checker, l_as_var);
         auto right_t = std::visit(type_checker, r_as_var);
 

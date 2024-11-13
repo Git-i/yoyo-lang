@@ -20,15 +20,19 @@ langauge, written in (and primarily for) C++20.
 - [ ] With statements*
 - [x] Tuples
 - [ ] Arrays
+- [ ] Span
 - [ ] Associative Arrays
 - [ ] Variants
 - [ ] Garbage Collections
 - [x] Classes
-- [ ] Structs
+- [x] Structs
 - [ ] Interfaces
 - [ ] Schemes
 - [x] Enums
 - [ ] Unions
+- [x] Optionals
+- [ ] Destructors
+- [ ] Capturing if
 
 *With statement is discussed under the memory model
 
