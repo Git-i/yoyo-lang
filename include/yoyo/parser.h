@@ -22,6 +22,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseDeclaration();
         std::unique_ptr<Statement> parseReturnStatement();
         std::unique_ptr<Statement> parseExpressionStatement();
+        std::unique_ptr<Statement> parseConditionalExtraction();
         std::unique_ptr<Statement> parseIfStatement();
         std::unique_ptr<Statement> parseBlockStatement();
         std::unique_ptr<Statement> parseForStatement();

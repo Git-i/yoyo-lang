@@ -362,6 +362,16 @@ namespace Yoyo
         return Type{"__null"};
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(AsExpression* expr)
+    {
+        auto to = std::visit(*this, expr->expr->toVariant());
+        if(!to || to->is_void()) return std::nullopt;
+        if(to->is_integral())
+        {
+
+        }
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals

@@ -138,4 +138,24 @@ namespace Yoyo
             : identifier(iden), values(std::move(vals)) {}
         StatementVaraint toVariant() override;
     };
+    // if |value| (optional) { }
+    // if |value| (result) {} else |error| {}
+    class ConditionalExtraction : public Statement
+    {
+    public:
+        std::string captured_name;
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<Statement> body;
+        std::string else_capture;
+        std::unique_ptr<Statement> else_body;
+        ConditionalExtraction(
+            std::string name,
+            std::unique_ptr<Expression> cond,
+            std::unique_ptr<Statement> body,
+            std::unique_ptr<Statement> else_,
+            std::string else_name = "")
+                : captured_name(std::move(name)), condition(std::move(cond)), body(std::move(body))
+                , else_capture(std::move(else_name)), else_body(std::move(else_body)) {}
+
+    };
 }

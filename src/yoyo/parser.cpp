@@ -559,8 +559,44 @@ namespace Yoyo
         return std::make_unique<ExpressionStatement>(std::move(expr));
     }
 
+    std::unique_ptr<Statement> Parser::parseConditionalExtraction()
+    {
+        //parse the capture
+        if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
+        auto iden = Peek();
+        if(!iden) return nullptr;
+        if(iden->type != TokenType::Identifier) error("Expected identifier", iden);
+        std::string name(iden->text);
+        if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
+
+        if(!discard(TokenType::LParen)) error("Expected '('", Peek());
+        auto condition = parseExpression(0);
+        if(!condition) synchronizeTo({{TokenType::RParen}});
+        if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
+        auto then = parseStatement();
+
+        std::unique_ptr<Statement> else_stat = nullptr;
+        std::string else_name;
+        auto else_tk = Peek();
+        if(else_tk && else_tk->type == TokenType::Else)
+        {
+            Get();
+            if(discard(TokenType::Pipe))
+            {
+                auto else_iden = Peek();
+                if(!else_iden) return nullptr;
+                if(else_iden->type != TokenType::Identifier) error("Expected identifier", else_iden);
+                if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
+                else_name.assign(else_iden->text.begin(), else_iden->text.end());
+            }
+            else_stat = parseStatement();
+        }
+        return std::make_unique<ConditionalExtraction>(name, condition, then, else_stat, else_name);
+    }
+
     std::unique_ptr<Statement> Parser::parseIfStatement()
     {
+        if(Peek() && Peek()->type == TokenType::Pipe) return parseConditionalExtraction();
         if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto condition = parseExpression(0);
         if(!condition) synchronizeTo({{TokenType::RParen}});
