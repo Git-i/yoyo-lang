@@ -31,9 +31,11 @@ val: enum = {
 }
 takes_foo: (param: i32) -> f64 = {
     option: mut i32? = null;
-    app::func("${option} is an optional");
+    if |value| (option) { app::func("value + 10 = ${value + 10}"); }
+    else { app::func("no value"); }
     option = 10;
-    app::func("${option}");
+    if |value| (option) { app::func("value + 10 = ${value + 10}"); }
+    else { app::func("no value"); }
     return param;
 }
 )";

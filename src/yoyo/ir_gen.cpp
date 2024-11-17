@@ -348,6 +348,50 @@ namespace Yoyo
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(while_bb);
         builder->SetInsertPoint(cont_bb);
     }
+
+    void IRGenerator::operator()(ConditionalExtraction* stat)
+    {
+        auto tp = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
+        if(!tp || !tp->is_optional()) { error(); return;}
+        if(!stat->else_capture.empty()) {error(); return;}
+
+        auto llvm_t = ToLLVMType(tp.value(), false);
+        auto optional = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
+
+        auto is_valid = builder->CreateLoad(llvm::Type::getInt1Ty(context), builder->CreateStructGEP(llvm_t, optional, 1));
+
+        auto fn = builder->GetInsertBlock()->getParent();
+        auto then_bb = llvm::BasicBlock::Create(context, "then", fn, returnBlock);
+        llvm::BasicBlock* else_bb = nullptr;
+        if(stat->else_body) else_bb = llvm::BasicBlock::Create(context, "else", fn, returnBlock);
+        auto merge_bb = llvm::BasicBlock::Create(context, "ifcont", fn, returnBlock);
+        builder->CreateCondBr(
+            is_valid, then_bb,
+            else_bb ? else_bb : merge_bb);
+        builder->SetInsertPoint(then_bb);
+
+        pushScope();
+        auto ptr = builder->CreateStructGEP(llvm_t, optional, 0, stat->captured_name);
+        tp->subtypes[0].is_lvalue = true; tp->subtypes[0].is_mutable = tp->is_mutable;
+        VariableDeclaration decl(Token{}, tp->subtypes[0], nullptr, tp->is_mutable);
+        variables.back()[stat->captured_name] = {ptr, &decl};
+        current_Statement = &stat->body;
+        std::visit(*this, stat->body->toVariant());
+        popScope();
+        if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
+
+        if(stat->else_body)
+        {
+            builder->SetInsertPoint(else_bb);
+            pushScope();
+            current_Statement = &stat->else_body;
+            std::visit(*this, stat->else_body->toVariant());
+            popScope();
+            if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
+        }
+        builder->SetInsertPoint(merge_bb);
+    }
+
     void IRGenerator::error()
     {
         raise(SIGTRAP);

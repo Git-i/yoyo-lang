@@ -49,7 +49,8 @@ namespace Yoyo
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(EnumDeclaration*){}
-        void operator()(ModuleImport*){};
+        void operator()(ModuleImport*){}
+        void operator()(ConditionalExtraction*);
 
         void error();
         void pushScope() {variables.emplace_back(); types.emplace_back();}

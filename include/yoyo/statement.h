@@ -20,6 +20,7 @@ namespace Yoyo
     class ForStatement;
     class ModuleImport;
     class EnumDeclaration;
+    class ConditionalExtraction;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -31,19 +32,20 @@ namespace Yoyo
         VariableDeclaration*,
         ExpressionStatement*,
         ModuleImport*,
-        EnumDeclaration*> StatementVaraint;
+        EnumDeclaration*,
+        ConditionalExtraction*> StatementVariant;
     class Statement
     {
     public:
         virtual ~Statement() = default;
-        virtual StatementVaraint toVariant() = 0;
+        virtual StatementVariant toVariant() = 0;
     };
     class ExpressionStatement : public Statement
     {
     public:
         std::unique_ptr<Expression> expression;
         explicit ExpressionStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {};
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class ModuleImport : public Statement
     {
@@ -52,7 +54,7 @@ namespace Yoyo
         std::string module_path;
         ModuleImport(std::string name, std::string path) : module_name(std::move(name)),
             module_path(std::move(path)) {};
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class VariableDeclaration : public Statement
     {
@@ -63,7 +65,7 @@ namespace Yoyo
         bool is_mut;
         VariableDeclaration(Token iden, std::optional<Type> t, std::unique_ptr<Expression> init, bool mut)
             : type(std::move(t)), identifier(iden), initializer(std::move(init)), is_mut(mut) {};
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class FunctionDeclaration : public Statement
     {
@@ -73,14 +75,14 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         FunctionDeclaration(Token ident, FunctionSignature sig, std::unique_ptr<Statement> body)
             : signature(std::move(sig)), identifier(ident), body(std::move(body)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class ReturnStatement : public Statement
     {
     public:
         std::unique_ptr<Expression> expression;
         explicit ReturnStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class IfStatement : public Statement
     {
@@ -90,7 +92,7 @@ namespace Yoyo
         std::unique_ptr<Statement> else_stat;
         IfStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> then_, std::unique_ptr<Statement> else_)
             : condition(std::move(cond)), then_stat(std::move(then_)), else_stat(std::move(else_)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class WhileStatement : public Statement
     {
@@ -99,14 +101,14 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         WhileStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> body)
             : condition(std::move(cond)), body(std::move(body)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class BlockStatement : public Statement
     {
     public:
         std::vector<std::unique_ptr<Statement>> statements;
         explicit BlockStatement(std::vector<std::unique_ptr<Statement>> stats) : statements(std::move(stats)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
 
     class ClassDeclaration : public Statement
@@ -117,7 +119,7 @@ namespace Yoyo
         std::vector<ClassMethod> methods;
         ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods)
             : identifier(ident), vars(std::move(vars)), methods(std::move(methods)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class ForStatement : public Statement
     {
@@ -127,7 +129,7 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         ForStatement(std::vector<Token> names, std::unique_ptr<Expression> expr, std::unique_ptr<Statement> body)
             : iterable(std::move(expr)), names(std::move(names)), body(std::move(body)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     class EnumDeclaration : public Statement
     {
@@ -136,7 +138,7 @@ namespace Yoyo
         std::unordered_map<std::string, int32_t> values;
         EnumDeclaration(Token iden, std::unordered_map<std::string, int32_t> vals)
             : identifier(iden), values(std::move(vals)) {}
-        StatementVaraint toVariant() override;
+        StatementVariant toVariant() override;
     };
     // if |value| (optional) { }
     // if |value| (result) {} else |error| {}
@@ -155,7 +157,8 @@ namespace Yoyo
             std::unique_ptr<Statement> else_,
             std::string else_name = "")
                 : captured_name(std::move(name)), condition(std::move(cond)), body(std::move(body))
-                , else_capture(std::move(else_name)), else_body(std::move(else_body)) {}
+                , else_capture(std::move(else_name)), else_body(std::move(else_)) {}
+        StatementVariant toVariant() override;
 
     };
 }

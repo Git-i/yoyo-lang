@@ -563,7 +563,7 @@ namespace Yoyo
     {
         //parse the capture
         if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
-        auto iden = Peek();
+        auto iden = Get();
         if(!iden) return nullptr;
         if(iden->type != TokenType::Identifier) error("Expected identifier", iden);
         std::string name(iden->text);
@@ -591,7 +591,7 @@ namespace Yoyo
             }
             else_stat = parseStatement();
         }
-        return std::make_unique<ConditionalExtraction>(name, condition, then, else_stat, else_name);
+        return std::make_unique<ConditionalExtraction>(name, std::move(condition), std::move(then), std::move(else_stat), else_name);
     }
 
     std::unique_ptr<Statement> Parser::parseIfStatement()

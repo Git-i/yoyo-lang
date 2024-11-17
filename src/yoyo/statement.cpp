@@ -1,50 +1,54 @@
 #include "statement.h"
 namespace Yoyo
 {
-    StatementVaraint ExpressionStatement::toVariant()
+    StatementVariant ExpressionStatement::toVariant()
     {
         return this;
     }
-    StatementVaraint ModuleImport::toVariant()
-    {
-        return this;
-    }
-
-    StatementVaraint VariableDeclaration::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint FunctionDeclaration::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint ReturnStatement::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint IfStatement::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint WhileStatement::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint BlockStatement::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint ClassDeclaration::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint ForStatement::toVariant()
-    {
-        return this;
-    }
-    StatementVaraint EnumDeclaration::toVariant()
+    StatementVariant ModuleImport::toVariant()
     {
         return this;
     }
 
+    StatementVariant VariableDeclaration::toVariant()
+    {
+        return this;
+    }
+    StatementVariant FunctionDeclaration::toVariant()
+    {
+        return this;
+    }
+    StatementVariant ReturnStatement::toVariant()
+    {
+        return this;
+    }
+    StatementVariant IfStatement::toVariant()
+    {
+        return this;
+    }
+    StatementVariant WhileStatement::toVariant()
+    {
+        return this;
+    }
+    StatementVariant BlockStatement::toVariant()
+    {
+        return this;
+    }
+    StatementVariant ClassDeclaration::toVariant()
+    {
+        return this;
+    }
+    StatementVariant ForStatement::toVariant()
+    {
+        return this;
+    }
+    StatementVariant EnumDeclaration::toVariant()
+    {
+        return this;
+    }
+
+    StatementVariant ConditionalExtraction::toVariant()
+    {
+        return this;
+    }
 }
