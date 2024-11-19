@@ -1,5 +1,6 @@
 #include <cmath>
 #include <csignal>
+#include <set>
 #include <llvm/Support/Error.h>
 
 #include "ir_gen.h"
@@ -247,6 +248,7 @@ namespace Yoyo
         }
         if(left_type.is_variant())
         {
+            std::set subtypes(left_type.subtypes.begin(), left_type.subtypes.end());
             auto fn = irgen->builder->GetInsertBlock()->getParent();
             auto llvm_ty = irgen->ToLLVMType(left_type, false);
             auto type_idx_ptr = irgen->builder->CreateStructGEP(llvm_ty, lhs, 1);
@@ -260,7 +262,7 @@ namespace Yoyo
                 llvm::BasicBlock* def = llvm::BasicBlock::Create(irgen->context, "variant_default", fn, irgen->returnBlock);
                 auto sw = irgen->builder->CreateSwitch(r_type_idx, def, left_type.subtypes.size());
                 uint32_t idx = 0;
-                for(auto& sub : left_type.subtypes)
+                for(auto& sub : subtypes)
                 {
                     llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, def);
                     sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
@@ -276,7 +278,8 @@ namespace Yoyo
             }
             //implicit conversion
             uint32_t i = 0;
-            for(auto& sub : left_type.subtypes)
+
+            for(auto& sub : subtypes)
             {
                 if(!sub.is_assignable_from(right_type)) { i++; continue; }
                 auto sub_mut = sub;

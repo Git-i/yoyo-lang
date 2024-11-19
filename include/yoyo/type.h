@@ -76,6 +76,13 @@ namespace Yoyo
         [[nodiscard]] bool is_lambda() const {return name.starts_with("__lambda");}
 
         [[nodiscard]] size_t bitsize(IRGenerator* irgen) const;
+        //there's no actual sorting, just to fulfill `set` requirements
+        bool operator<(const Type& other) const
+        {
+            if(module == other.module) return name < other.name;
+            return module < other.module;
+
+        }
 
     };
 

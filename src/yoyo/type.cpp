@@ -1,4 +1,7 @@
 #include "type.h"
+
+#include <set>
+
 #include "ir_gen.h"
 #include "statement.h"
 #include "fn_type.h"
@@ -80,11 +83,18 @@ namespace Yoyo
             }
             return is_valid;
         }
+
         return false;
     }
 
     bool Type::is_equal(const Type& other) const
     {
+        if(is_variant() && other.is_variant())
+        {
+            //variant ordering doesn't matter
+            return
+                std::set(subtypes.begin(), subtypes.end()) == std::set(other.subtypes.begin(), other.subtypes.end());
+        }
         return name == other.name && subtypes == other.subtypes && module == other.module;
     }
 
