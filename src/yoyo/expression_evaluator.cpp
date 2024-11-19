@@ -171,6 +171,7 @@ namespace Yoyo
     /// I don't know where to place this, but all structural types are pointers
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
+        //TODO make this function a lot more skinny
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(left_type.is_primitive())
@@ -243,6 +244,47 @@ namespace Yoyo
 
             irgen->builder->SetInsertPoint(opt_assign_cont);
             return nullptr;
+        }
+        if(left_type.is_variant())
+        {
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto llvm_ty = irgen->ToLLVMType(left_type, false);
+            auto type_idx_ptr = irgen->builder->CreateStructGEP(llvm_ty, lhs, 1);
+            if(left_type.is_equal(right_type))
+            {
+                //TODO destroy current value
+
+                auto r_type_idx = irgen->builder->CreateLoad(
+                    llvm::Type::getInt32Ty(irgen->context),
+                    irgen->builder->CreateStructGEP(llvm_ty, rhs, 1));
+                llvm::BasicBlock* def = llvm::BasicBlock::Create(irgen->context, "variant_default", fn, irgen->returnBlock);
+                auto sw = irgen->builder->CreateSwitch(r_type_idx, def, left_type.subtypes.size());
+                uint32_t idx = 0;
+                for(auto& sub : left_type.subtypes)
+                {
+                    llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, irgen->returnBlock);
+                    sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
+                    irgen->builder->SetInsertPoint(blk);
+                    auto sub_mut = sub;
+                    sub_mut.is_mutable = true;
+                    doAssign(lhs, rhs, sub_mut, sub_mut);
+                    irgen->builder->CreateStore(r_type_idx, type_idx_ptr);
+                    idx++;
+                }
+                irgen->builder->SetInsertPoint(def); return nullptr;
+            }
+            //implicit conversion
+            uint32_t i = 0;
+            for(auto& sub : left_type.subtypes)
+            {
+                if(!sub.is_assignable_from(right_type)) { i++; continue; }
+                auto sub_mut = sub;
+                sub_mut.is_mutable = true;
+                doAssign(lhs, rhs, sub_mut, right_type);
+                irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
+                    type_idx_ptr);
+                return nullptr;
+            }
         }
         //Copy for non primitives is memberwise, but can be explicitly
         //overloaded with the __copy method for classes

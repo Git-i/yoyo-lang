@@ -66,7 +66,20 @@ namespace Yoyo
         {
             return other.name == "__null" || subtypes[0].is_assignable_from(other);
         }
-
+        //for variants, the rhs must be assignable to only one of the subtypes
+        if(is_variant())
+        {
+            bool is_valid = false;
+            for(auto& subtype : subtypes)
+            {
+                if(subtype.is_assignable_from(other))
+                {
+                    if(is_valid) return false;
+                    is_valid = true;
+                }
+            }
+            return is_valid;
+        }
         return false;
     }
 
@@ -89,7 +102,7 @@ namespace Yoyo
 
         if(module_path.size() == 1)
         {
-            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional()))
+            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() ))
                 module = src;
         }
         if(module_path.size() > 1)

@@ -67,6 +67,24 @@ namespace Yoyo
             for(auto& sub_t : std::ranges::subrange(args.begin() + 1, args.end())) sub_t = llvm::Type::getInt64Ty(context);
             return llvm::StructType::get(context, args);
         }
+        if(type.is_variant())
+        {
+            std::array<llvm::Type*, 2> args{};
+            size_t size = 0;
+            auto& layout = code->getDataLayout();
+            for(auto& subtype : type.subtypes)
+            {
+                auto sub_t = ToLLVMType(subtype, false, disallowed_types);
+                auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
+                size_t sz = 0;
+                if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;
+                else sz = layout.getStructLayout(as_struct)->getSizeInBytes();
+                if(sz > size) size = sz;
+            }
+            args[0] = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), size);
+            args[1] = llvm::Type::getInt32Ty(context); // 2^32 is a reasonable amount of variant subtypes
+            return llvm::StructType::get(context, args);
+        }
         if(type.is_enum())
         {
             return llvm::Type::getInt32Ty(context);

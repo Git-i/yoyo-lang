@@ -48,6 +48,24 @@ namespace Yoyo
             args[1] = llvm::Type::getInt1Ty(context);
             return llvm::StructType::get(context, args);
         }
+        if(type.is_variant())
+        {
+            std::array<llvm::Type*, 2> args{};
+            size_t size = 0;
+            auto& layout = code->getDataLayout();
+            for(auto& subtype : type.subtypes)
+            {
+                auto sub_t = ToLLVMType(subtype, false);
+                auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
+                size_t sz = 0;
+                if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;
+                else sz = layout.getStructLayout(as_struct)->getSizeInBytes();
+                if(sz > size) size = sz;
+            }
+            args[0] = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), size);
+            args[1] = llvm::Type::getInt32Ty(context); // 2^32 is a reasonable amount of variant subtypes
+            return llvm::StructType::get(context, args);
+        }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         for(size_t i = types.size(); i > 0; i--)
         {
@@ -274,6 +292,7 @@ namespace Yoyo
         {
             error(); return;
         }
+        if(decl->type) decl->type->saturate(module);
         auto type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
         if(!type)
         {
