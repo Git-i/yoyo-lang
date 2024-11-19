@@ -262,13 +262,14 @@ namespace Yoyo
                 uint32_t idx = 0;
                 for(auto& sub : left_type.subtypes)
                 {
-                    llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, irgen->returnBlock);
+                    llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, def);
                     sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
                     irgen->builder->SetInsertPoint(blk);
                     auto sub_mut = sub;
                     sub_mut.is_mutable = true;
                     doAssign(lhs, rhs, sub_mut, sub_mut);
                     irgen->builder->CreateStore(r_type_idx, type_idx_ptr);
+                    irgen->builder->CreateBr(def);
                     idx++;
                 }
                 irgen->builder->SetInsertPoint(def); return nullptr;
