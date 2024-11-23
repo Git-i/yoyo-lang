@@ -125,8 +125,8 @@ namespace Yoyo {
             case '?': return Token{TokenType::Question};
             case '\t': [[fallthrough]];
             case ' ': [[fallthrough]];
-            case '\r': break;
-            case '\n': line++; break;
+            case '\r': [[fallthrough]];
+            case '\n': break;
             case '=':
                 {
                     if (NextIs('=')) return Token{TokenType::DoubleEqual};
@@ -203,10 +203,19 @@ namespace Yoyo {
         return Token{TokenType::StringLiteral, view};
     }
 
+    void Scanner::nextLine()
+    {
+        line++;
+        col = 0;
+    }
+
     void Scanner::handleLineComment()
     {
         while(!IsEof() && Peek() != '\n') std::ignore = Get();
-        if(!IsEof()) std::ignore = Get(); //discard the new-line
+        if(!IsEof())
+        {
+            std::ignore = Get(); //discard the new-line
+        }
     }
 
     void Scanner::handleBlockComment()
@@ -227,8 +236,12 @@ namespace Yoyo {
     }
 
 
+    SourceLocation Scanner::GetSourceLocation() const {return SourceLocation{line, col};}
+
     char Scanner::Get()
     {
+        if(Peek() == '\n') nextLine();
+        col++;
         return source[position++];
     }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "ast_node.h"
 #include <func_sig.h>
 #include <variant>
 
@@ -34,11 +35,19 @@ namespace Yoyo
         ModuleImport*,
         EnumDeclaration*,
         ConditionalExtraction*> StatementVariant;
-    class Statement
+    class Statement : public ASTNode
     {
     public:
         virtual ~Statement() = default;
         virtual StatementVariant toVariant() = 0;
+        static auto attachSLAndParent(std::unique_ptr<Statement> self, SourceLocation bg, SourceLocation end,ASTNode* parent = nullptr)
+            -> std::unique_ptr<Statement>
+        {
+            self->beg = bg;
+            self->end = end;
+            self->parent = parent;
+            return self;
+        }
     };
     class ExpressionStatement : public Statement
     {

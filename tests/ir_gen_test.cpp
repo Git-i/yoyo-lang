@@ -26,6 +26,7 @@ baz: class = {
     y: i32 & f64
 }
 
+
 val: enum = {
     abcd, efgh
 }
