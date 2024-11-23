@@ -440,12 +440,12 @@ namespace Yoyo
         if(result_type.is_integral() && left_type.is_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateSub(lhs, rhs, "addtmp");
+            return irgen->builder->CreateSub(lhs, rhs, "subtmp");
         }
         if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateFSub(lhs, rhs, "addtmp");
+            return irgen->builder->CreateFSub(lhs, rhs, "subtmp");
         }
         return nullptr;
     }

@@ -36,6 +36,7 @@ takes_foo: (param: i32) -> f64 = {
         app::func("${i}");
         i = i - 1;
     }
+    return 100;
 }
 )";
     std::string source = R"(
