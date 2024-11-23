@@ -20,9 +20,9 @@ langauge, written in (and primarily for) C++20.
 - [x] Enums
 - [x] Optionals
 - [x] Conditional Decomposition
+- [x] While loops
 - [ ] Modules
 - [ ] Iterators
-- [ ] While loops
 - [ ] For loops
 - [ ] With statements*
 - [ ] Arrays
