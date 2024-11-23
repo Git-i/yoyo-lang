@@ -33,16 +33,19 @@ namespace Yoyo
         std::optional<Type> parseType(uint32_t precedence);
         [[nodiscard]] bool discard(TokenType t);
         [[nodiscard]] bool failed() const {return has_error;};
-        void pushToken(Token t);
+        void pushToken(Token t, SourceLocation loc);
         void error(std::string message, std::optional<Token> tk);
 
         void synchronizeTo(std::span<const TokenType> t);///< skip all tokens till the next token of type @c t
         std::optional<Token> Peek();
         std::optional<Token> Get();
+        std::optional<std::pair<Token, SourceLocation>> PeekWithEndLocation();
+        std::optional<std::pair<Token, SourceLocation>> GetWithEndLocation();
         std::optional<FunctionSignature> parseFunctionSignature();
         const Scanner& getScanner() const { return scn; };
         const std::string& getSource() const { return source; };
         ASTNode* parent = nullptr;
+        SourceLocation discardLocation;
     private:
         bool has_error = false;
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
@@ -57,6 +60,6 @@ namespace Yoyo
         Scanner scn;
         std::unordered_map<TokenType, std::shared_ptr<PrefixParselet>> prefixParselets;
         std::unordered_map<TokenType, std::shared_ptr<InfixParselet>> infixParselets;
-        std::vector<Token> peekBuffer;
+        std::vector<std::pair<Token, SourceLocation>> peekBuffer;
     };
 }

@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include "parser.h"
 
+#include <iostream>
+
 TEST_CASE("Test sum/factor precedence", "[parser]")
 {
     Yoyo::Parser p("10 + 20 * 21");
@@ -90,4 +92,44 @@ TEST_CASE("Error recovery", "[parser]")
     REQUIRE(expr != nullptr);
     Yoyo::Parser p2("function: () -> return;");
     auto decl = p2.parseDeclaration();
+}
+TEST_CASE("Source Location", "[parser]")
+{
+    Yoyo::Parser p1(R"(
+main: () -> i32 = {
+    something := 10;
+    if (something) return something;
+    while(something > 20)
+    {
+        something -= 1;
+    }
+    return something;
+}
+)");
+    auto prog = p1.parseProgram();
+    auto visitor = [](auto arg, auto& self)
+    {
+        using arg_ty = std::remove_cvref_t<decltype(arg)>;
+        if constexpr (std::is_same_v<arg_ty, Yoyo::FunctionDeclaration*>)
+        {
+            std::cout << "Fn decl: " << arg->beg.line << ':' << arg->beg.column;
+            std::cout << ", " << arg->end.line << ':' << arg->end.column << "\n";
+            std::visit([&](auto arg) { self(arg, self);}, arg->body->toVariant());
+        }
+        else if constexpr (std::is_same_v<arg_ty, Yoyo::BlockStatement*>)
+        {
+            std::cout << "Blk Stat: " << arg->beg.line << ':' << arg->beg.column;
+            std::cout << ", " << arg->end.line << ':' << arg->end.column << "\n";
+            for(auto& stt: arg->statements) std::visit([&](auto arg) { self(arg, self);}, stt->toVariant());
+        }
+        else
+        {
+            std::cout << "Stat: " << arg->beg.line << ':' << arg->beg.column;
+            std::cout << ", " << arg->end.line << ':' << arg->end.column << "\n";
+        }
+    };
+    for(auto& stat: prog)
+    {
+        std::visit([&](auto arg) {visitor(arg, visitor);}, stat->toVariant());
+    }
 }
