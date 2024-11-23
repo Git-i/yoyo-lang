@@ -112,15 +112,15 @@ namespace Yoyo
         if(!look_ahead) return nullptr;
         switch (look_ahead->type)
         {
-        case TokenType::LParen: return parseFunctionDeclaration(iden.value(), loc);
-        case TokenType::Class: return parseClassDeclaration(iden.value(), false, loc);
-        case TokenType::Struct: return parseClassDeclaration(iden.value(), true, loc);
-        case TokenType::Enum: return parseEnumDeclaration(iden.value(), loc);
+        case TokenType::LParen: return parseFunctionDeclaration(iden.value());
+        case TokenType::Class: return parseClassDeclaration(iden.value(), false);
+        case TokenType::Struct: return parseClassDeclaration(iden.value(), true);
+        case TokenType::Enum: return parseEnumDeclaration(iden.value());
         case TokenType::EnumFlag:;//TODO
         case TokenType::Union:;//TODO
         case TokenType::Module: return parseModuleImport(iden.value());
 
-        default: return parseVariableDeclaration(iden.value(), loc);
+        default: return parseVariableDeclaration(iden.value());
         }
     }
 
@@ -178,7 +178,7 @@ namespace Yoyo
         while(Peek() && std::ranges::find(t, Peek()->type) == t.end()) Get();
     }
 
-    std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier, SourceLocation start)
+    std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
     {
         auto sig = parseFunctionSignature();
         //functions must specify explicit return types
@@ -191,7 +191,7 @@ namespace Yoyo
         auto stat = parseStatement();
         return Statement::attachSLAndParent(
             std::make_unique<FunctionDeclaration>(identifier, std::move(sig).value_or(FunctionSignature{}), std::move(stat)),
-            start, scn.GetSourceLocation(), parent
+            identifier.loc, scn.GetSourceLocation(), parent
             );
     }
 
@@ -356,7 +356,7 @@ namespace Yoyo
         return left;
     }
 
-    std::unique_ptr<Statement> Parser::parseVariableDeclaration(Token identifier, SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseVariableDeclaration(Token identifier)
     {
         bool is_mut = discard(TokenType::Mut);
         auto tk = Peek();
@@ -369,7 +369,7 @@ namespace Yoyo
             if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
             return Statement::attachSLAndParent(
             std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut),
-            loc, scn.GetSourceLocation(), parent);
+            identifier.loc, scn.GetSourceLocation(), parent);
         }
         if(tk->type == TokenType::Equal)
         {
@@ -380,7 +380,7 @@ namespace Yoyo
                 error("Expected ';'", Peek());
             return Statement::attachSLAndParent(
                 std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut),
-                loc, scn.GetSourceLocation(), parent);
+                identifier.loc, scn.GetSourceLocation(), parent);
         }
         auto type = parseType(0);
         if(!type) synchronizeTo({{TokenType::Equal, TokenType::SemiColon}});
@@ -392,10 +392,10 @@ namespace Yoyo
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
         return Statement::attachSLAndParent(
             std::make_unique<VariableDeclaration>(identifier, type, std::move(init), is_mut),
-            loc, scn.GetSourceLocation(), parent);
+            identifier.loc, scn.GetSourceLocation(), parent);
     }
 
-    std::unique_ptr<Statement> Parser::parseEnumDeclaration(Token identifier, SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseEnumDeclaration(Token identifier)
     {
         //Unspecified values cannot equal to specified values unlike in c++
         std::vector<int32_t> usedIntegers;
@@ -445,10 +445,10 @@ namespace Yoyo
             }
         }
         return Statement::attachSLAndParent(
-            std::make_unique<EnumDeclaration>(identifier, std::move(values)), loc, scn.GetSourceLocation(), parent);
+            std::make_unique<EnumDeclaration>(identifier, std::move(values)), identifier.loc, scn.GetSourceLocation(), parent);
     }
     //struct and classes are virtually the same, except structs don't have access specs and cant implement interfaces
-    std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct, SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct)
     {
         std::vector<ClassMethod> methods;
         std::vector<ClassVariable> vars;
@@ -486,7 +486,6 @@ namespace Yoyo
                 else if(tk->type == TokenType::Identifier) break;
                 else error("Unexpected token, expected '_', 'pub', 'mod' or identifier", Peek());
             }
-            const auto sl = scn.GetSourceLocation();
             auto iden = *Get();
             if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
             auto next_tk = Peek();
@@ -494,7 +493,7 @@ namespace Yoyo
             if(next_tk->type == TokenType::LParen)
             {
                 if(is_static) error("'static' cannot be applied to methods", next_tk);//static doesn't apply to functions
-                auto stat = parseFunctionDeclaration(iden, sl);
+                auto stat = parseFunctionDeclaration(iden);
                 methods.push_back(ClassMethod{.name=std::string{iden.text}, .function_decl = std::move(stat), .access = spec});
                 std::ignore = discard(TokenType::Comma); //comma is optional after function
             }
@@ -513,7 +512,7 @@ namespace Yoyo
             }
         }
         return Statement::attachSLAndParent(
-            std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods)), loc,
+            std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods)), identifier.loc,
             scn.GetSourceLocation(), parent
         );
     }
@@ -553,19 +552,19 @@ namespace Yoyo
         }
         return parseStatement();
     }
-    std::unique_ptr<Statement> Parser::parseReturnStatement(SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseReturnStatement(Token return_tok)
     {
         //empty return
         if(Peek() && Peek()->type == TokenType::SemiColon)
         {
             Get();
             return Statement::attachSLAndParent(
-                std::make_unique<ReturnStatement>(nullptr), loc, scn.GetSourceLocation(), parent);
+                std::make_unique<ReturnStatement>(nullptr), return_tok.loc, scn.GetSourceLocation(), parent);
         }
         auto expr = parseExpression(0);
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
         return Statement::attachSLAndParent(
-            std::make_unique<ReturnStatement>(std::move(expr)), loc, scn.GetSourceLocation(), parent);
+            std::make_unique<ReturnStatement>(std::move(expr)), return_tok.loc, scn.GetSourceLocation(), parent);
     }
 
     std::unique_ptr<Statement> Parser::parseExpressionStatement()
@@ -577,7 +576,7 @@ namespace Yoyo
             scn.GetSourceLocation(), parent);
     }
 
-    std::unique_ptr<Statement> Parser::parseConditionalExtraction(SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseConditionalExtraction(Token tk)
     {
         //parse the capture
         if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
@@ -611,13 +610,13 @@ namespace Yoyo
         }
         return Statement::attachSLAndParent(
             std::make_unique<ConditionalExtraction>(name, std::move(condition), std::move(then), std::move(else_stat), else_name),
-            loc, scn.GetSourceLocation(), parent
+            tk.loc, scn.GetSourceLocation(), parent
         );
     }
 
-    std::unique_ptr<Statement> Parser::parseIfStatement(SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseIfStatement(Token tk)
     {
-        if(Peek() && Peek()->type == TokenType::Pipe) return parseConditionalExtraction(loc);
+        if(Peek() && Peek()->type == TokenType::Pipe) return parseConditionalExtraction(tk);
         if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto condition = parseExpression(0);
         if(!condition) synchronizeTo({{TokenType::RParen}});
@@ -633,9 +632,9 @@ namespace Yoyo
         }
         return Statement::attachSLAndParent(
             std::make_unique<IfStatement>(std::move(condition), std::move(then), std::move(else_stat)),
-            loc, scn.GetSourceLocation(), parent);
+            tk.loc, scn.GetSourceLocation(), parent);
     }
-    std::unique_ptr<Statement> Parser::parseBlockStatement(SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseBlockStatement(Token tk)
     {
         std::vector<std::unique_ptr<Statement>> statements;
         while(!discard(TokenType::RCurly))
@@ -644,9 +643,9 @@ namespace Yoyo
             statements.push_back(std::move(decl));
         }
         return Statement::attachSLAndParent(
-            std::make_unique<BlockStatement>(std::move(statements)), loc, scn.GetSourceLocation(), parent);
+            std::make_unique<BlockStatement>(std::move(statements)), tk.loc, scn.GetSourceLocation(), parent);
     }
-    std::unique_ptr<Statement> Parser::parseForStatement(SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseForStatement(Token tk)
     {
         if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         std::vector<Token> vars;
@@ -670,10 +669,10 @@ namespace Yoyo
         auto then = parseStatement();
         return Statement::attachSLAndParent(
             std::make_unique<ForStatement>(std::move(vars), std::move(expr), std::move(then)),
-            loc, scn.GetSourceLocation(), parent);
+            tk.loc, scn.GetSourceLocation(), parent);
     }
 
-    std::unique_ptr<Statement> Parser::parseWhileStatement(SourceLocation loc)
+    std::unique_ptr<Statement> Parser::parseWhileStatement(Token tk)
     {
         if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto condition = parseExpression(0);
@@ -681,7 +680,7 @@ namespace Yoyo
         if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
         auto body = parseStatement();
         return Statement::attachSLAndParent(
-            std::make_unique<WhileStatement>(std::move(condition), std::move(body)), loc,
+            std::make_unique<WhileStatement>(std::move(condition), std::move(body)), tk.loc,
             scn.GetSourceLocation(), parent);
     }
     std::unique_ptr<Statement> Parser::parseStatement()
@@ -691,11 +690,11 @@ namespace Yoyo
         if(!tk) return nullptr;
         switch(tk->type)
         {
-        case TokenType::Return: {Get(); return parseReturnStatement(sl);}
-        case TokenType::If: {Get(); return parseIfStatement(sl);}
-        case TokenType::LCurly: {Get(); return parseBlockStatement(sl);}
-        case TokenType::While: {Get(); return parseWhileStatement(sl);}
-        case TokenType::For: {Get(); return parseForStatement(sl);}
+        case TokenType::Return: {Get(); return parseReturnStatement(*tk);}
+        case TokenType::If: {Get(); return parseIfStatement(*tk);}
+        case TokenType::LCurly: {Get(); return parseBlockStatement(*tk);}
+        case TokenType::While: {Get(); return parseWhileStatement(*tk);}
+        case TokenType::For: {Get(); return parseForStatement(*tk);}
         default: return parseExpressionStatement();
         }
 

@@ -26,6 +26,7 @@ namespace Yoyo {
     struct Token
     {
         TokenType type;
+        SourceLocation loc;
         std::string_view text;
         [[nodiscard]] bool is_assignment() const
         {

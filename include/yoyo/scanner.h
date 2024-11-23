@@ -10,6 +10,7 @@ namespace Yoyo {
         explicit Scanner(std::string_view);
 
         std::optional<Token> NextToken();
+        std::optional<Token> NextTokenInternal();
         size_t GetLine();
         [[nodiscard]] size_t GetOffset() const {return position;}
         [[nodiscard]] SourceLocation GetSourceLocation() const;

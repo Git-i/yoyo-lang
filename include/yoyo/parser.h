@@ -15,18 +15,18 @@ namespace Yoyo
     public:
         explicit Parser(std::string source);
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
-        std::unique_ptr<Statement> parseVariableDeclaration(Token identifier, SourceLocation loc);
-        std::unique_ptr<Statement> parseEnumDeclaration(Token identifier, SourceLocation);
-        std::unique_ptr<Statement> parseClassDeclaration(Token identifier, bool, SourceLocation);
+        std::unique_ptr<Statement> parseVariableDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseEnumDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseClassDeclaration(Token identifier, bool);
         std::unordered_map<std::string, std::unique_ptr<Expression>> parseObjectLiteral();
         std::unique_ptr<Statement> parseDeclaration();
-        std::unique_ptr<Statement> parseReturnStatement(SourceLocation loc);
+        std::unique_ptr<Statement> parseReturnStatement(Token);
         std::unique_ptr<Statement> parseExpressionStatement();
-        std::unique_ptr<Statement> parseConditionalExtraction(SourceLocation);
-        std::unique_ptr<Statement> parseIfStatement(SourceLocation);
-        std::unique_ptr<Statement> parseBlockStatement(SourceLocation);
-        std::unique_ptr<Statement> parseForStatement(SourceLocation);
-        std::unique_ptr<Statement> parseWhileStatement(SourceLocation);
+        std::unique_ptr<Statement> parseConditionalExtraction(Token);
+        std::unique_ptr<Statement> parseIfStatement(Token);
+        std::unique_ptr<Statement> parseBlockStatement(Token);
+        std::unique_ptr<Statement> parseForStatement(Token);
+        std::unique_ptr<Statement> parseWhileStatement(Token);
         std::unique_ptr<Statement> parseStatement();
         uint32_t GetNextTypePrecedence();
         std::vector<std::unique_ptr<Statement>> parseProgram();
@@ -45,7 +45,7 @@ namespace Yoyo
         ASTNode* parent = nullptr;
     private:
         bool has_error = false;
-        std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier, SourceLocation start);
+        std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
 
         uint32_t GetNextPrecedence();
         std::unique_ptr<Statement> parseModuleImport(Token identifier);
