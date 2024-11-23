@@ -13,26 +13,26 @@ langauge, written in (and primarily for) C++20.
 - [x] Mutability
 - [x] If Statements
 - [x] Lambdas
+- [x] Tuples
+- [x] Variants
+- [x] Classes
+- [x] Structs
+- [x] Enums
+- [x] Optionals
+- [x] Conditional Decomposition
 - [ ] Modules
 - [ ] Iterators
 - [ ] While loops
 - [ ] For loops
 - [ ] With statements*
-- [x] Tuples
 - [ ] Arrays
 - [ ] Span
 - [ ] Associative Arrays
-- [ ] Variants
 - [ ] Garbage Collections
-- [x] Classes
-- [x] Structs
 - [ ] Interfaces
 - [ ] Schemes
-- [x] Enums
 - [ ] Unions
-- [x] Optionals
 - [ ] Destructors
-- [ ] Capturing if
 
 *With statement is discussed under the memory model
 
