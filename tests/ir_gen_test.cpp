@@ -31,18 +31,11 @@ val: enum = {
     abcd, efgh
 }
 takes_foo: (param: i32) -> f64 = {
-    option: mut i32? = null;
-    lmao: f64 | baz = 10.0;
-    lol: baz | f64 = lmao;
-    if |value| (option) { app::func("value + 10 = ${value + 10}"); }
-    else { app::func("no value"); }
-    option = 10;
-    if |value| (option) { app::func("value + 10 = ${value + 10}"); }
-    else { app::func("no value"); }
-
-    if |value| (option) value = value + 100;
-    app::func("${option}");
-    return param;
+    i : mut = 10;
+    while (i > 0) {
+        app::func("${i}");
+        i = i - 1;
+    }
 }
 )";
     std::string source = R"(

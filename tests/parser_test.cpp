@@ -95,7 +95,7 @@ TEST_CASE("Error recovery", "[parser]")
 }
 TEST_CASE("Source Location", "[parser]")
 {
-    Yoyo::Parser p1(R"(
+    Yoyo::Parser p1(1 + R"(
 main: () -> i32 = {
     something := 10;
     if (something) return something;

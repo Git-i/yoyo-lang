@@ -349,14 +349,16 @@ namespace Yoyo
     }
     void IRGenerator::operator()(WhileStatement* expr)
     {
+        auto fn = builder->GetInsertBlock()->getParent();
         if(!std::visit(ExpressionTypeChecker{this}, expr->condition->toVariant())->is_boolean())
         {
             error();
             return;
         }
-        auto while_bb = llvm::BasicBlock::Create(context, "while", builder->GetInsertBlock()->getParent());
-        auto then_bb = llvm::BasicBlock::Create(context, "loopthen");
-        auto cont_bb = llvm::BasicBlock::Create(context, "loopcont");
+        auto while_bb = llvm::BasicBlock::Create(context, "while", fn, returnBlock);
+        auto then_bb = llvm::BasicBlock::Create(context, "loopthen", fn, returnBlock);
+        auto cont_bb = llvm::BasicBlock::Create(context, "loopcont", fn, returnBlock);
+        builder->CreateBr(while_bb);
         builder->SetInsertPoint(while_bb);
         auto value = std::visit(ExpressionEvaluator{this}, expr->condition->toVariant());
         builder->CreateCondBr(value, then_bb, cont_bb);

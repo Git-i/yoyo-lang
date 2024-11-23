@@ -440,12 +440,12 @@ namespace Yoyo
         if(result_type.is_integral() && left_type.is_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateAdd(lhs, rhs, "addtmp");
+            return irgen->builder->CreateSub(lhs, rhs, "addtmp");
         }
         if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateFAdd(lhs, rhs, "addtmp");
+            return irgen->builder->CreateFSub(lhs, rhs, "addtmp");
         }
         return nullptr;
     }
@@ -560,13 +560,13 @@ namespace Yoyo
                 }
             return llvm::CmpInst::BAD_ICMP_PREDICATE;
         };
-        if(left_type.is_signed_integral() && right_type.is_signed_integral())
+        if(left_type.is_signed_integral() && right_type.is_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             pred = get_int_cmp_pred(true, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
-        if(right_type.is_unsigned_integral() && left_type.is_integral())
+        if(left_type.is_unsigned_integral() && right_type.is_integral())
         {
             convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
             pred = get_int_cmp_pred(false, p);

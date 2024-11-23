@@ -28,7 +28,7 @@ namespace Yoyo {
         void handleLineComment();
         void handleBlockComment();
         size_t position = 0;
-        size_t col = 0;
+        size_t col = 1;
         size_t line = 1;
         std::string_view source;
         std::unordered_map<std::string_view, TokenType> keywords;

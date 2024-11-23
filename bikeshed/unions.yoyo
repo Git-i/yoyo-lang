@@ -17,7 +17,7 @@ Message: union = {
 
 main: () = {
     lol: mut Message = Message::Quit;
-    if |move_data: &{i32 & i32}| (lol as Message::Move) {
+    if |move_data| (lol as Message::Move) {
         
     }
     if (lol is Message::Quit) {
