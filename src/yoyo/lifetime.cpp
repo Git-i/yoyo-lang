@@ -1,4 +1,3 @@
-#pragma once
 #include "ir_gen.h"
 namespace Yoyo
 {

@@ -170,11 +170,12 @@ namespace Yoyo
     }
     /// IMPORTANT:\n
     /// I don't know where to place this, but all structural types are pointers
-    llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
+    llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_typ, const Type& right_type)
     {
         //TODO make this function a lot more skinny
-        if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
-        if(!left_type.is_mutable) {irgen->error(); return nullptr;}
+        if(!left_typ.deref().is_assignable_from(right_type)) {irgen->error(); return nullptr;}
+        if(!left_typ.is_mutable && !left_typ.is_mutable_reference()) {irgen->error(); return nullptr;}
+        auto& left_type = left_typ.deref();
         if(left_type.is_primitive())
         {
             return irgen->builder->CreateStore(implicitConvert(rhs, right_type, left_type, irgen), lhs);
@@ -622,9 +623,12 @@ namespace Yoyo
         return ExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
     }
 
-    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(Expression*)
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(Expression* expr)
     {
-        //TODO
+        auto t = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
+        if(!t) return nullptr;
+        if(t->is_reference()) return std::visit(ExpressionEvaluator{irgen}, expr->toVariant());
+        return nullptr;
     }
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(GroupingExpression* gre)

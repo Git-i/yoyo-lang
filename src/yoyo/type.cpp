@@ -152,6 +152,27 @@ namespace Yoyo
         for(auto& sub: subtypes) sub.saturate(src);
     }
 
+    Type Type::make_mut() const
+    {
+        Type t = *this;
+        t.is_lvalue = true; t.is_mutable = true;
+        return t;
+    }
+
+    Type Type::make_lvalue() const
+    {
+        Type t = *this;
+        t.is_lvalue = true;
+        return t;
+    }
+
+    Type Type::take_mutability_characteristics(const Type& other) const
+    {
+        Type t = *this;
+        t.is_lvalue = other.is_lvalue; t.is_mutable = other.is_mutable;
+        return t;
+    }
+
     Type Type::variant_merge(Type a, Type b)
     {
         if(a.is_equal(b)) return a;

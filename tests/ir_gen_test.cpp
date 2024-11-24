@@ -30,12 +30,13 @@ baz: class = {
 val: enum = {
     abcd, efgh
 }
+get_int: (tup: inout i32 & f32) -> &mut i32 = {
+    return tup.0;
+}
 takes_foo: (param: i32) -> f64 = {
-    i : mut = 10;
-    while (i > 0) {
-        app::func("${i}");
-        i = i - 1;
-    }
+    a : mut i32 & f32 = (10, 20);
+    get_int(a) = 400;
+    app::func("${a.0}");
     return 100;
 }
 )";

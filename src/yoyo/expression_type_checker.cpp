@@ -33,8 +33,10 @@ namespace Yoyo
     }
     static std::optional<Type> checkAssign(const Type &a, const Type &b)
     {
-        if(!a.is_mutable) return std::nullopt;
-        if(!a.is_assignable_from(b))
+        //auto deref is not done at type level, because composite types with references are not assignable to thier
+        //value counterparts ( i32? = {&i32}? is an error )
+        if(!a.is_mutable && !a.is_mutable_reference()) return std::nullopt;
+        if(!a.deref().is_assignable_from(b))
         {
             return std::nullopt;
         }
@@ -170,7 +172,7 @@ namespace Yoyo
         {
             if(auto idx = dynamic_cast<IntegerLiteral*>(expr->rhs.get()))
             {
-                return lhs.subtypes[std::stol(std::string{idx->text})];
+                return lhs.subtypes[std::stol(std::string{idx->text})].take_mutability_characteristics(lhs);
             }
             return std::nullopt;
         }
@@ -486,7 +488,7 @@ namespace Yoyo
             if(as_fn.sig.parameters[i].convention == ParamType::InOut)
             {
                 auto arg = std::visit(*this, op->arguments[i]->toVariant());
-                bool is_valid = arg && arg->is_lvalue && arg->is_equal(as_fn.sig.parameters[i].type);
+                bool is_valid = arg && arg->is_lvalue && arg->is_mutable && arg->is_equal(as_fn.sig.parameters[i].type);
                 if(!is_valid) return std::nullopt;
             }
             else if(!as_fn.sig.parameters[i].type.is_assignable_from(*std::visit(*this, op->arguments[i]->toVariant()))) return std::nullopt;

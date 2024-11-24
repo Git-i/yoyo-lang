@@ -12,7 +12,7 @@ namespace Yoyo
         //prefix operations are right associative
         auto self = std::make_unique<PrefixOperation>(tk, nullptr);
 
-        auto old_parent = parser.parent();
+        auto old_parent = parser.parent;
         parser.parent = self.get();
         auto expr = parser.parseExpression(Precedences::Prefix - 1);
         auto end = expr->end;
@@ -96,7 +96,7 @@ namespace Yoyo
             return Expression::attachSLAndParent(std::make_unique<TupleLiteral>(std::vector<std::unique_ptr<Expression>>{}),
                 tk.loc, parser.discardLocation, parser.parent);
 
-        auto old_parent = parser.parent();
+        auto old_parent = parser.parent;
         parser.parent = old_parent;
 
         auto expr = parser.parseExpression(0);
@@ -128,7 +128,7 @@ namespace Yoyo
             return Expression::attachSLAndParent(std::make_unique<ArrayLiteral>(std::vector<std::unique_ptr<Expression>>{}),
                 tk.loc, parser.discardLocation, parser.parent);
 
-        auto old_parent = parser.parent();
+        auto old_parent = parser.parent;
         parser.parent = old_parent;
 
         auto expr = parser.parseExpression(0);
