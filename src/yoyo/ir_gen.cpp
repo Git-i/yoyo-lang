@@ -440,10 +440,7 @@ namespace Yoyo
                 auto val = t->is_reference() ?
                     std::visit(ExpressionEvaluator{this}, stat->expression->toVariant()):
                     std::visit(ExpressionEvaluator::LValueEvaluator{this}, stat->expression->toVariant());
-                builder->CreateStore(
-                    val,
-                    currentReturnAddress
-                    );
+                builder->CreateStore(val, currentReturnAddress);
                 builder->CreateBr(returnBlock);
             }
             auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());

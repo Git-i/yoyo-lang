@@ -10,16 +10,31 @@ namespace Yoyo
     std::unique_ptr<Expression> PrefixOperationParselet::parse(Parser& parser, Token tk)
     {
         //prefix operations are right associative
+        auto self = std::make_unique<PrefixOperation>(tk, nullptr);
+
+        auto old_parent = parser.parent();
+        parser.parent = self.get();
         auto expr = parser.parseExpression(Precedences::Prefix - 1);
-        return std::make_unique<PrefixOperation>(tk, std::move(expr));
+        auto end = expr->end;
+        parser.parent = old_parent;
+
+        self->operand = std::move(expr);
+        return Expression::attachSLAndParent(std::move(self),
+            tk.loc, expr->end, parser.parent
+            );
     }
     std::unique_ptr<Expression> IntLiteralParselet::parse(Parser& parser, Token tk)
     {
-        return std::make_unique<IntegerLiteral>(tk.text);
+        return Expression::attachSLAndParent(
+            std::make_unique<IntegerLiteral>(tk.text), tk.loc,
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
     }
     std::unique_ptr<Expression> RealLiteralParselet::parse(Parser& parser, Token tk)
     {
-        return std::make_unique<RealLiteral>(tk);
+        return Expression::attachSLAndParent(
+            std::make_unique<RealLiteral>(tk), tk.loc,
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()},
+            parser.parent);
     }
     std::unique_ptr<Expression> StringLiteralParselet::parse(Parser& parser, Token tk)
     {
@@ -52,7 +67,14 @@ namespace Yoyo
         {
             values.emplace_back(std::string{tk.text.begin() + current_pos, tk.text.end()});
         }
-        return std::make_unique<StringLiteral>(std::move(values));
+
+        auto expr = std::make_unique<StringLiteral>(std::move(values));
+        for(auto& v : expr->literal)
+            if(std::holds_alternative<std::unique_ptr<Expression>>(v))
+                std::get<1>(v)->parent = expr.get();
+
+        return Expression::attachSLAndParent(std::move(expr), tk.loc,
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
     }
     std::unique_ptr<Expression> NameParselet::parse(Parser& parser, Token tk)
     {
@@ -60,15 +82,23 @@ namespace Yoyo
         if(curly && curly->type == TokenType::LCurly)
         {
             auto body = parser.parseObjectLiteral();
-            return std::make_unique<ObjectLiteral>(Type{.name = std::string{tk.text}}, std::move(body));
+            return Expression::attachSLAndParent(
+                std::make_unique<ObjectLiteral>(Type{.name = std::string{tk.text}}, std::move(body)), tk.loc,
+                parser.discardLocation, parser.parent);
         }
-        return std::make_unique<NameExpression>(std::string(tk.text));
+        return Expression::attachSLAndParent(std::make_unique<NameExpression>(std::string(tk.text)), tk.loc,
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
     }
     std::unique_ptr<Expression> GroupParselet::parse(Parser& parser, Token tk)
     {
         //empty tuple
         if(parser.discard(TokenType::RParen))
-            return std::make_unique<TupleLiteral>(std::vector<std::unique_ptr<Expression>>{});
+            return Expression::attachSLAndParent(std::make_unique<TupleLiteral>(std::vector<std::unique_ptr<Expression>>{}),
+                tk.loc, parser.discardLocation, parser.parent);
+
+        auto old_parent = parser.parent();
+        parser.parent = old_parent;
+
         auto expr = parser.parseExpression(0);
         if(!expr) parser.synchronizeTo({{TokenType::RParen, TokenType::Comma}});
         bool is_tuple = false;
@@ -85,13 +115,22 @@ namespace Yoyo
         {
             parser.error("Expected ')'", parser.Peek());
         }
-        return is_tuple ? static_cast<std::unique_ptr<Expression>>(std::make_unique<TupleLiteral>(std::move(expressions)))
-            : static_cast<std::unique_ptr<Expression>>(std::make_unique<GroupingExpression>(std::move(expr)));
+
+        parser.parent = old_parent;
+        return is_tuple ? Expression::attachSLAndParent(std::make_unique<TupleLiteral>(std::move(expressions)),
+            tk.loc, parser.discardLocation, parser.parent)
+            : Expression::attachSLAndParent(std::make_unique<GroupingExpression>(std::move(expr)),
+                tk.loc, parser.discardLocation, parser.parent);
     }
     std::unique_ptr<Expression> ArrayLiteralParselet::parse(Parser& parser, Token tk)
     {
         if(parser.discard(TokenType::RSquare))
-            return std::make_unique<ArrayLiteral>(std::vector<std::unique_ptr<Expression>>{});
+            return Expression::attachSLAndParent(std::make_unique<ArrayLiteral>(std::vector<std::unique_ptr<Expression>>{}),
+                tk.loc, parser.discardLocation, parser.parent);
+
+        auto old_parent = parser.parent();
+        parser.parent = old_parent;
+
         auto expr = parser.parseExpression(0);
         if(!expr) parser.synchronizeTo({{TokenType::RSquare, TokenType::Comma}});
         std::vector<std::unique_ptr<Expression>> expressions;
@@ -106,14 +145,18 @@ namespace Yoyo
         {
             parser.error("Expected ']'", parser.Peek());
         }
-        return std::make_unique<ArrayLiteral>(std::move(expressions));
+
+        parser.parent = old_parent;
+
+        return Expression::attachSLAndParent(std::make_unique<ArrayLiteral>(std::move(expressions)),
+            tk.loc, parser.discardLocation, parser.parent);
     }
 
     std::unique_ptr<Expression> BoolLiteralParselet::parse(Parser& parser, Token tk)
     {
-        return std::make_unique<BooleanLiteral>(tk);
+        return Expression::attachSLAndParent(std::make_unique<BooleanLiteral>(tk), tk.loc,
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
     }
-    auto print(int);
     std::unique_ptr<Expression> LambdaParselet::parse(Parser& parser, Token tok)
     {
         std::vector<std::pair<std::string, ParamType>> captures;
@@ -158,15 +201,20 @@ namespace Yoyo
         {
             sig = FunctionSignature{.returnType = Type{.name="__inferred"}, .return_is_ref = false, .parameters = {}};
         }
+
+
         auto stat = parser.parseStatement();
         auto expr = std::make_unique<LambdaExpression>(std::move(captures), std::move(sig), std::move(stat));
+
+        expr->body->parent = expr.get();
         //lambda hash depends on the pointer from `make_unique`
         expr->hash = std::to_string(reinterpret_cast<std::uintptr_t>(expr.get()));
-        return expr;
+        return Expression::attachSLAndParent(std::move(expr), tok.loc, stat->end, parser.parent);
     }
 
     std::unique_ptr<Expression> NullLiteralParselet::parse(Parser& parser, Token tk)
     {
-        return std::make_unique<NullLiteral>();
+        return Expression::attachSLAndParent(std::make_unique<NullLiteral>(), tk.loc,
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()} , parser.parent);
     }
 }

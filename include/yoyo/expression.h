@@ -1,4 +1,5 @@
 #pragma once
+#include <ast_node.h>
 #include <func_sig.h>
 
 #include "token.h"
@@ -52,10 +53,18 @@ namespace Yoyo
         ScopeOperation*,
         ObjectLiteral*,
         NullLiteral*>;
-    class Expression {
+    class Expression : public ASTNode {
     public:
-        virtual ~Expression() = default;
+        ~Expression() override = default;
         virtual ExpressionVariant toVariant() = 0;
+        static auto attachSLAndParent(std::unique_ptr<Expression> self, SourceLocation bg, SourceLocation end,ASTNode* parent = nullptr)
+            -> std::unique_ptr<Expression>
+        {
+            self->beg = bg;
+            self->end = end;
+            self->parent = parent;
+            return self;
+        }
     };
     class IntegerLiteral : public Expression {
     public:
