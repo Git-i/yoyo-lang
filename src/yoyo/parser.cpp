@@ -797,6 +797,14 @@ namespace Yoyo
         if(t.type == TokenType::Question) return Type{ .name = "__opt", .subtypes = {std::move(left)}};
         return std::nullopt;
     }
+    std::optional<Type> parseRefType(Token tk, Parser& p)
+    {
+        auto is_mut = p.discard(TokenType::Mut);
+        auto t = *p.parseType(0);
+        if(t.is_reference()) p.error("Double reference not allowed", tk);
+        if(is_mut) return Type{"__ref_mut", {std::move(t)}};
+        return Type("__ref", {std::move(t)});
+    }
     std::optional<Type> Parser::parseType(uint32_t precedence)
     {
         auto tk = Peek();
@@ -807,6 +815,7 @@ namespace Yoyo
         case TokenType::Identifier: Get(); t = Type(std::string(tk->text), {}); break;
         case TokenType::LSquare: Get(); t = parseArrayType(*tk, *this); break;
         case TokenType::LCurly: Get(); t = parseTypeGroup(*tk, *this); break;
+        case TokenType::Ampersand: Get(); t = parseRefType(*tk, *this); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())

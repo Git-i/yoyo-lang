@@ -16,6 +16,13 @@ iter: default fw_iterator::<&i32> for List = {
     value: (this) -> cref i32 = return this.current_node.value; //skipped the optional cuz ive not decided optional semantics
     advance: (this: inout) = this.current_node = this.current_node.next;
 }
+enumerate: iterator_op(iterator::<'a'> og) -> iterator::<'a' & usize> = {
+    idx: usize;
+    new: () -> This = return This{.idx = 0};
+    is_end: (this) -> bool = return og.is_end();
+    value: = return (og.value, idx);
+    advance:= {idx += 1; og.advance;}
+}
 
 num_digits: (x: u32) -> u32 = {...};
 nth_digit: (x: u32, n: u32) -> u32 = {...};

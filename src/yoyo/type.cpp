@@ -1,5 +1,6 @@
 #include "type.h"
 
+#include <csignal>
 #include <set>
 
 #include "ir_gen.h"
@@ -91,11 +92,34 @@ namespace Yoyo
     {
         if(is_variant() && other.is_variant())
         {
-            //variant ordering doesn't matter
+            //variant ordering doesn't matter TODO consider sorting variant subtypes in `saturate`
             return
                 std::set(subtypes.begin(), subtypes.end()) == std::set(other.subtypes.begin(), other.subtypes.end());
         }
         return name == other.name && subtypes == other.subtypes && module == other.module;
+    }
+
+    bool Type::is_non_owning(IRGenerator* irgen) const
+    {
+        if(is_reference()) return true;
+        if(is_optional() || is_variant() || is_tuple())
+        {
+            for(auto& subtype : subtypes)
+                if(subtype.is_non_owning(irgen)) return true;
+        }
+        std::raise(SIGTRAP);
+        return false;
+    }
+
+    bool Type::is_reference() const
+    {
+        return name == "__ref" || name == "__ref_mut";
+    }
+
+    const Type& Type::deref() const
+    {
+        if(is_reference()) return subtypes[0];
+        return *this;
     }
 
     Type Type::saturated(Module* src) const
@@ -220,10 +244,9 @@ namespace Yoyo
         if(!module) return false;
         return module->enums.contains(name);
     }
-
     bool Type::should_sret() const
     {
-        return !is_primitive() && !is_enum();
+        return !is_primitive() && !is_enum() && !is_reference();
     }
 
     bool Type::is_integral() const

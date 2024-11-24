@@ -30,6 +30,10 @@ namespace Yoyo
         [[nodiscard]] Type strip_lvalue() const {return {.name = name, .signature = signature, .is_mutable = false, .is_lvalue = false};}
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
+        [[nodiscard]] bool is_non_owning(IRGenerator*) const;
+        [[nodiscard]] bool is_reference() const;
+        /// returns a dereferenced version of a reference type or itself if not a reference
+        [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)
         [[nodiscard]] Type saturated(Module* src) const;
         void saturate(Module* src);

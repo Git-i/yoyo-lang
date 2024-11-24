@@ -417,13 +417,35 @@ namespace Yoyo
     {
         raise(SIGTRAP);
     }
-
+    FunctionDeclaration* IRGenerator::GetParentFunction(ASTNode* node)
+    {
+        auto parent = node->parent;
+        while(!dynamic_cast<FunctionDeclaration*>(parent))
+        {
+            parent = parent->parent;
+        }
+        return reinterpret_cast<FunctionDeclaration*>(parent);
+    }
     void IRGenerator::operator()(ReturnStatement* stat)
     {
         if(stat->expression)
         {
             auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant());
             if(!t) {error(); return;}
+            // `doAssign` for reference types works like c++ (dereference and assign) rather than rebind the ref, because
+            // references cannot be rebound, except in return statements, which is why we handle them specially
+            if(return_t.is_reference())
+            {
+                if(!std::visit(LifetimeExceedsFunctionChecker{this}, stat->expression->toVariant())) {error(); return;}
+                auto val = t->is_reference() ?
+                    std::visit(ExpressionEvaluator{this}, stat->expression->toVariant()):
+                    std::visit(ExpressionEvaluator::LValueEvaluator{this}, stat->expression->toVariant());
+                builder->CreateStore(
+                    val,
+                    currentReturnAddress
+                    );
+                builder->CreateBr(returnBlock);
+            }
             auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());
             ExpressionEvaluator{this}.doAssign(currentReturnAddress, value, return_t, *t);
             builder->CreateBr(returnBlock);

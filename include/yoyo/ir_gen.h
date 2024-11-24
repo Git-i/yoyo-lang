@@ -53,6 +53,7 @@ namespace Yoyo
         void operator()(ConditionalExtraction*);
 
         void error();
+        static FunctionDeclaration* GetParentFunction(ASTNode* node);
         void pushScope() {variables.emplace_back(); types.emplace_back();}
         void popScope() {variables.pop_back(); types.pop_back();}
         std::optional<Type> inferReturnType(Statement* stat);
@@ -132,6 +133,7 @@ namespace Yoyo
             llvm::Value* operator()(NameExpression*);
             llvm::Value* operator()(BinaryOperation*);
             llvm::Value* operator()(Expression*);
+            llvm::Value* operator()(GroupingExpression*);
         };
         llvm::Value* operator()(IntegerLiteral*);
         llvm::Value* operator()(BooleanLiteral*);
@@ -152,5 +154,22 @@ namespace Yoyo
         llvm::Value* operator()(ObjectLiteral*);
         llvm::Value* operator()(NullLiteral*);
         llvm::Value* operator()(AsExpression*);
+    };
+    //TODO: rename
+    class LifetimeExceedsFunctionChecker
+    {
+        IRGenerator* irgen;
+    public:
+        explicit LifetimeExceedsFunctionChecker(IRGenerator* irgen)
+            : irgen(irgen)
+        {
+        }
+        bool operator()(NameExpression*);
+        bool operator()(BinaryOperation*);
+        bool operator()(GroupingExpression*);
+        bool operator()(CallOperation*);
+        bool operator()(SubscriptOperation*);
+        bool operator()(Expression*);
+
     };
 }

@@ -618,7 +618,7 @@ namespace Yoyo
         if(bop->op.type != TokenType::Dot) return nullptr;
         auto left_t = std::visit(ExpressionTypeChecker{irgen}, bop->lhs->toVariant());
         if(!left_t) return nullptr;
-        if(!left_t->is_mutable) return nullptr;
+        if(!left_t->is_lvalue && !left_t->is_reference()) return nullptr;
         return ExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
     }
 
@@ -626,6 +626,12 @@ namespace Yoyo
     {
         //TODO
     }
+
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(GroupingExpression* gre)
+    {
+        return std::visit(*this, gre->expr->toVariant());
+    }
+
 
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
         const auto ul = std::stoull(std::string{lit->text});

@@ -7,5 +7,6 @@ namespace Yoyo {
         SourceLocation beg;
         SourceLocation end;
         ASTNode* parent = nullptr;
+        virtual ~ASTNode() = default;
     };
 }
