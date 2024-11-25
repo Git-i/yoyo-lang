@@ -17,14 +17,8 @@ namespace Yoyo
 namespace Yoyo
 {
     class NullLiteral;
-    class SubscriptOperation;
-    class CallOperation;
-    class PostfixOperation;
+    class ObjectLiteral;
     class LogicalOperation;
-    class PrefixOperation;
-    class BinaryOperation;
-    class GroupingExpression;
-    class NameExpression;
     class StringLiteral;
     class RealLiteral;
     class ArrayLiteral;
@@ -33,7 +27,15 @@ namespace Yoyo
     class IntegerLiteral;
     class LambdaExpression;
     class ScopeOperation;
-    class ObjectLiteral;
+
+    class SubscriptOperation;
+    class CallOperation;
+    class PostfixOperation;
+    class PrefixOperation;
+    class BinaryOperation;
+    class GroupingExpression;
+    class NameExpression;
+
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,

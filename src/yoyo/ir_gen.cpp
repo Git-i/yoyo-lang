@@ -299,6 +299,7 @@ namespace Yoyo
             error();
             return;
         }
+        if(type->is_non_owning(this)) { error(); return;}
 
         decl->type = type;
         //TODO probably consider copying lambda contexts??

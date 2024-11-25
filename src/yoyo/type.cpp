@@ -107,8 +107,13 @@ namespace Yoyo
             for(auto& subtype : subtypes)
                 if(subtype.is_non_owning(irgen)) return true;
         }
-        std::raise(SIGTRAP);
+        //TODO non-owning struct/class types
         return false;
+    }
+
+    bool Type::is_non_owning_mut(IRGenerator* g) const
+    {
+        return is_mutable_reference() || (is_non_owning(g) && is_mutable);
     }
 
     bool Type::is_reference() const

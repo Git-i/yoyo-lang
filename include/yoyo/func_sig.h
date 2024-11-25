@@ -2,15 +2,9 @@
 #include "type.h"
 namespace Yoyo
 {
-    enum class ParamType
-    {
-        In, //const&
-        InOut //&
-    };
     struct FunctionParameter
     {
         Type type;
-        ParamType convention;
         std::string name;
     };
     struct FunctionSignature

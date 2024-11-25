@@ -31,6 +31,7 @@ namespace Yoyo
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
         [[nodiscard]] bool is_non_owning(IRGenerator*) const;
+        [[nodiscard]] bool is_non_owning_mut(IRGenerator*) const;
         [[nodiscard]] bool is_reference() const;
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;

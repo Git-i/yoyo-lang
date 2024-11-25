@@ -170,12 +170,12 @@ namespace Yoyo
     }
     /// IMPORTANT:\n
     /// I don't know where to place this, but all structural types are pointers
-    llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_typ, const Type& right_type)
+    llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
         //TODO make this function a lot more skinny
-        if(!left_typ.deref().is_assignable_from(right_type)) {irgen->error(); return nullptr;}
-        if(!left_typ.is_mutable && !left_typ.is_mutable_reference()) {irgen->error(); return nullptr;}
-        auto& left_type = left_typ.deref();
+        if(!left_type.is_mutable) {irgen->error(); return nullptr;}
+        if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
+
         if(left_type.is_primitive())
         {
             return irgen->builder->CreateStore(implicitConvert(rhs, right_type, left_type, irgen), lhs);
@@ -623,12 +623,17 @@ namespace Yoyo
         return ExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
     }
 
+    llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(PrefixOperation* op)
+    {
+        if(op->op.type == TokenType::Star)
+        {
+            return std::visit(ExpressionEvaluator{irgen}, op->operand->toVariant());
+        }
+    }
+
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(Expression* expr)
     {
-        auto t = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
-        if(!t) return nullptr;
-        if(t->is_reference()) return std::visit(ExpressionEvaluator{irgen}, expr->toVariant());
-        return nullptr;
+        //TODO
     }
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(GroupingExpression* gre)
@@ -744,7 +749,22 @@ namespace Yoyo
         }
         return nullptr;
     }
-    llvm::Value* ExpressionEvaluator::operator()(PrefixOperation*) {}
+    llvm::Value* ExpressionEvaluator::operator()(PrefixOperation* op)
+    {
+        auto target = ExpressionTypeChecker{irgen}(op);
+        if(!target) {irgen->error(); return nullptr;}
+        auto operand = std::visit(*this, op->operand->toVariant());
+        switch(op->op.type)
+        {
+            //dereference
+        case TokenType::Star:
+            {
+                if(!target->should_sret())
+                    return irgen->builder->CreateLoad(irgen->ToLLVMType(*target, false), operand);
+                return operand;
+            }
+        }
+    }
     llvm::Value* ExpressionEvaluator::operator()(BinaryOperation* op)
     {
         auto type_checker = ExpressionTypeChecker{irgen};

@@ -35,8 +35,8 @@ namespace Yoyo
     {
         //auto deref is not done at type level, because composite types with references are not assignable to thier
         //value counterparts ( i32? = {&i32}? is an error )
-        if(!a.is_mutable && !a.is_mutable_reference()) return std::nullopt;
-        if(!a.deref().is_assignable_from(b))
+        if(!a.is_mutable) return std::nullopt;
+        if(!a.is_assignable_from(b))
         {
             return std::nullopt;
         }
@@ -469,6 +469,12 @@ namespace Yoyo
             using enum TokenType;
         case Minus: return unaryNegateResult(irgen->module, op_type);
         case Bang: return unaryNotResult(irgen->module, op_type);
+        case Star:
+            {
+                if(op_type.is_mutable_reference())  return op_type.deref().make_mut();
+                if(op_type.is_reference()) return op_type.deref();
+                return std::nullopt;
+            }
         default: return std::nullopt;
         }
 

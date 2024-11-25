@@ -19,8 +19,9 @@ namespace Yoyo
         parser.parent = old_parent;
 
         self->operand = std::move(expr);
+
         return Expression::attachSLAndParent(std::move(self),
-            tk.loc, expr->end, parser.parent
+            tk.loc, end, parser.parent
             );
     }
     std::unique_ptr<Expression> IntLiteralParselet::parse(Parser& parser, Token tk)
