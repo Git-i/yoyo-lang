@@ -30,18 +30,17 @@ baz: class = {
 val: enum = {
     abcd, efgh
 }
-get_int: (tup: inout i32 & f32, tup2: i32) -> &mut i32 = {
+get_int: (tup: &mut {i32 & f32}, tup2: i32) -> &mut i32 = {
     return tup.0;
 }
 takes_foo: (param: i32) -> f64 = {
     a : mut i32 & f32 = (10, 20);
-    *get_int(a) = 400;
+    *get_int(a, 10) = 400;
     app::func("${a.0}");
     return 100;
 }
 )";
     std::string source = R"(
-call_callable: (fn: called () -> f64) -> f64 = return fn.invoke();
 test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
 foo: class = {
     x: bar
@@ -62,7 +61,7 @@ returns_foo: () -> foo = {
 
     Yoyo::Engine engine;
     md = engine.addAppModule("APP");
-    md->addFunction("(x: str) -> i32", reinterpret_cast<void*>(&func), "func");
+    md->addFunction("(x: &str) -> i32", reinterpret_cast<void*>(&func), "func");
     engine.addModule("MOO", source);
     engine.addModule("MOO2", src2);
     engine.compile();

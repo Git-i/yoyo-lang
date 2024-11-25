@@ -21,7 +21,7 @@ namespace Yoyo
         //this is to store the signature for callable and storable functions
         std::shared_ptr<FunctionSignature> signature;
         Module* module;
-        bool is_mutable = false;
+        mutable bool is_mutable = false;
         bool is_lvalue = false;
         bool operator==(const Type& other) const
         {

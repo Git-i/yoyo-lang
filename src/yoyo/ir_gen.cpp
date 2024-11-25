@@ -215,14 +215,14 @@ namespace Yoyo
                 for(auto& capture: *caps)
                 {
                     auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), capture_idx);
-                    Token tk{.type = TokenType::Identifier, .text = capture.first};
+                    Token tk{.type = TokenType::Identifier, .text = capture};
                     NameExpression nexpr(std::string(tk.text));
                     auto type = ExpressionTypeChecker{this}(&nexpr);
                     declarations.emplace_back(Token{}, *type, nullptr, false);
-                    auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture.first);
+                    auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture);
                     if(type->is_primitive())
                         var = builder->CreateLoad(llvm::PointerType::get(context, 0), var);
-                    variables.back()[capture.first] = {
+                    variables.back()[capture] = {
                         var,
                         &declarations.back()
                     };

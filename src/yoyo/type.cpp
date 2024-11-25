@@ -60,7 +60,6 @@ namespace Yoyo
             for(size_t i = 0; i < signature->parameters.size(); ++i)
             {
                 if(signature->parameters[i].type != as_fn.sig.parameters[i].type) return false;
-                if(signature->parameters[i].convention != as_fn.sig.parameters[i].convention) return false;
             }
             if(signature->return_is_ref != as_fn.sig.return_is_ref) return false;
             if(signature->returnType != as_fn.sig.returnType) return false;
@@ -162,9 +161,13 @@ namespace Yoyo
 
         if(module_path.size() == 1)
         {
-            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() ))
+            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
                 module = src;
         }
+        if(is_mutable_reference())
+            subtypes[0].is_mutable = true;
+        if(is_reference())
+            subtypes[0].is_lvalue = true;
         if(module_path.size() > 1)
         {
             Module* mod = src->modules.at(std::string(module_path[0]));

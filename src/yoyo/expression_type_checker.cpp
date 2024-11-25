@@ -168,11 +168,11 @@ namespace Yoyo
             }
             return std::nullopt;
         }
-        if(lhs.name == "__tup")
+        if(lhs.deref().is_tuple())
         {
             if(auto idx = dynamic_cast<IntegerLiteral*>(expr->rhs.get()))
             {
-                return lhs.subtypes[std::stol(std::string{idx->text})].take_mutability_characteristics(lhs);
+                return lhs.deref().subtypes[std::stol(std::string{idx->text})].take_mutability_characteristics(lhs.deref());
             }
             return std::nullopt;
         }

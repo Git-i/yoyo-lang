@@ -378,14 +378,14 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
-        if(left_type.is_tuple())
+        if(left_type.deref().is_tuple())
         {
             if(auto idx = dynamic_cast<IntegerLiteral*>(rhs))
             {
                 auto idx_int = std::stoul(std::string{idx->text});
                 auto out_type = left_type.subtypes[idx_int];
 
-                auto llvm_t = irgen->ToLLVMType(left_type, false);
+                auto llvm_t = irgen->ToLLVMType(left_type.deref(), false);
                 auto llvm_idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx_int);
                 auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
                 auto left_ptr = std::visit(*this, lhs->toVariant());

@@ -8,6 +8,9 @@ namespace Yoyo
     {
         return false;
     }
+
+
+
     bool LifetimeExceedsFunctionChecker::operator()(BinaryOperation* op)
     {
         if(op->op.type != TokenType::Dot) return false;
@@ -73,6 +76,32 @@ namespace Yoyo
             }
         }
     }
+    BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(NameExpression* expr)
+    {
+        return {{expr->text, Mut }};
+    }
+
+    BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(BinaryOperation* expr)
+    {
+        BorrowResult{irgen}(expr);
+        if(expr->op.type == TokenType::Dot)
+            return std::visit(*this, expr->lhs->toVariant());
+        return {};
+    }
+
+    BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(CallOperation* expr)
+    {
+        return BorrowResult{irgen}(expr);
+    }
+
+    BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(PrefixOperation* expr)
+    {
+        BorrowResult{irgen}(expr);
+        if(expr->op.type == TokenType::Star)
+            return std::visit(*this, expr->operand->toVariant());
+        return {};
+    }
+
     BorrowResult::borrow_result_t BorrowResult::operator()(NameExpression* expr)
     {
         return {{expr->text, Const }};
@@ -123,7 +152,7 @@ namespace Yoyo
     {
         auto callee_ty = std::visit(ExpressionTypeChecker{irgen}, expr->callee->toVariant());
         std::vector<std::pair<Expression*, borrow_result_t>> borrows;
-        bool is_bound = callee_ty->is_bound();
+        bool is_bound = callee_ty->is_bound;
         //bound functions borrow the first arg too!
         if(is_bound)
         {

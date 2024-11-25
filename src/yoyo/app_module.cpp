@@ -18,7 +18,7 @@ namespace Yoyo
         }
         for(const auto& p : sig.parameters)
         {
-            if(!p.type.is_primitive() || p.convention == ParamType::InOut)
+            if(p.type.should_sret())
                 argTypes.push_back(llvm::PointerType::get(ctx, 0));
             else argTypes.push_back(module->ToLLVMType(p.type, false, {}));
         }

@@ -27,7 +27,7 @@ namespace Yoyo
         std::vector<
             std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration
         >>>> types;
-        std::unordered_map<std::string, std::pair<std::vector<std::pair<std::string, ParamType>>*, llvm::StructType*>> lambdas;
+        std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::string block_hash;
 
@@ -193,9 +193,10 @@ namespace Yoyo
             IRGenerator* irgen;
             borrow_result_t operator()(NameExpression*);
             borrow_result_t operator()(BinaryOperation*);
-            borrow_result_t operator()(Expression*);
+            borrow_result_t operator()(Expression*){}
+            borrow_result_t operator()(CallOperation*);
             borrow_result_t operator()(PrefixOperation*);
-            borrow_result_t operator()(GroupingExpression*);
+            borrow_result_t operator()(GroupingExpression*){}
         };
 
         //literals don't borrow (hopefully)
@@ -214,13 +215,13 @@ namespace Yoyo
         borrow_result_t operator()(PrefixOperation*);
         borrow_result_t operator()(BinaryOperation*);
         borrow_result_t operator()(GroupingExpression*);
-
-        borrow_result_t operator()(PostfixOperation*);
         borrow_result_t operator()(CallOperation*);
-        borrow_result_t operator()(SubscriptOperation*);
-        borrow_result_t operator()(LambdaExpression*);
-        borrow_result_t operator()(ScopeOperation*);
-        borrow_result_t operator()(AsExpression*);
+
+        borrow_result_t operator()(PostfixOperation*){}
+        borrow_result_t operator()(SubscriptOperation*){}
+        borrow_result_t operator()(LambdaExpression*){}
+        borrow_result_t operator()(ScopeOperation*){}
+        borrow_result_t operator()(AsExpression*){}
     };
     void validate_expression_borrows(Expression*, IRGenerator*);
 
