@@ -176,7 +176,7 @@ namespace Yoyo
             }
             return std::nullopt;
         }
-        if(auto cls = lhs.get_decl_if_class(irgen))
+        if(auto cls = lhs.deref().get_decl_if_class(irgen))
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
             {
@@ -199,9 +199,7 @@ namespace Yoyo
                 }); var != cls->methods.end())
                 {
                     auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                    if(decl->signature.parameters[0].type.name != "This")
-                        return std::nullopt;
-                    if(decl->signature.parameters[0].convention == ParamType::InOut && !lhs.is_mutable)
+                    if(decl->signature.parameters[0].name != "this")
                         return std::nullopt;
                     return FunctionType{decl->signature, true};
                 }
@@ -211,11 +209,8 @@ namespace Yoyo
         if(!rhs || !rhs->is_function()) return std::nullopt;
         auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
         if(as_function.is_bound) return std::nullopt;
-        if(!as_function.sig.parameters[0].type.is_equal(lhs))
-        {
+        if(!as_function.sig.parameters[0].type.can_accept_as_arg(lhs))
             return std::nullopt;
-        }
-        if(as_function.sig.parameters[0].convention == ParamType::InOut && !lhs.is_mutable) return std::nullopt;
         as_function.is_bound = true;
         return as_function;
     }
@@ -490,14 +485,8 @@ namespace Yoyo
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
         for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
         {
-            //inout parameters cannot be implicitly converted
-            if(as_fn.sig.parameters[i].convention == ParamType::InOut)
-            {
-                auto arg = std::visit(*this, op->arguments[i]->toVariant());
-                bool is_valid = arg && arg->is_lvalue && arg->is_mutable && arg->is_equal(as_fn.sig.parameters[i].type);
-                if(!is_valid) return std::nullopt;
-            }
-            else if(!as_fn.sig.parameters[i].type.is_assignable_from(*std::visit(*this, op->arguments[i]->toVariant()))) return std::nullopt;
+            if(!as_fn.sig.parameters[i].type.can_accept_as_arg(
+                *std::visit(*this, op->arguments[i]->toVariant()))) return std::nullopt;
         }
         return as_fn.sig.returnType;
     }

@@ -326,6 +326,56 @@ namespace Yoyo
         }
         return nullptr;
     }
+    llvm::Value* ExpressionEvaluator::clone(llvm::Value* lhs, const Type& left_type, llvm::Value* into)
+    {
+        if(!left_type.should_sret())
+        {
+            if(into) irgen->builder->CreateStore(lhs, into);
+            return lhs;
+        }
+        auto as_llvm = irgen->ToLLVMType(left_type, false);
+        if(!into) into = irgen->Alloca("clone", as_llvm);
+        if(left_type.is_tuple())
+        {
+            size_t idx = 0;
+            for(auto& sub : left_type.subtypes)
+            {
+                auto sub_as_llvm = irgen->ToLLVMType(sub, false);
+                auto ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
+                auto val = irgen->builder->CreateStructGEP(as_llvm, lhs, idx);
+                if(!sub.should_sret()) val = irgen->builder->CreateLoad(sub_as_llvm, val);
+                clone(val, left_type, ptr);
+                idx++;
+            }
+        }
+        else if(left_type.is_optional())
+        {
+            auto opt_ty = irgen->ToLLVMType(left_type, false);
+            //opt is {data, bool}
+            //TODO destroy data if exists
+
+            auto has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
+                irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto is_valid = llvm::BasicBlock::Create(irgen->context, "opt_valid_assign", fn, irgen->returnBlock);
+            auto opt_assign_cont = llvm::BasicBlock::Create(irgen->context, "opt_assign_cont", fn, irgen->returnBlock);
+            irgen->builder->CreateCondBr(has_value, is_valid, opt_assign_cont);
+
+            irgen->builder->SetInsertPoint(is_valid);
+            auto value= irgen->builder->CreateStructGEP(opt_ty, lhs, 0);
+            if(!left_type.subtypes[0].should_sret())
+            {
+                auto subtype = llvm::dyn_cast<llvm::StructType>(opt_ty)->getElementType(0);
+                value = irgen->builder->CreateLoad(subtype, value);
+            }
+            clone(value, left_type.subtypes[0], irgen->builder->CreateStructGEP(opt_ty, into, 0));
+            irgen->builder->CreateBr(opt_assign_cont);
+
+            irgen->builder->SetInsertPoint(opt_assign_cont);
+            irgen->builder->CreateStore(has_value, irgen->builder->CreateStructGEP(opt_ty, into , 1));
+        }
+        return into;
+    }
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
         if(left_type.is_tuple())
@@ -827,8 +877,19 @@ namespace Yoyo
         bool is_bound = first != nullptr;
         for(size_t i = 0; i < exprs.size(); i++)
         {
-            if(sig.parameters[i + is_bound].convention == ParamType::InOut)
+            if(sig.parameters[i + is_bound].type.is_non_owning_mut(irgen))
                 args[i + is_bound + uses_sret] = std::visit(LValueEvaluator{irgen}, exprs[i]->toVariant());
+            else if(sig.parameters[i + is_bound].type.is_non_owning(irgen))
+            {
+                auto val = std::visit(*this, exprs[i]->toVariant());
+                if(!val->getType()->isPointerTy())
+                {
+                    auto ptr = irgen->Alloca("fn_copy", val->getType());
+                    irgen->builder->CreateStore(val, ptr);
+                    val = ptr;
+                }
+                args[i + is_bound + uses_sret] = val;
+            }
             else
             {
                 auto arg = std::visit(*this, exprs[i]->toVariant());

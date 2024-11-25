@@ -100,8 +100,8 @@ namespace Yoyo
         }
         std::ranges::transform(sig.parameters, args.begin() + use_sret, [this](const FunctionParameter& p)
         {
-            auto t = ToLLVMType(p.type, p.convention == ParamType::InOut);
-            if((!p.type.is_primitive() && !p.type.is_enum())  || p.convention == ParamType::InOut)
+            auto t = ToLLVMType(p.type, false);
+            if(!p.type.is_primitive() && !p.type.is_enum())
                 t = t->getPointerTo();
             return t;
         });
@@ -188,9 +188,9 @@ namespace Yoyo
                 auto param_type = func->getFunctionType()->getFunctionParamType(idx);
                 auto type = param.type;
                 if(in_class && type.name == "This") type = this_t;
-                declarations.emplace_back(Token{}, type, nullptr,param.convention == ParamType::InOut);
+                declarations.emplace_back(Token{}, type, nullptr,false);
                 llvm::Value* var;
-                if(type.is_primitive() && param.convention != ParamType::InOut)
+                if(!param_type->isPointerTy())
                 {
                     var = Alloca(param.name, param_type);
                     builder->CreateStore(func->getArg(idx + uses_sret), var);
@@ -204,7 +204,7 @@ namespace Yoyo
                     &declarations.back()
                 };
             }
-            //make lambda context visible
+            //make lambda context visible TODO: fix lambdas
             if(param.type.is_lambda())
             {
                 if(!lambdas.contains(param.type.name)) {error(); return;}
@@ -218,9 +218,9 @@ namespace Yoyo
                     Token tk{.type = TokenType::Identifier, .text = capture.first};
                     NameExpression nexpr(std::string(tk.text));
                     auto type = ExpressionTypeChecker{this}(&nexpr);
-                    declarations.emplace_back(Token{}, *type, nullptr, capture.second == ParamType::InOut);
+                    declarations.emplace_back(Token{}, *type, nullptr, false);
                     auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture.first);
-                    if(type->is_primitive() && capture.second == ParamType::InOut)
+                    if(type->is_primitive())
                         var = builder->CreateLoad(llvm::PointerType::get(context, 0), var);
                     variables.back()[capture.first] = {
                         var,
@@ -247,7 +247,10 @@ namespace Yoyo
     }
     void IRGenerator::operator()(ExpressionStatement* stat)
     {
-        std::visit(ExpressionEvaluator{this}, stat->expression->toVariant());
+        auto as_var = stat->expression->toVariant();
+        auto ty = std::visit(ExpressionTypeChecker{this}, as_var);
+        validate_expression_borrows(stat->expression.get(), this);
+        std::visit(ExpressionEvaluator{this}, as_var);
     }
 
     void IRGenerator::operator()(ClassDeclaration* decl)

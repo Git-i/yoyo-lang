@@ -115,6 +115,7 @@ namespace Yoyo
         explicit ExpressionEvaluator(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
+        llvm::Value* clone(llvm::Value* lhs, const Type& left_type, llvm::Value* into);
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
         llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&, const Type&) const;
         llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
@@ -221,5 +222,6 @@ namespace Yoyo
         borrow_result_t operator()(ScopeOperation*);
         borrow_result_t operator()(AsExpression*);
     };
+    void validate_expression_borrows(Expression*, IRGenerator*);
 
 }

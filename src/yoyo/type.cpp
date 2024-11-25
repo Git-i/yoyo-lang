@@ -88,6 +88,20 @@ namespace Yoyo
         return false;
     }
 
+    bool Type::can_accept_as_arg(const Type& other) const
+    {
+        if(is_equal(other)) return true;
+        if(is_mutable_reference())
+        {
+            return deref().is_equal(other) && other.is_mutable;
+        }
+        if(is_reference())
+        {
+            return deref().is_equal(other);
+        }
+        return is_assignable_from(other);
+    }
+
     bool Type::is_equal(const Type& other) const
     {
         if(is_variant() && other.is_variant())
@@ -111,9 +125,16 @@ namespace Yoyo
         return false;
     }
 
-    bool Type::is_non_owning_mut(IRGenerator* g) const
+    bool Type::is_non_owning_mut(IRGenerator* irgen) const
     {
-        return is_mutable_reference() || (is_non_owning(g) && is_mutable);
+        if(is_mutable_reference()) return true;
+        if(is_optional() || is_variant() || is_tuple())
+        {
+            for(auto& subtype : subtypes)
+                if(subtype.is_non_owning_mut(irgen)) return true;
+        }
+        //TODO non-owning struct/class types
+        return false;
     }
 
     bool Type::is_reference() const

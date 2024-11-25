@@ -29,6 +29,7 @@ namespace Yoyo
         }
         [[nodiscard]] Type strip_lvalue() const {return {.name = name, .signature = signature, .is_mutable = false, .is_lvalue = false};}
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
+        [[nodiscard]] bool can_accept_as_arg(const Type& other) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
         [[nodiscard]] bool is_non_owning(IRGenerator*) const;
         [[nodiscard]] bool is_non_owning_mut(IRGenerator*) const;

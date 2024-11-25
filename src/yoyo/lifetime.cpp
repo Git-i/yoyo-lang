@@ -129,12 +129,49 @@ namespace Yoyo
         {
             auto as_bexp = reinterpret_cast<BinaryOperation*>(expr->callee.get());
             auto& type = callee_ty->sig.parameters[0].type;
-            auto is_mut_borrow = (type.is_mutable || type.is_mutable_reference();
-            borrows.emplace_back(as_bexp->lhs.get(), std::visit(*this, as_bexp->lhs->toVariant()));
+            auto is_mut_borrow = type.is_non_owning_mut(irgen);
+            borrows.emplace_back(as_bexp->lhs.get(),
+                is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, as_bexp->lhs->toVariant())
+                    : std::visit(*this, as_bexp->lhs->toVariant()));
         }
-        for(auto& arg : expr->arguments)
+        for(size_t i = 0; i < expr->arguments.size(); i++)
         {
-
+            auto& arg = expr->arguments[i];
+            auto& type = callee_ty->sig.parameters[i + is_bound].type;
+            auto is_mut_borrow = type.is_non_owning_mut(irgen);
+            borrows.emplace_back(arg.get(),
+                is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, arg->toVariant())
+                    : std::visit(*this, arg->toVariant()));
         }
+        validate_borrows(borrows, irgen);
+        //mutable non owning return borrows only mutable args
+        borrow_result_t out;
+        if(callee_ty->sig.returnType.is_non_owning_mut(irgen))
+        {
+            for(auto& borrow : borrows)
+            {
+                auto v = std::views::filter(borrow.second, [](auto& b) { return b.second == Mut; });
+                out.insert(out.begin(),
+                    std::make_move_iterator(v.begin()),
+                    std::make_move_iterator(v.end()));
+            }
+        }
+        //immutable non owning borrows all args, but does so immutably
+        else if(callee_ty->sig.returnType.is_non_owning(irgen))
+        {
+            for(auto& borrow : borrows)
+            {
+                std::ranges::for_each(borrow.second, [](auto& b){ b.second = Const; });
+                out.insert(out.begin(),
+                    std::make_move_iterator(borrow.second.begin()),
+                    std::make_move_iterator(borrow.second.end()));
+            }
+        }
+        return out;
+    }
+
+    void validate_expression_borrows(Expression* expr, IRGenerator* irgen)
+    {
+        validate_borrows({{{expr, std::visit(BorrowResult{irgen}, expr->toVariant())}}}, irgen);
     }
 }
