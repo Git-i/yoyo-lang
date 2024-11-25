@@ -926,7 +926,9 @@ namespace Yoyo
                     }
                     args[i + is_bound + uses_sret] = buffer;
                 }
-                else args[i + is_bound + uses_sret] = implicitConvert(arg, *tp, sig.parameters[i + is_bound].type, irgen);
+                else args[i + is_bound + uses_sret] = clone(
+                    implicitConvert(arg, *tp, sig.parameters[i + is_bound].type, irgen),
+                    sig.parameters[i + is_bound].type);
             }
         }
         return return_value;
@@ -962,7 +964,7 @@ namespace Yoyo
 
         auto fn_t = irgen->ToLLVMSignature(*left_t.signature);
         FunctionSignature sig = *left_t.signature;
-        sig.parameters.push_back(FunctionParameter{.type = Type{"__ptr"}, .convention = ParamType::InOut});
+        sig.parameters.push_back(FunctionParameter{.type = Type{"__ptr"}});
         auto lambda_t = irgen->ToLLVMSignature(sig);
 
         auto return_as_llvm = irgen->ToLLVMType(left_t.signature->returnType, false);
@@ -1074,13 +1076,12 @@ namespace Yoyo
         std::vector<llvm::Type*> context_types;
         for(auto& capture : expr->captures)
         {
-            Token tk{.type = TokenType::Identifier, .text = capture.first};
+            Token tk{.type = TokenType::Identifier, .text = capture};
             NameExpression name(std::string(tk.text));
             auto type = ExpressionTypeChecker{irgen}(&name);
             if(type->is_function()) { irgen->error(); return nullptr; }
-            if(capture.second == ParamType::InOut && !type->is_mutable) { irgen->error(); return nullptr; }
             llvm::Type* tp = irgen->ToLLVMType(*type, false);
-            context_types.push_back(capture.second == ParamType::In ? tp : tp->getPointerTo());
+            context_types.push_back(tp->getPointerTo());
         }
         auto context = llvm::StructType::get(irgen->context, context_types);
         auto ctx_object = irgen->Alloca("lambda_context", context);
@@ -1090,16 +1091,13 @@ namespace Yoyo
         for(auto& capture : expr->captures)
         {
             auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
-            Token tk{.type = TokenType::Identifier, .text = capture.first};
+            Token tk{.type = TokenType::Identifier, .text = capture};
             NameExpression name(std::string(tk.text));
             auto type = ExpressionTypeChecker{irgen}(&name);
             type->is_mutable = true;
-            llvm::Value* val = capture.second == ParamType::InOut ?
-                LValueEvaluator{irgen}(&name) :
-                (*this)(&name);
+            llvm::Value* val = LValueEvaluator{irgen}(&name);
             llvm::Value* lhs = irgen->builder->CreateGEP(context, ctx_object, {zero_const, idx_const});
-            if(capture.second == ParamType::InOut) irgen->builder->CreateStore(val, lhs);
-            else doAssign(lhs, val, *type, *type);
+            irgen->builder->CreateStore(val, lhs);
             idx++;
         }
         std::string name = "__lambda" + expr->hash;
@@ -1108,7 +1106,7 @@ namespace Yoyo
         irgen->lambdaSigs[name] = expr->sig;
         FunctionSignature sig = expr->sig;
         //insert a pointer to the context at the end of the signature
-        sig.parameters.push_back(FunctionParameter{.type = Type{name}, .convention = ParamType::InOut});
+        sig.parameters.push_back(FunctionParameter{.type = Type{name}});
         FunctionDeclaration decl(tk,std::move(sig), std::move(expr->body));
         (*irgen)(&decl);
         return ctx_object;

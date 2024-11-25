@@ -169,11 +169,11 @@ namespace Yoyo
     };
     class LambdaExpression : public Expression {
     public:
-        std::vector<std::pair<std::string, ParamType>> captures;
+        std::vector<std::string> captures;
         FunctionSignature sig;
         std::unique_ptr<Statement> body;
         std::string hash;
-        LambdaExpression(std::vector<std::pair<std::string, ParamType>> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
+        LambdaExpression(std::vector<std::string> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
         ExpressionVariant toVariant() override;
     };
     class ObjectLiteral : public Expression

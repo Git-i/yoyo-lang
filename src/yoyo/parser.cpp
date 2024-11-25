@@ -209,13 +209,6 @@ namespace Yoyo
              */
             auto tk = Peek();
             if(!tk) return std::nullopt;
-            auto t = ParamType::In;
-            if(tk->type == TokenType::In) Get();
-            else if(tk->type == TokenType::InOut)
-            {
-                t = ParamType::InOut;
-                Get();
-            }
             //param is a function
             else if(tk->type == TokenType::Called)
             {
@@ -223,10 +216,10 @@ namespace Yoyo
                 auto sig = parseFunctionSignature();
                 auto signature = std::make_shared<FunctionSignature>(*sig);
                 Type t{.name = "__called_fn", .subtypes = {}, .signature = signature, .is_mutable = false};
-                return FunctionParameter{.type = t, .convention = ParamType::In, .name = std::move(name)};
+                return FunctionParameter{.type = t, .name = std::move(name)};
             }
             auto type = parseType(0);
-            return FunctionParameter{std::move(type).value_or(Type{}), t, std::move(name)};
+            return FunctionParameter{std::move(type).value_or(Type{}),  std::move(name)};
         };
         auto tk = Peek();
         if(!tk) return std::nullopt;
@@ -257,16 +250,7 @@ namespace Yoyo
         else if(tk->type == TokenType::This)
         {
             Get();
-            auto conv = ParamType::In;
-            if(discard(TokenType::Colon))
-            {
-                auto conv_token = Peek();
-                if(!conv_token) return std::nullopt;
-                if(conv_token->type == TokenType::In){Get(); conv = ParamType::In;}
-                else if(conv_token->type == TokenType::InOut){Get();conv = ParamType::InOut;}
-                else error("Expected 'in' or 'inout'", conv_token);
-            }
-            sig.parameters.push_back(FunctionParameter{Type{"This", {}}, conv, "this"});
+            sig.parameters.push_back(FunctionParameter{Type{"This", {}},  "this"});
         }
         while(discard(TokenType::Comma))
         {

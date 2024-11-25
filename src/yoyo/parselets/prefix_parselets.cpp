@@ -160,7 +160,7 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> LambdaParselet::parse(Parser& parser, Token tok)
     {
-        std::vector<std::pair<std::string, ParamType>> captures;
+        std::vector<std::string> captures;
         if(tok.type == TokenType::Pipe)
         {
             do
@@ -171,19 +171,7 @@ namespace Yoyo
                 {
                     parser.Get();
                     std::string name(tk->text);
-                    auto t = ParamType::In;
-                    if(parser.discard(TokenType::Colon))
-                    {
-                        tk = parser.Peek();
-                        if(!tk) return nullptr;
-                        if(tk->type == TokenType::In) parser.Get();
-                        else if(tk->type == TokenType::InOut)
-                        {
-                            parser.Get();
-                            t = ParamType::InOut;
-                        }
-                    }
-                    captures.emplace_back(name, t);
+                    captures.emplace_back(name);
                 }
             } while(parser.discard(TokenType::Comma));
             if(!parser.discard(TokenType::Pipe)) parser.error("Expected '|'", parser.Peek());
