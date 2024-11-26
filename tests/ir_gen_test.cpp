@@ -41,9 +41,9 @@ takes_foo: (param: i32) -> f64 = {
     a : mut {i32 & i32}? = (10, 20);
     if |value| (a) {
         b: i32 = 0;
-        get_int(value, value_or(a, b));
+        get_int(value, b);
     }
-    app::func("lol");
+    app::func("${a}");
     return 100;
 }
 )";

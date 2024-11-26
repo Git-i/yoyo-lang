@@ -141,6 +141,58 @@ namespace Yoyo
 
             return {ptr_phi, value_phi};
         }
+        if(tp.is_tuple())
+        {
+            auto as_llvm = irgen->ToLLVMType(tp, false);
+            std::vector<std::pair<llvm::Value*, llvm::Value*>> args;
+            size_t idx = 0;
+            for(auto& sub: tp.subtypes)
+            {
+                auto sub_val = irgen->builder->CreateStructGEP(as_llvm, val, idx);
+                if(!sub.should_sret()) sub_val = irgen->builder->CreateLoad(irgen->ToLLVMType(sub, false), sub_val);
+                args.push_back(doToStr(sub_val, sub));
+                idx++;
+            }
+            // target output is (val, val2, val3...),
+            // hence the total size is the size of inputs plus 2(, ) for every input other than the first plus 2 for the
+            // open and close bracket
+            auto total_size = irgen->builder->CreateAdd(args[0].second,
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 2));
+            for(const auto& arg : std::ranges::subrange(args.begin() + 1, args.end()))
+            {
+                total_size = irgen->builder->CreateAdd(total_size, irgen->builder->CreateAdd(
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 2),
+                    arg.second));
+            }
+            auto memory = irgen->Malloc("tuple_to_string", total_size);
+            irgen->builder->CreateStore(
+                llvm::ConstantInt::get(llvm::Type::getInt8Ty(irgen->context), '('), memory);
+            llvm::Value* offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 1);
+            auto i8_ty = llvm::Type::getInt8Ty(irgen->context);
+
+            auto current_ptr = irgen->builder->CreateGEP(i8_ty, memory, offset);
+            irgen->builder->CreateMemCpy(current_ptr, std::nullopt, args[0].first, std::nullopt, args[0].second);
+            irgen->Free(args[0].first);
+            offset = irgen->builder->CreateAdd(offset, args[0].second);
+
+            auto const_one = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 1);
+            for(auto& arg : std::ranges::subrange(args.begin() + 1, args.end()))
+            {
+                current_ptr = irgen->builder->CreateGEP(i8_ty, memory, offset);
+                irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, ','), current_ptr);
+                offset = irgen->builder->CreateAdd(offset, const_one);
+                current_ptr = irgen->builder->CreateGEP(i8_ty, memory, offset);
+                irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, ' '), current_ptr);
+                offset = irgen->builder->CreateAdd(offset, const_one);
+                current_ptr = irgen->builder->CreateGEP(i8_ty, memory, offset);
+                irgen->builder->CreateMemCpy(current_ptr, std::nullopt, arg.first, std::nullopt, arg.second);
+                offset = irgen->builder->CreateAdd(offset, arg.second);
+                irgen->Free(arg.first);
+            }
+            current_ptr = irgen->builder->CreateGEP(i8_ty, memory, offset);
+            irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, ')'), current_ptr);
+            return {memory, total_size};
+        }
         raise(SIGTRAP);
     }
 }
