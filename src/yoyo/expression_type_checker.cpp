@@ -485,8 +485,9 @@ namespace Yoyo
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
         for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
         {
-            if(!as_fn.sig.parameters[i].type.can_accept_as_arg(
-                *std::visit(*this, op->arguments[i]->toVariant()))) return std::nullopt;
+            auto tp = std::visit(*this, op->arguments[i]->toVariant());
+            if(!tp) return std::nullopt;
+            if(!as_fn.sig.parameters[i].type.can_accept_as_arg(*tp)) return std::nullopt;
         }
         return as_fn.sig.returnType;
     }

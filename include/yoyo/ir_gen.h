@@ -1,6 +1,7 @@
 #pragma once
 #include <fn_type.h>
 #include <list>
+#include <span>
 #include <statement.h>
 #include "engine.h"
 #include <utility>
@@ -10,6 +11,56 @@
 #include "module.h"
 namespace Yoyo
 {
+    class IRGenerator;
+    //TODO: also rename, why can't AI do this :-(
+    /// The basic principle is:
+    /// - If the result of the expressions references any variable, it should be reflected in the borrows
+    /// or mutable_borrows maps
+    class BorrowResult
+    {
+        IRGenerator* irgen;
+    public:
+        enum BorrowType { Mut, Const };
+        explicit BorrowResult(IRGenerator* irgen):irgen(irgen){}
+
+
+        using borrow_result_t = std::vector<std::pair<std::string, BorrowType>>;
+        struct LValueBorrowResult
+        {
+            IRGenerator* irgen;
+            borrow_result_t operator()(NameExpression*);
+            borrow_result_t operator()(BinaryOperation*);
+            borrow_result_t operator()(Expression*){}
+            borrow_result_t operator()(CallOperation*);
+            borrow_result_t operator()(PrefixOperation*);
+            borrow_result_t operator()(GroupingExpression*){}
+        };
+
+        //literals don't borrow (hopefully)
+        borrow_result_t operator()(IntegerLiteral*) const {return {};}
+        borrow_result_t operator()(BooleanLiteral*) const {return {};}
+        borrow_result_t operator()(TupleLiteral*) const {return {};}
+        borrow_result_t operator()(ArrayLiteral*) const {return {};}
+        borrow_result_t operator()(RealLiteral*) const {return {};}
+        borrow_result_t operator()(StringLiteral*) const {return {};}
+        borrow_result_t operator()(ObjectLiteral*) const {return {};}
+        borrow_result_t operator()(NullLiteral*) const {return {};}
+        borrow_result_t operator()(LogicalOperation*) const {return {};}
+
+
+        borrow_result_t operator()(NameExpression*);
+        borrow_result_t operator()(PrefixOperation*);
+        borrow_result_t operator()(BinaryOperation*);
+        borrow_result_t operator()(GroupingExpression*);
+        borrow_result_t operator()(CallOperation*);
+        borrow_result_t doCall(CallOperation* expr);
+
+        borrow_result_t operator()(PostfixOperation*){}
+        borrow_result_t operator()(SubscriptOperation*){}
+        borrow_result_t operator()(LambdaExpression*){}
+        borrow_result_t operator()(ScopeOperation*){}
+        borrow_result_t operator()(AsExpression*){}
+    };
     class IRGenerator
     {
     public:
@@ -29,6 +80,7 @@ namespace Yoyo
         >>>> types;
         std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
+        std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
         std::string block_hash;
 
         std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>* findType(const std::string& name);
@@ -175,55 +227,8 @@ namespace Yoyo
         bool operator()(Expression*);
 
     };
-    //TODO: also rename, why can't AI do this :-(
-    /// The basic principle is:
-    /// - If the result of the expressions references any variable, it should be reflected in the borrows
-    /// or mutable_borrows maps
-    class BorrowResult
-    {
-        IRGenerator* irgen;
-    public:
-        enum BorrowType { Mut, Const };
-        explicit BorrowResult(IRGenerator* irgen):irgen(irgen){}
 
-
-        using borrow_result_t = std::vector<std::pair<std::string, BorrowType>>;
-        struct LValueBorrowResult
-        {
-            IRGenerator* irgen;
-            borrow_result_t operator()(NameExpression*);
-            borrow_result_t operator()(BinaryOperation*);
-            borrow_result_t operator()(Expression*){}
-            borrow_result_t operator()(CallOperation*);
-            borrow_result_t operator()(PrefixOperation*);
-            borrow_result_t operator()(GroupingExpression*){}
-        };
-
-        //literals don't borrow (hopefully)
-        borrow_result_t operator()(IntegerLiteral*) const {return {};}
-        borrow_result_t operator()(BooleanLiteral*) const {return {};}
-        borrow_result_t operator()(TupleLiteral*) const {return {};}
-        borrow_result_t operator()(ArrayLiteral*) const {return {};}
-        borrow_result_t operator()(RealLiteral*) const {return {};}
-        borrow_result_t operator()(StringLiteral*) const {return {};}
-        borrow_result_t operator()(ObjectLiteral*) const {return {};}
-        borrow_result_t operator()(NullLiteral*) const {return {};}
-        borrow_result_t operator()(LogicalOperation*) const {return {};}
-
-
-        borrow_result_t operator()(NameExpression*);
-        borrow_result_t operator()(PrefixOperation*);
-        borrow_result_t operator()(BinaryOperation*);
-        borrow_result_t operator()(GroupingExpression*);
-        borrow_result_t operator()(CallOperation*);
-        borrow_result_t doCall(CallOperation* expr);
-
-        borrow_result_t operator()(PostfixOperation*){}
-        borrow_result_t operator()(SubscriptOperation*){}
-        borrow_result_t operator()(LambdaExpression*){}
-        borrow_result_t operator()(ScopeOperation*){}
-        borrow_result_t operator()(AsExpression*){}
-    };
     void validate_expression_borrows(Expression*, IRGenerator*);
+    void validate_borrows(std::span<const std::pair<Expression*, BorrowResult::borrow_result_t>> param, IRGenerator* irgen);
 
 }

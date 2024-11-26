@@ -29,14 +29,21 @@ baz: class = {
 val: enum = {
     abcd, efgh
 }
-get_int: (tup: &mut {i32 & f32}, tup2: i32) -> &mut i32 = return tup.0;
-get_int_const: (tup: &{i32 & f32}, tup2: &i32) -> &i32 = return tup.0;
+get_int: (tup: &mut {i32 & i32}, tup2: &i32) -> &mut i32 = return tup.0;
+value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
+    if |val| (*tup) {
+        return val.0;
+    }
+    return alt;
+}
 
 takes_foo: (param: i32) -> f64 = {
-    a : mut i32 & f32 = (10, 20);
-    get_int_const(a, a.0);
-    *get_int(a, *get_int_const(a, a.0)) = a.0;
-    app::func("${a.0}");
+    a : mut {i32 & i32}? = (10, 20);
+    if |value| (a) {
+        b: i32 = 0;
+        get_int(value, value_or(a, b));
+    }
+    app::func("lol");
     return 100;
 }
 )";

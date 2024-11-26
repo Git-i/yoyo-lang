@@ -179,33 +179,20 @@ namespace Yoyo
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
 
         if(left_type.is_primitive())
-        {
             return irgen->builder->CreateStore(implicitConvert(rhs, right_type, left_type, irgen), lhs);
-        }
         if(left_type.is_tuple())
-        {
-            auto as_llvm = irgen->ToLLVMType(left_type, false);
-            if(!left_type.is_equal(right_type)) {irgen->error(); return nullptr;}
-
-            clone(rhs, left_type, lhs);
-
-
-            return nullptr;
-        }
+            return clone(rhs, left_type, lhs);
         if(left_type.is_enum())
-        {
             return irgen->builder->CreateStore(rhs, lhs);
-        }
+
         if(left_type.is_optional())
         {
             auto opt_ty = irgen->ToLLVMType(left_type, false);
             //opt is {data, bool}
             //TODO destroy data if exists
             if(right_type.name == "__null")
-            {
-                auto has_value = irgen->builder->CreateStructGEP(opt_ty, lhs, 1);
-                return irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), has_value);
-            }
+                return irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context),
+                    irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
             //subtype implicit conversion
             if(!right_type.is_equal(left_type))
             {
@@ -265,7 +252,7 @@ namespace Yoyo
                 auto ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
                 auto val = irgen->builder->CreateStructGEP(as_llvm, value, idx);
                 if(!sub.should_sret()) val = irgen->builder->CreateLoad(sub_as_llvm, val);
-                clone(val, left_type, ptr);
+                clone(val, sub, ptr);
                 idx++;
             }
         }

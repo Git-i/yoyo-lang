@@ -311,6 +311,8 @@ namespace Yoyo
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
+            if(!expr_type) error();
+            validate_expression_borrows(decl->initializer.get(), this);
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
             //instead of copying we move
@@ -360,6 +362,7 @@ namespace Yoyo
             error();
             return;
         }
+        validate_expression_borrows(expr->condition.get(), this);
         auto while_bb = llvm::BasicBlock::Create(context, "while", fn, returnBlock);
         auto then_bb = llvm::BasicBlock::Create(context, "loopthen", fn, returnBlock);
         auto cont_bb = llvm::BasicBlock::Create(context, "loopcont", fn, returnBlock);
@@ -381,6 +384,15 @@ namespace Yoyo
         if(!tp || !tp->is_optional()) { error(); return;}
         if(!stat->else_capture.empty()) {error(); return;}
 
+        std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
+        borrow_res[0].first = stat->condition.get();
+        borrow_res[0].second = tp->is_mutable ?
+            std::visit(BorrowResult::LValueBorrowResult{this}, stat->condition->toVariant()):
+            std::visit(BorrowResult{this}, stat->condition->toVariant());
+        validate_borrows(borrow_res, this);
+
+        if(isShadowing(stat->captured_name)) {error(); return;}
+
         auto llvm_t = ToLLVMType(tp.value(), false);
         auto optional = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
 
@@ -397,13 +409,18 @@ namespace Yoyo
         builder->SetInsertPoint(then_bb);
 
         pushScope();
+        lifetimeExtensions[stat->captured_name] = std::move(borrow_res[0].second);
+
         auto ptr = builder->CreateStructGEP(llvm_t, optional, 0, stat->captured_name);
         tp->subtypes[0].is_lvalue = true; tp->subtypes[0].is_mutable = tp->is_mutable;
         VariableDeclaration decl(Token{}, tp->subtypes[0], nullptr, tp->is_mutable);
         variables.back()[stat->captured_name] = {ptr, &decl};
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
+
+        lifetimeExtensions.erase(stat->captured_name);
         popScope();
+
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
 
         if(stat->else_body)

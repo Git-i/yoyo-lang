@@ -39,8 +39,19 @@ namespace Yoyo
     }
     bool LifetimeExceedsFunctionChecker::operator()(NameExpression* nm)
     {
-        //the lifetime can only exceed if it's a function parameter, or a global
+        //the lifetime can only exceed if it's a function parameter(or borrowed from a param), or a global
         //TODO: add globals
+        if(irgen->lifetimeExtensions.contains(nm->text))
+        {
+            bool is_valid = true;
+            for(auto& expr : irgen->lifetimeExtensions[nm->text])
+            {
+                NameExpression nm2(expr.first);
+                nm2.parent = nm->parent;
+                if(!(*this)(&nm2)) is_valid = false;
+            }
+            return is_valid;
+        }
         auto fn = IRGenerator::GetParentFunction(nm);
         if(auto it = std::ranges::find_if(fn->signature.parameters, [&](auto& p)
         {
@@ -78,6 +89,8 @@ namespace Yoyo
     }
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(NameExpression* expr)
     {
+        if(irgen->lifetimeExtensions.contains(expr->text))
+            return irgen->lifetimeExtensions[expr->text];
         return {{expr->text, Mut }};
     }
 
@@ -104,6 +117,12 @@ namespace Yoyo
 
     BorrowResult::borrow_result_t BorrowResult::operator()(NameExpression* expr)
     {
+        if(irgen->lifetimeExtensions.contains(expr->text))
+        {
+            auto v = irgen->lifetimeExtensions[expr->text];
+            for(auto& val : v) val.second = Const;
+            return v;
+        }
         return {{expr->text, Const }};
     }
     BorrowResult::borrow_result_t BorrowResult::operator()(PrefixOperation* expr)
