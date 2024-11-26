@@ -170,6 +170,8 @@ namespace Yoyo
     }
     /// IMPORTANT:\n
     /// I don't know where to place this, but all structural types are pointers
+
+
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
         //TODO make this function a lot more skinny
@@ -184,17 +186,10 @@ namespace Yoyo
         {
             auto as_llvm = irgen->ToLLVMType(left_type, false);
             if(!left_type.is_equal(right_type)) {irgen->error(); return nullptr;}
-            auto zero_const = llvm::ConstantInt::get(irgen->builder->getInt32Ty(), 0);
-            size_t idx = 0;
-            for(auto& sub : left_type.subtypes)
-            {
-                auto idx_const = llvm::ConstantInt::get(irgen->builder->getInt32Ty(), idx);
-                auto ptr = irgen->builder->CreateGEP(as_llvm, lhs, {zero_const, idx_const});
-                Type tp = sub;
-                tp.is_mutable = true;
-                doAssign(ptr, rhs, tp, tp);
-                idx++;
-            }
+
+            clone(rhs, left_type, lhs);
+
+
             return nullptr;
         }
         if(left_type.is_enum())
@@ -219,33 +214,7 @@ namespace Yoyo
                 doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), rhs, tp, right_type);
                 return irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
             }
-            auto right_has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
-                irgen->builder->CreateStructGEP(opt_ty, rhs, 1));
-            auto fn = irgen->builder->GetInsertBlock()->getParent();
-            auto r_is_valid = llvm::BasicBlock::Create(irgen->context, "opt_valid_assign", fn, irgen->returnBlock);
-            auto r_is_invalid = llvm::BasicBlock::Create(irgen->context, "opt_invalid_assign", fn, irgen->returnBlock);
-            auto opt_assign_cont = llvm::BasicBlock::Create(irgen->context, "opt_assign_cont", fn, irgen->returnBlock);
-            irgen->builder->CreateCondBr(right_has_value, r_is_valid, r_is_invalid);
-
-            irgen->builder->SetInsertPoint(r_is_valid);
-            auto value_rhs = irgen->builder->CreateStructGEP(opt_ty, rhs, 0);
-            if(!right_type.subtypes[0].should_sret())
-            {
-                auto subtype = llvm::dyn_cast<llvm::StructType>(opt_ty)->getElementType(0);
-                value_rhs = irgen->builder->CreateLoad(subtype, value_rhs);
-            }
-            Type tp = left_type.subtypes[0];
-            tp.is_mutable = true;
-            doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), value_rhs, tp, tp);
-            irgen->builder->CreateBr(opt_assign_cont);
-
-            irgen->builder->SetInsertPoint(r_is_invalid);
-            auto has_value = irgen->builder->CreateStructGEP(opt_ty, lhs, 1);
-            irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), has_value);
-            irgen->builder->CreateBr(opt_assign_cont);
-
-            irgen->builder->SetInsertPoint(opt_assign_cont);
-            return nullptr;
+            clone(rhs, left_type, lhs);
         }
         if(left_type.is_variant())
         {
@@ -255,27 +224,7 @@ namespace Yoyo
             auto type_idx_ptr = irgen->builder->CreateStructGEP(llvm_ty, lhs, 1);
             if(left_type.is_equal(right_type))
             {
-                //TODO destroy current value
-
-                auto r_type_idx = irgen->builder->CreateLoad(
-                    llvm::Type::getInt32Ty(irgen->context),
-                    irgen->builder->CreateStructGEP(llvm_ty, rhs, 1));
-                llvm::BasicBlock* def = llvm::BasicBlock::Create(irgen->context, "variant_default", fn, irgen->returnBlock);
-                auto sw = irgen->builder->CreateSwitch(r_type_idx, def, left_type.subtypes.size());
-                uint32_t idx = 0;
-                for(auto& sub : subtypes)
-                {
-                    llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, def);
-                    sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
-                    irgen->builder->SetInsertPoint(blk);
-                    auto sub_mut = sub;
-                    sub_mut.is_mutable = true;
-                    doAssign(lhs, rhs, sub_mut, sub_mut);
-                    irgen->builder->CreateStore(r_type_idx, type_idx_ptr);
-                    irgen->builder->CreateBr(def);
-                    idx++;
-                }
-                irgen->builder->SetInsertPoint(def); return nullptr;
+                clone(rhs, left_type, lhs);
             }
             //implicit conversion
             uint32_t i = 0;
@@ -291,47 +240,19 @@ namespace Yoyo
                 return nullptr;
             }
         }
-        //Copy for non primitives is memberwise, but can be explicitly
-        //overloaded with the __copy method for classes
-        //__copy is always (this: inout, other: in This) -> void
-        //copy is mangled as __class__<source>____copy
-        auto l_data = findType(left_type.name, irgen, left_type.module);
-        if(!l_data) {irgen->error(); return nullptr;}
-        std::string cp_name = std::get<0>(*l_data) + "__copy";
-        auto cp_fn = irgen->code->getFunction(cp_name);
-        if(cp_fn)
-        {
-            irgen->builder->CreateCall(cp_fn, {lhs, rhs});
-        }
-        else
-        {
-            //member wise copy is generated by default for same type
-            if(!left_type.is_equal(right_type)) {irgen->error(); return nullptr;}
-            llvm::Type* llvm_t = irgen->ToLLVMType(left_type, false);
-            auto as_class = left_type.get_decl_if_class(irgen);
-            size_t idx = 0;
-            auto zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
-            for(auto& var : as_class->vars)
-            {
-                auto mem_idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
-                llvm::Value* mem_wise_rhs = irgen->builder->CreateGEP(llvm_t, rhs, {zero, mem_idx});
-                llvm::Value* mem_wise_lhs = irgen->builder->CreateGEP(llvm_t, lhs, {zero, mem_idx});
-                auto mem_wise_type = irgen->ToLLVMType(var.type, false);
-                if(!var.type.should_sret()) mem_wise_rhs = irgen->builder->CreateLoad(mem_wise_type, mem_wise_rhs);
-                auto as_lvalue = var.type;
-                as_lvalue.is_mutable = true;
-                doAssign(mem_wise_lhs, mem_wise_rhs, as_lvalue, var.type);
-                idx++;
-            }
-        }
+        //TODO: user defined types
         return nullptr;
     }
-    llvm::Value* ExpressionEvaluator::clone(llvm::Value* lhs, const Type& left_type, llvm::Value* into)
+    /// user defined types can create a @c clone function.\n
+    /// The @c clone function's signature looks like @code clone: (this) -> This @endcode \n
+    /// Without it the type is cannot be copied
+    /// I think it should be implicit for union types
+    llvm::Value* ExpressionEvaluator::clone(llvm::Value* value, const Type& left_type, llvm::Value* into)
     {
         if(!left_type.should_sret())
         {
-            if(into) irgen->builder->CreateStore(lhs, into);
-            return lhs;
+            if(into) irgen->builder->CreateStore(value, into);
+            return value;
         }
         auto as_llvm = irgen->ToLLVMType(left_type, false);
         if(!into) into = irgen->Alloca("clone", as_llvm);
@@ -342,7 +263,7 @@ namespace Yoyo
             {
                 auto sub_as_llvm = irgen->ToLLVMType(sub, false);
                 auto ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
-                auto val = irgen->builder->CreateStructGEP(as_llvm, lhs, idx);
+                auto val = irgen->builder->CreateStructGEP(as_llvm, value, idx);
                 if(!sub.should_sret()) val = irgen->builder->CreateLoad(sub_as_llvm, val);
                 clone(val, left_type, ptr);
                 idx++;
@@ -352,27 +273,56 @@ namespace Yoyo
         {
             auto opt_ty = irgen->ToLLVMType(left_type, false);
             //opt is {data, bool}
-            //TODO destroy data if exists
-
             auto has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
-                irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
+                irgen->builder->CreateStructGEP(opt_ty, value, 1));
             auto fn = irgen->builder->GetInsertBlock()->getParent();
             auto is_valid = llvm::BasicBlock::Create(irgen->context, "opt_valid_assign", fn, irgen->returnBlock);
             auto opt_assign_cont = llvm::BasicBlock::Create(irgen->context, "opt_assign_cont", fn, irgen->returnBlock);
             irgen->builder->CreateCondBr(has_value, is_valid, opt_assign_cont);
 
             irgen->builder->SetInsertPoint(is_valid);
-            auto value= irgen->builder->CreateStructGEP(opt_ty, lhs, 0);
+            auto sub_value = irgen->builder->CreateStructGEP(opt_ty, value, 0);
             if(!left_type.subtypes[0].should_sret())
             {
                 auto subtype = llvm::dyn_cast<llvm::StructType>(opt_ty)->getElementType(0);
-                value = irgen->builder->CreateLoad(subtype, value);
+                sub_value = irgen->builder->CreateLoad(subtype, sub_value);
             }
-            clone(value, left_type.subtypes[0], irgen->builder->CreateStructGEP(opt_ty, into, 0));
+            clone(sub_value, left_type.subtypes[0], irgen->builder->CreateStructGEP(opt_ty, into, 0));
             irgen->builder->CreateBr(opt_assign_cont);
 
             irgen->builder->SetInsertPoint(opt_assign_cont);
             irgen->builder->CreateStore(has_value, irgen->builder->CreateStructGEP(opt_ty, into , 1));
+        }
+        else if(left_type.is_variant())
+        {
+            std::set subtypes(left_type.subtypes.begin(), left_type.subtypes.end());
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto llvm_ty = irgen->ToLLVMType(left_type, false);
+            auto type_idx_ptr = irgen->builder->CreateStructGEP(llvm_ty, value, 1);
+
+            auto type_idx = irgen->builder->CreateLoad(
+                    llvm::Type::getInt32Ty(irgen->context),
+                    irgen->builder->CreateStructGEP(llvm_ty, value, 1));
+            llvm::BasicBlock* def = llvm::BasicBlock::Create(irgen->context, "variant_default", fn, irgen->returnBlock);
+            auto sw = irgen->builder->CreateSwitch(type_idx, def, left_type.subtypes.size());
+            uint32_t idx = 0;
+            for(auto& sub : subtypes)
+            {
+                llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, def);
+                sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
+
+                auto sub_as_llvm = irgen->ToLLVMType(sub, false);
+                irgen->builder->SetInsertPoint(blk);
+                auto sub_value = irgen->builder->CreateStructGEP(llvm_ty, value, 0);
+                if(!sub.should_sret()) sub_value = irgen->builder->CreateLoad(sub_as_llvm, sub_value);
+
+                clone(sub_value, sub, irgen->builder->CreateStructGEP(llvm_ty, into, 1));
+
+                irgen->builder->CreateBr(def);
+                idx++;
+            }
+            irgen->builder->SetInsertPoint(def);
+            irgen->builder->CreateStore(type_idx, type_idx_ptr);
         }
         return into;
     }

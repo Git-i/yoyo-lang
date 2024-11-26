@@ -135,7 +135,10 @@ namespace Yoyo
                 std::visit(*this, expr->lhs->toVariant());
 
             borrows[1].first = expr->rhs.get();
-            borrows[1].second = std::visit(*this, expr->rhs->toVariant());
+            auto right_borrow = std::visit(*this, expr->rhs->toVariant());
+            //assignment does not borrow the right(it clones)
+            if(expr->op.is_assignment()) validate_borrows({{{expr->rhs.get(),right_borrow}}}, irgen);
+            else borrows[1].second = std::move(right_borrow);
             validate_borrows(borrows, irgen);
             return {};
         }
