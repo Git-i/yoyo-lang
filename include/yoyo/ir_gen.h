@@ -216,6 +216,7 @@ namespace Yoyo
         borrow_result_t operator()(BinaryOperation*);
         borrow_result_t operator()(GroupingExpression*);
         borrow_result_t operator()(CallOperation*);
+        borrow_result_t doCall(CallOperation* expr);
 
         borrow_result_t operator()(PostfixOperation*){}
         borrow_result_t operator()(SubscriptOperation*){}

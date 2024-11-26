@@ -91,7 +91,7 @@ namespace Yoyo
 
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(CallOperation* expr)
     {
-        return BorrowResult{irgen}(expr);
+        return BorrowResult{irgen}.doCall(expr);
     }
 
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(PrefixOperation* expr)
@@ -150,6 +150,12 @@ namespace Yoyo
 
     BorrowResult::borrow_result_t BorrowResult::operator()(CallOperation* expr)
     {
+        auto v = doCall(expr);
+        for(auto& val : v) val.second = Const;
+        return v;
+    }
+    BorrowResult::borrow_result_t BorrowResult::doCall(CallOperation* expr)
+    {
         auto callee_ty = std::visit(ExpressionTypeChecker{irgen}, expr->callee->toVariant());
         std::vector<std::pair<Expression*, borrow_result_t>> borrows;
         bool is_bound = callee_ty->is_bound;
@@ -159,8 +165,10 @@ namespace Yoyo
             auto as_bexp = reinterpret_cast<BinaryOperation*>(expr->callee.get());
             auto& type = callee_ty->sig.parameters[0].type;
             auto is_mut_borrow = type.is_non_owning_mut(irgen);
-            borrows.emplace_back(as_bexp->lhs.get(),
-                is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, as_bexp->lhs->toVariant())
+
+            if(type.is_non_owning(irgen))
+                borrows.emplace_back(as_bexp->lhs.get(),
+                    is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, as_bexp->lhs->toVariant())
                     : std::visit(*this, as_bexp->lhs->toVariant()));
         }
         for(size_t i = 0; i < expr->arguments.size(); i++)
@@ -168,8 +176,10 @@ namespace Yoyo
             auto& arg = expr->arguments[i];
             auto& type = callee_ty->sig.parameters[i + is_bound].type;
             auto is_mut_borrow = type.is_non_owning_mut(irgen);
-            borrows.emplace_back(arg.get(),
-                is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, arg->toVariant())
+
+            if(type.is_non_owning(irgen))
+                borrows.emplace_back(arg.get(),
+                    is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, arg->toVariant())
                     : std::visit(*this, arg->toVariant()));
         }
         validate_borrows(borrows, irgen);

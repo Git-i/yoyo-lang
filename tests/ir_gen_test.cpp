@@ -26,16 +26,16 @@ baz: class = {
     y: i32 & f64
 }
 
-
 val: enum = {
     abcd, efgh
 }
-get_int: (tup: &mut {i32 & f32}, tup2: i32) -> &mut i32 = {
-    return tup.0;
-}
+get_int: (tup: &mut {i32 & f32}, tup2: i32) -> &mut i32 = return tup.0;
+get_int_const: (tup: &{i32 & f32}, tup2: &i32) -> &i32 = return tup.0;
+
 takes_foo: (param: i32) -> f64 = {
     a : mut i32 & f32 = (10, 20);
-    *get_int(a, 10) = 400;
+    get_int_const(a, a.0);
+    *get_int(a, *get_int_const(a, a.0)) = 400;
     app::func("${a.0}");
     return 100;
 }

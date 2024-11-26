@@ -96,7 +96,7 @@ namespace Yoyo
         }
         if(is_reference())
         {
-            return deref().is_equal(other);
+            return deref().is_equal(other.deref());
         }
         return is_assignable_from(other);
     }

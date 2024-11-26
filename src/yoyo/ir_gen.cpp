@@ -185,7 +185,7 @@ namespace Yoyo
         {
             if(!param.name.empty())
             {
-                auto param_type = func->getFunctionType()->getFunctionParamType(idx);
+                auto param_type = func->getFunctionType()->getFunctionParamType(idx + uses_sret);
                 auto type = param.type;
                 if(in_class && type.name == "This") type = this_t;
                 declarations.emplace_back(Token{}, type, nullptr,false);
@@ -249,6 +249,7 @@ namespace Yoyo
     {
         auto as_var = stat->expression->toVariant();
         auto ty = std::visit(ExpressionTypeChecker{this}, as_var);
+        if(!ty) error();
         validate_expression_borrows(stat->expression.get(), this);
         std::visit(ExpressionEvaluator{this}, as_var);
     }
@@ -416,7 +417,6 @@ namespace Yoyo
         }
         builder->SetInsertPoint(merge_bb);
     }
-
     void IRGenerator::error()
     {
         raise(SIGTRAP);
