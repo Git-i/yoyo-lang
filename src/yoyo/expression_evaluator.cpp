@@ -346,7 +346,7 @@ namespace Yoyo
                 auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
                 auto left_ptr = std::visit(*this, lhs->toVariant());
                 auto ptr = irgen->builder->CreateGEP(llvm_t, left_ptr, {zero_const, llvm_idx});
-                if(load_primitive && out_type.is_primitive())
+                if(load_primitive && !out_type.should_sret())
                     return irgen->builder->CreateLoad(irgen->ToLLVMType(out_type, false), ptr);
                 return ptr;
             }
@@ -370,7 +370,7 @@ namespace Yoyo
                     auto lalloc = std::visit(*this, lhs->toVariant());
                     ptr = irgen->builder->CreateGEP(llvm_t, lalloc, {zero, idx});
 
-                    if(load_primitive && var->type.is_primitive()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
+                    if(load_primitive && !var->type.should_sret()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
                     return ptr;
                 }
             }

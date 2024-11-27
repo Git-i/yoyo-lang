@@ -1,3 +1,4 @@
+#include <codecvt>
 #include <csignal>
 #include <iostream>
 #include <ir_gen.h>
@@ -7,6 +8,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
+
 
 Yoyo::AppModule* md;
 
@@ -35,9 +37,6 @@ at: (p: tuple_index, idx: i32) -> &mut i32 = {
     if (idx == 2) return &mut p.storage.2;
 }
 
-val: enum = {
-    abcd, efgh
-}
 get_int: (tup: &mut {i32 & i32}, tup2: &i32) -> &mut i32 = return &mut tup.0;
 value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
     if |val| (*tup) {
@@ -48,13 +47,8 @@ value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
 
 takes_foo: (param: i32) -> f64 = {
     a : mut {i32 & i32}? = (10, 20);
-    if |value| (a) {
-        b: i32 = 0;
-        get_int(&mut value, &b);
-    }
     tuple: mut = (10, 20, 30);
-    //app::func("${*tuple_index::new(&mut tuple).at(0)}");
-    app::func(&"${a}");
+    app::func(&"${*tuple_index::new(&mut tuple).at(0)}");
     return 10;
 }
 )";
@@ -72,7 +66,6 @@ returns_foo: () -> foo = {
     return a;
 }
 )";
-
     int argc = 1;
     const char* argv[] = {"foo"};
     const char** lol = argv;
