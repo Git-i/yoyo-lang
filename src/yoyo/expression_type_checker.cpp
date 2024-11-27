@@ -470,6 +470,18 @@ namespace Yoyo
                 if(op_type.is_reference()) return op_type.deref();
                 return std::nullopt;
             }
+        case Ampersand:
+            {
+                //ref to ref is invalid
+                if(op_type.is_reference()) return std::nullopt;
+                return Type{"__ref", {std::move(op_type)}};
+            }
+        case RefMut:
+            {
+                if(op_type.is_reference()) return std::nullopt;
+                if(!op_type.is_mutable) return std::nullopt;
+                return Type{"__ref_mut", {std::move(op_type)}};
+            }
         default: return std::nullopt;
         }
 
@@ -483,11 +495,11 @@ namespace Yoyo
         auto& as_fn = reinterpret_cast<FunctionType&>(*callee_ty);
         //If the function is bound (something.function()) we skip checking the first args type
         if(op->arguments.size() + callee_ty->is_bound != as_fn.sig.parameters.size()) return std::nullopt;
-        for(size_t i = callee_ty->is_bound; i < as_fn.sig.parameters.size(); ++i)
+        for(size_t i = 0; i < op->arguments.size(); ++i)
         {
             auto tp = std::visit(*this, op->arguments[i]->toVariant());
             if(!tp) return std::nullopt;
-            if(!as_fn.sig.parameters[i].type.can_accept_as_arg(*tp)) return std::nullopt;
+            if(!as_fn.sig.parameters[i + callee_ty->is_bound].type.can_accept_as_arg(*tp)) return std::nullopt;
         }
         return as_fn.sig.returnType;
     }

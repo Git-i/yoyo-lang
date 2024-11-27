@@ -453,29 +453,11 @@ namespace Yoyo
         {
             auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant());
             if(!t) {error(); return;}
+            if(!return_t.is_assignable_from(*t)) {error(); return;}
             // `doAssign` for reference types works like c++ (dereference and assign) rather than rebind the ref, because
             // references cannot be rebound, except in return statements, which is why we handle them specially
-            if(return_t.is_reference())
-            {
-                //sanity checks--------------------------------------
-                if(!t->is_lvalue && !t->is_reference()) {error(); return;}
-                if(!return_t.deref().is_equal(t->deref())) {error(); return;}
-
-                if(return_t.is_mutable_reference() && t->is_lvalue)
-                    if(!t->is_mutable) {error(); return;}
-                if(return_t.is_mutable_reference() && t->is_reference())
-                    if(!t->is_mutable_reference()) {error(); return;}
-                //-----------------------------------------------------
-
+            if(return_t.is_non_owning(this))
                 if(!std::visit(LifetimeExceedsFunctionChecker{this}, stat->expression->toVariant())) {error(); return;}
-                auto val = t->is_reference() ?
-                    std::visit(ExpressionEvaluator{this}, stat->expression->toVariant()):
-                    std::visit(ExpressionEvaluator::LValueEvaluator{this}, stat->expression->toVariant());
-
-                builder->CreateStore(val, currentReturnAddress);
-                builder->CreateBr(returnBlock);
-                return;
-            }
             auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());
             ExpressionEvaluator{this}.doAssign(currentReturnAddress, value, return_t, *t);
             builder->CreateBr(returnBlock);

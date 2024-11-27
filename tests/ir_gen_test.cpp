@@ -29,14 +29,19 @@ tuple_index: struct:&mut = {
     storage: &mut {i32 & i32 & i32},
     new: (storage: &mut {i32 & i32 & i32}) -> tuple_index = return tuple_index{ .storage = storage };
 }
+at: (p: tuple_index, idx: i32) -> &mut i32 = {
+    if (idx == 0) return &mut p.storage.0;
+    if (idx == 1) return &mut p.storage.1;
+    if (idx == 2) return &mut p.storage.2;
+}
 
 val: enum = {
     abcd, efgh
 }
-get_int: (tup: &mut {i32 & i32}, tup2: &i32) -> &mut i32 = return tup.0;
+get_int: (tup: &mut {i32 & i32}, tup2: &i32) -> &mut i32 = return &mut tup.0;
 value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
     if |val| (*tup) {
-        return val.0;
+        return &val.0;
     }
     return alt;
 }
@@ -45,9 +50,11 @@ takes_foo: (param: i32) -> f64 = {
     a : mut {i32 & i32}? = (10, 20);
     if |value| (a) {
         b: i32 = 0;
-        get_int(value, b);
+        get_int(&mut value, &b);
     }
-    app::func("${a}");
+    tuple: mut = (10, 20, 30);
+    //app::func("${*tuple_index::new(&mut tuple).at(0)}");
+    app::func(&"${a}");
     return 10;
 }
 )";
@@ -99,16 +106,20 @@ returns_foo: () -> foo = {
     REQUIRE(!p1.failed());
 
     llvm::ExitOnError ExitOnErr;
-    auto j = llvm::orc::LLJITBuilder().create();
+    auto j = ExitOnErr(llvm::orc::LLJITBuilder().create());
 
     auto llvm_ctx = std::unique_ptr<llvm::LLVMContext>(static_cast<llvm::LLVMContext*>(engine.llvm_context));
     auto ctx = llvm::orc::ThreadSafeContext(std::move(llvm_ctx));
     for(auto& mod: engine.modules)
     {
-        std::ignore = j.get()->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.second->code), ctx));
+        auto err = j->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.second->code), ctx));
+        if(err)
+        {
+            raise(SIGTRAP);
+        }
     }
     std::string unmangled_name = engine.modules["MOO2"]->module_hash + "takes_foo";
-    auto addr = j.get()->lookup(unmangled_name).get();
+    auto addr = j->lookup(unmangled_name).get();
     double(*fn)(int) = addr.toPtr<double(int)>();
     auto res = fn(30);
     std::cout << res;

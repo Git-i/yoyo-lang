@@ -22,7 +22,7 @@ namespace Yoyo {
         Class, Struct, Enum, EnumFlag, Union, Scheme, Interface, Module,
         SemiColon, In, InOut, This, Ref, Return, Called, Tilde, Pub, Static, Mod,
         Question, Null,
-        Underscore, Mut,
+        Underscore, Mut, RefMut
     };
     struct Token
     {

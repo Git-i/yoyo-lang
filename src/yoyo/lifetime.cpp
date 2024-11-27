@@ -4,39 +4,18 @@
 namespace Yoyo
 {
 
-    bool LifetimeExceedsFunctionChecker::operator()(Expression*)
+    bool LifetimeExceedsFunctionChecker::operator()(Expression* expr)
     {
-        return false;
-    }
-
-
-
-    bool LifetimeExceedsFunctionChecker::operator()(BinaryOperation* op)
-    {
-        if(op->op.type != TokenType::Dot) return false;
-        return std::visit(*this, op->lhs->toVariant());
-    }
-    bool LifetimeExceedsFunctionChecker::operator()(CallOperation* op)
-    {
-        //if it does not return a reference its false
-        if(auto as_bin = dynamic_cast<BinaryOperation*>(op->callee.get()))
+        auto borrows = std::visit(BorrowResult{irgen}, expr->toVariant());
+        for(auto&[name, _] : borrows)
         {
-            if(!std::visit(*this, as_bin->lhs->toVariant())) return false;
-        }
-        for(auto& arg : op->arguments)
-        {
-            if(!std::visit(*this, arg->toVariant())) return false;
+            NameExpression nexpr(std::move(name));
+            nexpr.parent = expr->parent;
+            if(!(*this)(&nexpr)) return false;
         }
         return true;
     }
-    bool LifetimeExceedsFunctionChecker::operator()(GroupingExpression* grp)
-    {
-        return std::visit(*this, grp->expr->toVariant());
-    }
-    bool LifetimeExceedsFunctionChecker::operator()(SubscriptOperation* sub)
-    {
-        return std::visit(*this, sub->object->toVariant());
-    }
+
     bool LifetimeExceedsFunctionChecker::operator()(NameExpression* nm)
     {
         //the lifetime can only exceed if it's a function parameter(or borrowed from a param), or a global
@@ -112,6 +91,9 @@ namespace Yoyo
         BorrowResult{irgen}(expr);
         if(expr->op.type == TokenType::Star)
             return std::visit(*this, expr->operand->toVariant());
+        if(expr->op.type == TokenType::RefMut)
+            return std::visit(*this, expr->operand->toVariant());
+        irgen->error();//expression cannot be mutably borrowed
         return {};
     }
 
@@ -128,7 +110,7 @@ namespace Yoyo
     BorrowResult::borrow_result_t BorrowResult::operator()(PrefixOperation* expr)
     {
         //dereference propagates borrow
-        if(expr->op.type == TokenType::Star)
+        if(expr->op.type == TokenType::Star || expr->op.type == TokenType::RefMut || expr->op.type == TokenType::Ampersand)
         {
             auto v = std::visit(*this, expr->operand->toVariant());
             for(auto& val : v) val.second = Const;

@@ -220,10 +220,6 @@ namespace Yoyo
         {
         }
         bool operator()(NameExpression*);
-        bool operator()(BinaryOperation*);
-        bool operator()(GroupingExpression*);
-        bool operator()(CallOperation*);
-        bool operator()(SubscriptOperation*);
         bool operator()(Expression*);
 
     };

@@ -9,6 +9,7 @@ namespace Yoyo
 {
     std::unique_ptr<Expression> PrefixOperationParselet::parse(Parser& parser, Token tk)
     {
+        if(tk.type == TokenType::Ampersand && parser.discard(TokenType::Mut)) tk.type = TokenType::RefMut;
         //prefix operations are right associative
         auto self = std::make_unique<PrefixOperation>(tk, nullptr);
 
