@@ -16,7 +16,13 @@ namespace Yoyo
         std::ignore = std::get<2>(irgen->module->classes[name]).release();
 
         irgen->this_t = Type{.name = name, .subtypes = {}};
-        for(auto& fn: decl->methods)
+        auto decl_ptr = decl.get();
+        irgen->module->classes[name] = {
+            mangled_name_prefix,
+            irgen->hanldeClassDeclaration(decl.get(), false),
+            std::move(decl)
+        };
+        for(auto& fn: decl_ptr->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
             std::string mangled_name = mangled_name_prefix + std::string{fn_decl->identifier.text};
@@ -30,11 +36,7 @@ namespace Yoyo
             irgen->block_hash = "";
             irgen->in_class = false;
         }
-        irgen->module->classes[name] = {
-            mangled_name_prefix,
-            irgen->hanldeClassDeclaration(decl.get(), false),
-            std::move(decl)
-        };
+
         return true;
     }
 

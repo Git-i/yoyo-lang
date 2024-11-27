@@ -25,6 +25,10 @@ baz: class = {
     x: lol::foo,
     y: i32 & f64
 }
+tuple_index: struct:&mut = {
+    storage: &mut {i32 & i32 & i32},
+    new: (storage: &mut {i32 & i32 & i32}) -> tuple_index = return tuple_index{ .storage = storage };
+}
 
 val: enum = {
     abcd, efgh
@@ -44,7 +48,7 @@ takes_foo: (param: i32) -> f64 = {
         get_int(value, b);
     }
     app::func("${a}");
-    return 100;
+    return 10;
 }
 )";
     std::string source = R"(

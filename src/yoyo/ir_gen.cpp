@@ -592,11 +592,12 @@ namespace Yoyo
                 if(fn_names[i] == fn_names[j]) {error(); return nullptr;}
             }
         }
-
         std::vector<llvm::Type*> args(decl->vars.size());
         std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
-            [this](const ClassVariable& p)
+            [this, decl](const ClassVariable& p)
             {
+                if(decl->ownership == Ownership::Owning && p.type.is_non_owning(this)) error();
+                if(decl->ownership == Ownership::NonOwning && p.type.is_non_owning_mut(this)) error();
                 return ToLLVMType(p.type, false);
             });
         if(is_anon)

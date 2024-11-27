@@ -174,7 +174,6 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
-        //TODO make this function a lot more skinny
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
 
@@ -227,7 +226,7 @@ namespace Yoyo
                 return nullptr;
             }
         }
-        //TODO: user defined types
+        clone(rhs, left_type, lhs);
         return nullptr;
     }
     /// user defined types can create a @c clone function.\n
@@ -310,6 +309,26 @@ namespace Yoyo
             }
             irgen->builder->SetInsertPoint(def);
             irgen->builder->CreateStore(type_idx, type_idx_ptr);
+        }
+        else if(left_type.is_reference())
+        {
+            irgen->builder->CreateStore(value, into);
+        }
+        //class types
+        else if(auto decl = left_type.get_decl_if_class(irgen))
+        {
+            as_llvm = irgen->ToLLVMType(left_type, false);
+            //TODO: check for overrides for this method
+            size_t idx = 0;
+            for(auto& var : decl->vars)
+            {
+                auto sub_val_ptr = irgen->builder->CreateStructGEP(as_llvm, value, idx);
+                auto sub_into_ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
+                if(!var.type.should_sret())
+                    sub_val_ptr = irgen->builder->CreateLoad(irgen->ToLLVMType(var.type, false), sub_val_ptr);
+                clone(sub_val_ptr, var.type, sub_into_ptr);
+                idx++;
+            }
         }
         return into;
     }

@@ -35,6 +35,7 @@ namespace Yoyo
         ModuleImport*,
         EnumDeclaration*,
         ConditionalExtraction*> StatementVariant;
+    enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     class Statement : public ASTNode
     {
     public:
@@ -126,8 +127,10 @@ namespace Yoyo
         Token identifier;
         std::vector<ClassVariable> vars;
         std::vector<ClassMethod> methods;
-        ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods)
-            : identifier(ident), vars(std::move(vars)), methods(std::move(methods)) {}
+
+        Ownership ownership;
+        ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods, Ownership sh)
+            : identifier(ident), vars(std::move(vars)), methods(std::move(methods)), ownership(sh) {}
         StatementVariant toVariant() override;
     };
     class ForStatement : public Statement

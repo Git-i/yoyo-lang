@@ -120,7 +120,8 @@ namespace Yoyo
             for(auto& subtype : subtypes)
                 if(subtype.is_non_owning(irgen)) return true;
         }
-        //TODO non-owning struct/class types
+        if(auto decl = get_decl_if_class(irgen))
+            return decl->ownership == Ownership::NonOwning || decl->ownership == Ownership::NonOwningMut;
         return false;
     }
 
@@ -132,7 +133,8 @@ namespace Yoyo
             for(auto& subtype : subtypes)
                 if(subtype.is_non_owning_mut(irgen)) return true;
         }
-        //TODO non-owning struct/class types
+        if(auto decl = get_decl_if_class(irgen))
+            return decl->ownership == Ownership::NonOwningMut;
         return false;
     }
 

@@ -453,6 +453,13 @@ namespace Yoyo
         std::vector<ClassMethod> methods;
         std::vector<ClassVariable> vars;
         Get(); //skip the "class" or "struct" keyword
+        Ownership own_method = Ownership::Owning;
+        if(discard(TokenType::Colon))
+        {
+            if(!discard(TokenType::Ampersand)) error("Expected '&'", Peek());
+            if(discard(TokenType::Mut)) own_method = Ownership::NonOwningMut;
+            else own_method = Ownership::NonOwning;
+        }
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
@@ -512,7 +519,7 @@ namespace Yoyo
             }
         }
         return Statement::attachSLAndParent(
-            std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods)), identifier.loc,
+            std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods), own_method), identifier.loc,
             discardLocation, parent
         );
     }
