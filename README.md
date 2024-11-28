@@ -70,7 +70,7 @@ or a global variable
 - Every non owning object is valid as long as the object(s) that produce it are never mutated
 
 To achieve memory safety using the above assumptions, the language disallows storing references,
-and disallows an owning object to be only be used once per expression if used mutably
+and disallows an owning object to be used more than once per expression if used mutably
 ```rust
 change_arr_and_val(arr: &mut [i32], val: &i32) = {
     arr.push(90); // can invalidate references to the array
