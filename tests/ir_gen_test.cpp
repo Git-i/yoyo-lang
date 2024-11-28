@@ -45,12 +45,11 @@ value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
     }
     return alt;
 }
-
 takes_foo: (param: i32) -> f64 = {
     d := '😁';
     app::func(&"${d}");
     a : mut {i32 & i32}? = (10, 20);
-    tuple: mut = (10, 20, 30);eq
+    tuple: mut = (10, 20, 30);
     app::func(&"${*tuple_index::new(&mut tuple).at(0)}");
     return 10;
 }

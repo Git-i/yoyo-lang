@@ -21,6 +21,7 @@ langauge, written in (and primarily for) C++20.
 - [x] Optionals
 - [x] Conditional Decomposition
 - [x] While loops
+- [x] References
 - [ ] Modules
 - [ ] Iterators
 - [ ] For loops
@@ -50,112 +51,68 @@ Notes:
 - Function blocks are implicit if they only have one statement 
 (`name: () -> i32 = return 5;`)
 
-Expressions have standard syntax and mostly the same precedence rules as C++.
+Expressions have mostly the same syntax and precedence rules as C++.
 
-## Functions
 
-A function is declared as
-```
-name: signature = body
-```
-The function signature list the inputs and output of the function.
-An example signature is shown below:
-```
-(x: in i32, y: u32, z: inout u64) -> ref i32
-```
-the `in` and `inout` are the methods the parameter is passed
-- `in` takes an argument by copying(if primitive) or `const&`
-- `inout` takes an argument by reference
-
-When either is omitted, the parameter defaults to `in`
-
-the `ref` specifies the function returns a reference and can be omitted
 ## Memory model
 
-The language features a garbage collector, but it's very optional. Because
-the language is designed to be embedded and we cannot force C++ types to
-follow lifetime rules of the garbage collector, we cannot enforce the use of the
-GC.
+The language features a garbage collector(later), but it's very optional. Because
+the language is designed to be embedded and cannot force C++ types to
+follow lifetime rules of the garbage collector.
 
-For safety reasons there are 'no' references. 'no' in quotes for several reasons.
-- Function parameters passed with `inout` take a value by reference
-- Function with a `ref` return type return a reference
+So there exists non-garbage collected references(`&T` and `&mut T`) and garbage collected
+references(`^T`). For the non-gc references and non-owning types in general, 
+a mechanism is needed to ensure they are never invalid.
 
-As such there's three sources of mutable 'l-values':
-- Member access of a mutable l-value
-- Mutable variables
-- Functions that return a `ref`
+The mechanism works on certain assumptions:
+- Every non owning type refers to value that was passed into the function that created it
+or a global variable
+- Every non owning object is valid as long as the object(s) that produce it are never mutated
 
-The main goal is to avoid invalid references. Disallowing storing references
-makes sense, but re-invoking a function to get a reference can be inefficient,
-especially when the function is provided by C++ at runtime and cannot be optimized
-away and It also does not completely solve the problem. However, references can only be 
-invalid when the object that produced them changed(we assume). If we can ensure that, 
-then we can store a reference (No, I don't want to write a borrow checker).
-
-### The Solution(s)
-
-#### Part 1
-Only allow a reference source to be used once per expression, consider this:
-```
-change_arr_and_val(arr: inout [i32], val: inout i32) = {
+To achieve memory safety using the above assumptions, the language disallows storing references,
+and disallows an owning object to be only be used once per expression if used mutably
+```rust
+change_arr_and_val(arr: &mut [i32], val: &i32) = {
     arr.push(90); // can invalidate references to the array
     val = 10; 
 }
 /*  call site  */
-arr := [10, 20]
-change_arr_and_val(arr, arr[0]); // write to invalid memory
+arr : mut = [10, 20]
+change_arr_and_val(&mut arr, arr[0]); // write to invalid memory
 ```
-For each of the mutable 'l-value' sources, there's other sources that generate them
-- Member access of a mutable l-value -> The mutable variable itself
-- Mutable variables -> The variable itself
-- Functions that return a `ref` -> All `inout` parameters of the function
-and their sources
-
 If we only allow one source to be used once the above code would fail to compile,
-because `arr` is used as a reference twice in the same function. What if the case
-was like this:
-```
-foo: struct = {...}
-change_arr_and_val(arr: inout [foo], val: foo) = {
-    arr.push(90);
-    val = 10; 
+because `arr` is used as a reference twice in the same function.
+
+Not being allowed to store references can be very inefficient however, consider a case where
+we have a scene of a game that has to search through a million entities every time we need to retrieve
+```rust
+Scene: class = {
+    entities: [u64 & Entity]; //id and corresponding entity
+    get_entity_mut: (&mut this, id: u64) -> {&mut Entity}? = {
+        for (entity in this.entities) {
+            if(entity.0 == id) return entity;
+        }
+        return null;
+    }
 }
-/*  call site  */
-arr := [foo{...}, foo{...}]
-change_arr_and_val(arr, arr[0]); // write to invalid memory is arr[0] is passed by ref
 ```
-Since we've already mutably referenced array once, we're forced to copy
-the parameter(I'm not writing a borrow checker).
-
-##### What about lambdas??
-
-Lambdas can capture mutable variables by reference, so using a lambda
-(passing it to be called, or calling it) counts as referencing everything it
-has captured.
-
-Lambdas also cannot be stored if they capture a mutable variable by reference
-
-#### Part 2
-
-Part 1 solved the safety issue, but there's the issue of having to re-invoke
-reference producing functions (like array indexing). The issue becomes apparent
-when there is a cost to get the reference, like searching through a container.
-
-This is where `with` statements come in, within a `with` block you're allowed to
-actually 'store' a reference.
-
-Syntax:
-```
-with ref_name as ref_producer {...}
-with elem1 as arr[1] {...}
+calling `get_entity` over and over is terrible for performance, that's where the first assumption comes in,
+as long as scene is not modified the reference we got is valid, the `with` statement makes sure of this.
+The `with` statements gives us a scope where we can extend the lifetime of a non-owning object, but prevents
+us from modifying any potential source of the non-owning object.
+```rust
+main: () = {
+    scene: mut Scene;
+    // initialize with a million entities somehow
+    with entity as scene.get_entity_mut(90) {
+        //entity is a {&mut Entity}? and scene cannot be modified
+    }
+}
 ```
 
-Within a `with` block you're allowed to store a reference, but anything involved
-in producing that reference becomes immutable.
 
-#### But I want to actually store a reference
+#### But I want to actually store a reference?
 
-Use the garbage Collector
+If this sounds like you just use the garbage Collector
 
 
