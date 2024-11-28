@@ -187,16 +187,14 @@ namespace Yoyo
                     : std::visit(*this, arg->toVariant()));
         }
         validate_borrows(borrows, irgen);
-        //mutable non owning return borrows only mutable args
         borrow_result_t out;
         if(callee_ty->sig.returnType.is_non_owning_mut(irgen))
         {
             for(auto& borrow : borrows)
             {
-                auto v = std::views::filter(borrow.second, [](auto& b) { return b.second == Mut; });
                 out.insert(out.begin(),
-                    std::make_move_iterator(v.begin()),
-                    std::make_move_iterator(v.end()));
+                    std::make_move_iterator(borrow.second.begin()),
+                    std::make_move_iterator(borrow.second.end()));
             }
         }
         //immutable non owning borrows all args, but does so immutably
