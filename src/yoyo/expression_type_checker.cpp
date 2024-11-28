@@ -450,6 +450,7 @@ namespace Yoyo
         }
         if(t.is_enum()) return true;
         if(t.is_optional()) return hasToStr(t.subtypes[0]);
+        if(t.is_char()) return true;
         return false;
     }
 

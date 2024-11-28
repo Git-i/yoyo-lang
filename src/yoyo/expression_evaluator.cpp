@@ -742,7 +742,7 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                if(var->second.second->type->is_primitive() || var->second.second->type->is_enum())
+                if(!var->second.second->type->should_sret())
                 {
                     return irgen->builder->CreateLoad(irgen->ToLLVMType(*var->second.second->type, false), var->second.first, name);
                 }

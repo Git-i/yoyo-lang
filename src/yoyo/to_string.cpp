@@ -85,6 +85,28 @@ namespace Yoyo
             auto as64 = irgen->builder->CreateZExt(val, llvm::Type::getInt64Ty(irgen->context));
             return uint_to_str(as64, irgen);
         }
+        if(tp.is_char())
+        {
+            auto copy = irgen->Alloca("char_tmp_stck", val->getType());
+            irgen->builder->CreateStore(val, copy);
+            
+            auto i64 = llvm::Type::getInt64Ty(irgen->context);
+            auto i32 = llvm::Type::getInt32Ty(irgen->context);
+            auto i8 = llvm::Type::getInt8Ty(irgen->context);
+
+            llvm::Value* size = llvm::ConstantInt::get(i64, 0);
+            for(unsigned i = 0; i < 4; ++i)
+            {
+                llvm::Value* idx_const = llvm::ConstantInt::get(i32, i);
+                auto byte = irgen->builder->CreateLoad(i8, irgen->builder->CreateGEP(i8, copy, {idx_const}));
+                size = irgen->builder->CreateAdd(size,
+                    irgen->builder->CreateZExt(irgen->builder->CreateICmpNE(byte, llvm::ConstantInt::get(i8, 0)),
+                    i64));
+            }
+            auto addr = irgen->Malloc("char_tmp", size);
+            irgen->builder->CreateMemCpy(addr, std::nullopt, copy, std::nullopt, size);
+            return {addr, size};
+        }
         if(tp.is_enum())
         {
             auto decl = tp.module->enums[tp.name].get();

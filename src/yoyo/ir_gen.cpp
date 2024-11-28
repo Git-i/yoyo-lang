@@ -117,7 +117,6 @@ namespace Yoyo
                  entry_block->begin());
         return temp.CreateAlloca(type, nullptr, name);
     }
-
     llvm::Value* IRGenerator::Malloc(std::string_view name, llvm::Value* size)
     {
         auto malloc_fn = code->getFunction("malloc");
@@ -190,7 +189,7 @@ namespace Yoyo
                 if(in_class && type.name == "This") type = this_t;
                 declarations.emplace_back(Token{}, type, nullptr,false);
                 llvm::Value* var;
-                if(!param_type->isPointerTy())
+                if(!type.should_sret())
                 {
                     var = Alloca(param.name, param_type);
                     builder->CreateStore(func->getArg(idx + uses_sret), var);
