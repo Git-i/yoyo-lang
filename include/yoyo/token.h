@@ -16,7 +16,7 @@ namespace Yoyo {
         Dot, Comma,
         Ampersand, Pipe, DoubleAmpersand, DoublePipe,
         Caret,
-        IntegerLiteral, RealLiteral, StringLiteral, True, False,
+        IntegerLiteral, RealLiteral, StringLiteral, CharLiteral, True, False,
         TemplateOpen, /// ::<
         DoubleGreater, DoubleLess,
         Class, Struct, Enum, EnumFlag, Union, Scheme, Interface, Module,

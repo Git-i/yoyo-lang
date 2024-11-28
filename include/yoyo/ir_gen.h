@@ -45,6 +45,7 @@ namespace Yoyo
         borrow_result_t operator()(StringLiteral*) const {return {};}
         borrow_result_t operator()(ObjectLiteral*) const {return {};}
         borrow_result_t operator()(NullLiteral*) const {return {};}
+        borrow_result_t operator()(CharLiteral*) const {return {};}
         borrow_result_t operator()(LogicalOperation*) const {return {};}
 
 
@@ -152,6 +153,7 @@ namespace Yoyo
         std::optional<FunctionType> operator()(ObjectLiteral*);
         std::optional<FunctionType> operator()(NullLiteral*);
         std::optional<FunctionType> operator()(AsExpression*);
+        std::optional<FunctionType> operator()(CharLiteral*);
 
     };
     class ExpressionEvaluator
@@ -209,6 +211,7 @@ namespace Yoyo
         llvm::Value* operator()(ObjectLiteral*);
         llvm::Value* operator()(NullLiteral*);
         llvm::Value* operator()(AsExpression*);
+        llvm::Value* operator()(CharLiteral*);
     };
     //TODO: rename
     class LifetimeExceedsFunctionChecker

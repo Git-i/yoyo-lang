@@ -369,6 +369,11 @@ namespace Yoyo
         }
     }
 
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(CharLiteral*)
+    {
+        return Type{"char"};
+    }
+
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals

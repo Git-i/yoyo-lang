@@ -24,6 +24,7 @@ namespace Yoyo {
         [[nodiscard]] Token ScanIdentifier();
         [[nodiscard]] Token ScanNumber();
         [[nodiscard]] std::optional<Token> ScanStringLiteral();
+        [[nodiscard]] std::optional<Token> ScanCharLiteral();
         void nextLine();
         void handleLineComment();
         void handleBlockComment();

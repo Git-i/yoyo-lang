@@ -1143,4 +1143,9 @@ namespace Yoyo
     {
         return nullptr;
     }
+
+    llvm::Value* ExpressionEvaluator::operator()(CharLiteral* lit)
+    {
+        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), lit->value);
+    }
 }

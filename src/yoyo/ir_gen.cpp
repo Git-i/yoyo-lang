@@ -316,7 +316,7 @@ namespace Yoyo
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
             //instead of copying we move
-            if(type->is_lambda() || (!expr_type->is_lvalue && !expr_type->is_primitive() && !expr_type->is_enum() && expr_type->is_equal(*type)))
+            if(type->is_lambda() || (!expr_type->is_lvalue && expr_type->should_sret() && expr_type->is_equal(*type)))
             {
                 init->setName(decl->identifier.text);
                 alloc = init;

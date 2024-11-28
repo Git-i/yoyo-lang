@@ -49,6 +49,7 @@ namespace Yoyo
         [[nodiscard]] bool is_optional() const {return name == "__opt";}
         [[nodiscard]] bool is_str() const {return name == "str";}
         [[nodiscard]] bool is_variant() const {return name == "__var";}
+        [[nodiscard]] bool is_char() const {return name == "char";}
         [[nodiscard]] bool is_mutable_reference() const {return name == "__ref_mut";}
         [[nodiscard]] Type make_mut() const;
         [[nodiscard]] Type make_lvalue() const;

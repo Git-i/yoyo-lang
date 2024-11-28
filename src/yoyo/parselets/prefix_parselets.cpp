@@ -207,4 +207,14 @@ namespace Yoyo
         return Expression::attachSLAndParent(std::make_unique<NullLiteral>(), tk.loc,
             SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()} , parser.parent);
     }
+    std::unique_ptr<Expression> CharLiteralParselet::parse(Parser& parser, Token tk)
+    {
+        auto expr = std::make_unique<CharLiteral>();
+        expr->value = 0;
+        for(auto i = 0; i < tk.text.size(); i++)
+            reinterpret_cast<uint8_t*>(&expr->value)[i] = tk.text[i];
+        SourceLocation end{.line = tk.loc.line, .column = tk.loc.column + tk.text.size() + 1};
+        return Expression::attachSLAndParent(std::move(expr), tk.loc, end, parser.parent);
+    }
+
 }

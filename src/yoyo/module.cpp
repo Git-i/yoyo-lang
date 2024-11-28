@@ -36,6 +36,8 @@ namespace Yoyo
             return llvm::Type::getVoidTy(context);
         if(type.is_opaque_pointer() || type.is_reference())
             return llvm::PointerType::get(context, 0);
+        if(type.is_char())
+            return llvm::Type::getInt32Ty(context);
         if(type.name == "__called_fn")
         {
             auto ptr_ty = llvm::PointerType::get(context, 0);

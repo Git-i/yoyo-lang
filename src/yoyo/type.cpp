@@ -163,7 +163,7 @@ namespace Yoyo
 
         if(module_path.size() == 1)
         {
-            if(!(is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
+            if(!(is_char() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
                 module = src;
         }
         if(is_mutable_reference())
@@ -298,7 +298,7 @@ namespace Yoyo
     }
     bool Type::should_sret() const
     {
-        return !is_primitive() && !is_enum() && !is_reference();
+        return !is_primitive() && !is_enum() && !is_reference() && !is_char();
     }
 
     bool Type::is_integral() const

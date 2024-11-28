@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <ast_node.h>
 #include <func_sig.h>
 
@@ -27,6 +28,7 @@ namespace Yoyo
     class IntegerLiteral;
     class LambdaExpression;
     class ScopeOperation;
+    class CharLiteral;
 
     class SubscriptOperation;
     class CallOperation;
@@ -35,6 +37,7 @@ namespace Yoyo
     class BinaryOperation;
     class GroupingExpression;
     class NameExpression;
+
 
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
@@ -54,7 +57,8 @@ namespace Yoyo
         LambdaExpression*,
         ScopeOperation*,
         ObjectLiteral*,
-        NullLiteral*>;
+        NullLiteral*,
+        CharLiteral*>;
     class Expression : public ASTNode {
     public:
         ~Expression() override = default;
@@ -216,5 +220,11 @@ namespace Yoyo
         std::unique_ptr<Expression> expr;
         Type dest;
         AsExpression(std::unique_ptr<Expression> expr, Type dest) : expr(std::move(expr)), dest(std::move(dest)) {}
+    };
+    class CharLiteral : public Expression
+    {
+    public:
+        uint32_t value;
+        ExpressionVariant toVariant() override;
     };
 }

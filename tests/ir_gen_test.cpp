@@ -14,6 +14,7 @@ Yoyo::AppModule* md;
 
 int32_t func(void* arg)
 {
+    constexpr auto a = sizeof(wchar_t);
     std::string_view sv =  Yoyo::Engine::viewString(arg);
     std::cout << sv << std::endl;
     return 0;
@@ -46,6 +47,7 @@ value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
 }
 
 takes_foo: (param: i32) -> f64 = {
+    d := '😁';
     a : mut {i32 & i32}? = (10, 20);
     tuple: mut = (10, 20, 30);
     app::func(&"${*tuple_index::new(&mut tuple).at(0)}");

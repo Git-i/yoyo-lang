@@ -132,11 +132,8 @@ namespace Yoyo {
                     if (NextIs('=')) return Token{TokenType::DoubleEqual, loc};
                     return Token{TokenType::Equal, loc};
                 }
-            case '"':
-                {
-                    return ScanStringLiteral();
-                }
-            
+            case '"': return ScanStringLiteral();
+            case '\'': return ScanCharLiteral();
             default:
                 {
                     if(std::isdigit(c)) return ScanNumber();
@@ -207,6 +204,30 @@ namespace Yoyo {
         }
         auto view = std::string_view(source.begin() + iden_begin, source.begin() + position - 1);
         return Token{TokenType::StringLiteral, loc, view};
+    }
+
+    std::optional<Token> Scanner::ScanCharLiteral()
+    {
+        auto loc = GetSourceLocation();
+        loc.column--;
+        size_t begin = position;
+        size_t num_bytes = 0;
+        auto next_byte = std::bit_cast<uint8_t>(Get());
+        std::string_view view;
+
+        if(next_byte <= 0x7F) num_bytes = 1;
+        else if(next_byte <= 0xDF) num_bytes = 2;
+        else if(next_byte <= 0xEF) num_bytes = 3;
+        else if(next_byte <= 0xF7) num_bytes = 4;
+        else return std::nullopt;
+
+        for(size_t i = 1; i < num_bytes; i++) std::ignore = Get();
+        view = std::string_view{source.begin() + begin, source.begin() + begin + num_bytes};
+        if(Peek() == '\'')
+        {
+            std::ignore = Get(); return Token{TokenType::CharLiteral, loc, view};
+        }
+        return std::nullopt;
     }
 
     void Scanner::nextLine()
