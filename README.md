@@ -22,10 +22,10 @@ langauge, written in (and primarily for) C++20.
 - [x] Conditional Decomposition
 - [x] While loops
 - [x] References
+- [x] With statements*
 - [ ] Modules
 - [ ] Iterators
 - [ ] For loops
-- [ ] With statements*
 - [ ] Arrays
 - [ ] Span
 - [ ] Associative Arrays
