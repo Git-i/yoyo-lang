@@ -68,8 +68,18 @@ namespace Yoyo
     }
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(NameExpression* expr)
     {
+
+        for(auto& i : irgen->variables | std::views::reverse)
+        {
+            if(i.contains(expr->text) && !i.at(expr->text).second.is_mutable)
+                irgen->error();
+        }
         if(irgen->lifetimeExtensions.contains(expr->text))
-            return irgen->lifetimeExtensions[expr->text];
+        {
+            auto v = irgen->lifetimeExtensions[expr->text];
+            v.emplace_back(expr->text, Mut);
+            return  v;
+        }
         return {{expr->text, Mut }};
     }
 
@@ -103,6 +113,7 @@ namespace Yoyo
         {
             auto v = irgen->lifetimeExtensions[expr->text];
             for(auto& val : v) val.second = Const;
+            v.emplace_back(expr->text, Const);
             return v;
         }
         return {{expr->text, Const }};

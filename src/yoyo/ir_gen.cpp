@@ -2,6 +2,7 @@
 
 #include <csignal>
 #include <list>
+#include <ranges>
 #include <set>
 
 namespace Yoyo
@@ -178,7 +179,6 @@ namespace Yoyo
         auto old_hash = block_hash;
         block_hash = name + "__";
         pushScope();
-        std::list<VariableDeclaration> declarations;
         size_t idx = 0;
         for(auto& param : decl->signature.parameters)
         {
@@ -187,7 +187,6 @@ namespace Yoyo
                 auto param_type = func->getFunctionType()->getFunctionParamType(idx + uses_sret);
                 auto type = param.type;
                 if(in_class && type.name == "This") type = this_t;
-                declarations.emplace_back(Token{}, type, nullptr,false);
                 llvm::Value* var;
                 if(!type.should_sret())
                 {
@@ -200,7 +199,7 @@ namespace Yoyo
                 }
                 variables.back()[param.name] = {
                     var,
-                    &declarations.back()
+                    std::move(type)
                 };
             }
             //make lambda context visible TODO: fix lambdas
@@ -217,13 +216,12 @@ namespace Yoyo
                     Token tk{.type = TokenType::Identifier, .text = capture};
                     NameExpression nexpr(std::string(tk.text));
                     auto type = ExpressionTypeChecker{this}(&nexpr);
-                    declarations.emplace_back(Token{}, *type, nullptr, false);
                     auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture);
                     if(type->is_primitive())
                         var = builder->CreateLoad(llvm::PointerType::get(context, 0), var);
                     variables.back()[capture] = {
                         var,
-                        &declarations.back()
+                        std::move(type).value()
                     };
                     capture_idx++;
                 }
@@ -303,7 +301,7 @@ namespace Yoyo
             return;
         }
         if(type->is_non_owning(this)) { error(); return;}
-
+        type->is_mutable = decl->is_mut;
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc = nullptr;
@@ -336,7 +334,7 @@ namespace Yoyo
         }
         type->saturate(module);
         if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
-        variables.back()[name] = {alloc, decl};
+        variables.back()[name] = {alloc, std::move(type).value()};
     }
     void IRGenerator::operator()(BlockStatement* stat)
     {
@@ -412,8 +410,7 @@ namespace Yoyo
 
         auto ptr = builder->CreateStructGEP(llvm_t, optional, 0, stat->captured_name);
         tp->subtypes[0].is_lvalue = true; tp->subtypes[0].is_mutable = tp->is_mutable;
-        VariableDeclaration decl(Token{}, tp->subtypes[0], nullptr, tp->is_mutable);
-        variables.back()[stat->captured_name] = {ptr, &decl};
+        variables.back()[stat->captured_name] = {ptr, std::move(tp->subtypes[0])};
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
 
@@ -433,6 +430,62 @@ namespace Yoyo
         }
         builder->SetInsertPoint(merge_bb);
     }
+    template <std::input_iterator It>
+    void IRGenerator::pushScopeWithConstLock(It begin, It end)
+    {
+        pushScope();
+        for(const std::string& str: std::ranges::subrange(begin, end))
+        {
+            for(auto& i : variables | std::views::reverse)
+            {
+                if(!i.contains(str)) continue;
+                Type new_tp = i.at(str).second;
+                new_tp.is_mutable = false;
+                variables.back()[str] = {i.at(str).first, std::move(new_tp)};
+                break;
+            }
+        }
+    }
+    void IRGenerator::operator()(WithStatement* stat)
+    {
+        auto ty = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant());
+        if(!ty) {error(); return;}
+        if(!ty->is_non_owning(this)) {error(); return;}
+        if(isShadowing(stat->name)) {error(); return;}
+
+        ty->is_mutable = ty->is_non_owning(this);
+
+        std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
+        borrow_res[0].first = stat->expression.get();
+        borrow_res[0].second = ty->is_mutable ?
+            std::visit(BorrowResult::LValueBorrowResult{this}, stat->expression->toVariant()):
+            std::visit(BorrowResult{this}, stat->expression->toVariant());
+        validate_borrows(borrow_res, this);
+
+        auto expr = std::visit(ExpressionEvaluator{this}, stat->expression->toVariant());
+        llvm::Value* val;
+        auto names = borrow_res[0].second | std::views::keys;
+        pushScopeWithConstLock(names.begin(), names.end());
+        lifetimeExtensions[stat->name] = std::move(borrow_res[0].second);
+
+        if(ty->should_sret())
+        {
+            expr->setName(stat->name);
+            val = expr;
+        }
+        else
+        {
+            val = Alloca(stat->name, ToLLVMType(*ty, false));
+            ty->is_mutable = true;
+            ExpressionEvaluator{this}.doAssign(val, expr, *ty, *ty);
+        }
+        variables.back()[stat->name] = {val, std::move(ty).value()};
+        current_Statement = &stat->body;
+        std::visit(*this, stat->body->toVariant());
+        lifetimeExtensions.erase(stat->name);
+        popScope();
+    }
+
     void IRGenerator::error()
     {
         raise(SIGTRAP);

@@ -613,7 +613,7 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                if(!var->second.second->is_mut) return nullptr;
+                if(!var->second.second.is_mutable) return nullptr;
                 return var->second.first;
             }
         }
@@ -742,9 +742,9 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                if(!var->second.second->type->should_sret())
+                if(!var->second.second.should_sret())
                 {
-                    return irgen->builder->CreateLoad(irgen->ToLLVMType(*var->second.second->type, false), var->second.first, name);
+                    return irgen->builder->CreateLoad(irgen->ToLLVMType(var->second.second, false), var->second.first, name);
                 }
                 return var->second.first;
             }

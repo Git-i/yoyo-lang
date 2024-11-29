@@ -64,6 +64,7 @@ namespace Yoyo
     };
     class IRGenerator
     {
+        template<std::input_iterator It> void pushScopeWithConstLock(It begin, It end);
     public:
         llvm::Value* currentReturnAddress;
         Type this_t;
@@ -75,7 +76,7 @@ namespace Yoyo
         llvm::Module* code;
         std::unique_ptr<llvm::IRBuilder<>> builder;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
-        std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, VariableDeclaration*>>> variables;
+        std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, Type>>> variables;
         std::vector<
             std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration
         >>>> types;
@@ -105,6 +106,7 @@ namespace Yoyo
         void operator()(EnumDeclaration*){}
         void operator()(ModuleImport*){}
         void operator()(ConditionalExtraction*);
+        void operator()(WithStatement*);
 
         void error();
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
@@ -115,6 +117,9 @@ namespace Yoyo
         llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);
         void GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md);
     };
+
+
+
     struct TopLevelVisitor
     {
         IRGenerator* irgen;

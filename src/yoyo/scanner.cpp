@@ -30,7 +30,10 @@ namespace Yoyo {
         {"mut", TokenType::Mut},
         {"called", TokenType::Called},
         {"module", TokenType::Module},
-        {"null", TokenType::Null}
+        {"null", TokenType::Null},
+        {"with", TokenType::With},
+        {"as", TokenType::As},
+        {"fn", TokenType::Fn},
     })
     {
 

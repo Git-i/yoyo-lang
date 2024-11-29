@@ -24,45 +24,42 @@ TEST_CASE("Test IR")
     std::string src2 = R"(
 lol: module = MOO //The import system is not too strong rn
 app: module = APP
-baz: class = {
-    x: lol::foo,
-    y: i32 & f64
-}
+
 tuple_index: struct:&mut = {
-    storage: &mut {i32 & i32 & i32},
-    new: (storage: &mut {i32 & i32 & i32}) -> tuple_index = return tuple_index{ .storage = storage };
+    storage: &mut (i32, i32, i32),
+    new: fn(storage: &mut (i32, i32, i32)) -> tuple_index = return tuple_index{ .storage = storage };
 }
-at: (p: tuple_index, idx: i32) -> &mut i32 = {
+at: fn(p: tuple_index, idx: i32) -> &mut i32 = {
     if (idx == 0) return &mut p.storage.0;
     if (idx == 1) return &mut p.storage.1;
     if (idx == 2) return &mut p.storage.2;
 }
-
-get_int: (tup: &mut {i32 & i32}, tup2: &i32) -> &mut i32 = return &mut tup.0;
-value_or: (tup: & {i32 & i32}?, alt: &i32) -> &i32 = {
-    if |val| (*tup) {
-        return &val.0;
-    }
-    return alt;
-}
-takes_foo: (param: i32) -> f64 = {
+takes_foo: fn(param: i32) -> f64 = {
     d := '😁';
     app::func(&"${d}");
-    a : mut {i32 & i32}? = (10, 20);
+    a : mut (i32, i32)? = (10, 20);
     tuple: mut = (10, 20, 30);
-    app::func(&"${*tuple_index::new(&mut tuple).at(0)}");
+    with indexer as tuple_index::new(&mut tuple) {
+        //tuple.0 = 10; error
+        with number as at(indexer, 0) {
+            //indexer.storage.0 = 5; error
+            *number = 100;
+            app::func(&"${10 + *number}");
+            app::func(&"${tuple}");
+        }
+    }
     return 10;
 }
 )";
     std::string source = R"(
-test_impl_conv: (a: i64) -> i64 & f64 = return (a, 10);
+test_impl_conv: fn(a: i64) -> (i64, f64) = return (a, 10);
 foo: class = {
     x: bar
 }
 bar: class = {
     y: f64
 }
-returns_foo: () -> foo = {
+returns_foo: fn -> foo = {
     a: mut foo;
     a.x.y = 300.0;
     return a;

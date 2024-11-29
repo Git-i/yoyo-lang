@@ -260,16 +260,10 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                auto decl = var->second.second;
-                auto t = decl->type ? decl->type.value() : std::visit(*this, decl->initializer->toVariant());
-                if(t->is_lambda())
-                {
-                    return std::visit(*this, decl->initializer->toVariant());
-                }
-                t->is_mutable = decl->is_mut;
-                t->is_lvalue = true;
-                t->saturate(irgen->module);
-                return t;
+                auto& type = var->second.second;
+                type.is_lvalue = true;
+                type.saturate(irgen->module);
+                return type;
             }
         }
         if(auto fn = irgen->module->findFunction(irgen->module->module_hash + name))

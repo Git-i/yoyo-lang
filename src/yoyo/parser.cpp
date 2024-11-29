@@ -114,7 +114,7 @@ namespace Yoyo
         if(!look_ahead) return nullptr;
         switch (look_ahead->type)
         {
-        case TokenType::LParen: return parseFunctionDeclaration(iden.value());
+        case TokenType::Fn: return parseFunctionDeclaration(iden.value());
         case TokenType::Class: return parseClassDeclaration(iden.value(), false);
         case TokenType::Struct: return parseClassDeclaration(iden.value(), true);
         case TokenType::Enum: return parseEnumDeclaration(iden.value());
@@ -182,6 +182,7 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
     {
+        if(!discard(TokenType::Fn)) error("Expected 'fn'", Peek());
         auto sig = parseFunctionSignature();
         //functions must specify explicit return types
         if(sig->returnType.name == "__inferred") sig->returnType.name = "void";
@@ -201,7 +202,13 @@ namespace Yoyo
 
     std::optional<FunctionSignature> Parser::parseFunctionSignature()
     {
-        if(!discard(TokenType::LParen)) return std::nullopt;
+        if(discard(TokenType::Arrow))
+            return FunctionSignature{.returnType = *parseType(0), .return_is_ref = false, .parameters = {}};
+        //empty signature
+        if(!discard(TokenType::LParen))
+        {
+            return FunctionSignature{.returnType = "__inferred", .return_is_ref = false, .parameters = {}};
+        }
         FunctionSignature sig;
         auto parseParam = [this](std::string name) -> std::optional<FunctionParameter>
         {
@@ -499,7 +506,7 @@ namespace Yoyo
             if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
             auto next_tk = Peek();
             if(!next_tk) return nullptr;
-            if(next_tk->type == TokenType::LParen)
+            if(next_tk->type == TokenType::Fn)
             {
                 if(is_static) error("'static' cannot be applied to methods", next_tk);//static doesn't apply to functions
                 auto stat = parseFunctionDeclaration(iden);
@@ -705,9 +712,22 @@ namespace Yoyo
         case TokenType::LCurly: {Get(); return parseBlockStatement(*tk);}
         case TokenType::While: {Get(); return parseWhileStatement(*tk);}
         case TokenType::For: {Get(); return parseForStatement(*tk);}
+        case TokenType::With: {Get(); return parseWithStatement(*tk);}
         default: return parseExpressionStatement();
         }
 
+    }
+
+    std::unique_ptr<Statement> Parser::parseWithStatement(Token tk)
+    {
+        auto name = Get();
+        if(!name || name->type != TokenType::Identifier) error("Expected identifier", Peek());
+        if(!discard(TokenType::As)) error("Expected 'as'", Peek());
+        auto expr = parseExpression(0);
+        auto stat = std::make_unique<WithStatement>(std::string(name->text), std::move(expr), parseStatement());
+        stat->body->parent = stat.get();
+        auto end = stat->body->end;
+        return Statement::attachSLAndParent(std::move(stat), tk.loc, end, parent);
     }
 
     std::optional<Type> parseArrayType(Token t, Parser& parser)
@@ -726,7 +746,6 @@ namespace Yoyo
     }
     //TODO reconsider this table
     static constexpr uint32_t PipePrecedence = 1;
-    static constexpr uint32_t AmpersandPrecedence = 2;
     static constexpr uint32_t OptionalPreference = 3;
     static constexpr uint32_t TemplatePrecedence = 4;
     static constexpr uint32_t ScopePrecedence = 5;
@@ -736,23 +755,12 @@ namespace Yoyo
         if(!tk) return 0;
         switch(tk->type)
         {
-        case TokenType::Ampersand: return AmpersandPrecedence;
         case TokenType::Pipe: return PipePrecedence;
         case TokenType::TemplateOpen: return TemplatePrecedence;
         case TokenType::DoubleColon: return ScopePrecedence;
         case TokenType::Question: return OptionalPreference;
         default: return 0;
         }
-    }
-    std::optional<Type> parseAmpTypeExpr(Parser& p, Type left)
-    {
-        auto t = p.parseType(AmpersandPrecedence);
-        if(left.name == "__tup")
-        {
-            left.subtypes.push_back(std::move(t).value_or(Type{}));
-            return left;
-        }
-        return Type("__tup", {left, std::move(t).value_or(Type{})});
     }
     std::optional<Type> parsePipeTypeExpr(Parser& p, Type left)
     {
@@ -799,6 +807,21 @@ namespace Yoyo
         if(is_mut) return Type{"__ref_mut", {std::move(t)}};
         return Type("__ref", {std::move(t)});
     }
+    std::optional<Type> parseTupleType(Parser& p)
+    {
+        if(p.discard(TokenType::RParen)) return Type{"void"};
+        Type t{"__tup"};
+        while(!p.discard(TokenType::RParen))
+        {
+            t.subtypes.push_back(p.parseType(0).value_or(Type{}));
+            if(!p.discard(TokenType::Comma))
+            {
+                if(!p.discard(TokenType::RParen)) p.error("Expected ','", p.Peek());
+                else break;
+            }
+        }
+        return t;
+    }
     std::optional<Type> Parser::parseType(uint32_t precedence)
     {
         auto tk = Peek();
@@ -810,6 +833,7 @@ namespace Yoyo
         case TokenType::LSquare: Get(); t = parseArrayType(*tk, *this); break;
         case TokenType::LCurly: Get(); t = parseTypeGroup(*tk, *this); break;
         case TokenType::Ampersand: Get(); t = parseRefType(*tk, *this); break;
+        case TokenType::LParen: Get(); t = parseTupleType(*this); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())
@@ -817,7 +841,6 @@ namespace Yoyo
             tk = Get();
             switch(tk->type)
             {
-            case TokenType::Ampersand: t = parseAmpTypeExpr(*this, std::move(t).value()); break;
             case TokenType::Pipe: t = parsePipeTypeExpr(*this, std::move(t).value()); break;
             case TokenType::TemplateOpen: t = parseTemplateTypeExpr(*this, std::move(t).value()); break;
             case TokenType::Question: t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk); break;

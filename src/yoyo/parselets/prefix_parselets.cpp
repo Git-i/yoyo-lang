@@ -179,18 +179,8 @@ namespace Yoyo
         }
         auto tk = parser.Peek();
         if(!tk) return nullptr;
-        FunctionSignature sig;
-        if(tk->type == TokenType::LParen) sig = *parser.parseFunctionSignature();
-        else if(tk->type == TokenType::Arrow)
-        {
-            parser.Get();
-            auto ty = parser.parseType(0);
-            sig = FunctionSignature{.returnType = std::move(ty).value_or(Type{}), .return_is_ref = false, .parameters = {}};
-        }
-        else
-        {
-            sig = FunctionSignature{.returnType = Type{.name="__inferred"}, .return_is_ref = false, .parameters = {}};
-        }
+        FunctionSignature sig = *parser.parseFunctionSignature();
+
 
 
         auto stat = parser.parseStatement();

@@ -51,4 +51,9 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant WithStatement::toVariant()
+    {
+        return this;
+    }
+
 }

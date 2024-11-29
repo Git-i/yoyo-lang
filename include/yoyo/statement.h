@@ -22,6 +22,7 @@ namespace Yoyo
     class ModuleImport;
     class EnumDeclaration;
     class ConditionalExtraction;
+    class WithStatement;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -34,7 +35,8 @@ namespace Yoyo
         ExpressionStatement*,
         ModuleImport*,
         EnumDeclaration*,
-        ConditionalExtraction*> StatementVariant;
+        ConditionalExtraction*,
+        WithStatement*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     class Statement : public ASTNode
     {
@@ -172,5 +174,15 @@ namespace Yoyo
                 , else_capture(std::move(else_name)), else_body(std::move(else_)) {}
         StatementVariant toVariant() override;
 
+    };
+    class WithStatement : public Statement
+    {
+    public:
+        std::string name;
+        std::unique_ptr<Expression> expression;
+        std::unique_ptr<Statement> body;
+        WithStatement(std::string name, std::unique_ptr<Expression> exp, std::unique_ptr<Statement> body)
+            : name(std::move(name)), expression(std::move(exp)), body(std::move(body)) {}
+        StatementVariant toVariant() override;
     };
 }
