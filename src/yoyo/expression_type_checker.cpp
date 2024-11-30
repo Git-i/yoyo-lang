@@ -1,9 +1,25 @@
 #include <csignal>
+#include <ranges>
 
 #include "ir_gen.h"
 #include "fn_type.h"
 namespace Yoyo
 {
+    std::optional<Type> peerResolve(std::ranges::forward_range auto types)
+    {
+        std::optional<Type> result = *types.begin();
+        static_assert(std::is_base_of_v<Type,
+            std::remove_cvref_t<std::ranges::range_value_t<decltype(types)>>>);
+        for(std::ranges::range_value_t<decltype(types)> type : std::ranges::subrange(types.begin() + 1, types.end()))
+        {
+            if (!result->is_assignable_from(type))
+            {
+                if (type.is_assignable_from(*result)) result = type;
+                else return std::nullopt;
+            }
+        }
+        return result;
+    }
     //defined in type.cpp
     extern std::vector<std::string_view> split(std::string_view str, std::string_view delim);
     std::optional<Type> canBinOpLiteral(const Type &a, const Type &b)
@@ -140,18 +156,15 @@ namespace Yoyo
             return fn->returnType;
         return std::nullopt;
     }
-
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ArrayLiteral* lit)
     {
-        Type t{.name = "__arr", .subtypes = {}};
-        Type subtype;
-        for(auto& elem : lit->elements)
+        auto subtype = peerResolve(lit->elements | std::views::transform([this](std::unique_ptr<Expression>& elem)
         {
-            auto sub_t = std::visit(*this, elem->toVariant());
-            if(!sub_t) return std::nullopt;
-            subtype = Type::variant_merge(std::move(subtype), std::move(sub_t).value());
-        }
-        return subtype;
+            return std::make_tuple(std::visit(*this, elem->toVariant()).value_or(Type{}), elem.get());
+        }));
+        if(!subtype) return std::nullopt;
+
+        return Type{.name = "__arr" + std::to_string(lit->elements.size()), .subtypes = {*subtype}};
     }
 
     std::optional<FunctionType> checkDot(BinaryOperation* expr, const Type& lhs, IRGenerator* irgen)

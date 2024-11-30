@@ -118,3 +118,11 @@ returns_foo: fn -> foo = {
     REQUIRE(res == 10.0);
 }
 
+TEST_CASE("Test peer type resolve")
+{
+    std::string source = R"([10, 20, 20.0])";
+    auto type = std::visit(Yoyo::ExpressionTypeChecker{nullptr},
+        Yoyo::Parser(source).parseExpression(0)->toVariant());
+    REQUIRE(type);
+    std::cout << type->subtypes[0].name << std::endl;
+}
