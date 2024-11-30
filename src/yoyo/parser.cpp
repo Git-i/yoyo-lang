@@ -720,10 +720,12 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseWithStatement(Token tk)
     {
+        if(!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto name = Get();
         if(!name || name->type != TokenType::Identifier) error("Expected identifier", Peek());
         if(!discard(TokenType::As)) error("Expected 'as'", Peek());
         auto expr = parseExpression(0);
+        if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
         auto stat = std::make_unique<WithStatement>(std::string(name->text), std::move(expr), parseStatement());
         stat->body->parent = stat.get();
         auto end = stat->body->end;

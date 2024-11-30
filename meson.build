@@ -22,4 +22,7 @@ sources = [
 yoyo_lib = library('yoyo', sources, include_directories: 'include/yoyo',dependencies: dependency('llvm'))
 yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: dependency('llvm'))
 parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
-parser_test = executable('ir_gen_test', ['tests/ir_gen_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
+irgen_test = executable('ir_gen_test', ['tests/ir_gen_test.cpp'], dependencies: [
+                             yoyo_dep,
+                             dependency('catch2-with-main'),
+                             dependency('libgvc')])

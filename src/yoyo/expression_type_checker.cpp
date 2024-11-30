@@ -7,10 +7,9 @@ namespace Yoyo
 {
     std::optional<Type> peerResolve(std::ranges::forward_range auto types)
     {
-        std::optional<Type> result = *types.begin();
-        static_assert(std::is_base_of_v<Type,
-            std::remove_cvref_t<std::ranges::range_value_t<decltype(types)>>>);
-        for(std::ranges::range_value_t<decltype(types)> type : std::ranges::subrange(types.begin() + 1, types.end()))
+        std::optional<Type> result = (*types.begin()).first;
+        for(auto type :
+            std::ranges::subrange(types.begin() + 1, types.end()) | std::views::keys)
         {
             if (!result->is_assignable_from(type))
             {
@@ -160,7 +159,7 @@ namespace Yoyo
     {
         auto subtype = peerResolve(lit->elements | std::views::transform([this](std::unique_ptr<Expression>& elem)
         {
-            return std::make_tuple(std::visit(*this, elem->toVariant()).value_or(Type{}), elem.get());
+            return std::make_pair(std::visit(*this, elem->toVariant()).value_or(Type{}), elem.get());
         }));
         if(!subtype) return std::nullopt;
 

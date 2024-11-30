@@ -8,7 +8,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
-
+#include "graphviz/gvc.h"
 
 Yoyo::AppModule* md;
 
@@ -39,9 +39,9 @@ takes_foo: fn(param: i32) -> f64 = {
     app::func(&"${d}");
     a : mut (i32, i32)? = (10, 20);
     tuple: mut = (10, 20, 30);
-    with indexer as tuple_index::new(&mut tuple) {
+    with(indexer as tuple_index::new(&mut tuple)) {
         //tuple.0 = 10; error
-        with number as at(indexer, 0) {
+        with(number as at(indexer, 0)) {
             //indexer.storage.0 = 5; error
             *number = 100;
             app::func(&"${10 + *number}");
@@ -125,4 +125,47 @@ TEST_CASE("Test peer type resolve")
         Yoyo::Parser(source).parseExpression(0)->toVariant());
     REQUIRE(type);
     std::cout << type->subtypes[0].name << std::endl;
+}
+
+void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo::CFGNode*, Agnode_t*>& nodes, std::set<Yoyo::CFGNode*>& prepared)
+{
+    if(prepared.contains(node)) return;
+    prepared.insert(node);
+    for(auto child: node->children)
+    {
+        agedge(graph, nodes[node], nodes[child], nullptr, TRUE);
+        prepare_edge(child, graph, nodes, prepared);
+    }
+};
+TEST_CASE("Test CFG")
+{
+    char name[] = "CFG";
+    Yoyo::Parser p(R"(
+        main: fn = {
+            a := 0;
+            b := 0;
+            if(a > b) {
+                a = 10;
+            } else { b = 10; }
+            while(a > 2) { 10 + 10; }
+            with(a as &mut expr) {
+                if |val| (a) a = 10;
+                return 90;
+            }
+            return 400;
+        }
+    )");
+    auto graph = agopen(name, Agdirected, nullptr);
+    Yoyo::CFGNodeManager manager;
+    auto root = Yoyo::CFGNode::prepareFromFunction(manager,
+        dynamic_cast<Yoyo::FunctionDeclaration*>(p.parseDeclaration().get()));
+    std::unordered_map<Yoyo::CFGNode*, Agnode_t*> nodes;
+    for(auto& node: manager.nodes)
+    {
+        nodes[node.get()] = agnode(graph, nullptr, true);
+    }
+    std::set<Yoyo::CFGNode*> prepared;
+    prepare_edge(root, graph, nodes, prepared);
+    auto f = fopen("test_result.graphviz", "w");
+    agwrite(graph, f);
 }
