@@ -13,6 +13,7 @@ namespace Yoyo
         CFGNode() = default;
         friend class CFGNodeManager;
     public:
+        std::string debug_name;
         static CFGNode* prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl);
         std::vector<CFGNode*> children;
         std::vector<CFGNode*> parents;
@@ -25,6 +26,6 @@ namespace Yoyo
     {
     public:
         std::vector<std::unique_ptr<CFGNode>> nodes;
-        CFGNode* newNode(uint32_t depth);
+        CFGNode* newNode(uint32_t depth, std::string name = "");
     };
 }

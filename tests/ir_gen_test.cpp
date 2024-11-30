@@ -146,13 +146,15 @@ TEST_CASE("Test CFG")
             b := 0;
             if(a > b) {
                 a = 10;
-            } else { b = 10; }
+            } else {
+                b = 10;
+                if(b == 10) return 8;
+            }
             while(a > 2) { 10 + 10; }
             with(a as &mut expr) {
                 if |val| (a) a = 10;
                 return 90;
             }
-            return 400;
         }
     )");
     auto graph = agopen(name, Agdirected, nullptr);
@@ -160,9 +162,12 @@ TEST_CASE("Test CFG")
     auto root = Yoyo::CFGNode::prepareFromFunction(manager,
         dynamic_cast<Yoyo::FunctionDeclaration*>(p.parseDeclaration().get()));
     std::unordered_map<Yoyo::CFGNode*, Agnode_t*> nodes;
+    size_t idx = 0;
     for(auto& node: manager.nodes)
     {
-        nodes[node.get()] = agnode(graph, nullptr, true);
+        std::string name = "Node" + std::to_string(idx) + " " + node->debug_name + ": " + std::to_string(node->depth);
+        nodes[node.get()] = agnode(graph, name.data(), true);
+        idx += 1;
     }
     std::set<Yoyo::CFGNode*> prepared;
     prepare_edge(root, graph, nodes, prepared);
