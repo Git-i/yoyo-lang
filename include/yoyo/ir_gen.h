@@ -9,6 +9,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
 #include "module.h"
+#include "cfg_node.h"
 namespace Yoyo
 {
     class IRGenerator;
