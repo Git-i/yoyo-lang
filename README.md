@@ -72,7 +72,7 @@ or a global variable
 To achieve memory safety using the above assumptions, the language disallows storing references,
 and disallows an owning object to be used more than once per expression if used mutably
 ```rust
-change_arr_and_val(arr: &mut [i32], val: &i32) = {
+change_arr_and_val: fn (arr: &mut [i32], val: &i32) = {
     arr.push(90); // can invalidate references to the array
     val = 10; 
 }
@@ -87,8 +87,8 @@ Not being allowed to store references can be very inefficient however, consider 
 we have a scene of a game that has to search through a million entities every time we need to retrieve
 ```rust
 Scene: class = {
-    entities: [u64 & Entity]; //id and corresponding entity
-    get_entity_mut: (&mut this, id: u64) -> {&mut Entity}? = {
+    entities: [(u64, Entity)]; //id and corresponding entity
+    get_entity_mut: fn (&mut this, id: u64) -> {&mut Entity}? = {
         for (entity in this.entities) {
             if(entity.0 == id) return entity;
         }
@@ -101,7 +101,7 @@ as long as scene is not modified the reference we got is valid, the `with` state
 The `with` statements gives us a scope where we can extend the lifetime of a non-owning object, but prevents
 us from modifying any potential source of the non-owning object.
 ```rust
-main: () = {
+main: fn = {
     scene: mut Scene;
     // initialize with a million entities somehow
     with entity as scene.get_entity_mut(90) {
