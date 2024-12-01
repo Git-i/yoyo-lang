@@ -3,6 +3,8 @@
 #include <type.h>
 #include <fn_type.h>
 #include <statement.h>
+#include <llvm/IR/IRBuilder.h>
+
 #include "engine.h"
 namespace Yoyo
 {
@@ -105,5 +107,106 @@ namespace Yoyo
             return ptr;
         }
         return nullptr;
+    }
+
+    void makeBuiltinModule(Engine* eng)
+    {
+        if(eng->modules.contains("__builtin")) return;
+        eng->modules["__builtin"] = std::make_unique<Module>();
+        auto module = eng->modules.at("__builtin").get();
+        module->module_hash = "";
+        module->engine = eng;
+        auto& operators = module->overloads;
+        std::array types = {
+            Type{"f64", {}, nullptr, module},
+            Type{"f32", {}, nullptr, module},
+            Type{"i64", {}, nullptr, module},
+            Type{"i32", {}, nullptr, module},
+            Type{"i16", {}, nullptr, module},
+            Type{"i8", {}, nullptr, module},
+            Type{"u64", {}, nullptr, module},
+            Type{"u32", {}, nullptr, module},
+            Type{"u16", {}, nullptr, module},
+            Type{"u8", {}, nullptr, module},
+            };
+        auto& ctx = *static_cast<llvm::LLVMContext*>(eng->llvm_context);
+        module->code = std::make_unique<llvm::Module>("__builtin", ctx);
+        llvm::IRBuilder<> builder(ctx);
+        for(auto& t : types)
+        {
+            auto as_llvm = module->ToLLVMType(t, false, {});
+            auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm, as_llvm}, false);
+            auto mangled_name_for = [&t](const std::string& op_name)
+            {
+                // __operator_<name>__<type_lhs>__<type_rhs>
+                return "__operator__" + op_name + "__" + t.name + "__" + t.name;
+            };
+            auto plus_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
+                mangled_name_for("plus"), module->code.get());
+            auto minus_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
+                mangled_name_for("minus"), module->code.get());
+            auto mul_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
+                mangled_name_for("mul"), module->code.get());
+            auto div_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
+                mangled_name_for("div"), module->code.get());
+
+            plus_fn->addFnAttr(llvm::Attribute::AlwaysInline);
+            minus_fn->addFnAttr(llvm::Attribute::AlwaysInline);
+            mul_fn->addFnAttr(llvm::Attribute::AlwaysInline);
+            div_fn->addFnAttr(llvm::Attribute::AlwaysInline);
+
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", plus_fn));
+            if(t.is_integral()) builder.CreateRet(builder.CreateAdd(plus_fn->getArg(0), plus_fn->getArg(1)));
+            else builder.CreateRet(builder.CreateFAdd(plus_fn->getArg(0), plus_fn->getArg(1)));
+            operators.plus.emplace_back(t,t, t);
+
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", minus_fn));
+            if(t.is_integral()) builder.CreateRet(builder.CreateSub(minus_fn->getArg(0), minus_fn->getArg(1)));
+            else builder.CreateRet(builder.CreateFSub(minus_fn->getArg(0), minus_fn->getArg(1)));
+            operators.minus.emplace_back(t,t,t);
+
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", mul_fn));
+            if(t.is_integral()) builder.CreateRet(builder.CreateMul(mul_fn->getArg(0), mul_fn->getArg(1)));
+            else builder.CreateRet(builder.CreateFMul(mul_fn->getArg(0), mul_fn->getArg(1)));
+            operators.mul.emplace_back(t,t,t);
+
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", div_fn));
+            if(t.is_signed_integral()) builder.CreateRet(builder.CreateSDiv(div_fn->getArg(0), div_fn->getArg(1)));
+            else if(t.is_unsigned_integral()) builder.CreateRet(builder.CreateUDiv(div_fn->getArg(0), div_fn->getArg(1)));
+            else builder.CreateRet(builder.CreateFDiv(div_fn->getArg(0), div_fn->getArg(1)));
+            operators.div.emplace_back(t,t,t);
+        }
+        for(auto& t : std::ranges::subrange(types.begin(), types.begin() + 6))
+        {
+            auto as_llvm = module->ToLLVMType(t, false, {});
+            auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm}, false);
+            auto mangled_name_for = [&t](const std::string& op_name)
+            {
+                return "__operator__" + op_name + "__" + t.name;
+            };
+            auto fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("un_neg"),
+                module->code.get());
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
+            if(t.is_integral()) builder.CreateRet(builder.CreateNeg(fn->getArg(0)));
+            else builder.CreateRet(builder.CreateFNeg(fn->getArg(0)));
+            operators.un_neg.emplace_back(t,t);
+        }
+        for(auto& t : std::ranges::subrange(types.begin() + 2, types.end()))
+        {
+            auto as_llvm = module->ToLLVMType(t, false, {});
+            auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm, as_llvm}, false);
+            auto mangled_name_for = [&t](const std::string& op_name)
+            {
+                return "__operator__" + op_name + "__" + t.name + "__" + t.name;
+            };
+            auto fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("mod"),
+                module->code.get());
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
+            if(t.is_signed_integral()) builder.CreateRet(builder.CreateSRem(fn->getArg(0), fn->getArg(1)));
+            else builder.CreateRet(builder.CreateURem(fn->getArg(0), fn->getArg(1)));
+            operators.mod.emplace_back(t,t,t);
+        }
+
+
     }
 }

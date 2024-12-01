@@ -4,7 +4,7 @@
 #include <type.h>
 #include <unordered_map>
 #include <llvm/IR/Module.h>
-
+#include "overload_details.h"
 
 
 namespace Yoyo
@@ -18,11 +18,16 @@ namespace Yoyo
         std::unordered_map<std::string, std::unique_ptr<EnumDeclaration>> enums;
         std::unordered_map<std::string, Type> aliases;
         std::unordered_map<std::string, Module*> modules;
-
+        ModuleOverloadDetails overloads;
         Engine* engine;
         std::string module_hash;
         FunctionSignature* findFunction(const std::string& name);
 
         llvm::Type* ToLLVMType(const Type& type, bool is_ref, const std::vector<Type>& disallowed_types);
     };
+    void makeBuiltinModule(Engine* eng);
+    /*
+     * void makeStd();
+     * void makeStdExtended();
+     */
 }

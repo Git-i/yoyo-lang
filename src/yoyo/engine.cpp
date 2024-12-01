@@ -115,6 +115,7 @@ namespace Yoyo
     Engine::Engine()
     {
         llvm_context = new llvm::LLVMContext();
+        makeBuiltinModule(this);
     }
 
     Engine::~Engine()
