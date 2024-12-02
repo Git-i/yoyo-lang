@@ -353,7 +353,7 @@ namespace Yoyo
                 return ptr;
             }
         }
-        if(auto cls = left_type.get_decl_if_class(irgen))
+        if(auto cls = left_type.deref().get_decl_if_class(irgen))
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(rhs))
             {

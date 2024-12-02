@@ -14,7 +14,6 @@ Yoyo::AppModule* md;
 
 int32_t func(void* arg)
 {
-    constexpr auto a = sizeof(wchar_t);
     std::string_view sv =  Yoyo::Engine::viewString(arg);
     std::cout << sv << std::endl;
     return 0;
@@ -29,19 +28,26 @@ tuple_index: struct:&mut = {
     storage: &mut (i32, i32, i32),
     new: fn(storage: &mut (i32, i32, i32)) -> tuple_index = return tuple_index{ .storage = storage };
 }
+Vec2: struct = {
+    x: i32, y: i32,
+    new: fn -> Vec2 = return Vec2{ .x = 0, .y = 0 };
+}
+//operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
+print_vec2: fn(v: &Vec2) = app::func(&"${v.x}, ${v.y}");
 at: fn(p: tuple_index, idx: i32) -> &mut i32 = {
     if (idx == 0) return &mut p.storage.0;
     if (idx == 1) return &mut p.storage.1;
     if (idx == 2) return &mut p.storage.2;
 }
-takes_foo: fn(param: i32) -> f64 = {
+takes_foo: fn -> f64 = {
     d := '😁';
     app::func(&"${d}");
     a : mut (i32, i32)? = (10, 20);
     tuple: mut = (10, 20, 30);
+    (&Vec2::new()).print_vec2();
     with(indexer as tuple_index::new(&mut tuple)) {
         //tuple.0 = 10; error
-        with(number as at(indexer, 0)) {
+        with(number as indexer.at(0)) {
             //indexer.storage.0 = 5; error
             *number = 100;
             app::func(&"${10 + *number}");
@@ -112,8 +118,8 @@ returns_foo: fn -> foo = {
     }
     std::string unmangled_name = engine.modules["MOO2"]->module_hash + "takes_foo";
     auto addr = j->lookup(unmangled_name).get();
-    double(*fn)(int) = addr.toPtr<double(int)>();
-    auto res = fn(30);
+    double(*fn)() = addr.toPtr<double()>();
+    auto res = fn();
     std::cout << res;
     REQUIRE(res == 10.0);
 }

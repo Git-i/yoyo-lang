@@ -388,7 +388,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(GroupingExpression* expr)
     {
-        return std::visit(*this, expr->toVariant());
+        return std::visit(*this, expr->expr->toVariant());
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::checkNameWithinClassOrModule(Module* module, ClassDeclaration* type,
