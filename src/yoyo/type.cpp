@@ -27,6 +27,53 @@ namespace Yoyo
         result.emplace_back(str.begin() + left, str.end());
         return result;
     }
+
+    size_t Type::conversion_friction(const Type& other) const
+    {
+        constexpr size_t max = std::numeric_limits<size_t>::max();
+        if(is_equal(other)) return 0;
+        if(!is_assignable_from(other)) return max;
+        if(is_unsigned_integral())
+        {
+            if(other.name == "ilit") return 0;
+            return 1;
+        }
+        if(is_signed_integral())
+        {
+            if(other.name == "ilit") return 0;
+            if(other.is_unsigned_integral()) return 2;
+            return 1;
+        }
+        if(is_floating_point())
+        {
+            if(other.name == "ilit") return 0;
+            if(other.name == "flit") return 0;
+            if(other.is_floating_point()) return 1;
+            return 2;
+        }
+        if(name == "__called_fn" && (other.is_function() || other.is_lambda()))
+        {
+            return 0;
+        }
+        if(is_optional())
+        {
+            if(other.name == "__null") return 0;
+            return 1 + subtypes[0].conversion_friction(other);
+        }
+        //for variants, the rhs must be assignable to only one of the subtypes
+        if(is_variant())
+        {
+            for(auto& subtype : subtypes)
+            {
+                if(subtype.is_assignable_from(other))
+                {
+                    return 1 + subtype.conversion_friction(other);
+                }
+            }
+        }
+        return max;
+    }
+
     bool Type::is_assignable_from(const Type& other) const
     {
         if(is_equal(other)) return true;
@@ -165,6 +212,8 @@ namespace Yoyo
         {
             if(!(is_char() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
                 module = src;
+            else
+                module = src->engine->modules.at("__builtin").get();
         }
         if(is_mutable_reference())
             subtypes[0].is_mutable = true;
@@ -325,6 +374,11 @@ namespace Yoyo
         if(!is_floating_point()) return std::nullopt;
         std::string size(name.begin() + 1, name.end());
         return std::stoul(size);
+    }
+
+    std::string Type::full_name() const
+    {
+        return module->module_hash + name;
     }
 
     size_t Type::bitsize(IRGenerator* irgen) const

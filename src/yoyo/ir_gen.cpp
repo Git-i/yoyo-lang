@@ -272,16 +272,16 @@ namespace Yoyo
             {
                 int64_t int_val = as_int->getSExtValue();
                 if(int_val >= std::numeric_limits<int32_t>::min() && int_val <= std::numeric_limits<int32_t>::max())
-                    return Type{.name="i32"};
-                return Type{.name="i64"};
+                    return Type{.name="i32", .module = src.module};
+                return Type{.name="i64",.module = src.module};
             }
             uint64_t int_val = as_int->getZExtValue();
-            if(int_val <= std::numeric_limits<int32_t>::max()) return Type{.name="i32"};
-            if(int_val <= std::numeric_limits<uint32_t>::max()) return Type{.name="u32"};
-            if(int_val <= std::numeric_limits<int64_t>::max()) return Type{.name="i64"};
-            return Type{.name="u64"};
+            if(int_val <= std::numeric_limits<int32_t>::max()) return Type{.name="i32",.module = src.module};
+            if(int_val <= std::numeric_limits<uint32_t>::max()) return Type{.name="u32",.module = src.module};
+            if(int_val <= std::numeric_limits<int64_t>::max()) return Type{.name="i64",.module = src.module};
+            return Type{.name="u64",.module = src.module};
         }
-        if(src.name == "flit") return Type{.name = "f64"};
+        if(src.name == "flit") return Type{.name = "f64",.module = src.module};
         //unreachble
         return Type{};
     }

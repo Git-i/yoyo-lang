@@ -1,4 +1,6 @@
 #pragma once
+#include <csignal>
+
 namespace Yoyo
 {
     enum class OverloadType
@@ -14,6 +16,19 @@ namespace Yoyo
     struct OverloadDetailsBinary
     {
         Type left; Type right; Type result;
+        std::string mangled_name(const TokenType t) const
+        {
+            std::string middle;
+            switch (t)
+            {
+            case TokenType::Plus: middle = "plus__"; break;
+            case TokenType::Minus: middle = "minus__"; break;
+            case TokenType::Star: middle = "mul__"; break;
+            case TokenType::Slash: middle = "div__"; break;
+            default: raise(SIGTRAP);
+            }
+            return "__operator__" + middle + left.full_name() + "__" + right.full_name();
+        }
     };
 
     struct OverloadDetailsUnary

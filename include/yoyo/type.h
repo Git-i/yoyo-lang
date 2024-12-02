@@ -27,6 +27,7 @@ namespace Yoyo
         {
             return is_equal(other);
         }
+        [[nodiscard]] size_t conversion_friction(const Type& other) const;
         [[nodiscard]] Type strip_lvalue() const {return {.name = name, .signature = signature, .is_mutable = false, .is_lvalue = false};}
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
         [[nodiscard]] bool can_accept_as_arg(const Type& other) const;

@@ -1,4 +1,5 @@
 #include <csignal>
+#include <overload_resolve.h>
 #include <ranges>
 
 #include "ir_gen.h"
@@ -37,78 +38,50 @@ namespace Yoyo
     }
     static std::optional<Type> checkAddition(const Type &a, const Type &b)
     {
-        if(a.is_integral() || a.is_floating_point())
-        {
-            if(a.is_equal(b)) return a.strip_lvalue();
-            auto res = canBinOpLiteral(a, b);
-            if(res) return res->strip_lvalue();
-            return std::nullopt;
-        }
-        return std::nullopt;
+        if(a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveAdd(a, b);
+        if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkAssign(const Type &a, const Type &b)
     {
-        //auto deref is not done at type level, because composite types with references are not assignable to thier
-        //value counterparts ( i32? = {&i32}? is an error )
         if(!a.is_mutable) return std::nullopt;
         if(!a.is_assignable_from(b))
         {
             return std::nullopt;
         }
-        return Type{"void"};
+        return Type{.name="void", .module = a.module->engine->modules.at("__builtin").get()};
     }
     static std::optional<Type> checkMinus(const Type &a, const Type &b)
     {
-        if(a.is_integral() || a.is_floating_point())
-        {
-            if(a.is_equal(b)) return a.strip_lvalue();
-            auto res = canBinOpLiteral(a, b);
-            if(res) return res->strip_lvalue();
-            return std::nullopt;
-        }
-        return std::nullopt;
+        if(a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveSub(a, b);
+        if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkStar(const Type &a, const Type &b)
     {
-        if(a.is_integral() || a.is_floating_point())
-        {
-            if(a.is_equal(b)) return a.strip_lvalue();
-            auto res = canBinOpLiteral(a, b);
-            if(res) return res->strip_lvalue();
-            return std::nullopt;
-        }
-        return std::nullopt;
+        if(a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveMul(a, b);
+        if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkDivide(const Type &a, const Type &b)
     {
-        if(a.is_integral() || a.is_floating_point())
-        {
-            if(a.is_equal(b)) return a.strip_lvalue();
-            auto res = canBinOpLiteral(a, b);
-            if(res) return res->strip_lvalue();
-            return std::nullopt;
-        }
-        return std::nullopt;
+        if(a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveDiv(a, b);
+        if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkPercent(const Type &a, const Type &b)
     {
-        if(a.is_integral())
-        {
-            if(a.is_equal(b)) return a.strip_lvalue();
-            auto res = canBinOpLiteral(a, b);
-            if(res && res->is_floating_point()) return std::nullopt;
-            if(res) return res->strip_lvalue();
-            return std::nullopt;
-        }
-        return std::nullopt;
+        if(a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveRem(a, b);
+        if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkCmp(const Type& a, const Type& b)
     {
         if(a.is_integral() || a.is_floating_point())
         {
-            if(a.is_equal(b)) return Type{"bool", {}};
+            if(a.is_equal(b)) return Type{.name="bool", .module = a.module->engine->modules.at("__builtin").get()};
             auto res = canBinOpLiteral(a, b);
-            if(res) return Type{"bool", {}};
+            if(res) return Type{.name="bool", .module = a.module->engine->modules.at("__builtin").get()};
             return std::nullopt;
         }
         return std::nullopt;
@@ -163,7 +136,8 @@ namespace Yoyo
         }));
         if(!subtype) return std::nullopt;
 
-        return Type{.name = "__arr" + std::to_string(lit->elements.size()), .subtypes = {*subtype}};
+        return Type{.name = "__arr" + std::to_string(lit->elements.size()), .subtypes = {*subtype},
+            .module = subtype->module->engine->modules.at("__builtin").get()};
     }
 
     std::optional<FunctionType> checkDot(BinaryOperation* expr, const Type& lhs, IRGenerator* irgen)
@@ -362,7 +336,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(NullLiteral* null)
     {
-        return Type{"__null"};
+        return Type{.name="__null",.module = irgen->module->engine->modules.at("__builtin").get()};
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(AsExpression* expr)
@@ -377,14 +351,14 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(CharLiteral*)
     {
-        return Type{"char"};
+        return Type{.name = "char", .module = irgen->module->engine->modules.at("__builtin").get()};
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals
         bool consider_target = target && target->is_tuple() && target->subtypes.size() == tup->elements.size();
-        Type tp{"__tup"};
+        Type tp{.name="__tup", .module = irgen->module->engine->modules.at("__builtin").get()};
         for(size_t i = 0; i < tup->elements.size(); ++i)
         {
             auto type_i = std::visit(ExpressionTypeChecker{irgen}, tup->elements[i]->toVariant());
@@ -409,7 +383,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(BooleanLiteral*)
     {
-        return Type{.name = "bool", .subtypes = {}};
+        return Type{.name = "bool", .module = irgen->module->engine->modules.at("__builtin").get()};
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(GroupingExpression* expr)
@@ -462,7 +436,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(IntegerLiteral*)
     {
-        return Type{.name = "ilit", .subtypes = {}};
+        return Type{.name = "ilit", .module = irgen->module->engine->modules.at("__builtin").get()};
     }
 
 
@@ -486,13 +460,15 @@ namespace Yoyo
             {
                 //ref to ref is invalid
                 if(op_type.is_reference()) return std::nullopt;
-                return Type{"__ref", {std::move(op_type)}};
+                return Type{.name="__ref", .subtypes={std::move(op_type)},
+                    .module = irgen->module->engine->modules.at("__builtin").get()};
             }
         case RefMut:
             {
                 if(op_type.is_reference()) return std::nullopt;
                 if(!op_type.is_mutable) return std::nullopt;
-                return Type{"__ref_mut", {std::move(op_type)}};
+                return Type{.name="__ref_mut", .subtypes={std::move(op_type)},
+                    .module = irgen->module->engine->modules.at("__builtin").get()};
             }
         default: return std::nullopt;
         }
@@ -518,7 +494,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(RealLiteral*)
     {
-        return Type{.name = "flit", .subtypes = {}};
+        return Type{.name = "flit", .module = irgen->module->engine->modules.at("__builtin").get()};
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(StringLiteral* lit)
@@ -533,7 +509,8 @@ namespace Yoyo
                 if(!hasToStr(*ty)) return std::nullopt;
             }
         }
-        return Type{.name = "str", .subtypes = {}};
+        return Type{.name = "str",
+            .module = irgen->module->engine->modules.at("__builtin").get()};
     }
 
 

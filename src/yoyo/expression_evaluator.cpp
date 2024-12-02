@@ -1,5 +1,6 @@
 #include <cmath>
 #include <csignal>
+#include <overload_resolve.h>
 #include <set>
 #include <llvm/Support/Error.h>
 
@@ -174,6 +175,7 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
+        // TODO: this entire function should be clone(implicitConvert(rhs, right_type, left_type, irgen), left_type, lhs)
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
 
@@ -233,7 +235,7 @@ namespace Yoyo
     /// The @c clone function's signature looks like @code clone: (this) -> This @endcode \n
     /// Without it the type is cannot be copied
     /// I think it should be implicit for union types
-    llvm::Value* ExpressionEvaluator::clone(llvm::Value* value, const Type& left_type, llvm::Value* into)
+    llvm::Value* ExpressionEvaluator::clone(llvm::Value* value, const Type& left_type, llvm::Value* into) const
     {
         if(!left_type.should_sret())
         {
@@ -416,123 +418,111 @@ namespace Yoyo
         if(right_type.name == "ilit" || right_type.name == "flit")
             convertLiterals(rhs, lhs, right_type, left_type, irgen);
     }
+    llvm::FunctionType* BinOverloadToLLVMSig(IRGenerator* irgen, OverloadDetailsBinary* bin)
+    {
+        bool should_sret = bin->result.should_sret();
+        auto ptr_ty = llvm::PointerType::get(irgen->context, 0);
+        llvm::Type* res = should_sret ? llvm::Type::getVoidTy(irgen->context)
+            : irgen->ToLLVMType(bin->result, false);
+        std::vector<llvm::Type*> args;
+        args.reserve(2 + should_sret);
+        if(should_sret) args.push_back(ptr_ty);
+        args.push_back(bin->left.should_sret() ? ptr_ty: irgen->ToLLVMType(bin->left, false));
+        args.push_back(bin->right.should_sret() ? ptr_ty: irgen->ToLLVMType(bin->right, false));
+        return llvm::FunctionType::get(res, args, false);
+    }
+    llvm::Function* getOperatorFunction(TokenType t, IRGenerator* irgen, OverloadDetailsBinary* target)
+    {
+        auto fn_name = target->mangled_name(t);
+        auto fn = irgen->code->getFunction(fn_name);
+        if(!fn)
+        {
+            fn = llvm::Function::Create(BinOverloadToLLVMSig(irgen, target), llvm::GlobalValue::ExternalLinkage,
+                fn_name, irgen->code);
+            if(target->result.should_sret()) fn->addAttributeAtIndex(1,
+                llvm::Attribute::get(irgen->context,llvm::Attribute::StructRet, irgen->ToLLVMType(target->result, false)));
+        }
+        return fn;
+    }
     llvm::Value* ExpressionEvaluator::doAddition(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type,
-        const Type& result_type) const
+        const Type& right_type) const
     {
-        //integral result can come from overloaded operators
-        if(result_type.is_integral() && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateAdd(lhs, rhs, "addtmp");
-        }
-        //left can be an integer literal
-        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateFAdd(lhs, rhs, "addtmp");
-        }
-        return nullptr;
+        auto target = resolveAdd(left_type, right_type);
+        auto fn = getOperatorFunction(TokenType::Plus, irgen, target);
+        std::vector<llvm::Value*> args;
+        if(target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
+        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        return target->result.should_sret() ? args[0] : ret;
     }
     llvm::Value* ExpressionEvaluator::doMinus(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type,
-        const Type& result_type) const
+        const Type& right_type) const
     {
-        if(result_type.is_integral() && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateSub(lhs, rhs, "subtmp");
-        }
-        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateFSub(lhs, rhs, "subtmp");
-        }
-        return nullptr;
+        auto target = resolveSub(left_type, right_type);
+        auto fn = getOperatorFunction(TokenType::Minus, irgen, target);
+        std::vector<llvm::Value*> args;
+        if(target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
+        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        return target->result.should_sret() ? args[0] : ret;
     }
     llvm::Value* ExpressionEvaluator::doMult(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type,
-        const Type& result_type) const
+        const Type& right_type) const
     {
-        if(result_type.is_integral() && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateMul(lhs, rhs, "multmp");
-        }
-        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateFMul(lhs, rhs, "multmp");
-        }
-        return nullptr;
+        auto target = resolveMul(left_type, right_type);
+        auto fn = getOperatorFunction(TokenType::Star, irgen, target);
+        std::vector<llvm::Value*> args;
+        if(target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
+        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        return target->result.should_sret() ? args[0] : ret;
     }
     llvm::Value* ExpressionEvaluator::doDiv(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type,
-        const Type& result_type) const
+        const Type& right_type) const
     {
-        if(result_type.is_signed_integral() && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateSDiv(lhs, rhs, "divtmp");
-        }
-        if(result_type.is_unsigned_integral() && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateUDiv(lhs, rhs, "divtmp");
-        }
-        if(result_type.is_integral()) //integer literal
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
-            auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
-            if(lhs_int->isNegative() || rhs_int->isNegative()) return irgen->builder->CreateSDiv(lhs, rhs, "divtmp");
-            return irgen->builder->CreateUDiv(lhs, rhs, "divtmp");
-        }
-        if(result_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateFDiv(lhs, rhs, "divtmp");
-        }
-        return nullptr;
+        auto target = resolveDiv(left_type, right_type);
+        auto fn = getOperatorFunction(TokenType::Slash, irgen, target);
+        std::vector<llvm::Value*> args;
+        if(target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
+        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        return target->result.should_sret() ? args[0] : ret;
     }
     llvm::Value* ExpressionEvaluator::doRem(
         llvm::Value* lhs,
         llvm::Value* rhs,
         const Type& left_type,
-        const Type& right_type,
-        const Type& result_type) const
+        const Type& right_type) const
     {
-        if(left_type.is_signed_integral()  && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateSRem(lhs, rhs, "divtmp");
-        }
-        if(left_type.is_unsigned_integral() && left_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            return irgen->builder->CreateURem(lhs, rhs, "divtmp");
-        }
-        if(result_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
-            auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
-            auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
-            if(lhs_int->isNegative() || rhs_int->isNegative()) return irgen->builder->CreateSRem(lhs, rhs, "divtmp");
-            return irgen->builder->CreateURem(lhs, rhs, "divtmp");
-        }
-        return nullptr;
+        auto target = resolveRem(left_type, right_type);
+        auto fn = getOperatorFunction(TokenType::Percent, irgen, target);
+        std::vector<llvm::Value*> args;
+        if(target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
+        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        return target->result.should_sret() ? args[0] : ret;
     }
     llvm::Value* ExpressionEvaluator::doCmp(
         ComparisonPredicate p,
@@ -809,11 +799,11 @@ namespace Yoyo
         switch(op->op.type)
         {
             using enum TokenType;
-        case Plus: return doAddition(lhs, rhs, *left_t, *right_t, *res);
-        case Minus: return doMinus(lhs, rhs, *left_t, *right_t, *res);
-        case Star: return doMult(lhs, rhs, *left_t, *right_t, *res);
-        case Slash: return doDiv(lhs, rhs, *left_t, *right_t, *res);
-        case Percent: return doRem(lhs, rhs, *left_t, *right_t, *res);
+        case Plus: return doAddition(lhs, rhs, *left_t, *right_t);
+        case Minus: return doMinus(lhs, rhs, *left_t, *right_t);
+        case Star: return doMult(lhs, rhs, *left_t, *right_t);
+        case Slash: return doDiv(lhs, rhs, *left_t, *right_t);
+        case Percent: return doRem(lhs, rhs, *left_t, *right_t);
         case Greater: return doCmp(GT, lhs, rhs, *left_t, *right_t, *res);
         case Less: return doCmp(LT, lhs, rhs, *left_t, *right_t, *res);
         case GreaterEqual: return doCmp(EQ_GT, lhs, rhs, *left_t, *right_t, *res);

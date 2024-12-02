@@ -175,13 +175,13 @@ namespace Yoyo
         explicit ExpressionEvaluator(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
-        llvm::Value* clone(llvm::Value* value, const Type& left_type, llvm::Value* into = nullptr);
+        llvm::Value* clone(llvm::Value* value, const Type& left_type, llvm::Value* into = nullptr) const;
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
-        llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&, const Type&) const;
-        llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
-        llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
-        llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
-        llvm::Value* doRem(llvm::Value*, llvm::Value*, const Type&, const Type&, const Type&) const;
+        llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
+        llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
+        llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
+        llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
+        llvm::Value* doRem(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
         llvm::Value* doCmp(ComparisonPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
                            const Type& right_type, const Type&) const;
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
