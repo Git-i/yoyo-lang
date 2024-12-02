@@ -363,10 +363,10 @@ namespace Yoyo
                     return name == v.name;
                 }); var != cls->vars.end())
                 {
-                    auto llvm_t = irgen->ToLLVMType(left_type, false);
+                    auto llvm_t = irgen->ToLLVMType(left_type.deref(), false);
                     auto out_t = irgen->ToLLVMType(var->type, false);
                     llvm::Value* ptr;
-                    auto idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), std::distance(var, cls->vars.begin()));
+                    auto idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), std::distance(cls->vars.begin(), var));
                     auto zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
 
                     auto lalloc = std::visit(*this, lhs->toVariant());
