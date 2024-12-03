@@ -54,5 +54,17 @@ namespace Yoyo
         std::vector<OverloadDetailsUnary> un_not;
         std::vector<OverloadDetailsBinary> spaceship;
         std::vector<OverloadDetailsBinary> equal;
+        std::vector<OverloadDetailsBinary>* binary_details_for(TokenType t)
+        {
+            switch (t)
+            {
+            case TokenType::Plus: return &plus;
+            case TokenType::Minus: return &minus;
+            case TokenType::Star: return &mul;
+            case TokenType::Slash: return &div;
+            case TokenType::Percent: return &mod;
+            default: return nullptr;
+            }
+        }
     };
 }

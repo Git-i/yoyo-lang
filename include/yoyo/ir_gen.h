@@ -108,6 +108,7 @@ namespace Yoyo
         void operator()(ModuleImport*){}
         void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);
+        void operator()(OperatorOverload*);
 
         void error();
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
@@ -125,8 +126,9 @@ namespace Yoyo
     {
         IRGenerator* irgen;
         //return true on success
-        bool operator()(std::unique_ptr<FunctionDeclaration>);
-        bool operator()(std::unique_ptr<ClassDeclaration>);
+        bool operator()(std::unique_ptr<FunctionDeclaration>) const;
+        bool operator()(std::unique_ptr<ClassDeclaration>) const;
+        bool operator()(std::unique_ptr<OperatorOverload>);
     };
     class ExpressionTypeChecker
     {

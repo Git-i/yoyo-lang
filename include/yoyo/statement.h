@@ -23,6 +23,7 @@ namespace Yoyo
     class EnumDeclaration;
     class ConditionalExtraction;
     class WithStatement;
+    class OperatorOverload;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -36,6 +37,7 @@ namespace Yoyo
         ModuleImport*,
         EnumDeclaration*,
         ConditionalExtraction*,
+        OperatorOverload*,
         WithStatement*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     class Statement : public ASTNode
@@ -87,6 +89,16 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         FunctionDeclaration(Token ident, FunctionSignature sig, std::unique_ptr<Statement> body)
             : signature(std::move(sig)), identifier(ident), body(std::move(body)) {}
+        StatementVariant toVariant() override;
+    };
+    class OperatorOverload : public Statement
+    {
+    public:
+        FunctionSignature signature;
+        TokenType tok;
+        std::unique_ptr<Statement> body;
+        OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body)
+            : signature(std::move(sig)), tok(ident), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
     class ReturnStatement : public Statement

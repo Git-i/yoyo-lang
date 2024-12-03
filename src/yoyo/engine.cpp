@@ -48,6 +48,7 @@ namespace Yoyo
             md->enums[std::string{decl->identifier.text}] = std::unique_ptr<EnumDeclaration>(decl);
             return true;
         }
+        bool operator()(OperatorOverload*) {return true;}
         bool operator()(Statement*) {return false;};
     };
     struct ForwardDeclaratorPass2

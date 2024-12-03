@@ -103,11 +103,11 @@ namespace Yoyo
         if(iden->type != TokenType::Identifier) error("Expected identifier", Peek());
         return std::make_unique<ModuleImport>(std::move(name), std::string{iden->text});
     }
-
     std::unique_ptr<Statement> Parser::parseTopLevelDeclaration()
     {
         auto iden = Get();
         if(!iden) return nullptr;
+        if(iden->type == TokenType::Operator) return parseOperatorOverload(iden.value());
         if(iden->type != TokenType::Identifier) error("Expected Identifier", iden);
         Get();//discard the ':'
         auto look_ahead = Peek();
@@ -125,6 +125,18 @@ namespace Yoyo
         default: return parseVariableDeclaration(iden.value());
         }
     }
+    std::unique_ptr<Statement> Parser::parseOperatorOverload(const Token& tok)
+    {
+        if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
+        auto op = Get();
+        if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());
+        auto sig = parseFunctionSignature();
+        if(!discard(TokenType::Equal)) error("Expected '='", Peek());
+        auto body = parseStatement();
+        auto return_val = std::make_unique<OperatorOverload>(op->type, std::move(sig).value_or(FunctionSignature{}), std::move(body));
+        return_val->body->parent = return_val.get();
+        return Statement::attachSLAndParent(std::move(return_val), tok.loc, return_val->body->end, parent);
+    }
 
     std::vector<std::unique_ptr<Statement>> Parser::parseProgram()
     {
@@ -138,7 +150,9 @@ namespace Yoyo
     bool Parser::isTopLevelDeclaration()
     {
         auto tk = Peek();
-        if(tk && tk->type == TokenType::Identifier)
+        if(!tk) return false;
+        if(tk->type == TokenType::Operator) return true;
+        if(tk->type == TokenType::Identifier)
         {
             auto [tok, loc] = *GetWithEndLocation();
             if(Peek() && Peek()->type == TokenType::Colon)
@@ -294,12 +308,6 @@ namespace Yoyo
         sig.returnType = Type{"__inferred", {}};
         if(discard(TokenType::Arrow))
         {
-            auto ref_tk = Peek();
-            if(ref_tk->type == TokenType::Ref)
-            {
-                Get();
-                sig.return_is_ref = true;
-            }
             auto ret_type = parseType(0);
             sig.returnType = std::move(ret_type).value_or(Type{});
         }

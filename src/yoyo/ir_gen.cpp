@@ -486,6 +486,11 @@ namespace Yoyo
         popScope();
     }
 
+    void IRGenerator::operator()(OperatorOverload*)
+    {
+        error();
+    }
+
     void IRGenerator::error()
     {
         raise(SIGTRAP);
@@ -652,7 +657,10 @@ namespace Yoyo
         pushScope();
         for(auto& stat : statements)
         {
-            std::variant<std::unique_ptr<ClassDeclaration>, std::unique_ptr<FunctionDeclaration>> vnt;
+            std::variant<
+                std::unique_ptr<ClassDeclaration>,
+                std::unique_ptr<FunctionDeclaration>,
+                std::unique_ptr<OperatorOverload>> vnt;
             if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get()))
             {
                 std::ignore = stat.release();
@@ -662,6 +670,11 @@ namespace Yoyo
             {
                 std::ignore = stat.release();
                 vnt = std::unique_ptr<FunctionDeclaration>(fn_ptr);
+            }
+            else if(auto ovl_ptr = dynamic_cast<OperatorOverload*>(stat.get()))
+            {
+                std::ignore = stat.release();
+                vnt = std::unique_ptr<OperatorOverload>(ovl_ptr);
             }
             else continue;
             std::visit(TopLevelVisitor{this}, std::move(vnt));

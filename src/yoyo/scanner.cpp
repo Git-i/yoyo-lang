@@ -12,7 +12,7 @@ namespace Yoyo {
         {"while", TokenType::While},
         {"in", TokenType::In},
         {"inout", TokenType::InOut},
-        {"ref", TokenType::Ref},
+        {"operator", TokenType::Operator},
         {"return", TokenType::Return},
         {"class", TokenType::Class},
         {"struct", TokenType::Struct},

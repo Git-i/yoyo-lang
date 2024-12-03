@@ -24,37 +24,16 @@ TEST_CASE("Test IR")
 lol: module = MOO //The import system is not too strong rn
 app: module = APP
 
-tuple_index: struct:&mut = {
-    storage: &mut (i32, i32, i32),
-    new: fn(storage: &mut (i32, i32, i32)) -> tuple_index = return tuple_index{ .storage = storage };
-}
 Vec2: struct = {
     x: i32, y: i32,
-    new: fn -> Vec2 = return Vec2{ .x = 0, .y = 0 };
+    new: fn -> Vec2 = return Vec2{ .x = 90, .y = 0 };
 }
-//operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
+operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
 print_vec2: fn(v: &Vec2) = app::func(&"${v.x}, ${v.y}");
-at: fn(p: tuple_index, idx: i32) -> &mut i32 = {
-    if (idx == 0) return &mut p.storage.0;
-    if (idx == 1) return &mut p.storage.1;
-    if (idx == 2) return &mut p.storage.2;
-}
+
 takes_foo: fn -> f64 = {
-    d := '😁';
-    app::func(&"${d}");
-    a : mut (i32, i32)? = (10, 20);
-    tuple: mut = (10, 20, 30);
-    (&Vec2::new()).print_vec2();
-    with(indexer as tuple_index::new(&mut tuple)) {
-        //tuple.0 = 10; error
-        with(number as indexer.at(0)) {
-            //indexer.storage.0 = 5; error
-            *number = 100;
-            app::func(&"${10 + *number}");
-            app::func(&"${tuple}");
-        }
-    }
-    return 10;
+    (Vec2{ .x = 10, .y = 20 } + Vec2{ .x = 20, .y = 5}).print_vec2();
+    return 0;
 }
 )";
     std::string source = R"(

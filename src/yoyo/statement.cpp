@@ -18,6 +18,12 @@ namespace Yoyo
     {
         return this;
     }
+
+    StatementVariant OperatorOverload::toVariant()
+    {
+        return this;
+    }
+
     StatementVariant ReturnStatement::toVariant()
     {
         return this;

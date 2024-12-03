@@ -64,6 +64,7 @@ namespace Yoyo
         void operator()(ForStatement* stat){} //TODO
         void operator()(ModuleImport* stat) const {}
         void operator()(EnumDeclaration* stat) const {}
+        void operator()(OperatorOverload*) const{}
         void operator()(ConditionalExtraction* stat)
         {
             node->statements.push_back(stat);
