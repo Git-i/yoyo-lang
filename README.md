@@ -6,37 +6,6 @@ langauge, written in (and primarily for) C++20.
 > [!IMPORTANT]
 > This implementation is very far from useful
 
-## Progress
-
-- [x] Functions
-- [x] Variables
-- [x] Mutability
-- [x] If Statements
-- [x] Lambdas
-- [x] Tuples
-- [x] Variants
-- [x] Classes
-- [x] Structs
-- [x] Enums
-- [x] Optionals
-- [x] Conditional Decomposition
-- [x] While loops
-- [x] References
-- [x] With statements*
-- [ ] Modules
-- [ ] Iterators
-- [ ] For loops
-- [ ] Arrays
-- [ ] Span
-- [ ] Associative Arrays
-- [ ] Garbage Collections
-- [ ] Interfaces
-- [ ] Schemes
-- [ ] Unions
-- [ ] Destructors
-
-*With statement is discussed under the memory model
-
 ## Syntax
 
 The syntax is heavily inspired by [cpp2/cppfront](https://github.com/hsutter/cppfront)

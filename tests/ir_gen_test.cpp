@@ -32,7 +32,7 @@ operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y 
 operator: -(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x - rhs.x, .y = lhs.y - rhs.y };
 operator: *(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x * rhs.x, .y = lhs.y * rhs.y };
 operator: /(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x / rhs.x, .y = lhs.y / rhs.y };
-print: fn(v: &Vec2) = app::func(&"${v.x}, ${v.y}");
+print: fn(v: &Vec2) = "${v.x}, ${v.y}".app::func();
 
 takes_foo: fn -> f64 = {
     a := Vec2{ .x = 10, .y = 20 };
