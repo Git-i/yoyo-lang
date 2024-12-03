@@ -1,5 +1,6 @@
 #include <charconv>
 #include <csignal>
+#include <format>
 
 #include "ir_gen.h"
 
@@ -18,6 +19,22 @@ namespace Yoyo
             *buffer_length = std::snprintf(nullptr, 0, "%lu", value);
             auto buffer = static_cast<char*>(malloc(*buffer_length));
             std::to_chars(buffer, buffer + *buffer_length + 1, value);
+            return buffer;
+        }
+        char* YOYO_to_string_float32_dont_use_name(float value, size_t* buffer_length)
+        {
+            *buffer_length = std::snprintf(nullptr, 0, "%f", value);
+            auto buffer = static_cast<char*>(malloc(*buffer_length));
+            auto out = std::format_to_n(buffer, static_cast<std::iter_difference_t<char*>>(*buffer_length), "{}", value);
+            *buffer_length = out.out - buffer;
+            return buffer;
+        }
+        char* YOYO_to_string_float64_dont_use_name(double value, size_t* buffer_length)
+        {
+            *buffer_length = std::snprintf(nullptr, 0, "%lf", value);
+            auto buffer = static_cast<char*>(malloc(*buffer_length));
+            auto out = std::format_to_n(buffer, static_cast<std::iter_difference_t<char*>>(*buffer_length), "{}", value);
+            *buffer_length = out.out - buffer;
             return buffer;
         }
         char* YOYO_to_string_enum_dont_use_name(int32_t value, EnumDeclaration* decl, size_t* buffer_length)
@@ -61,6 +78,36 @@ namespace Yoyo
         auto mem = irgen->builder->CreateCall(fn, {integer, size});
         return {mem, irgen->builder->CreateLoad(int64_ty, size)};
     }
+    std::pair<llvm::Value*, llvm::Value*> f32_to_str(llvm::Value* value, IRGenerator* irgen)
+    {
+        auto fn = irgen->code->getFunction("YOYO_to_string_float32_dont_use_name");
+        auto int64_ty = llvm::Type::getInt64Ty(irgen->context);
+        auto f32_ty = llvm::Type::getFloatTy(irgen->context);
+        auto ptr_ty = llvm::PointerType::get(irgen->context, 0);
+        auto size = irgen->Alloca("int_as_str_size", int64_ty);
+        if(!fn)
+        {
+            auto type = llvm::FunctionType::get(ptr_ty,{f32_ty, ptr_ty}, false);
+            fn = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage, "YOYO_to_string_float32_dont_use_name", irgen->code);
+        }
+        auto mem = irgen->builder->CreateCall(fn, {value, size});
+        return {mem, irgen->builder->CreateLoad(int64_ty, size)};
+    }
+    std::pair<llvm::Value*, llvm::Value*> f64_to_str(llvm::Value* value, IRGenerator* irgen)
+    {
+        auto fn = irgen->code->getFunction("YOYO_to_string_float64_dont_use_name");
+        auto int64_ty = llvm::Type::getInt64Ty(irgen->context);
+        auto f64_ty = llvm::Type::getDoubleTy(irgen->context);
+        auto ptr_ty = llvm::PointerType::get(irgen->context, 0);
+        auto size = irgen->Alloca("int_as_str_size", int64_ty);
+        if(!fn)
+        {
+            auto type = llvm::FunctionType::get(ptr_ty,{f64_ty, ptr_ty}, false);
+            fn = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage, "YOYO_to_string_float64_dont_use_name", irgen->code);
+        }
+        auto mem = irgen->builder->CreateCall(fn, {value, size});
+        return {mem, irgen->builder->CreateLoad(int64_ty, size)};
+    }
     llvm::Function* enum_to_string_fn(IRGenerator* irgen)
     {
         auto fn = irgen->code->getFunction("YOYO_to_string_enum_dont_use_name");
@@ -85,6 +132,10 @@ namespace Yoyo
             auto as64 = irgen->builder->CreateZExt(val, llvm::Type::getInt64Ty(irgen->context));
             return uint_to_str(as64, irgen);
         }
+        if(tp.name == "f32")
+            return f32_to_str(val, irgen);
+        if(tp.name == "f64")
+            return f64_to_str(val, irgen);
         if(tp.is_char())
         {
             auto copy = irgen->Alloca("char_tmp_stck", val->getType());

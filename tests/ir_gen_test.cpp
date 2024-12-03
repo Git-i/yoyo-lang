@@ -25,14 +25,22 @@ lol: module = MOO //The import system is not too strong rn
 app: module = APP
 
 Vec2: struct = {
-    x: i32, y: i32,
+    x: f32, y: f32,
     new: fn -> Vec2 = return Vec2{ .x = 90, .y = 0 };
 }
 operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
-print_vec2: fn(v: &Vec2) = app::func(&"${v.x}, ${v.y}");
+operator: -(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x - rhs.x, .y = lhs.y - rhs.y };
+operator: *(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x * rhs.x, .y = lhs.y * rhs.y };
+operator: /(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x / rhs.x, .y = lhs.y / rhs.y };
+print: fn(v: &Vec2) = app::func(&"${v.x}, ${v.y}");
 
 takes_foo: fn -> f64 = {
-    (Vec2{ .x = 10, .y = 20 } + Vec2{ .x = 20, .y = 5}).print_vec2();
+    a := Vec2{ .x = 10, .y = 20 };
+    b := Vec2{ .x = 5, .y = 6 };
+    (a + b).print();
+    (a - b).print();
+    (a * b).print();
+    (a / b).print();
     return 0;
 }
 )";
