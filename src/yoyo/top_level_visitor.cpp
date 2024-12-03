@@ -22,7 +22,7 @@ namespace Yoyo
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
 
-            std::string& mangled_name = std::get<0>(irgen->module->classes[name]);
+            std::string mangled_name = std::get<0>(irgen->module->classes[name]) + fn.name;
 
             if(irgen->module->functions.contains(mangled_name)) return false;
             irgen->module->functions[mangled_name] = fn_decl->signature;

@@ -27,6 +27,7 @@ app: module = APP
 Vec2: struct = {
     x: f32, y: f32,
     new: fn -> Vec2 = return Vec2{ .x = 90, .y = 0 };
+    new_with_vals: fn (x: f32, y: f32) -> Vec2 = return Vec2{ .x = x, .y = y };
 }
 operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
 operator: -(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x - rhs.x, .y = lhs.y - rhs.y };
@@ -35,8 +36,8 @@ operator: /(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x / rhs.x, .y 
 print: fn(v: &Vec2) = "${v.x}, ${v.y}".app::func();
 
 takes_foo: fn -> f64 = {
-    a := Vec2{ .x = 10, .y = 20 };
-    b := Vec2{ .x = 5, .y = 6 };
+    a := Vec2::new_with_vals(10, 20);
+    b := Vec2::new_with_vals(3, 9);
     (a + b).print();
     (a - b).print();
     (a * b).print();
