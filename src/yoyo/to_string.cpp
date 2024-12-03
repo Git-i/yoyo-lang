@@ -9,32 +9,30 @@ namespace Yoyo
     extern "C" {
         char* YOYO_to_string_signed_integer_dont_use_name(int64_t value, size_t* buffer_length)
         {
-            *buffer_length = std::snprintf(nullptr, 0, "%ld", value);
+            *buffer_length = std::formatted_size("{}", value);
             auto buffer = static_cast<char*>(malloc(*buffer_length));
-            std::to_chars(buffer, buffer + *buffer_length + 1, value);
+            std::format_to(buffer, "{}", value);
             return buffer;
         }
         char* YOYO_to_string_unsigned_integer_dont_use_name(uint64_t value, size_t* buffer_length)
         {
-            *buffer_length = std::snprintf(nullptr, 0, "%lu", value);
+            *buffer_length = std::formatted_size("{}", value);
             auto buffer = static_cast<char*>(malloc(*buffer_length));
-            std::to_chars(buffer, buffer + *buffer_length + 1, value);
+            std::format_to(buffer, "{}", value);
             return buffer;
         }
         char* YOYO_to_string_float32_dont_use_name(float value, size_t* buffer_length)
         {
-            *buffer_length = std::snprintf(nullptr, 0, "%f", value);
+            *buffer_length = std::formatted_size("{}", value);
             auto buffer = static_cast<char*>(malloc(*buffer_length));
-            auto out = std::format_to_n(buffer, static_cast<std::iter_difference_t<char*>>(*buffer_length), "{}", value);
-            *buffer_length = out.out - buffer;
+            std::format_to(buffer, "{}", value);
             return buffer;
         }
         char* YOYO_to_string_float64_dont_use_name(double value, size_t* buffer_length)
         {
-            *buffer_length = std::snprintf(nullptr, 0, "%lf", value);
+            *buffer_length = std::formatted_size("{}", value);
             auto buffer = static_cast<char*>(malloc(*buffer_length));
-            auto out = std::format_to_n(buffer, static_cast<std::iter_difference_t<char*>>(*buffer_length), "{}", value);
-            *buffer_length = out.out - buffer;
+            std::format_to(buffer, "{}", value);
             return buffer;
         }
         char* YOYO_to_string_enum_dont_use_name(int32_t value, EnumDeclaration* decl, size_t* buffer_length)
