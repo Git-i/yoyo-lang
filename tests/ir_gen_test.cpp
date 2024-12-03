@@ -33,6 +33,7 @@ operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y 
 operator: -(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x - rhs.x, .y = lhs.y - rhs.y };
 operator: *(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x * rhs.x, .y = lhs.y * rhs.y };
 operator: /(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x / rhs.x, .y = lhs.y / rhs.y };
+operator: +(lhs: Vec2, rhs: i32?) = "called optional".app::func();
 print: fn(v: &Vec2) = "${v.x}, ${v.y}".app::func();
 
 takes_foo: fn -> f64 = {
@@ -42,6 +43,7 @@ takes_foo: fn -> f64 = {
     (a - b).print();
     (a * b).print();
     (a / b).print();
+    a + 10;
     return 0;
 }
 )";

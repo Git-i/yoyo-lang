@@ -99,10 +99,12 @@ namespace Yoyo
         }
         return 0;
     }
-    llvm::Value* implicitConvert(llvm::Value* val, const Type& src, const Type& dst, IRGenerator* irgen)
+    llvm::Value* ExpressionEvaluator::implicitConvert(llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
-        if(!dst.is_assignable_from(src)) {irgen->error(); return nullptr;}
-        llvm::Type* dest = irgen->ToLLVMType(dst, false);
+        if(dst.is_equal(src)) { return clone(val, dst, out); }
+        if(!dst.is_assignable_from(src)) { irgen->error(); return nullptr; }
+        auto dst_as_llvm = irgen->ToLLVMType(dst, false);
+        if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
         if(src.name == "ilit")
         {
             auto as_int = llvm::dyn_cast<llvm::ConstantInt>(val);
@@ -113,12 +115,20 @@ namespace Yoyo
                 if(as_int->isNegative())
                 {
                     if(as_int->getSExtValue() >= min_bound && as_int->getSExtValue() <= max_bound)
-                        return irgen->builder->CreateSExtOrTrunc(val, dest);
+                    {
+                        val = irgen->builder->CreateSExtOrTrunc(val, dst_as_llvm);
+                        irgen->builder->CreateStore(val, out);
+                        return val;
+                    }
                     irgen->error();
                     return nullptr;
                 }
                 if(as_int->getZExtValue() <= max_bound)
-                    return irgen->builder->CreateZExtOrTrunc(val, dest);
+                {
+                    val = irgen->builder->CreateZExtOrTrunc(val, dst_as_llvm);
+                    irgen->builder->CreateStore(val, out);
+                    return val;
+                }
                 irgen->error();
                 return nullptr;
             }
@@ -127,17 +137,26 @@ namespace Yoyo
                 if(as_int->isNegative())
                 {
                     if(as_int->getSExtValue() >= min_bound && as_int->getSExtValue() <= max_bound)
-                        return irgen->builder->CreateSIToFP(val, dest);
+                    {
+                        val = irgen->builder->CreateSIToFP(val, dst_as_llvm);
+                        irgen->builder->CreateStore(val, out);
+                        return val;
+                    }
                     irgen->error();
                     return nullptr;
                 }
                 if(as_int->getZExtValue() <= max_bound)
-                    return irgen->builder->CreateUIToFP(val, dest);
+                {
+                    val = irgen->builder->CreateUIToFP(val, dst_as_llvm);
+                    irgen->builder->CreateStore(val, out);
+                    return val;
+                }
                 irgen->error();
                 return nullptr;
             }
         }
         if(src.name == "flit")
+
         {
             auto as_float = llvm::dyn_cast<llvm::ConstantFP>(val);
             double min_bound = getFloatMinOf(dst);
@@ -145,29 +164,73 @@ namespace Yoyo
             double value = as_float->getValue().convertToDouble();
             if(dst.is_floating_point())
             {
-                if(*dst.float_width() == 64) return val;
+                if(*dst.float_width() == 64)
+                {
+                    irgen->builder->CreateStore(val, out);
+                    return val;
+                }
                 if(value >= min_bound && value <= max_bound)
-                    return irgen->builder->CreateFPTrunc(val, dest);
+                {
+                    val = irgen->builder->CreateFPTrunc(val, dst_as_llvm);
+                    irgen->builder->CreateStore(val, out);
+                    return val;
+                }
             }
         }
         if(dst.is_unsigned_integral())
         {
-            if(!dst.is_equal(src)) val = irgen->builder->CreateZExt(val, dest, "assign_zext");
+            if(!dst.is_equal(src))
+                val = irgen->builder->CreateZExt(val, dst_as_llvm, "assign_zext");
+            irgen->builder->CreateStore(val, out);
+            return val;
         }
-        else if(dst.is_signed_integral())
+        if(dst.is_signed_integral())
         {
             if(!dst.is_equal(src))
-                if(src.is_signed_integral()) val = irgen->builder->CreateSExt(val, dest, "assign_sext");
-                else if(src.is_unsigned_integral()) val = irgen->builder->CreateZExt(val, dest, "assign_zext");
+                if(src.is_signed_integral()) val = irgen->builder->CreateSExt(val, dst_as_llvm, "assign_sext");
+                else if(src.is_unsigned_integral()) val = irgen->builder->CreateZExt(val, dst_as_llvm, "assign_zext");
+            irgen->builder->CreateStore(val, out);
+            return val;
         }
-        else if(dst.is_floating_point())
+        if(dst.is_floating_point())
         {
             if(!dst.is_equal(src))
-                if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dest, "assign_fpext");
-                else if(src.is_unsigned_integral()) val = irgen->builder->CreateUIToFP(val, dest, "assign_uitofp");
-                else if(src.is_signed_integral()) val = irgen->builder->CreateSIToFP(val, dest, "assign_uitofp");
+                if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dst_as_llvm, "assign_fpext");
+                else if(src.is_unsigned_integral()) val = irgen->builder->CreateUIToFP(val, dst_as_llvm, "assign_uitofp");
+                else if(src.is_signed_integral()) val = irgen->builder->CreateSIToFP(val, dst_as_llvm, "assign_uitofp");
+            irgen->builder->CreateStore(val, out);
+            return val;
         }
-        return val;
+
+
+        if(dst.is_optional())
+        {
+            //opt is {data, bool}
+            //TODO destroy data if exists
+            if(src.name == "__null")
+                return irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context),
+                    irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
+
+            //subtype implicit conversion
+            implicitConvert(val, src, dst.subtypes[0], irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
+            irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
+        }
+        if(dst.is_variant())
+        {
+            const std::set subtypes(dst.subtypes.begin(), dst.subtypes.end());
+            const auto type_idx_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 1);
+            uint32_t i = 0;
+
+            for(auto& sub : subtypes)
+            {
+                if(!sub.is_assignable_from(src)) { i++; continue; }
+                implicitConvert(val, src, sub, irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
+                irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
+                    type_idx_ptr);
+                break;
+            }
+        }
+        return out;
     }
     /// IMPORTANT:\n
     /// I don't know where to place this, but all structural types are pointers
@@ -175,61 +238,9 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
-        // TODO: this entire function should be clone(implicitConvert(rhs, right_type, left_type, irgen), left_type, lhs)
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
-
-        if(left_type.is_primitive())
-            return irgen->builder->CreateStore(implicitConvert(rhs, right_type, left_type, irgen), lhs);
-        if(left_type.is_tuple())
-            return clone(rhs, left_type, lhs);
-        if(left_type.is_enum())
-            return irgen->builder->CreateStore(rhs, lhs);
-
-        if(left_type.is_optional())
-        {
-            auto opt_ty = irgen->ToLLVMType(left_type, false);
-            //opt is {data, bool}
-            //TODO destroy data if exists
-            if(right_type.name == "__null")
-                return irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context),
-                    irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
-            //subtype implicit conversion
-            if(!right_type.is_equal(left_type))
-            {
-                Type tp = left_type.subtypes[0];
-                tp.is_mutable = true;
-                doAssign(irgen->builder->CreateStructGEP(opt_ty, lhs, 0), rhs, tp, right_type);
-                return irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(opt_ty, lhs, 1));
-            }
-            clone(rhs, left_type, lhs);
-        }
-        if(left_type.is_variant())
-        {
-            std::set subtypes(left_type.subtypes.begin(), left_type.subtypes.end());
-            auto fn = irgen->builder->GetInsertBlock()->getParent();
-            auto llvm_ty = irgen->ToLLVMType(left_type, false);
-            auto type_idx_ptr = irgen->builder->CreateStructGEP(llvm_ty, lhs, 1);
-            if(left_type.is_equal(right_type))
-            {
-                clone(rhs, left_type, lhs);
-            }
-            //implicit conversion
-            uint32_t i = 0;
-
-            for(auto& sub : subtypes)
-            {
-                if(!sub.is_assignable_from(right_type)) { i++; continue; }
-                auto sub_mut = sub;
-                sub_mut.is_mutable = true;
-                doAssign(lhs, rhs, sub_mut, right_type);
-                irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
-                    type_idx_ptr);
-                return nullptr;
-            }
-        }
-        clone(rhs, left_type, lhs);
-        return nullptr;
+        return implicitConvert(rhs, right_type, left_type, lhs);
     }
     /// user defined types can create a @c clone function.\n
     /// The @c clone function's signature looks like @code clone: (this) -> This @endcode \n
@@ -394,7 +405,7 @@ namespace Yoyo
     void convertLiterals(llvm::Value** lhs,
         llvm::Value** rhs,
         const Type& left_type,
-        const Type& right_type, IRGenerator* irgen)
+        const Type& right_type, IRGenerator* irgen, const ExpressionEvaluator* eval)
     {
         if(left_type.name == "ilit")
         {
@@ -406,17 +417,17 @@ namespace Yoyo
                 else *lhs = irgen->builder->CreateUIToFP(*lhs, llvm::Type::getDoubleTy(irgen->context));
                 return;
             }
-            *lhs = implicitConvert(*lhs, left_type, right_type, irgen);
+            *lhs = eval->implicitConvert(*lhs, left_type, right_type);
             return;
         }
         if(left_type.name == "flit")
         {
             if(right_type.name == "flit") return;
-            *lhs = implicitConvert(*lhs, left_type, right_type, irgen);
+            *lhs = eval->implicitConvert(*lhs, left_type, right_type);
             return;
         }
         if(right_type.name == "ilit" || right_type.name == "flit")
-            convertLiterals(rhs, lhs, right_type, left_type, irgen);
+            convertLiterals(rhs, lhs, right_type, left_type, irgen, eval);
     }
     llvm::FunctionType* BinOverloadToLLVMSig(IRGenerator* irgen, OverloadDetailsBinary* bin)
     {
@@ -455,8 +466,8 @@ namespace Yoyo
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
-        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        args.push_back(implicitConvert(lhs, left_type, target->left));
+        args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         return target->result.should_sret() ? args[0] : ret;
     }
@@ -471,8 +482,8 @@ namespace Yoyo
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
-        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        args.push_back(implicitConvert(lhs, left_type, target->left));
+        args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         return target->result.should_sret() ? args[0] : ret;
     }
@@ -487,8 +498,8 @@ namespace Yoyo
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
-        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        args.push_back(implicitConvert(lhs, left_type, target->left));
+        args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         return target->result.should_sret() ? args[0] : ret;
     }
@@ -503,8 +514,8 @@ namespace Yoyo
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
-        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        args.push_back(implicitConvert(lhs, left_type, target->left));
+        args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         return target->result.should_sret() ? args[0] : ret;
     }
@@ -519,8 +530,8 @@ namespace Yoyo
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(clone(implicitConvert(lhs, left_type, target->left, irgen), target->left, nullptr));
-        args.push_back(clone(implicitConvert(rhs, right_type, target->right, irgen), target->right, nullptr));
+        args.push_back(implicitConvert(lhs, left_type, target->left));
+        args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         return target->result.should_sret() ? args[0] : ret;
     }
@@ -559,19 +570,19 @@ namespace Yoyo
         };
         if(left_type.is_signed_integral() && right_type.is_integral())
         {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
             pred = get_int_cmp_pred(true, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
         if(left_type.is_unsigned_integral() && right_type.is_integral())
         {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
             pred = get_int_cmp_pred(false, p);
             return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
         }
         if(left_type.is_integral() && right_type.is_integral())
         {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
             auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
             auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
             pred = get_int_cmp_pred(lhs_int->isNegative() || rhs_int->isNegative(), p);
@@ -579,7 +590,7 @@ namespace Yoyo
         }
         if(left_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
         {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen);
+            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
             switch(p)
             {
             case EQ: pred = llvm::CmpInst::FCMP_OEQ; break;
@@ -873,9 +884,7 @@ namespace Yoyo
                 }
                 args[i + is_bound + uses_sret] = buffer;
             }
-            else args[i + is_bound + uses_sret] = clone(
-                implicitConvert(arg, *tp, sig.parameters[i + is_bound].type, irgen),
-                sig.parameters[i + is_bound].type);
+            else args[i + is_bound + uses_sret] = implicitConvert(arg, *tp, sig.parameters[i + is_bound].type);
         }
         return return_value;
     }

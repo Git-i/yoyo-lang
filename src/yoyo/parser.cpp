@@ -131,6 +131,7 @@ namespace Yoyo
         auto op = Get();
         if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());
         auto sig = parseFunctionSignature();
+        if(sig->returnType.name == "__inferred") sig->returnType.name = "void";
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         auto body = parseStatement();
         auto return_val = std::make_unique<OperatorOverload>(op->type, std::move(sig).value_or(FunctionSignature{}), std::move(body));

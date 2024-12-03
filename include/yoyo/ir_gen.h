@@ -176,6 +176,7 @@ namespace Yoyo
         };
         explicit ExpressionEvaluator(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
+        llvm::Value* implicitConvert(llvm::Value*, const Type&, const Type&, llvm::Value* = nullptr) const;
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
         llvm::Value* clone(llvm::Value* value, const Type& left_type, llvm::Value* into = nullptr) const;
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
