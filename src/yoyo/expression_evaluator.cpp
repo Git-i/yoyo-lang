@@ -208,8 +208,11 @@ namespace Yoyo
             //opt is {data, bool}
             //TODO destroy data if exists
             if(src.name == "__null")
-                return irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context),
+            {
+                irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context),
                     irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
+                return out;
+            }
 
             //subtype implicit conversion
             implicitConvert(val, src, dst.subtypes[0], irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
@@ -750,8 +753,17 @@ namespace Yoyo
                 return var->second.first;
             }
         }
-        if(auto fn = irgen->code->getFunction(irgen->module->module_hash + name))
+        auto mangled_name = irgen->module->module_hash + name;
+        if(irgen->module->functions.contains(mangled_name))
         {
+            auto fn = irgen->code->getFunction(mangled_name);
+            if(!fn)
+            {
+                auto& fn_sig = irgen->module->functions.at(mangled_name);
+                irgen->saturateSignature(fn_sig, irgen->module);
+                fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
+                    irgen->code);
+            }
             return fn;
         }
         return nullptr;

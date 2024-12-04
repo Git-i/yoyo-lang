@@ -158,13 +158,16 @@ namespace Yoyo
 
         if(builder->GetInsertBlock()) oldBuilder = std::make_unique<llvm::IRBuilder<>>(builder->GetInsertBlock(), builder->GetInsertPoint());
         auto name = block_hash + std::string{decl->identifier.text};
-        if(code->getFunction(name))
+        llvm::Function* func = nullptr;
+        if((func = code->getFunction(name)))
         {
-            error();
-            return;
+            if(!func->empty()) { error(); return; }
         }
-        saturateSignature(decl->signature, module);
-        llvm::Function* func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
+        else
+        {
+            saturateSignature(decl->signature, module);
+            func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
+        }
         return_t = decl->signature.returnType;
         auto return_as_llvm_type = ToLLVMType(return_t, false);
         return_t.is_mutable = true;
