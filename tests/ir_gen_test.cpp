@@ -26,7 +26,7 @@ app: module = APP
 
 Vec2: struct = {
     x: f32, y: f32,
-    new: fn -> Vec2 = return Vec2{ .x = 90, .y = 0 };
+    new: fn -> Vec2 = return Vec2::new_with_vals(0,0);
     new_with_vals: fn (x: f32, y: f32) -> Vec2 = return Vec2{ .x = x, .y = y };
 }
 operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };

@@ -29,11 +29,19 @@ namespace Yoyo
             std::string mangled_name_prefix = md->module_hash + "__class__" + name + "__";
             if(md->classes.contains(name)) return false;
 
+            for(auto& fn : decl->methods)
+            {
+                auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
+                auto mangled_name = mangled_name_prefix + fn.name;
+                if(md->functions.contains(mangled_name)) return false;
+                md->functions[mangled_name] = fn_decl->signature;
+            }
             md->classes[name] = {
                 mangled_name_prefix,
                 nullptr,
                 std::unique_ptr<ClassDeclaration>{decl}
             };
+
             return true;
         }
         bool operator()(ModuleImport* imp)

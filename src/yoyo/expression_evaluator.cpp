@@ -763,6 +763,11 @@ namespace Yoyo
                 irgen->saturateSignature(fn_sig, irgen->module);
                 fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
                     irgen->code);
+                if(fn_sig.returnType.should_sret())
+                {
+                    const auto return_as_llvm = irgen->ToLLVMType(fn_sig.returnType, false);
+                    fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
+                }
             }
             return fn;
         }
@@ -1092,7 +1097,20 @@ namespace Yoyo
                 {
                     auto& class_entry = ty->module->classes.at(op->type.name);
                     std::string mangled_name = std::get<0>(class_entry) + op->name;
-                    return irgen->code->getFunction(mangled_name);
+                    auto fn = irgen->code->getFunction(mangled_name);
+                    if(!fn)
+                    {
+                        auto& sig = irgen->module->functions.at(mangled_name);
+                        irgen->saturateSignature(sig, irgen->module);
+                        fn = llvm::Function::Create(irgen->ToLLVMSignature(sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
+                            irgen->code);
+                        if(sig.returnType.should_sret())
+                        {
+                            const auto return_as_llvm = irgen->ToLLVMType(sig.returnType, false);
+                            fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
+                        }
+                    }
+                    return fn;
                 }
                 std::string mangled_name = ty->module->module_hash + op->name;
                 return irgen->code->getFunction(mangled_name);

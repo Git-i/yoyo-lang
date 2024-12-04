@@ -24,8 +24,6 @@ namespace Yoyo
 
             std::string mangled_name = std::get<0>(irgen->module->classes[name]) + fn.name;
 
-            if(irgen->module->functions.contains(mangled_name)) return false;
-            irgen->module->functions[mangled_name] = fn_decl->signature;
             irgen->in_class = true;
             auto curr_hash = std::move(irgen->block_hash);
             irgen->block_hash = curr_hash + mangled_name_prefix;

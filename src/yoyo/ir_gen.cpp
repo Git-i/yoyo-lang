@@ -159,21 +159,28 @@ namespace Yoyo
         if(builder->GetInsertBlock()) oldBuilder = std::make_unique<llvm::IRBuilder<>>(builder->GetInsertBlock(), builder->GetInsertPoint());
         auto name = block_hash + std::string{decl->identifier.text};
         llvm::Function* func = nullptr;
+        bool uses_sret;
+
+        llvm::Type* return_as_llvm_type;
         if((func = code->getFunction(name)))
         {
             if(!func->empty()) { error(); return; }
+            uses_sret = func->hasStructRetAttr();
+            return_as_llvm_type = func->getParamStructRetType(0);
         }
         else
         {
             saturateSignature(decl->signature, module);
+            return_as_llvm_type = ToLLVMType(decl->signature.returnType, false);
             func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
+            uses_sret = decl->signature.returnType.should_sret();
+            if(uses_sret)
+                func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
         }
+
         return_t = decl->signature.returnType;
-        auto return_as_llvm_type = ToLLVMType(return_t, false);
         return_t.is_mutable = true;
-        bool uses_sret = decl->signature.returnType.should_sret();
-        if(uses_sret)
-            func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
+
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         returnBlock = llvm::BasicBlock::Create(context, "return", func);
         builder->SetInsertPoint(bb);
