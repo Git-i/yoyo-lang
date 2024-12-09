@@ -12,6 +12,7 @@ namespace Yoyo
     //TODO: move to util header !??
     std::vector<std::string_view> split(std::string_view str, std::string_view delim)
     {
+        if(str.size() <= delim.size()) return {str};
         // ab::lol
         std::vector<std::string_view> result;
         size_t left = 0;
@@ -393,11 +394,12 @@ namespace Yoyo
         if(!subtypes.empty())
         {
             final += "__sub_begin@@";
-            for(auto& sub : subtypes)
+            final += subtypes[0].full_name();
+            for(auto& sub : std::ranges::subrange(subtypes.begin() + 1, subtypes.end()))
                 final +=  sub.full_name();
             final += "@@__sub_end";
         }
-
+        return final;
     }
 
     size_t Type::bitsize(IRGenerator* irgen) const

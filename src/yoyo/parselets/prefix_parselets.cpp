@@ -88,8 +88,18 @@ namespace Yoyo
                 std::make_unique<ObjectLiteral>(Type{.name = std::string{tk.text}}, std::move(body)), tk.loc,
                 parser.discardLocation, parser.parent);
         }
-        return Expression::attachSLAndParent(std::make_unique<NameExpression>(std::string(tk.text)), tk.loc,
-            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
+        //if we see ::< it's a generic
+        if(!parser.discard(TokenType::TemplateOpen))
+            return Expression::attachSLAndParent(std::make_unique<NameExpression>(std::string(tk.text)), tk.loc,
+                SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
+        std::vector types{parser.parseType(0).value_or(Type{})};
+        while(!parser.discard(TokenType::Greater))
+        {
+            if(!parser.discard(TokenType::Comma)) parser.error("Expected ','", parser.Peek());
+            types.push_back(parser.parseType(0).value_or(Type{}));
+        }
+        return Expression::attachSLAndParent(std::make_unique<GenericNameExpression>(std::string(tk.text), std::move(types)),
+            tk.loc, parser.discardLocation, parser.parent);
     }
     std::unique_ptr<Expression> GroupParselet::parse(Parser& parser, Token tk)
     {

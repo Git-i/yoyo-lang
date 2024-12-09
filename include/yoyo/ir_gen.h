@@ -151,6 +151,7 @@ namespace Yoyo
         std::optional<FunctionType> operator()(RealLiteral*);
         std::optional<FunctionType> operator()(StringLiteral*);
         std::optional<FunctionType> operator()(NameExpression*);
+        std::optional<FunctionType> operator()(GenericNameExpression*);
         std::optional<FunctionType> operator()(PrefixOperation*);
         std::optional<FunctionType> operator()(BinaryOperation*);
         std::optional<FunctionType> operator()(GroupingExpression*);
@@ -210,6 +211,7 @@ namespace Yoyo
         llvm::Value* operator()(RealLiteral*);
         llvm::Value* operator()(StringLiteral*);
         llvm::Value* operator()(NameExpression*);
+        llvm::Value* operator()(GenericNameExpression*);
         llvm::Value* operator()(PrefixOperation*);
         llvm::Value* operator()(BinaryOperation*);
         llvm::Value* operator()(GroupingExpression*);

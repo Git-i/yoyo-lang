@@ -321,6 +321,25 @@ namespace Yoyo
         }
         return sig;
     }
+    // ::<a, b, c>
+    std::optional<GenericClause> Parser::parseGenericClause()
+    {
+        std::vector<std::string> names;
+        if(!discard(TokenType::TemplateOpen)) error("Expected '::<'", Peek());
+        auto iden = Get();
+        if(!iden) return std::nullopt;
+        if(iden->type != TokenType::Identifier) error("Expected identifier", Peek());
+        else names.emplace_back(iden->text);
+        while(!discard(TokenType::Greater))
+        {
+            if(!discard(TokenType::Comma)) error("Expected ','", Peek());
+            iden = Get();
+            if(!iden) return std::nullopt;
+            if(iden->type != TokenType::Identifier) error("Expected identifier", Peek());
+            else names.emplace_back(iden->text);
+        }
+        return GenericClause(std::move(names));
+    }
 
     std::optional<Token> Parser::Peek()
     {

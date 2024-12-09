@@ -259,6 +259,32 @@ namespace Yoyo
         }
         return std::nullopt;
     }
+    void generic_replace(Type& type, const std::string& generic, const Type& other)
+    {
+        if(type.name == generic)
+            type = other;
+        for(auto& sub: type.subtypes)
+            generic_replace(sub, generic, other);
+    }
+    std::optional<FunctionType> ExpressionTypeChecker::operator()(GenericNameExpression* expr)
+    {
+        // todo: inline generic functions (probably disallow those)
+        if(irgen->module->generic_fns.contains(expr->text))
+        {
+            auto& decl = irgen->module->generic_fns.at(expr->text);
+            if(expr->arguments.size() != decl->clause.types.size()) return std::nullopt;
+            FunctionSignature new_sig = decl->body.signature;
+            for(size_t i = 0; i < decl->clause.types.size(); ++i)
+            {
+                expr->arguments[i].saturate(irgen->module, irgen);
+                generic_replace(new_sig.returnType, decl->clause.types[i], expr->arguments[i]);
+                for(auto& param : new_sig.parameters)
+                    generic_replace(param.type, decl->clause.types[i], expr->arguments[i]);
+            }
+            return FunctionType{std::move(new_sig), false};
+        }
+        return std::nullopt;
+    }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(PostfixOperation*)
     {

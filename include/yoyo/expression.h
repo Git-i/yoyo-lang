@@ -37,7 +37,7 @@ namespace Yoyo
     class BinaryOperation;
     class GroupingExpression;
     class NameExpression;
-
+    class GenericNameExpression;
 
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
@@ -58,7 +58,8 @@ namespace Yoyo
         ScopeOperation*,
         ObjectLiteral*,
         NullLiteral*,
-        CharLiteral*>;
+        CharLiteral*,
+        GenericNameExpression*>;
     class Expression : public ASTNode {
     public:
         ~Expression() override = default;
@@ -115,6 +116,14 @@ namespace Yoyo
     public:
         std::string text;
         explicit NameExpression(std::string tk) : text(std::move(tk)) {}
+        ExpressionVariant toVariant() override;
+    };
+    class GenericNameExpression: public NameExpression
+    {
+    public:
+        std::vector<Type> arguments;
+        GenericNameExpression(std::string name, std::vector<Type> arguments)
+            : NameExpression(std::move(name)), arguments(std::move(arguments)) {}
         ExpressionVariant toVariant() override;
     };
     class PrefixOperation : public Expression {

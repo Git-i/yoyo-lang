@@ -773,6 +773,38 @@ namespace Yoyo
         }
         return nullptr;
     }
+
+    llvm::Value* ExpressionEvaluator::operator()(GenericNameExpression* nm)
+    {
+        if(irgen->module->generic_fns.contains(nm->text))
+        {
+            auto& fn = irgen->module->generic_fns.at(nm->text);
+            std::string mangled_name = irgen->module->module_hash + nm->text + "__gscope@@" + nm->arguments[0].full_name();
+            for(auto& tp : std::ranges::subrange(nm->arguments.begin() + 1, nm->arguments.end()))
+                mangled_name += "@" + tp.full_name();
+            mangled_name += "@@__gscope";
+            auto fn_ptr = irgen->code->getFunction(mangled_name);
+            if(!fn_ptr)
+            {
+                irgen->aliases.emplace_back();
+                for(size_t i = 0; i < nm->arguments.size(); i++)
+                    irgen->aliases.back()[fn->clause.types[i]] = nm->arguments[i];
+                auto old_hash = std::move(irgen->block_hash);
+                irgen->block_hash = "";
+                std::string_view old_name = fn->body.identifier.text;
+                fn->body.identifier.text = mangled_name;
+                auto old_sig = fn->body.signature; //signature will be modified during saturation
+                (*irgen)(&fn->body);
+                fn->body.signature = std::move(old_sig);
+                fn->body.identifier.text = old_name;
+                irgen->block_hash = std::move(old_hash);
+                irgen->aliases.pop_back();
+                fn_ptr = irgen->code->getFunction(mangled_name);
+            }
+            return fn_ptr;
+        }
+    }
+
     llvm::Value* ExpressionEvaluator::operator()(PrefixOperation* op)
     {
         auto target = ExpressionTypeChecker{irgen}(op);

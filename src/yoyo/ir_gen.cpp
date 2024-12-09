@@ -501,6 +501,11 @@ namespace Yoyo
         error();
     }
 
+    void IRGenerator::operator()(GenericFunctionDeclaration*)
+    {
+        raise(SIGTRAP);
+    }
+
     void IRGenerator::error()
     {
         raise(SIGTRAP);

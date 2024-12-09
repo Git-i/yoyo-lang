@@ -37,6 +37,11 @@ namespace Yoyo
         return this;
     }
 
+    ExpressionVariant GenericNameExpression::toVariant()
+    {
+        return this;
+    }
+
     ExpressionVariant PrefixOperation::toVariant()
     {
         return this;

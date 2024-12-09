@@ -30,33 +30,17 @@ Vec2: struct = {
     new_with_vals: fn (x: f32, y: f32) -> Vec2 = return Vec2{ .x = x, .y = y };
 }
 operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
-operator: -(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x - rhs.x, .y = lhs.y - rhs.y };
-operator: *(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x * rhs.x, .y = lhs.y * rhs.y };
-operator: /(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x / rhs.x, .y = lhs.y / rhs.y };
-operator: +(lhs: Vec2, rhs: i32?) = {
-    "${rhs}".app::func();
-    if |rhs_val| (rhs) {
-        // this should never be reachable through implicit conversion
-        "value + v.x = ${rhs_val + lhs.x}".app::func();
-    } else {
-        "value does not exist".app::func();
-    }
-}
-operator: +(lhs: Vec2, rhs: i32) = {
-    "dodged optional".app::func();
-}
+
+generic_add: fn::<T>(a: T, b: T) -> T = return a + b;
+print_vec: fn(v: &Vec2) = "${v.x}, ${v.y}".app::func();
+print_int: fn(i: i32) = "${i}".app::func();
 takes_foo: fn -> f64 = {
     a := Vec2::new_with_vals(10, 20);
     b := Vec2::new_with_vals(3, 9);
-    (a + b).print();
-    (a - b).print();
-    (a * b).print();
-    (a / b).print();
-    a + 10;
-    a + null;
-    return 0;
+    generic_add::<Vec2>(a, b).print_vec();
+    generic_add::<i32>(0, 10).print_int();
+    return 0.0;
 }
-print: fn(v: &Vec2) = "${v.x}, ${v.y}".app::func();
 )";
     std::string source = R"(
 test_impl_conv: fn(a: i64) -> (i64, f64) = return (a, 10);
