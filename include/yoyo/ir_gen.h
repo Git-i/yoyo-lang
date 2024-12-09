@@ -84,6 +84,7 @@ namespace Yoyo
         std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
+        std::vector<std::unordered_map<std::string, Type>> aliases;
         std::string block_hash;
 
         std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>* findType(const std::string& name);
@@ -109,6 +110,7 @@ namespace Yoyo
         void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);
         void operator()(OperatorOverload*);
+        void operator()(GenericFunctionDeclaration*);
 
         void error();
         static FunctionDeclaration* GetParentFunction(ASTNode* node);

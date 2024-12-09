@@ -14,6 +14,7 @@ namespace Yoyo
     {
         std::unique_ptr<llvm::Module> code;
         std::unordered_map<std::string, FunctionSignature> functions;
+        std::unordered_map<std::string, std::unique_ptr<GenericFunctionDeclaration>> generic_fns;
         std::unordered_map<std::string, std::tuple<std::string,llvm::StructType*, std::unique_ptr<ClassDeclaration>>> classes;
         std::unordered_map<std::string, std::unique_ptr<EnumDeclaration>> enums;
         std::unordered_map<std::string, Type> aliases;

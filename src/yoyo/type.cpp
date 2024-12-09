@@ -1,6 +1,7 @@
 #include "type.h"
 
 #include <csignal>
+#include <ranges>
 #include <set>
 
 #include "ir_gen.h"
@@ -196,14 +197,14 @@ namespace Yoyo
         return *this;
     }
 
-    Type Type::saturated(Module* src) const
+    Type Type::saturated(Module* src, IRGenerator* irgen) const
     {
         Type tp = *this;
-        tp.saturate(src);
+        tp.saturate(src, irgen);
         return tp;
     }
 
-    void Type::saturate(Module* src)
+    void Type::saturate(Module* src, IRGenerator* irgen)
     {
         if(module) return; //avoid double saturation
         auto module_path = split(name, "::");
@@ -219,6 +220,7 @@ namespace Yoyo
             subtypes[0].is_mutable = true;
         if(is_reference())
             subtypes[0].is_lvalue = true;
+        decltype(&src->aliases) alias_list = nullptr;
         if(module_path.size() > 1)
         {
             Module* mod = src->modules.at(std::string(module_path[0]));
@@ -228,8 +230,16 @@ namespace Yoyo
             }
             name = module_path.back();
             module = mod;
+            alias_list = &mod->aliases;
         }
-        for(auto& sub: subtypes) sub.saturate(src);
+        else if(irgen && src == irgen->module)
+            for(auto& aliases : irgen->aliases | std::views::reverse)
+                if(aliases.contains(name)) { alias_list = &aliases; break; }
+        if(alias_list && alias_list->contains(name))
+        {
+            *this = alias_list->at(name);
+        }
+        for(auto& sub: subtypes) sub.saturate(src, irgen);
     }
 
     Type Type::make_mut() const
@@ -378,7 +388,16 @@ namespace Yoyo
 
     std::string Type::full_name() const
     {
-        return module->module_hash + name;
+        //__opt__subs__@0__opt__subs__@0i320@0@
+        std::string final = module->module_hash + name;
+        if(!subtypes.empty())
+        {
+            final += "__sub_begin@@";
+            for(auto& sub : subtypes)
+                final +=  sub.full_name();
+            final += "@@__sub_end";
+        }
+
     }
 
     size_t Type::bitsize(IRGenerator* irgen) const

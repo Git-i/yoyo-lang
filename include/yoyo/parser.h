@@ -43,6 +43,7 @@ namespace Yoyo
         std::optional<std::pair<Token, SourceLocation>> PeekWithEndLocation();
         std::optional<std::pair<Token, SourceLocation>> GetWithEndLocation();
         std::optional<FunctionSignature> parseFunctionSignature();
+        std::optional<GenericClause> parseGenericClause();
         const Scanner& getScanner() const { return scn; };
         const std::string& getSource() const { return source; };
         ASTNode* parent = nullptr;

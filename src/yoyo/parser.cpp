@@ -198,6 +198,10 @@ namespace Yoyo
     std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
     {
         if(!discard(TokenType::Fn)) error("Expected 'fn'", Peek());
+        auto next_tok = Peek();
+        if(!next_tok) return nullptr;
+        std::optional<GenericClause> gclause = next_tok->type == TokenType::TemplateOpen ?
+            parseGenericClause() : std::nullopt;
         auto sig = parseFunctionSignature();
         //functions must specify explicit return types
         if(sig->returnType.name == "__inferred") sig->returnType.name = "void";
@@ -206,13 +210,16 @@ namespace Yoyo
         {
             error("Expected '='", Peek());
         }
-        auto fn_decl = std::make_unique<FunctionDeclaration>(identifier, std::move(sig).value_or(FunctionSignature{}), nullptr);
-        auto old_parent = parent;
-        parent = fn_decl.get();
         auto stat = parseStatement();
-        parent = old_parent;
-        fn_decl->body = std::move(stat);
-        return Statement::attachSLAndParent(std::move(fn_decl), identifier.loc, fn_decl->body->end, parent);
+        auto stat_ptr = stat.get();
+        std::unique_ptr<Statement> fn_decl;
+        if(gclause)
+            fn_decl = std::make_unique<GenericFunctionDeclaration>(*std::move(gclause),
+                FunctionDeclaration(identifier, *std::move(sig), std::move(stat)));
+        else
+            fn_decl = std::make_unique<FunctionDeclaration>(identifier, *std::move(sig), std::move(stat));
+        stat_ptr->parent = fn_decl.get();
+        return Statement::attachSLAndParent(std::move(fn_decl), identifier.loc, stat_ptr->end, parent);
     }
 
     std::optional<FunctionSignature> Parser::parseFunctionSignature()

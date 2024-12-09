@@ -248,7 +248,7 @@ namespace Yoyo
             {
                 auto& type = var->second.second;
                 type.is_lvalue = true;
-                type.saturate(irgen->module);
+                type.saturate(irgen->module, irgen);
                 return type;
             }
         }
@@ -316,7 +316,7 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ObjectLiteral* obj)
     {
-        obj->t.saturate(irgen->module);
+        obj->t.saturate(irgen->module, irgen);
         auto decl = obj->t.get_decl_if_class(irgen);
         if(!decl) return std::nullopt;
         if(obj->values.size() != decl->vars.size()) return std::nullopt;

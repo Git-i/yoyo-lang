@@ -38,8 +38,8 @@ namespace Yoyo
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)
-        [[nodiscard]] Type saturated(Module* src) const;
-        void saturate(Module* src);
+        [[nodiscard]] Type saturated(Module* src, IRGenerator* irgen) const;
+        void saturate(Module* src, IRGenerator* irgen);
 
         [[nodiscard]] bool is_shallow_equal(const Type& other) const
         {

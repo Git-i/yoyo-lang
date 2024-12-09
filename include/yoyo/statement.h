@@ -8,6 +8,7 @@
 #include "class_entry.h"
 #include <optional>
 #include <cstdint>
+#include "generic_clause.h"
 namespace Yoyo
 {
     class ExpressionStatement;
@@ -24,6 +25,7 @@ namespace Yoyo
     class ConditionalExtraction;
     class WithStatement;
     class OperatorOverload;
+    class GenericFunctionDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -38,7 +40,8 @@ namespace Yoyo
         EnumDeclaration*,
         ConditionalExtraction*,
         OperatorOverload*,
-        WithStatement*> StatementVariant;
+        WithStatement*,
+        GenericFunctionDeclaration*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     class Statement : public ASTNode
     {
@@ -89,6 +92,15 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         FunctionDeclaration(Token ident, FunctionSignature sig, std::unique_ptr<Statement> body)
             : signature(std::move(sig)), identifier(ident), body(std::move(body)) {}
+        StatementVariant toVariant() override;
+    };
+    class GenericFunctionDeclaration: public Statement
+    {
+    public:
+        GenericClause clause;
+        FunctionDeclaration body;
+        GenericFunctionDeclaration(GenericClause cl, FunctionDeclaration body)
+            : clause(std::move(cl)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
     class OperatorOverload : public Statement
@@ -157,6 +169,7 @@ namespace Yoyo
             : iterable(std::move(expr)), names(std::move(names)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
+
     class EnumDeclaration : public Statement
     {
     public:

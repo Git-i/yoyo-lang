@@ -45,8 +45,6 @@ operator: +(lhs: Vec2, rhs: i32?) = {
 operator: +(lhs: Vec2, rhs: i32) = {
     "dodged optional".app::func();
 }
-
-
 takes_foo: fn -> f64 = {
     a := Vec2::new_with_vals(10, 20);
     b := Vec2::new_with_vals(3, 9);

@@ -19,6 +19,11 @@ namespace Yoyo
         return this;
     }
 
+    StatementVariant GenericFunctionDeclaration::toVariant()
+    {
+        return this;
+    }
+
     StatementVariant OperatorOverload::toVariant()
     {
         return this;

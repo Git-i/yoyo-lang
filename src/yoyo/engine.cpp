@@ -16,14 +16,20 @@ namespace Yoyo
     {
         Module* md;
         std::unique_ptr<Statement>& stmt;
-        bool operator()(FunctionDeclaration* decl)
+        bool operator()(FunctionDeclaration* decl) const
         {
             std::string mangled_name = md->module_hash + std::string{decl->identifier.text};
             if(md->functions.contains(mangled_name)) return false;
             md->functions[mangled_name] = decl->signature;
             return true;
         }
-        bool operator()(ClassDeclaration* decl)
+        bool operator()(GenericFunctionDeclaration* decl) const
+        {
+            std::ignore = stmt.release();
+            md->generic_fns[std::string{decl->body.identifier.text}] = std::unique_ptr<GenericFunctionDeclaration>{decl};
+            return true;
+        }
+        bool operator()(ClassDeclaration* decl) const
         {
             std::string name = std::string{decl->identifier.text};
             std::string mangled_name_prefix = md->module_hash + "__class__" + name + "__";
@@ -57,7 +63,7 @@ namespace Yoyo
             return true;
         }
         bool operator()(OperatorOverload*) {return true;}
-        bool operator()(Statement*) {return false;};
+        bool operator()(Statement*) const {return false;};
     };
     struct ForwardDeclaratorPass2
     {
@@ -65,7 +71,7 @@ namespace Yoyo
         //to prevent infinitely looping we stop when we see a name already here
         std::vector<Type> encountered_names;
         bool operator()(ClassDeclaration* decl);
-        bool operator()(Statement*);;
+        bool operator()(Statement*);
     };
 
     bool ForwardDeclaratorPass2::operator()(ClassDeclaration* decl)
@@ -110,7 +116,7 @@ namespace Yoyo
         std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
                        [this](ClassVariable& p)
                        {
-                           p.type.saturate(md);
+                           p.type.saturate(md, nullptr);
                            return md->ToLLVMType(p.type, false, encountered_names);
                        });
         if(std::ranges::any_of(args, [](llvm::Type* t) {return t == nullptr;})) return false;

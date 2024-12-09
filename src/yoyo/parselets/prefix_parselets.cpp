@@ -201,7 +201,7 @@ namespace Yoyo
     {
         auto expr = std::make_unique<CharLiteral>();
         expr->value = 0;
-        for(auto i = 0; i < tk.text.size(); i++)
+        for(size_t i = 0; i < tk.text.size(); i++)
             reinterpret_cast<uint8_t*>(&expr->value)[i] = tk.text[i];
         SourceLocation end{.line = tk.loc.line, .column = tk.loc.column + tk.text.size() + 1};
         return Expression::attachSLAndParent(std::move(expr), tk.loc, end, parser.parent);

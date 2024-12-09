@@ -82,10 +82,10 @@ namespace Yoyo
     }
     void IRGenerator::saturateSignature(FunctionSignature& sig, Module* module)
     {
-        sig.returnType.saturate(module);
+        sig.returnType.saturate(module, this);
         for(auto& param: sig.parameters)
         {
-            param.type.saturate(module);
+            param.type.saturate(module, this);
         }
     }
     llvm::FunctionType* IRGenerator::ToLLVMSignature(const FunctionSignature& sig)
@@ -303,7 +303,7 @@ namespace Yoyo
         {
             error(); return;
         }
-        if(decl->type) decl->type->saturate(module);
+        if(decl->type) decl->type->saturate(module, this);
         auto type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
         if(!type)
         {
@@ -342,7 +342,7 @@ namespace Yoyo
             }
 
         }
-        type->saturate(module);
+        type->saturate(module, this);
         if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
         variables.back()[name] = {alloc, std::move(type).value()};
     }
