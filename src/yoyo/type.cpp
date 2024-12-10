@@ -380,15 +380,14 @@ namespace Yoyo
 
     std::string Type::full_name() const
     {
-        //__opt__subs__@0__opt__subs__@0i320@0@
-        std::string final = module->module_hash + name;
+        std::string final = (module ? module->module_hash : "") + name;
         if(!subtypes.empty())
         {
-            final += "__sub_begin@@";
+            final += "@@__sub_begin@@";
             final += subtypes[0].full_name();
             for(auto& sub : std::ranges::subrange(subtypes.begin() + 1, subtypes.end()))
-                final +=  sub.full_name();
-            final += "@@__sub_end";
+                final +=  "@@" + sub.full_name();
+            final += "@@__sub_end@@";
         }
         return final;
     }
@@ -409,5 +408,95 @@ namespace Yoyo
             return sz;
         }
         return 0;
+    }
+
+    UnsaturatedTypeIterator::UnsaturatedTypeIterator(const Type& type) : type(type)
+    {
+        split_cache = split(type.name, "::");
+    }
+
+    bool UnsaturatedTypeIterator::is_end() const
+    {
+        return pos >= split_cache.size() - 1;
+    }
+    struct MangleScanner
+    {
+        enum Type
+        {
+            SubOpen, Name, SubClose, AtAt
+        };
+        struct Token
+        {
+            Type type; std::string_view text;
+        };
+        std::string_view text;
+        size_t pos = 0;
+        std::vector<Token> buffer;
+        std::optional<Token> next()
+        {
+            if(!buffer.empty())
+            {
+                auto back = buffer.back();
+                buffer.pop_back();
+                return back;
+            }
+            if(pos == text.size()) return std::nullopt;
+            auto next_at_at = text.find_first_of("@@", pos);
+            if(next_at_at == std::string_view::npos) next_at_at = text.size();
+            std::string_view from_pos{text.begin() + pos, text.end()};
+            if(next_at_at == pos)
+            {
+                if(from_pos.starts_with("@@__sub_begin@@"))
+                {
+                    pos += 15; return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 15}};
+                }
+                if(from_pos.starts_with("@@__sub_end@@"))
+                {
+                    pos += 13; return Token{SubClose, {from_pos.begin(), from_pos.begin() + 13}};
+                }
+                pos += 2; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
+            }
+            auto ret_val = std::string_view{from_pos.begin(), from_pos.begin() + next_at_at - pos};
+            pos = next_at_at;
+            return Token{Name, ret_val};
+        }
+    };
+    // for this we assume 100% correctness because its only called in that case
+    Type parseType(MangleScanner& scanner)
+    {
+        Type output;
+        auto token = scanner.next().value();
+        assert(token.type == MangleScanner::Name);
+        output.name = token.text;
+        output.module = nullptr;
+        auto next = scanner.next();
+        if(!next) return output;
+        if(next->type == MangleScanner::SubOpen)
+        {
+            output.subtypes.emplace_back(parseType(scanner));
+            while(scanner.next()->type == MangleScanner::AtAt)
+            {
+                output.subtypes.emplace_back(parseType(scanner));
+            }
+        }
+        else scanner.buffer.push_back(next.value());
+        return output;
+    }
+    Type UnsaturatedTypeIterator::next()
+    {
+        if(pos >= split_cache.size() - 1) return Type{};
+        auto scn = MangleScanner(split_cache[pos]);
+        pos++;
+        return parseType(scn);
+    }
+    Type UnsaturatedTypeIterator::last()
+    {
+        if(pos == split_cache.size() - 1)
+        {
+            Type tp = type;
+            tp.name = split_cache.back();
+            pos++;
+            return tp;
+        }
     }
 }

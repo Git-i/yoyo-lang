@@ -305,34 +305,44 @@ namespace Yoyo
     //TODO: compleltely redo scopes
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ScopeOperation* scp)
     {
-        //Everything till the second to last must be a module
         Module* md = irgen->module;
-        if(!scp->scope.empty())
-        {
-            auto split_name = split(scp->scope, "::");
-            for(size_t i = 0; i < split_name.size() - 2; i++)
-            {
-                auto str = std::string{split_name[i]};
-                if(!md->modules.contains(str)) irgen->error();
-                md = md->modules.at(str);
-            }
-
-        }
+        std::string hash = irgen->block_hash;
         ClassDeclaration* decl = nullptr;
-        if(md->modules.contains(scp->type.name))
-            md = md->modules.at(scp->type.name);
-        else if(auto t = md->findType(md == irgen->module ? irgen->block_hash : md->module_hash, scp->type.name))
-            decl = std::get<2>(*t).get();
-        else if(md->enums.contains(scp->type.name))
+        auto iterator = UnsaturatedTypeIterator(scp->type);
+        std::vector<Type> tps;
+        while(!iterator.is_end())
         {
-            if(!md->enums.at(scp->type.name)->values.contains(scp->name)) return std::nullopt;
-            Type ty = scp->type;
-            ty.module = md;
-            return ty;
+            auto type = iterator.next();
+            if(md->modules.contains(type.name))
+            {
+                md = md->modules.at(type.name);
+                hash = md->module_hash;
+                continue;
+            }
+            if(auto dets = md->findType(hash, type.name))
+            {
+                hash = std::get<0>(*dets);
+                decl = std::get<2>(*dets).get();
+                continue;
+            }
+            return std::nullopt;
+        }
+        auto last = iterator.last();
+        if(decl)
+        {
+            if(auto it = std::ranges::find_if(decl->methods, [&last](auto& meth)
+            {
+                return meth.name == last.name;
+            }); it != decl->methods.end())
+            {
+                auto& sig = reinterpret_cast<FunctionDeclaration*>(it->function_decl.get())->signature;
+                irgen->saturateSignature(sig, md);
+                return FunctionType{sig, false};
+            }
+            return std::nullopt;
         }
 
-        scp->type.saturate(md, irgen);
-        return checkNameWithinClassOrModule(md, decl,scp->name);
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ObjectLiteral* obj)

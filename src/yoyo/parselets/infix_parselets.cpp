@@ -60,48 +60,17 @@ namespace Yoyo
     std::unique_ptr<Expression> ScopeOperationParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
     {
         auto as_name = dynamic_cast<NameExpression*>(left.get());
-        auto as_scope = dynamic_cast<ScopeOperation*>(left.get());
-        if(!as_name && !as_scope)
+        if(!as_name) { parser.error("Expression to the left of '::' must be a name", tk); return nullptr; }
+        Type original_type {as_name->text};
+        if(auto as_gen_name = dynamic_cast<GenericNameExpression*>(as_name))
+            for(auto& arg : as_gen_name->arguments)
+                original_type.subtypes.emplace_back(std::move(arg));
+        auto others = parser.parseType(0);
+        if(others)
         {
-            parser.error("Left of '::' must be a name", tk);
-            return nullptr;
+            others->name = original_type.full_name() + "::" + others->name;
+            original_type = std::move(others).value();
         }
-        auto expr = parser.parseExpression(prec);
-        auto expr_as_name = dynamic_cast<NameExpression*>(expr.get());
-        auto expr_as_init = dynamic_cast<ObjectLiteral*>(expr.get());
-        if(!expr_as_name && !expr_as_init)
-        {
-            parser.error("Right of '::' must be a name", tk);
-            return nullptr;
-        }
-
-        if(as_name)
-        {
-            if(expr_as_init)
-            {
-                expr_as_init->t.name = std::string{as_name->text} + "::" + expr_as_init->t.name;
-                expr_as_init->beg = as_name->beg;
-                return expr;
-            }
-            return Expression::attachSLAndParent(
-                std::make_unique<ScopeOperation>(Type{.name= std::string{as_name->text}}, "", std::string{expr_as_name->text}),
-                as_name->beg, expr_as_name->end, parser.parent);
-        }
-        if(as_scope)
-        {
-            if(expr_as_init)
-            {
-                std::string prefix = as_scope->scope.empty() ? "" : as_scope->scope + "::";
-                expr_as_init->t.name =  prefix + as_scope->type.name + "::" + as_scope->name + "::" + expr_as_init->t.name;
-                expr_as_init->beg = as_scope->beg;
-                return expr;
-            }
-            as_scope->scope += "::" + as_scope->type.name;
-            as_scope->type.name = as_scope->name;
-            as_scope->name = std::string{expr_as_name->text};
-            as_scope->end = expr_as_name->beg;
-            return left;
-        }
-        return nullptr;
+        return std::make_unique<ScopeOperation>(std::move(original_type));
     }
 }

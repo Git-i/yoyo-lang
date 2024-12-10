@@ -884,7 +884,7 @@ namespace Yoyo
             case TokenType::DoubleColon:
                 {
                     auto tp = parseType(precedence);
-                    tp->name = t->name + "::" + tp->name;
+                    tp->name = t->full_name() + "::" + tp->name;
                     t = std::move(tp);
                 }
             default: /*unreachable*/;

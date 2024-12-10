@@ -1109,58 +1109,6 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(ScopeOperation* op)
     {
         auto ty = ExpressionTypeChecker{irgen}(op);
-        if(!ty) {irgen->error();return nullptr;}
-        //either a function or global var or enum
-        if(ty->is_function())
-        {
-            if(ty->module == irgen->module)
-            {
-                if(auto class_entry = ty->module->findType(irgen->block_hash, op->type.name))
-                {
-                    std::string mangled_name = std::get<0>(*class_entry) + op->name;
-                    auto fn = irgen->code->getFunction(mangled_name);
-                    if(!fn)
-                    {
-                        auto& sig = irgen->module->functions.at(mangled_name);
-                        irgen->saturateSignature(sig, irgen->module);
-                        fn = llvm::Function::Create(irgen->ToLLVMSignature(sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
-                            irgen->code);
-                        if(sig.returnType.should_sret())
-                        {
-                            const auto return_as_llvm = irgen->ToLLVMType(sig.returnType, false);
-                            fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
-                        }
-                    }
-                    return fn;
-                }
-                std::string mangled_name = ty->module->module_hash + op->name;
-                return irgen->code->getFunction(mangled_name);
-            }
-            else
-            {
-                std::string mangled_name;
-                if(auto class_entry = ty->module->findType(op->type.module->module_hash, op->type.name))
-                {
-                    mangled_name = std::get<0>(*class_entry) + op->name;
-                }
-                else mangled_name = ty->module->module_hash + op->name;
-                auto fn = irgen->code->getFunction(mangled_name);
-                if(fn) return fn;
-                fn = llvm::Function::Create(irgen->ToLLVMSignature(ty->sig), llvm::GlobalValue::ExternalLinkage,
-                    mangled_name, irgen->code);
-                if(!ty->sig.returnType.is_builtin())
-                {
-                    auto return_as_llvm_type = irgen->ToLLVMType(ty->sig.returnType, false);
-                    fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm_type));
-                }
-                return fn;
-            }
-        }
-        if(ty->is_enum())
-        {
-            auto decl = ty->module->enums[op->type.name].get();
-            return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), decl->values.at(op->name));
-        }
         return nullptr;
     }
 

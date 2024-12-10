@@ -23,6 +23,7 @@ namespace Yoyo
         Module* module;
         mutable bool is_mutable = false;
         bool is_lvalue = false;
+        std::string block_hash;
         bool operator==(const Type& other) const
         {
             return is_equal(other);
@@ -99,6 +100,15 @@ namespace Yoyo
 
     };
 
-
+    struct UnsaturatedTypeIterator
+    {
+        const Type& type;
+        explicit UnsaturatedTypeIterator(const Type& type);
+        [[nodiscard]] bool is_end() const;
+        [[nodiscard]] Type next();
+        Type last();
+        size_t pos = 0;
+        std::vector<std::string_view> split_cache;
+    };
 
 }
