@@ -172,12 +172,12 @@ namespace Yoyo
                     return name == v.name;
                 }); var != cls->vars.end())
                 {
+                    var->type.saturate(irgen->module, irgen);
                     //accessing an l-value struct yields an l-value
-                    return Type{
-                        .name = var->type.name, .subtypes = var->type.subtypes, .module = var->type.module,
-                        .is_mutable = lhs.is_mutable,
-                        .is_lvalue = lhs.is_lvalue,
-                    };
+                    Type t = var->type;
+                    t.is_mutable = lhs.is_mutable;
+                    t.is_lvalue = lhs.is_lvalue;
+                    return t;
                 }
                 if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
                 {
@@ -307,13 +307,13 @@ namespace Yoyo
     {
         Module* md = irgen->module;
         std::string hash = irgen->block_hash;
-        ClassDeclaration* decl = nullptr;
+        Module::ClassDetails* det = nullptr;
         auto iterator = UnsaturatedTypeIterator(scp->type);
         std::vector<Type> tps;
         while(!iterator.is_end())
         {
             auto type = iterator.next();
-            if(md->modules.contains(type.name))
+            if(!det && md->modules.contains(type.name))
             {
                 md = md->modules.at(type.name);
                 hash = md->module_hash;
@@ -322,14 +322,15 @@ namespace Yoyo
             if(auto dets = md->findType(hash, type.name))
             {
                 hash = std::get<0>(*dets);
-                decl = std::get<2>(*dets).get();
+                det = dets;
                 continue;
             }
             return std::nullopt;
         }
         auto last = iterator.last();
-        if(decl)
+        if(det)
         {
+            auto decl = std::get<2>(*det).get();
             if(auto it = std::ranges::find_if(decl->methods, [&last](auto& meth)
             {
                 return meth.name == last.name;
@@ -337,11 +338,21 @@ namespace Yoyo
             {
                 auto& sig = reinterpret_cast<FunctionDeclaration*>(it->function_decl.get())->signature;
                 irgen->saturateSignature(sig, md);
-                return FunctionType{sig, false};
+                auto t = FunctionType{sig, false};
+                t.module = md;
+                t.block_hash = std::get<0>(*det);
+                return t;
             }
             return std::nullopt;
         }
-
+        if(md->functions.contains(last.name))
+        {
+            irgen->saturateSignature(md->functions.at(last.name), md);
+            auto t = FunctionType{md->functions.at(last.name), false};
+            t.block_hash = hash;
+            t.module = md;
+            return t;
+        }
         return std::nullopt;
     }
 

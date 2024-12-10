@@ -227,8 +227,6 @@ namespace Yoyo
     }
     /// IMPORTANT:\n
     /// I don't know where to place this, but all structural types are pointers
-
-
     llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
     {
         if(!left_type.is_mutable) {irgen->error(); return nullptr;}
@@ -337,6 +335,19 @@ namespace Yoyo
             }
         }
         return into;
+    }
+    llvm::Function* declareFunction(const std::string& mangled_name, IRGenerator* irgen, FunctionSignature& fn_sig)
+    {
+        llvm::Function* fn = nullptr;
+        irgen->saturateSignature(fn_sig, irgen->module);
+        fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
+            irgen->code);
+        if(fn_sig.returnType.should_sret())
+        {
+            const auto return_as_llvm = irgen->ToLLVMType(fn_sig.returnType, false);
+            fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
+        }
+        return fn;
     }
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
@@ -1109,6 +1120,13 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(ScopeOperation* op)
     {
         auto ty = ExpressionTypeChecker{irgen}(op);
+        if(ty->is_function())
+        {
+            std::string mangled_name = ty->block_hash + UnsaturatedTypeIterator(op->type).last().name;
+            auto fn = irgen->code->getFunction(mangled_name);
+            if(!fn) fn = declareFunction(mangled_name, irgen, ty->sig);
+            return fn;
+        }
         return nullptr;
     }
 

@@ -155,10 +155,10 @@ namespace Yoyo
         if(is_variant() && other.is_variant())
         {
             //variant ordering doesn't matter TODO consider sorting variant subtypes in `saturate`
-            return
+            return block_hash == other.block_hash &&
                 std::set(subtypes.begin(), subtypes.end()) == std::set(other.subtypes.begin(), other.subtypes.end());
         }
-        return name == other.name && subtypes == other.subtypes && module == other.module;
+        return name == other.name && subtypes == other.subtypes && module == other.module && block_hash == other.block_hash;
     }
 
     bool Type::is_non_owning(IRGenerator* irgen) const
@@ -209,11 +209,16 @@ namespace Yoyo
     {
         if(module) return; //avoid double saturation
         auto module_path = split(name, "::");
-
-        if(module_path.size() == 1)
+        auto it = UnsaturatedTypeIterator(*this);
+        if(it.is_end())
         {
-            if(!(is_char() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
+            name = it.last().name;
+            if(!(is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
+            {
                 module = src;
+                auto hsh = module->hashOf(irgen ? irgen->block_hash : src->module_hash , name);
+                if(hsh) block_hash = std::move(hsh).value();
+            }
             else
                 module = src->engine->modules.at("__builtin").get();
         }
@@ -224,14 +229,30 @@ namespace Yoyo
         decltype(&src->aliases) alias_list = nullptr;
         if(module_path.size() > 1)
         {
-            Module* mod = src->modules.at(std::string(module_path[0]));
-            for(size_t i = 1; i < module_path.size() - 1; ++i)
+            Module* md = src;
+            ClassDeclaration* decl = nullptr;
+            std::string hash = irgen ? irgen->block_hash : src->module_hash;
+            while(!it.is_end())
             {
-                mod = mod->modules.at(std::string(module_path[i]));
+                auto type = it.next();
+                if(!decl && md->modules.contains(type.name))
+                {
+                    md = md->modules.at(type.name);
+                    hash = md->module_hash;
+                    continue;
+                }
+                if(auto dets = md->findType(hash, type.name))
+                {
+                    hash = std::get<0>(*dets);
+                    decl = std::get<2>(*dets).get();
+                    continue;
+                }
+                if(irgen) irgen->error();
             }
-            name = module_path.back();
-            module = mod;
-            alias_list = &mod->aliases;
+            name = it.last().name;
+            module = md;
+            block_hash = std::move(hash);
+            alias_list = &md->aliases;
         }
         else if(irgen && src == irgen->module)
             for(auto& aliases : irgen->aliases | std::views::reverse)
@@ -297,7 +318,7 @@ namespace Yoyo
     {
         if(module)
         {
-            if(auto decl = module->findType(gen->block_hash, name))
+            if(auto decl = module->findType(block_hash, name))
                 return std::get<2>(*decl).get();
             return nullptr;
         }
@@ -491,12 +512,9 @@ namespace Yoyo
     }
     Type UnsaturatedTypeIterator::last()
     {
-        if(pos == split_cache.size() - 1)
-        {
             Type tp = type;
             tp.name = split_cache.back();
             pos++;
             return tp;
-        }
     }
 }

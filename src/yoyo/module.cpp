@@ -30,10 +30,24 @@ namespace Yoyo
         for(auto&[hash, details_list] : classes)
         {
             if(!block.starts_with(hash)) continue;
-            for(auto& detaials : details_list)
-                if(std::get<2>(detaials)->identifier.text == name) return &detaials;
+            for(auto& details : details_list)
+                if(std::get<2>(details)->identifier.text == name) return &details;
         }
         return nullptr;
+    }
+
+    std::optional<std::string> Module::hashOf(const std::string& block, const std::string& name)
+    {
+        for(auto&[hash, details_list] : classes)
+        {
+            if(!block.starts_with(hash)) continue;
+            auto it = std::ranges::find_if(details_list, [&name](auto& det)
+            {
+                return std::get<2>(det)->identifier.text == name;
+            });
+            if(it != details_list.end()) return hash;
+        }
+        return std::nullopt;
     }
 
     llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)
@@ -107,7 +121,7 @@ namespace Yoyo
 
         //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         if(type.is_lambda()) return nullptr;
-        if(auto t = findType(hash, type.name))
+        if(auto t = findType(type.block_hash, type.name))
         {
             auto& ptr = std::get<1>(*t);
             if(ptr) return ptr;
