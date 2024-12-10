@@ -247,7 +247,19 @@ namespace Yoyo
         auto ptr = current_Statement->release();
         assert(ptr == decl);
         std::string class_hash = block_hash + "__class__" + name + "__";
-        module->classes[block_hash].emplace_back(std::move(class_hash), hanldeClassDeclaration(decl, true), std::unique_ptr<ClassDeclaration>{decl});
+        module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl, true), std::unique_ptr<ClassDeclaration>{decl});
+
+        for(auto& fn: decl->methods)
+        {
+            auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
+            in_class = true;
+            auto curr_hash = reset_hash();
+            block_hash = class_hash;
+            current_Statement = &fn.function_decl;
+            (*this)(fn_decl);
+            block_hash = std::move(curr_hash);
+            in_class = false;
+        }
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
     {

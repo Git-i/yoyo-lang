@@ -1115,7 +1115,7 @@ namespace Yoyo
         {
             if(ty->module == irgen->module)
             {
-                if(auto class_entry = ty->module->findType(op->type.module->module_hash, op->type.name))
+                if(auto class_entry = ty->module->findType(irgen->block_hash, op->type.name))
                 {
                     std::string mangled_name = std::get<0>(*class_entry) + op->name;
                     auto fn = irgen->code->getFunction(mangled_name);

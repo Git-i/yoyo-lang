@@ -321,7 +321,7 @@ namespace Yoyo
         ClassDeclaration* decl = nullptr;
         if(md->modules.contains(scp->type.name))
             md = md->modules.at(scp->type.name);
-        else if(auto t = md->findType(md->module_hash, scp->type.name))
+        else if(auto t = md->findType(md == irgen->module ? irgen->block_hash : md->module_hash, scp->type.name))
             decl = std::get<2>(*t).get();
         else if(md->enums.contains(scp->type.name))
         {
