@@ -273,7 +273,7 @@ namespace Yoyo
         {
             auto& decl = irgen->module->generic_fns.at(expr->text);
             if(expr->arguments.size() != decl->clause.types.size()) return std::nullopt;
-            FunctionSignature new_sig = decl->body.signature;
+            FunctionSignature new_sig = decl->signature;
             for(size_t i = 0; i < decl->clause.types.size(); ++i)
             {
                 expr->arguments[i].saturate(irgen->module, irgen);
@@ -302,7 +302,7 @@ namespace Yoyo
         fn_t.name = "__lambda" + lmd->hash;
         return fn_t;
     }
-
+    //TODO: compleltely redo scopes
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ScopeOperation* scp)
     {
         //Everything till the second to last must be a module
@@ -321,8 +321,8 @@ namespace Yoyo
         ClassDeclaration* decl = nullptr;
         if(md->modules.contains(scp->type.name))
             md = md->modules.at(scp->type.name);
-        else if(md->classes.contains(scp->type.name))
-            decl = std::get<2>(md->classes.at(scp->type.name)).get();
+        else if(auto t = md->findType(md->module_hash, scp->type.name))
+            decl = std::get<2>(*t).get();
         else if(md->enums.contains(scp->type.name))
         {
             if(!md->enums.at(scp->type.name)->values.contains(scp->name)) return std::nullopt;
@@ -331,12 +331,7 @@ namespace Yoyo
             return ty;
         }
 
-        //check types in scope
-        else if(md == irgen->module)
-        {
-            //TODO
-        }
-
+        scp->type.saturate(md, irgen);
         return checkNameWithinClassOrModule(md, decl,scp->name);
     }
 

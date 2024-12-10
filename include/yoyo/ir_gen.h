@@ -78,16 +78,12 @@ namespace Yoyo
         std::unique_ptr<llvm::IRBuilder<>> builder;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
         std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, Type>>> variables;
-        std::vector<
-            std::unordered_map<std::string, std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration
-        >>>> types;
         std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
         std::vector<std::unordered_map<std::string, Type>> aliases;
         std::string block_hash;
 
-        std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>* findType(const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
         void saturateSignature(FunctionSignature& sig, Module* md);
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
@@ -113,9 +109,10 @@ namespace Yoyo
         void operator()(GenericFunctionDeclaration*);
 
         void error();
+        std::string reset_hash();
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
-        void pushScope() {variables.emplace_back(); types.emplace_back();}
-        void popScope() {variables.pop_back(); types.pop_back();}
+        void pushScope() {variables.emplace_back();}
+        void popScope() {variables.pop_back();}
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);

@@ -10,7 +10,7 @@ namespace Yoyo
         llvm::LLVMContext& ctx = *static_cast<llvm::LLVMContext*>(module->engine->llvm_context);
         std::vector<llvm::Type*> argTypes;
         //sret
-        auto return_t = module->ToLLVMType(sig.returnType, false, {});
+        auto return_t = module->ToLLVMType(sig.returnType, module->module_hash, {});
         if(sig.returnType.should_sret())
         {
             argTypes.push_back(llvm::PointerType::get(ctx, 0));
@@ -20,7 +20,7 @@ namespace Yoyo
         {
             if(p.type.should_sret())
                 argTypes.push_back(llvm::PointerType::get(ctx, 0));
-            else argTypes.push_back(module->ToLLVMType(p.type, false, {}));
+            else argTypes.push_back(module->ToLLVMType(p.type, module->module_hash, {}));
         }
         return llvm::FunctionType::get(return_t, argTypes, false);
     }
@@ -29,7 +29,7 @@ namespace Yoyo
         Parser p(std::move(signature));
         auto sig = *p.parseFunctionSignature();
         if(p.failed()) raise(SIGTRAP);
-        auto return_as_llvm = ToLLVMType(sig.returnType, false, {});
+        auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, {});
         llvm::LLVMContext& ctx = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
         auto llvm_sig = toLLVMSignature(sig, this);
 

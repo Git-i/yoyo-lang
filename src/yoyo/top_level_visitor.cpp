@@ -13,16 +13,17 @@ namespace Yoyo
         std::string name = std::string{decl->identifier.text};
         std::string mangled_name_prefix = "__class__" + name + "__";
 
-        std::ignore = std::get<2>(irgen->module->classes[name]).release();
+        auto ty = irgen->module->findType(irgen->block_hash, name);
+        std::ignore = std::get<2>(*ty).release();
 
         irgen->this_t = Type{.name = name, .subtypes = {}};
         auto decl_ptr = decl.get();
-        std::get<2>(irgen->module->classes[name]) = std::move(decl);
+        std::get<2>(*ty) = std::move(decl);
         for(auto& fn: decl_ptr->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
 
-            std::string mangled_name = std::get<0>(irgen->module->classes[name]) + fn.name;
+            std::string mangled_name = std::get<0>(*ty) + fn.name;
 
             irgen->in_class = true;
             auto curr_hash = std::move(irgen->block_hash);
@@ -42,12 +43,15 @@ namespace Yoyo
         OverloadDetailsBinary bin {.left = decl->signature.parameters[0].type,
             .right = decl->signature.parameters[1].type,
             .result = decl->signature.returnType};
-        std::string old_hash = std::move(irgen->block_hash);
+        std::string old_hash = irgen->reset_hash();
         std::string name = bin.mangled_name(decl->tok);
         Token tk{.text = name};
         FunctionDeclaration fn_decl(tk, std::move(decl->signature), std::move(decl->body));
         (*irgen)(&fn_decl);
         irgen->block_hash = std::move(old_hash);
+        //remove the module hash infront of the final name
+        auto fn = irgen->code->getFunction(irgen->module->module_hash + name);
+        fn->setName(name);
         irgen->module->overloads.binary_details_for(decl->tok)->emplace_back(std::move(bin));
         return true;
     }

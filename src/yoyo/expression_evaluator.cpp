@@ -8,16 +8,6 @@
 #include "fn_type.h"
 namespace Yoyo
 {
-    auto findType(const std::string& name, IRGenerator* irgen, Module* mod) ->
-        std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>*
-    {
-        if(mod == irgen->module) return irgen->findType(name);
-        if(mod->classes.contains(name))
-        {
-            return &mod->classes.at(name);
-        }
-        return nullptr;
-    }
     int64_t getIntMinOf(const Type& type)
     {
         if(type.is_signed_integral())
@@ -779,24 +769,24 @@ namespace Yoyo
         if(irgen->module->generic_fns.contains(nm->text))
         {
             auto& fn = irgen->module->generic_fns.at(nm->text);
-            std::string mangled_name = irgen->module->module_hash + nm->text + "__gscope@@" + nm->arguments[0].full_name();
+            std::string mangled_name_suffix = nm->text + "__gscope@@" + nm->arguments[0].full_name();
             for(auto& tp : std::ranges::subrange(nm->arguments.begin() + 1, nm->arguments.end()))
-                mangled_name += "@" + tp.full_name();
-            mangled_name += "@@__gscope";
+                mangled_name_suffix += "@" + tp.full_name();
+            mangled_name_suffix += "@@__gscope";
+            auto mangled_name = irgen->module->module_hash + mangled_name_suffix;
             auto fn_ptr = irgen->code->getFunction(mangled_name);
             if(!fn_ptr)
             {
                 irgen->aliases.emplace_back();
                 for(size_t i = 0; i < nm->arguments.size(); i++)
                     irgen->aliases.back()[fn->clause.types[i]] = nm->arguments[i];
-                auto old_hash = std::move(irgen->block_hash);
-                irgen->block_hash = "";
-                std::string_view old_name = fn->body.identifier.text;
-                fn->body.identifier.text = mangled_name;
-                auto old_sig = fn->body.signature; //signature will be modified during saturation
-                (*irgen)(&fn->body);
-                fn->body.signature = std::move(old_sig);
-                fn->body.identifier.text = old_name;
+                auto old_hash = irgen->reset_hash();
+                std::string_view old_name = fn->identifier.text;
+                fn->identifier.text = mangled_name_suffix;
+                auto old_sig = fn->signature; //signature will be modified during saturation
+                (*irgen)(static_cast<FunctionDeclaration*>(fn.get()));
+                fn->signature = std::move(old_sig);
+                fn->identifier.text = old_name;
                 irgen->block_hash = std::move(old_hash);
                 irgen->aliases.pop_back();
                 fn_ptr = irgen->code->getFunction(mangled_name);
@@ -1028,7 +1018,7 @@ namespace Yoyo
                         }); var != cls->methods.end())
                     {
                         auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                        auto found = irgen->findType(left_t->name);
+                        auto found = irgen->module->findType(irgen->block_hash, left_t->name);
                         auto function_name  = std::get<0>(*found) + name;
                         auto callee = irgen->code->getFunction(function_name);
                         bool uses_sret = callee->hasStructRetAttr();
@@ -1125,10 +1115,9 @@ namespace Yoyo
         {
             if(ty->module == irgen->module)
             {
-                if(ty->module->classes.contains(op->type.name))
+                if(auto class_entry = ty->module->findType(op->type.module->module_hash, op->type.name))
                 {
-                    auto& class_entry = ty->module->classes.at(op->type.name);
-                    std::string mangled_name = std::get<0>(class_entry) + op->name;
+                    std::string mangled_name = std::get<0>(*class_entry) + op->name;
                     auto fn = irgen->code->getFunction(mangled_name);
                     if(!fn)
                     {
@@ -1150,10 +1139,9 @@ namespace Yoyo
             else
             {
                 std::string mangled_name;
-                if(ty->module->classes.contains(op->type.name))
+                if(auto class_entry = ty->module->findType(op->type.module->module_hash, op->type.name))
                 {
-                    auto& class_entry = ty->module->classes.at(op->type.name);
-                    mangled_name = std::get<0>(class_entry) + op->name;
+                    mangled_name = std::get<0>(*class_entry) + op->name;
                 }
                 else mangled_name = ty->module->module_hash + op->name;
                 auto fn = irgen->code->getFunction(mangled_name);

@@ -25,7 +25,18 @@ namespace Yoyo
         return nullptr;
     }
 
-    llvm::Type* Module::ToLLVMType(const Type& type, bool is_ref, const std::vector<Type>& disallowed_types)
+    Module::ClassDetails* Module::findType(const std::string& block, const std::string& name)
+    {
+        for(auto&[hash, details_list] : classes)
+        {
+            if(!block.starts_with(hash)) continue;
+            for(auto& detaials : details_list)
+                if(std::get<2>(detaials)->identifier.text == name) return &detaials;
+        }
+        return nullptr;
+    }
+
+    llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)
     {
         auto& context = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
         if(type.is_integral())
@@ -51,7 +62,7 @@ namespace Yoyo
             std::vector<llvm::Type*> args;
             for(auto& subtype : type.subtypes)
             {
-                auto ty = ToLLVMType(subtype, false, disallowed_types);
+                auto ty = ToLLVMType(subtype, hash, disallowed_types);
                 if(!ty) return nullptr;
                 args.push_back(ty);
             }
@@ -60,7 +71,7 @@ namespace Yoyo
         if(type.is_optional())
         {
             std::array<llvm::Type*, 2> args{};
-            args[0] = ToLLVMType(type.subtypes[0], false, disallowed_types);
+            args[0] = ToLLVMType(type.subtypes[0], hash, disallowed_types);
             args[1] = llvm::Type::getInt1Ty(context);
             return llvm::StructType::get(context, args);
         }
@@ -78,7 +89,7 @@ namespace Yoyo
             auto& layout = code->getDataLayout();
             for(auto& subtype : type.subtypes)
             {
-                auto sub_t = ToLLVMType(subtype, false, disallowed_types);
+                auto sub_t = ToLLVMType(subtype, hash, disallowed_types);
                 auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
                 size_t sz = 0;
                 if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;
@@ -96,14 +107,14 @@ namespace Yoyo
 
         //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         if(type.is_lambda()) return nullptr;
-        if(auto t = type.module->classes.find(type.name); t != classes.end())
+        if(auto t = findType(hash, type.name))
         {
-            auto& ptr = std::get<1>(t->second);
+            auto& ptr = std::get<1>(*t);
             if(ptr) return ptr;
             //class is not yet defined but is recursive
             if(auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
                 return nullptr;
-            ForwardDeclaratorPass2{type.module, disallowed_types}(std::get<2>(t->second).get());
+            ForwardDeclaratorPass2{type.module, disallowed_types}(std::get<2>(*t).get());
             return ptr;
         }
         return nullptr;
@@ -134,7 +145,7 @@ namespace Yoyo
         llvm::IRBuilder<> builder(ctx);
         for(auto& t : types)
         {
-            auto as_llvm = module->ToLLVMType(t, false, {});
+            auto as_llvm = module->ToLLVMType(t, "", {});
             auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm, as_llvm}, false);
             auto mangled_name_for = [&t](const std::string& op_name)
             {
@@ -178,7 +189,7 @@ namespace Yoyo
         }
         for(auto& t : std::ranges::subrange(types.begin(), types.begin() + 6))
         {
-            auto as_llvm = module->ToLLVMType(t, false, {});
+            auto as_llvm = module->ToLLVMType(t, "", {});
             auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm}, false);
             auto mangled_name_for = [&t](const std::string& op_name)
             {
@@ -193,7 +204,7 @@ namespace Yoyo
         }
         for(auto& t : std::ranges::subrange(types.begin() + 2, types.end()))
         {
-            auto as_llvm = module->ToLLVMType(t, false, {});
+            auto as_llvm = module->ToLLVMType(t, "", {});
             auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm, as_llvm}, false);
             auto mangled_name_for = [&t](const std::string& op_name)
             {

@@ -37,6 +37,8 @@ print_int: fn(i: i32) = "${i}".app::func();
 takes_foo: fn -> f64 = {
     a := Vec2::new_with_vals(10, 20);
     b := Vec2::new_with_vals(3, 9);
+    Inline: struct = { x: i32, y: i32 }
+    c := Inline{.x = 10, .y = 3};
     generic_add::<Vec2>(a, b).print_vec();
     generic_add::<i32>(0, 10).print_int();
     return 0.0;

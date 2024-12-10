@@ -295,21 +295,12 @@ namespace Yoyo
 
     ClassDeclaration* Type::get_decl_if_class(IRGenerator* gen) const
     {
-        if(module && module != gen->module)
+        if(module)
         {
-            if(module->classes.contains(name))
-                return std::get<2>(module->classes.at(name)).get();
+            if(auto decl = module->findType(gen->block_hash, name))
+                return std::get<2>(*decl).get();
             return nullptr;
         }
-        for(size_t i = gen->types.size(); i > 0; i--)
-        {
-            auto idx = i - 1;
-            if(auto t = gen->types[idx].find(name); t != gen->types[idx].end())
-            {
-                return std::get<2>(t->second).get();
-            }
-        }
-        if(auto t = gen->module->classes.find(name); t != gen->module->classes.end()) return std::get<2>(t->second).get();
         return nullptr;
     }
 

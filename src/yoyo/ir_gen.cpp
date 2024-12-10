@@ -7,26 +7,12 @@
 
 namespace Yoyo
 {
-    std::tuple<std::string, llvm::StructType*, std::unique_ptr<ClassDeclaration>>* IRGenerator::findType(
-        const std::string& name)
-    {
-        for(size_t i = types.size(); i > 0; i--)
-        {
-            auto idx = i - 1;
-            if(auto t = types[idx].find(name); t != types[idx].end())
-            {
-                return &t->second;
-            }
-        }
-        if(auto t = module->classes.find(name); t != module->classes.end()) return &t->second;
-        return nullptr;
-    }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
         //type is not required not have a module (built-ins)
         auto t = type.module ?
-            type.module->ToLLVMType(type, is_ref, {}):
-            module->ToLLVMType(type, is_ref, {});
+            type.module->ToLLVMType(type, block_hash, {}):
+            module->ToLLVMType(type, block_hash, {});
         if(t) return t;
         if(type.is_lambda())
         {
@@ -68,15 +54,6 @@ namespace Yoyo
             return llvm::StructType::get(context, args);
         }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
-        for(size_t i = types.size(); i > 0; i--)
-        {
-            auto idx = i - 1;
-            if(auto t = types[idx].find(type.name); t != types[idx].end())
-            {
-                return std::get<1>(t->second);
-            }
-        }
-        if(auto t = module->classes.find(type.name); t != module->classes.end()) return std::get<1>(t->second);
         error();
         return nullptr;
     }
@@ -143,8 +120,6 @@ namespace Yoyo
     bool IRGenerator::isShadowing(const std::string& name) const
     {
         for(auto& map : variables)
-            if(map.contains(name)) return true;
-        for(auto& map : types)
             if(map.contains(name)) return true;
         return false;
     }
@@ -271,7 +246,8 @@ namespace Yoyo
         }
         auto ptr = current_Statement->release();
         assert(ptr == decl);
-        types.back()[name] = {block_hash, hanldeClassDeclaration(decl, true), std::unique_ptr<ClassDeclaration>{decl}};
+        std::string class_hash = block_hash + "__class__" + name + "__";
+        module->classes[block_hash].emplace_back(std::move(class_hash), hanldeClassDeclaration(decl, true), std::unique_ptr<ClassDeclaration>{decl});
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
     {
@@ -510,6 +486,14 @@ namespace Yoyo
     {
         raise(SIGTRAP);
     }
+
+    std::string IRGenerator::reset_hash()
+    {
+        auto old = std::move(block_hash);
+        block_hash = module->module_hash;
+        return old;
+    }
+
     FunctionDeclaration* IRGenerator::GetParentFunction(ASTNode* node)
     {
         auto parent = node->parent;

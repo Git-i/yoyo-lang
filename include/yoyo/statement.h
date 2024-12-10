@@ -94,13 +94,12 @@ namespace Yoyo
             : signature(std::move(sig)), identifier(ident), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
-    class GenericFunctionDeclaration: public Statement
+    class GenericFunctionDeclaration: public FunctionDeclaration
     {
     public:
         GenericClause clause;
-        FunctionDeclaration body;
         GenericFunctionDeclaration(GenericClause cl, FunctionDeclaration body)
-            : clause(std::move(cl)), body(std::move(body)) {}
+            : FunctionDeclaration(std::move(body)), clause(std::move(cl)) {}
         StatementVariant toVariant() override;
     };
     class OperatorOverload : public Statement
