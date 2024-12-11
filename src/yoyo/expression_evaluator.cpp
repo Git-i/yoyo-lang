@@ -771,8 +771,8 @@ namespace Yoyo
             std::string mangled_name_suffix = nm->text + IRGenerator::mangleGenericArgs(nm->arguments);
             //it has not already been instantiated
             if(auto[name_prefx, ifn] = irgen->module->findFunction(irgen->block_hash, mangled_name_suffix); !ifn)
-                generateGenericFunction(irgen->module, hash + "__", fn, nm->arguments);
-            return irgen->code->getFunction(hash + "__" + mangled_name_suffix);
+                generateGenericFunction(irgen->module, hash, fn, nm->arguments);
+            return irgen->code->getFunction(hash + mangled_name_suffix);
         }
     }
 
@@ -973,9 +973,8 @@ namespace Yoyo
         auto module = irgen->module;
         irgen->module = mod;
 
-        irgen->aliases.emplace_back();
         for(size_t i = 0; i < types.size(); i++)
-            irgen->aliases.back()[fn->clause.types[i]] = types[i];
+            irgen->module->aliases[hash + name + "__"].emplace(fn->clause.types[i], types[i]);
 
         auto old_hash = irgen->reset_hash();
         irgen->block_hash = hash;
@@ -986,7 +985,6 @@ namespace Yoyo
         fn->signature = std::move(old_sig);
         fn->name = std::move(old_name);
         irgen->block_hash = std::move(old_hash);
-        irgen->aliases.pop_back();
         irgen->module = module;
     }
 

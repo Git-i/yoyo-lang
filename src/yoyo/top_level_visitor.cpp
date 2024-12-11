@@ -34,7 +34,7 @@ namespace Yoyo
             irgen->block_hash = std::move(curr_hash);
             irgen->in_class = false;
         }
-        irgen->hanldeClassDeclaration(decl_ptr, true);
+        //irgen->hanldeClassDeclaration(TODO, TODO, TODO);
         return true;
     }
     bool handleBinaryOverload(OperatorOverload* decl, IRGenerator* irgen)

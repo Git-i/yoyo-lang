@@ -39,6 +39,16 @@ namespace Yoyo
         return {"", nullptr};
     }
 
+    Type* Module::findAlias(const std::string& block, const std::string& name)
+    {
+        for(auto&[hash, details_list] : aliases)
+        {
+            if(!block.starts_with(hash)) continue;
+            if(details_list.contains(name)) return &details_list.at(name);
+        }
+        return nullptr;
+    }
+
     Module::ClassDetails* Module::findType(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : classes)

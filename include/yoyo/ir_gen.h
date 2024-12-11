@@ -81,7 +81,6 @@ namespace Yoyo
         std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
-        std::vector<std::unordered_map<std::string, Type>> aliases;
         std::string block_hash;
 
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
@@ -116,7 +115,7 @@ namespace Yoyo
         void popScope() {variables.pop_back();}
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
-        llvm::StructType* hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon);
+        llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
         void GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md);
     };
 

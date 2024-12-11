@@ -248,7 +248,9 @@ namespace Yoyo
         auto ptr = current_Statement->release();
         assert(ptr == decl);
         std::string class_hash = block_hash + "__class__" + name + "__";
-        module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl, true), std::unique_ptr<ClassDeclaration>{decl});
+        auto vars = decl->vars;
+        for(auto& var : vars) var.type.saturate(module, this);
+        module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
 
         for(auto& fn: decl->methods)
         {
@@ -620,52 +622,21 @@ namespace Yoyo
         return std::nullopt;
     }
 
-    llvm::StructType* IRGenerator::hanldeClassDeclaration(ClassDeclaration* decl, bool is_anon)
+    llvm::StructType* IRGenerator::hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name)
     {
-        std::vector<std::string> var_names(decl->vars.size());
-        std::vector<std::string> fn_names(decl->methods.size());
-        std::ranges::transform(decl->vars, var_names.begin(), [](ClassVariable& var)
-        {
-            return var.name;
-        });
-        std::ranges::transform(decl->methods, fn_names.begin(), [](ClassMethod& method)
-        {
-            return method.name;
-        });
-        for(const auto& name: var_names)
-            if(std::ranges::find(fn_names, name) != fn_names.end()){error(); return nullptr;}
+        std::vector<std::string> var_names(vars.size());
 
-        for(const auto& name: fn_names)
-            if(std::ranges::find(var_names, name) != var_names.end()){error(); return nullptr;}
-        for(size_t i = 0; i < var_names.size(); ++i)
+        std::vector<llvm::Type*> args(vars.size());
+        std::ranges::transform(vars, args.begin(), [this, own](const ClassVariable& p)
         {
-            for(size_t j = 0; j < var_names.size(); ++j)
-            {
-                if(j == i) continue;
-                if(var_names[i] == var_names[j]) {error(); return nullptr;}
-            }
-        }
-        for(size_t i = 0; i < fn_names.size(); ++i)
-        {
-            for(size_t j = 0; j < fn_names.size(); ++j)
-            {
-                if(j == i) continue;
-                if(fn_names[i] == fn_names[j]) {error(); return nullptr;}
-            }
-        }
-        std::vector<llvm::Type*> args(decl->vars.size());
-        std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
-            [this, decl](const ClassVariable& p)
-            {
-                if(decl->ownership == Ownership::Owning && p.type.is_non_owning(this)) error();
-                if(decl->ownership == Ownership::NonOwning && p.type.is_non_owning_mut(this)) error();
-                return ToLLVMType(p.type, false);
-            });
-        if(is_anon)
+            if(own == Ownership::Owning && p.type.is_non_owning(this)) error();
+            if(own == Ownership::NonOwning && p.type.is_non_owning_mut(this)) error();
+            return ToLLVMType(p.type, false);
+        });
+        if(name.empty())
         {
             return llvm::StructType::get(context, args);
         }
-        std::string name(decl->identifier.text);
         return llvm::StructType::create(context, args, name);
     }
 

@@ -298,7 +298,40 @@ namespace Yoyo
         fn_t.name = "__lambda" + lmd->hash;
         return fn_t;
     }
-    //TODO: compleltely redo scopes
+    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen)
+    {
+        if(md->modules.contains(type.name))
+        {
+            md = md->modules.at(type.name);
+            hash = md->module_hash;
+            return true;
+        }
+        if(auto dets = md->findType(hash, type.name))
+        {
+            hash = std::get<0>(*dets);
+            return true;
+        }
+        if(auto [name,fn] = md->findFunction(hash, type.name); fn)
+        {
+            hash = name + type.name + "__";
+            return true;
+        }
+        if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
+        {
+            if(type.subtypes.size() != fn->clause.types.size()) return false;
+            for(auto& sub : type.subtypes) sub.saturate(md, irgen);
+            auto mangled_name = fn->name + IRGenerator::mangleGenericArgs(type.subtypes);
+            if(auto [_, exists] = md->findFunction(this_hash, mangled_name); !exists)
+                ExpressionEvaluator{irgen}.generateGenericFunction(md, this_hash, fn, type.subtypes);
+            hash = this_hash + mangled_name + "__";
+            return true;
+        }
+        if(auto alias = md->findAlias(hash, type.name); alias)
+        {
+            advanceScope(*alias, md, hash, irgen);
+        }
+        return false;
+    }
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ScopeOperation* scp)
     {
         Module* md = irgen->module;
@@ -309,43 +342,9 @@ namespace Yoyo
         while(!iterator.is_end())
         {
             auto type = iterator.next();
-            if(!det && md->modules.contains(type.name))
-            {
-                md = md->modules.at(type.name);
-                hash = md->module_hash;
-                continue;
-            }
-            if(auto dets = md->findType(hash, type.name))
-            {
-                hash = std::get<0>(*dets);
-                det = dets;
-                continue;
-            }
-            if(auto [name,fn] = md->findFunction(hash, type.name); fn)
-            {
-                hash = name + type.name + "__";
-                continue;
-            }
-            return std::nullopt;
+            if(!advanceScope(type, md, hash, irgen)) return std::nullopt;
         }
         auto last = iterator.last();
-        if(det)
-        {
-            auto decl = std::get<2>(*det).get();
-            if(auto it = std::ranges::find_if(decl->methods, [&last](auto& meth)
-            {
-                return meth.name == last.name;
-            }); it != decl->methods.end())
-            {
-                auto& sig = reinterpret_cast<FunctionDeclaration*>(it->function_decl.get())->signature;
-                irgen->saturateSignature(sig, md);
-                auto t = FunctionType{sig, false};
-                t.module = md;
-                t.block_hash = std::get<0>(*det);
-                return t;
-            }
-            return std::nullopt;
-        }
         if(auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
             irgen->saturateSignature(fn->sig, md);

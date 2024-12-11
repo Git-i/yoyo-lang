@@ -204,7 +204,7 @@ namespace Yoyo
         tp.saturate(src, irgen);
         return tp;
     }
-
+    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen);
     void Type::saturate(Module* src, IRGenerator* irgen)
     {
         if(module) return; //avoid double saturation
@@ -216,7 +216,8 @@ namespace Yoyo
             if(!(is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
             {
                 module = src;
-                auto hsh = module->hashOf(irgen ? irgen->block_hash : src->module_hash , name);
+                block_hash = irgen ? irgen->block_hash : src->module_hash;
+                auto hsh = module->hashOf(block_hash, name);
                 if(hsh) block_hash = std::move(hsh).value();
             }
             else
@@ -235,36 +236,17 @@ namespace Yoyo
             while(!it.is_end())
             {
                 auto type = it.next();
-                if(!decl && md->modules.contains(type.name))
-                {
-                    md = md->modules.at(type.name);
-                    hash = md->module_hash;
-                    continue;
-                }
-                if(auto dets = md->findType(hash, type.name))
-                {
-                    hash = std::get<0>(*dets);
-                    decl = std::get<2>(*dets).get();
-                    continue;
-                }
-                if(auto [name, fn] = md->findFunction(hash, type.name); fn)
-                {
-                    hash = name + type.name + "__";
-                    continue;
-                }
-                if(irgen) irgen->error();
+                if(!advanceScope(type, md, hash, irgen))
+                    if(irgen) irgen->error();
             }
             name = it.last().name;
             module = md;
             block_hash = std::move(hash);
             alias_list = &md->aliases;
         }
-        else if(irgen && src == irgen->module)
-            for(auto& aliases : irgen->aliases | std::views::reverse)
-                if(aliases.contains(name)) { alias_list = &aliases; break; }
-        if(alias_list && alias_list->contains(name))
+        if(auto alias = module->findAlias(block_hash, name))
         {
-            *this = alias_list->at(name);
+            *this = *alias;
         }
         for(auto& sub: subtypes) sub.saturate(src, irgen);
     }

@@ -23,13 +23,14 @@ namespace Yoyo
         std::unordered_map<std::string, std::vector<ClassDetails>> classes;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericFunctionDeclaration>>> generic_fns;
         std::unordered_map<std::string, std::unique_ptr<EnumDeclaration>> enums;
-        std::unordered_map<std::string, Type> aliases;
+        std::unordered_map<std::string, std::unordered_map<std::string, Type>> aliases;
         std::unordered_map<std::string, Module*> modules;
         ModuleOverloadDetails overloads;
         Engine* engine;
         std::string module_hash;
         std::pair<std::string, FunctionDetails*> findFunction(const std::string& block, const std::string& name);
         std::pair<std::string, GenericFunctionDeclaration*> findGenericFn(const std::string& block, const std::string& name);
+        Type* findAlias(const std::string& block, const std::string& name);
         ClassDetails* findType(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types);

@@ -24,31 +24,18 @@ TEST_CASE("Test IR")
 lol: module = MOO //The import system is not too strong rn
 app: module = APP
 
-Vec2: struct = {
-    x: f32, y: f32,
-    new: fn -> Vec2 = return Vec2 { .x = 10, .y = 20 };
+generic: fn::<T> = {
+    Type: struct = {
+        param: T
+    }
 }
-operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{.x=lhs.x+rhs.x,.y=lhs.y+rhs.y};
-generic_add: fn::<T>(a: T, b: T) -> T = return a + b;
 
-other_fn: fn = {
-    Inline: struct = {
-        z: f32,
-        d: f32
-    }
-    nest_test: fn (a: &Inline) = app::func(&"${a.z} ${a.d}");
-}
 takes_foo: fn -> f64 = {
-    generic_add::<Vec2>(Vec2::new(), Vec2::new());
-    Inline: struct = {
-        x: i32,
-        y: i32,
-        new: fn -> f64 = return 50;
-    }
-    c := Inline{.x = 10, .y = 3};
-    d := other_fn::Inline{ .z = 10.0, .d = 1.0 };
-    other_fn::nest_test(&d);
-    return Inline::new();
+    a := generic::<str>::Type{ .param = "hello" };
+    b := generic::<i32>::Type{ .param = 1000000 };
+    app::func(&a.param);
+    app::func(&"${b.param}");
+    return 10;
 }
 )";
     std::string source = R"(
