@@ -2,6 +2,7 @@
 #include <csignal>
 #include <overload_resolve.h>
 #include <set>
+#include <tree_cloner.h>
 #include <llvm/Support/Error.h>
 
 #include "ir_gen.h"
@@ -981,7 +982,8 @@ namespace Yoyo
         std::string old_name = std::move(fn->name);
         fn->name = name;
         auto old_sig = fn->signature; //signature will be modified during saturation
-        (*irgen)(static_cast<FunctionDeclaration*>(fn));
+        auto ptr = StatementTreeCloner{}(static_cast<FunctionDeclaration*>(fn));
+        (*irgen)(reinterpret_cast<FunctionDeclaration*>(ptr.get()));
         fn->signature = std::move(old_sig);
         fn->name = std::move(old_name);
         irgen->block_hash = std::move(old_hash);
