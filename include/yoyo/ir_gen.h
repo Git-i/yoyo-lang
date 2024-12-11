@@ -111,6 +111,7 @@ namespace Yoyo
         void error();
         std::string reset_hash();
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
+        static std::string mangleGenericArgs(std::span<const Type> list);
         void pushScope() {variables.emplace_back();}
         void popScope() {variables.pop_back();}
         std::optional<Type> inferReturnType(Statement* stat);
@@ -190,6 +191,7 @@ namespace Yoyo
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);
+        void generateGenericFunction(Module*, const std::string&,GenericFunctionDeclaration*, std::span<Type>);
         //the malloc and the size
         std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator

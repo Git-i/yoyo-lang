@@ -766,32 +766,13 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::operator()(GenericNameExpression* nm)
     {
-        if(irgen->module->generic_fns.contains(nm->text))
+        if(auto[hash, fn] = irgen->module->findGenericFn(irgen->block_hash, nm->text); fn)
         {
-            auto& fn = irgen->module->generic_fns.at(nm->text);
-            std::string mangled_name_suffix = nm->text + "__gscope@@" + nm->arguments[0].full_name();
-            for(auto& tp : std::ranges::subrange(nm->arguments.begin() + 1, nm->arguments.end()))
-                mangled_name_suffix += "@" + tp.full_name();
-            mangled_name_suffix += "@@__gscope";
-            auto mangled_name = irgen->module->module_hash + mangled_name_suffix;
-            auto fn_ptr = irgen->code->getFunction(mangled_name);
-            if(!fn_ptr)
-            {
-                irgen->aliases.emplace_back();
-                for(size_t i = 0; i < nm->arguments.size(); i++)
-                    irgen->aliases.back()[fn->clause.types[i]] = nm->arguments[i];
-                auto old_hash = irgen->reset_hash();
-                std::string old_name = std::move(fn->name);
-                fn->name = mangled_name_suffix;
-                auto old_sig = fn->signature; //signature will be modified during saturation
-                (*irgen)(static_cast<FunctionDeclaration*>(fn.get()));
-                fn->signature = std::move(old_sig);
-                fn->name = std::move(old_name);
-                irgen->block_hash = std::move(old_hash);
-                irgen->aliases.pop_back();
-                fn_ptr = irgen->code->getFunction(mangled_name);
-            }
-            return fn_ptr;
+            std::string mangled_name_suffix = nm->text + IRGenerator::mangleGenericArgs(nm->arguments);
+            //it has not already been instantiated
+            if(auto[name_prefx, ifn] = irgen->module->findFunction(irgen->block_hash, mangled_name_suffix); !ifn)
+                generateGenericFunction(irgen->module, hash + "__", fn, nm->arguments);
+            return irgen->code->getFunction(hash + "__" + mangled_name_suffix);
         }
     }
 
@@ -983,6 +964,30 @@ namespace Yoyo
 
 
         return return_val;
+    }
+
+    void ExpressionEvaluator::generateGenericFunction(Module* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
+    {
+        std::string name = fn->name + IRGenerator::mangleGenericArgs(types);
+        if(auto[_,exists] = mod->findFunction(hash, name); exists) return;
+        auto module = irgen->module;
+        irgen->module = mod;
+
+        irgen->aliases.emplace_back();
+        for(size_t i = 0; i < types.size(); i++)
+            irgen->aliases.back()[fn->clause.types[i]] = types[i];
+
+        auto old_hash = irgen->reset_hash();
+        irgen->block_hash = hash;
+        std::string old_name = std::move(fn->name);
+        fn->name = name;
+        auto old_sig = fn->signature; //signature will be modified during saturation
+        (*irgen)(static_cast<FunctionDeclaration*>(fn));
+        fn->signature = std::move(old_sig);
+        fn->name = std::move(old_name);
+        irgen->block_hash = std::move(old_hash);
+        irgen->aliases.pop_back();
+        irgen->module = module;
     }
 
     llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)

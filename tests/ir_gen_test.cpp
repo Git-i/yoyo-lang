@@ -24,6 +24,12 @@ TEST_CASE("Test IR")
 lol: module = MOO //The import system is not too strong rn
 app: module = APP
 
+Vec2: struct = {
+    x: f32, y: f32,
+    new: fn -> Vec2 = return Vec2 { .x = 10, .y = 20 };
+}
+operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{.x=lhs.x+rhs.x,.y=lhs.y+rhs.y};
+generic_add: fn::<T>(a: T, b: T) -> T = return a + b;
 
 other_fn: fn = {
     Inline: struct = {
@@ -33,6 +39,7 @@ other_fn: fn = {
     nest_test: fn (a: &Inline) = app::func(&"${a.z} ${a.d}");
 }
 takes_foo: fn -> f64 = {
+    generic_add::<Vec2>(Vec2::new(), Vec2::new());
     Inline: struct = {
         x: i32,
         y: i32,

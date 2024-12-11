@@ -406,7 +406,7 @@ namespace Yoyo
 
     std::string Type::full_name() const
     {
-        std::string final = (module ? module->module_hash : "") + name;
+        std::string final = block_hash + name;
         if(!subtypes.empty())
         {
             final += "@@__sub_begin@@";

@@ -266,9 +266,8 @@ namespace Yoyo
     std::optional<FunctionType> ExpressionTypeChecker::operator()(GenericNameExpression* expr)
     {
         // todo: inline generic functions (probably disallow those)
-        if(irgen->module->generic_fns.contains(expr->text))
+        if(auto[hash, decl] = irgen->module->findGenericFn(irgen->block_hash, expr->text); decl)
         {
-            auto& decl = irgen->module->generic_fns.at(expr->text);
             if(expr->arguments.size() != decl->clause.types.size()) return std::nullopt;
             FunctionSignature new_sig = decl->signature;
             for(size_t i = 0; i < decl->clause.types.size(); ++i)

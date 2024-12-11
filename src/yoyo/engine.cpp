@@ -24,7 +24,7 @@ namespace Yoyo
         bool operator()(GenericFunctionDeclaration* decl) const
         {
             std::ignore = stmt.release();
-            md->generic_fns[decl->name] = std::unique_ptr<GenericFunctionDeclaration>{decl};
+            md->generic_fns[md->module_hash].emplace_back(decl);
             return true;
         }
         bool operator()(ClassDeclaration* decl) const

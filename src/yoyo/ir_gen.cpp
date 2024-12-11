@@ -516,6 +516,16 @@ namespace Yoyo
         }
         return reinterpret_cast<FunctionDeclaration*>(parent);
     }
+
+    std::string IRGenerator::mangleGenericArgs(std::span<const Type> list)
+    {
+        std::string final = "@@__gscope_beg@@" + list[0].full_name();
+        for(auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
+            final += "@@" + tp.full_name();
+        final += "@@__gscope_end@@";
+        return final;
+    }
+
     void IRGenerator::operator()(ReturnStatement* stat)
     {
         if(stat->expression)

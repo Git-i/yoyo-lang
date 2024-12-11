@@ -27,6 +27,18 @@ namespace Yoyo
         return {"", nullptr};
     }
 
+    std::pair<std::string, GenericFunctionDeclaration*> Module::findGenericFn(const std::string& block,
+        const std::string& name)
+    {
+        for(auto&[hash, details_list] : generic_fns)
+        {
+            if(!block.starts_with(hash)) continue;
+            for(auto& details : details_list)
+                if(details->name == name) return {hash, details.get()};
+        }
+        return {"", nullptr};
+    }
+
     Module::ClassDetails* Module::findType(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : classes)
