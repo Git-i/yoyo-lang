@@ -45,8 +45,7 @@ namespace Yoyo
             .result = decl->signature.returnType};
         std::string old_hash = irgen->reset_hash();
         std::string name = bin.mangled_name(decl->tok);
-        Token tk{.text = name};
-        FunctionDeclaration fn_decl(tk, std::move(decl->signature), std::move(decl->body));
+        FunctionDeclaration fn_decl(name, std::move(decl->signature), std::move(decl->body));
         (*irgen)(&fn_decl);
         irgen->block_hash = std::move(old_hash);
         //remove the module hash infront of the final name

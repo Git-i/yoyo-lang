@@ -247,6 +247,11 @@ namespace Yoyo
                     decl = std::get<2>(*dets).get();
                     continue;
                 }
+                if(auto [name, fn] = md->findFunction(hash, type.name); fn)
+                {
+                    hash = name;
+                    continue;
+                }
                 if(irgen) irgen->error();
             }
             name = it.last().name;

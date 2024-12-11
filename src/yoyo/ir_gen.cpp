@@ -132,7 +132,7 @@ namespace Yoyo
         auto old_ret_block = returnBlock;
 
         if(builder->GetInsertBlock()) oldBuilder = std::make_unique<llvm::IRBuilder<>>(builder->GetInsertBlock(), builder->GetInsertPoint());
-        auto name = block_hash + std::string{decl->identifier.text};
+        auto name = block_hash + decl->name;
         llvm::Function* func = nullptr;
         bool uses_sret;
 
@@ -151,6 +151,7 @@ namespace Yoyo
             uses_sret = decl->signature.returnType.should_sret();
             if(uses_sret)
                 func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
+            module->functions[block_hash].emplace_back(decl->name, decl->signature);
         }
 
         return_t = decl->signature.returnType;

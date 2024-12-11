@@ -33,10 +33,10 @@ namespace Yoyo
         llvm::LLVMContext& ctx = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
         auto llvm_sig = toLLVMSignature(sig, this);
 
-        if(functions.contains(name)) return; //TODO: fail on this?
+
         bool uses_sret = sig.returnType.should_sret();
-        functions[name] = std::move(sig);
         std::string mangled_name = module_hash + name;
+        functions[module_hash].emplace_back(name, std::move(sig));
 
         auto fn = llvm::Function::Create(llvm_sig, llvm::GlobalValue::ExternalLinkage, mangled_name, code.get());
         if(uses_sret)

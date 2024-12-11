@@ -117,15 +117,12 @@ namespace Yoyo
     {
         if(typ.is_unsigned_integral()) return std::nullopt;
         if(typ.is_signed_integral() || typ.is_floating_point()) return typ.strip_lvalue();
-        if(auto fn = mod->findFunction("__op_unary_negate__" + typ.name))
-            return fn->returnType;
+
         return std::nullopt;
     }
     static std::optional<Type> unaryNotResult(Module* module, const Type& type)
     {
         if(type.is_boolean()) return type;
-        if(auto fn = module->findFunction("__op_unary_not__" + type.name))
-            return fn->returnType;
         return std::nullopt;
     }
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ArrayLiteral* lit)
@@ -252,10 +249,10 @@ namespace Yoyo
                 return type;
             }
         }
-        if(auto fn = irgen->module->findFunction(irgen->module->module_hash + name))
+        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->module->module_hash, name); fn)
         {
-            irgen->saturateSignature(*fn, irgen->module);
-            return FunctionType{*fn, false};
+            irgen->saturateSignature(fn->sig, irgen->module);
+            return FunctionType{fn->sig, false};
         }
         return std::nullopt;
     }
@@ -325,6 +322,11 @@ namespace Yoyo
                 det = dets;
                 continue;
             }
+            if(auto [name,fn] = md->findFunction(hash, type.name); fn)
+            {
+                hash = name;
+                continue;
+            }
             return std::nullopt;
         }
         auto last = iterator.last();
@@ -345,10 +347,10 @@ namespace Yoyo
             }
             return std::nullopt;
         }
-        if(md->functions.contains(last.name))
+        if(auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
-            irgen->saturateSignature(md->functions.at(last.name), md);
-            auto t = FunctionType{md->functions.at(last.name), false};
+            irgen->saturateSignature(fn->sig, md);
+            auto t = FunctionType{fn->sig, false};
             t.block_hash = hash;
             t.module = md;
             return t;
@@ -433,34 +435,6 @@ namespace Yoyo
         return std::visit(*this, expr->expr->toVariant());
     }
 
-    std::optional<FunctionType> ExpressionTypeChecker::checkNameWithinClassOrModule(Module* module, ClassDeclaration* type,
-        std::string_view name)
-    {
-        if(type)
-        {
-            for(auto& method : type->methods)
-            {
-                if(method.name == name)
-                {
-                    auto decl = reinterpret_cast<FunctionDeclaration*>(method.function_decl.get());
-                    irgen->saturateSignature(decl->signature, module);
-                    auto ret_val = FunctionType{decl->signature, false};
-                    ret_val.module = module;
-                    return std::move(ret_val);
-                }
-            }
-            return std::nullopt;
-        }
-        if(auto fn = module->findFunction(module->module_hash + std::string{name}))
-        {
-            //it should already be saturated at this point
-            irgen->saturateSignature(*fn, module);
-            auto ret_val = FunctionType{*fn, false};
-            ret_val.module = module;
-            return std::move(ret_val);
-        }
-        return std::nullopt;
-    }
 
     bool ExpressionTypeChecker::hasToStr(const Type& t)
     {

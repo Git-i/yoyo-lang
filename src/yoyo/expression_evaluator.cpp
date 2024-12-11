@@ -754,23 +754,12 @@ namespace Yoyo
                 return var->second.first;
             }
         }
-        auto mangled_name = irgen->module->module_hash + name;
-        if(irgen->module->functions.contains(mangled_name))
+        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, name); fn)
         {
-            auto fn = irgen->code->getFunction(mangled_name);
-            if(!fn)
-            {
-                auto& fn_sig = irgen->module->functions.at(mangled_name);
-                irgen->saturateSignature(fn_sig, irgen->module);
-                fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
-                    irgen->code);
-                if(fn_sig.returnType.should_sret())
-                {
-                    const auto return_as_llvm = irgen->ToLLVMType(fn_sig.returnType, false);
-                    fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
-                }
-            }
-            return fn;
+            auto llvm_fn = irgen->code->getFunction(name_prefix + name);
+            if(!llvm_fn)
+                llvm_fn = declareFunction(name_prefix + name, irgen, fn->sig);
+            return llvm_fn;
         }
         return nullptr;
     }
@@ -792,12 +781,12 @@ namespace Yoyo
                 for(size_t i = 0; i < nm->arguments.size(); i++)
                     irgen->aliases.back()[fn->clause.types[i]] = nm->arguments[i];
                 auto old_hash = irgen->reset_hash();
-                std::string_view old_name = fn->identifier.text;
-                fn->identifier.text = mangled_name_suffix;
+                std::string old_name = std::move(fn->name);
+                fn->name = mangled_name_suffix;
                 auto old_sig = fn->signature; //signature will be modified during saturation
                 (*irgen)(static_cast<FunctionDeclaration*>(fn.get()));
                 fn->signature = std::move(old_sig);
-                fn->identifier.text = old_name;
+                fn->name = std::move(old_name);
                 irgen->block_hash = std::move(old_hash);
                 irgen->aliases.pop_back();
                 fn_ptr = irgen->code->getFunction(mangled_name);
@@ -1112,7 +1101,7 @@ namespace Yoyo
         FunctionSignature sig = expr->sig;
         //insert a pointer to the context at the end of the signature
         sig.parameters.push_back(FunctionParameter{.type = Type{name}});
-        FunctionDeclaration decl(tk,std::move(sig), std::move(expr->body));
+        FunctionDeclaration decl(std::string{tk.text},std::move(sig), std::move(expr->body));
         (*irgen)(&decl);
         return ctx_object;
     }

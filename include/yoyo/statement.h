@@ -88,10 +88,10 @@ namespace Yoyo
     {
     public:
         FunctionSignature signature;
-        Token identifier;
+        std::string name;
         std::unique_ptr<Statement> body;
-        FunctionDeclaration(Token ident, FunctionSignature sig, std::unique_ptr<Statement> body)
-            : signature(std::move(sig)), identifier(ident), body(std::move(body)) {}
+        FunctionDeclaration(std::string name, FunctionSignature sig, std::unique_ptr<Statement> body)
+            : signature(std::move(sig)), name(std::move(name)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
     class GenericFunctionDeclaration: public FunctionDeclaration

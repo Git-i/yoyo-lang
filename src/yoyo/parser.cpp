@@ -215,9 +215,9 @@ namespace Yoyo
         std::unique_ptr<Statement> fn_decl;
         if(gclause)
             fn_decl = std::make_unique<GenericFunctionDeclaration>(*std::move(gclause),
-                FunctionDeclaration(identifier, *std::move(sig), std::move(stat)));
+                FunctionDeclaration(std::string{identifier.text}, *std::move(sig), std::move(stat)));
         else
-            fn_decl = std::make_unique<FunctionDeclaration>(identifier, *std::move(sig), std::move(stat));
+            fn_decl = std::make_unique<FunctionDeclaration>(std::string{identifier.text}, *std::move(sig), std::move(stat));
         stat_ptr->parent = fn_decl.get();
         return Statement::attachSLAndParent(std::move(fn_decl), identifier.loc, stat_ptr->end, parent);
     }

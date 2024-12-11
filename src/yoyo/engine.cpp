@@ -18,15 +18,13 @@ namespace Yoyo
         std::unique_ptr<Statement>& stmt;
         bool operator()(FunctionDeclaration* decl) const
         {
-            std::string mangled_name = md->module_hash + std::string{decl->identifier.text};
-            if(md->functions.contains(mangled_name)) return false;
-            md->functions[mangled_name] = decl->signature;
+            md->functions[md->module_hash].emplace_back(decl->name, decl->signature);
             return true;
         }
         bool operator()(GenericFunctionDeclaration* decl) const
         {
             std::ignore = stmt.release();
-            md->generic_fns[std::string{decl->identifier.text}] = std::unique_ptr<GenericFunctionDeclaration>{decl};
+            md->generic_fns[decl->name] = std::unique_ptr<GenericFunctionDeclaration>{decl};
             return true;
         }
         bool operator()(ClassDeclaration* decl) const
@@ -38,9 +36,7 @@ namespace Yoyo
             for(auto& fn : decl->methods)
             {
                 auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
-                auto mangled_name = mangled_name_prefix + fn.name;
-                if(md->functions.contains(mangled_name)) return false;
-                md->functions[mangled_name] = fn_decl->signature;
+                md->functions[mangled_name_prefix].emplace_back(fn_decl->name, fn_decl->signature);
             }
             md->classes[md->module_hash].emplace_back(
                 mangled_name_prefix,

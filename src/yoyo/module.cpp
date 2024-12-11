@@ -16,13 +16,15 @@ namespace Yoyo
         bool operator()(ClassDeclaration* decl);
         bool operator()(Statement*);
     };
-    FunctionSignature* Module::findFunction(const std::string& name)
+    std::pair<std::string, Module::FunctionDetails*> Module::findFunction(const std::string& block, const std::string& name)
     {
-        if(auto fn = functions.find(name); fn != functions.end())
+        for(auto&[hash, details_list] : functions)
         {
-            return &fn->second;
+            if(!block.starts_with(hash)) continue;
+            for(auto& details : details_list)
+                if(details.name == name) return {hash, &details};
         }
-        return nullptr;
+        return {"", nullptr};
     }
 
     Module::ClassDetails* Module::findType(const std::string& block, const std::string& name)
