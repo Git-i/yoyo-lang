@@ -71,6 +71,14 @@ namespace Yoyo
             others->name = original_type.full_name() + "::" + others->name;
             original_type = std::move(others).value();
         }
+        auto curly = parser.Peek();
+        if(curly && curly->type == TokenType::LCurly)
+        {
+            auto body = parser.parseObjectLiteral();
+            return Expression::attachSLAndParent(
+                std::make_unique<ObjectLiteral>(std::move(original_type), std::move(body)), tk.loc,
+                parser.discardLocation, parser.parent);
+        }
         return std::make_unique<ScopeOperation>(std::move(original_type));
     }
 }

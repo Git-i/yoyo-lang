@@ -24,27 +24,23 @@ TEST_CASE("Test IR")
 lol: module = MOO //The import system is not too strong rn
 app: module = APP
 
-Vec2: struct = {
-    x: f32, y: f32,
-    new: fn -> Vec2 = return Vec2::new_with_vals(0,0);
-    new_with_vals: fn (x: f32, y: f32) -> Vec2 = return Vec2{ .x = x, .y = y };
+
+other_fn: fn = {
+    Inline: struct = {
+        z: f32,
+        d: f32
+    }
+    nest_test: fn (a: &Inline) = app::func(&"${a.z} ${a.d}");
 }
-operator: +(lhs: Vec2, rhs: Vec2) -> Vec2 = return Vec2{ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y };
-operator: +(lhs: Vec2, rhs: i32?) -> i32 = return 0;
-generic_add: fn::<T>(a: T, b: T) -> T = return a + b;
-print_vec: fn(v: &Vec2) = "${v.x}, ${v.y}".app::func();
-print_int: fn(i: i32) = "${i}".app::func();
 takes_foo: fn -> f64 = {
-    a := Vec2::new_with_vals(10, 20);
-    b := Vec2::new_with_vals(3, 9);
     Inline: struct = {
         x: i32,
         y: i32,
         new: fn -> f64 = return 50;
     }
     c := Inline{.x = 10, .y = 3};
-    generic_add::<Vec2>(a, b).print_vec();
-    generic_add::<i32>(0, 10).print_int();
+    d := other_fn::Inline{ .z = 10.0, .d = 1.0 };
+    other_fn::nest_test(&d);
     return Inline::new();
 }
 )";

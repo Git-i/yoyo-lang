@@ -249,7 +249,7 @@ namespace Yoyo
                 }
                 if(auto [name, fn] = md->findFunction(hash, type.name); fn)
                 {
-                    hash = name;
+                    hash = name + type.name + "__";
                     continue;
                 }
                 if(irgen) irgen->error();
