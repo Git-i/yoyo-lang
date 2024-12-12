@@ -248,9 +248,8 @@ namespace Yoyo
         auto ptr = current_Statement->release();
         assert(ptr == decl);
         std::string class_hash = block_hash + "__class__" + name + "__";
-        auto vars = decl->vars;
-        for(auto& var : vars) var.type.saturate(module, this);
-        module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
+        for(auto& var : decl->vars) var.type.saturate(module, this);
+        module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl->vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
 
         for(auto& fn: decl->methods)
         {

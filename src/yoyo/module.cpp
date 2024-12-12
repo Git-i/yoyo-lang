@@ -100,7 +100,7 @@ namespace Yoyo
             std::vector<llvm::Type*> args;
             for(auto& subtype : type.subtypes)
             {
-                auto ty = ToLLVMType(subtype, hash, disallowed_types);
+                auto ty = subtype.module->ToLLVMType(subtype, hash, disallowed_types);
                 if(!ty) return nullptr;
                 args.push_back(ty);
             }
@@ -109,7 +109,7 @@ namespace Yoyo
         if(type.is_optional())
         {
             std::array<llvm::Type*, 2> args{};
-            args[0] = ToLLVMType(type.subtypes[0], hash, disallowed_types);
+            args[0] = type.subtypes[0].module->ToLLVMType(type.subtypes[0], hash, disallowed_types);
             args[1] = llvm::Type::getInt1Ty(context);
             return llvm::StructType::get(context, args);
         }
@@ -127,7 +127,7 @@ namespace Yoyo
             auto& layout = code->getDataLayout();
             for(auto& subtype : type.subtypes)
             {
-                auto sub_t = ToLLVMType(subtype, hash, disallowed_types);
+                auto sub_t = subtype.module->ToLLVMType(subtype, hash, disallowed_types);
                 auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
                 size_t sz = 0;
                 if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;

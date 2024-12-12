@@ -120,6 +120,7 @@ namespace Yoyo
         case TokenType::Enum: return parseEnumDeclaration(iden.value());
         case TokenType::EnumFlag:;//TODO
         case TokenType::Union:;//TODO
+        case TokenType::Alias: return parseAliasDeclaration(iden.value());
         case TokenType::Module: return parseModuleImport(iden.value());
 
         default: return parseVariableDeclaration(iden.value());
@@ -567,6 +568,22 @@ namespace Yoyo
             discardLocation, parent
         );
     }
+
+    std::unique_ptr<Statement> Parser::parseAliasDeclaration(Token identifier)
+    {
+        Get(); // skip the `alias`
+        auto next_tok = Peek();
+        std::optional<GenericClause> clause;
+        if(!next_tok) { error("Unexpected EOF", next_tok); return nullptr; }
+        if(next_tok->type == TokenType::TemplateOpen) clause = parseGenericClause();
+        if(!discard(TokenType::Equal)) error("Expected '='", Peek());
+        Type tp = parseType(0).value_or(Type{});
+        if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
+        return Statement::attachSLAndParent(clause ? std::make_unique<GenericAliasDeclaration>(std::move(tp), *std::move(clause))
+            : std::make_unique<AliasDeclaration>(std::move(tp)), identifier.loc, discardLocation, parent
+            );
+    }
+
     //For this fn, the type has already been discarded
     /// Syntax:
     /// {.name1 = value1, .name2 = value2}

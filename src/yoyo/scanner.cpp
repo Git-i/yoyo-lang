@@ -34,6 +34,7 @@ namespace Yoyo {
         {"with", TokenType::With},
         {"as", TokenType::As},
         {"fn", TokenType::Fn},
+        {"alias", TokenType::Alias},
     })
     {
 

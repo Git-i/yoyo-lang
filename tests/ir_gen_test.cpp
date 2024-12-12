@@ -20,36 +20,29 @@ int32_t func(void* arg)
 }
 TEST_CASE("Test IR")
 {
-    std::string src2 = R"(
-lol: module = MOO //The import system is not too strong rn
+    std::string src2 = 1 + R"(
 app: module = APP
+
+Vec2: struct = {
+    x: i32,
+    y: i32
+}
 
 generic: fn::<T> = {
     Type: struct = {
         param: T
     }
 }
+Type: alias::<T> = generic::<T>::Type;
+Int: alias = i32;
 
 takes_foo: fn -> f64 = {
-    a := generic::<str>::Type{ .param = "hello" };
-    b := generic::<i32>::Type{ .param = 1000000 };
-    app::func(&a.param);
+    a := Type::<Vec2?>{ .param = Vec2{ .x = 1, .y = 1 } };
+    b := Type::<Int>{ .param = 1000000 };
+    if |vec| (a.param) app::func(&"${vec.x} ${vec.y}");
+    else app::func(&"null");
     app::func(&"${b.param}");
     return 10;
-}
-)";
-    std::string source = R"(
-test_impl_conv: fn(a: i64) -> (i64, f64) = return (a, 10);
-foo: class = {
-    x: bar
-}
-bar: class = {
-    y: f64
-}
-returns_foo: fn -> foo = {
-    a: mut foo;
-    a.x.y = 300.0;
-    return a;
 }
 )";
     int argc = 1;
@@ -59,7 +52,6 @@ returns_foo: fn -> foo = {
     Yoyo::Engine engine;
     md = engine.addAppModule("APP");
     md->addFunction("(x: &str) -> i32", reinterpret_cast<void*>(&func), "func");
-    engine.addModule("MOO", source);
     engine.addModule("MOO2", src2);
     engine.compile();
 
@@ -78,11 +70,6 @@ returns_foo: fn -> foo = {
     llvm::InitLLVM llvm(argc, lol);
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-
-
-    Yoyo::Parser p1(std::move(source));
-    auto decl = p1.parseProgram();
-    REQUIRE(!p1.failed());
 
     llvm::ExitOnError ExitOnErr;
     auto j = ExitOnErr(llvm::orc::LLJITBuilder().create());
@@ -112,7 +99,7 @@ void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo:
     prepared.insert(node);
     for(auto child: node->children)
     {
-        agedge(graph, nodes[node], nodes[child], nullptr, TRUE);
+        agedge(graph, nodes[node], nodes[child], nullptr, true);
         prepare_edge(child, graph, nodes, prepared);
     }
 };

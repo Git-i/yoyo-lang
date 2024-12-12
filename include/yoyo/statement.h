@@ -1,6 +1,7 @@
 #pragma once
 #include "ast_node.h"
 #include <func_sig.h>
+#include <utility>
 #include <variant>
 
 #include "type.h"
@@ -72,6 +73,21 @@ namespace Yoyo
         ModuleImport(std::string name, std::string path) : module_name(std::move(name)),
             module_path(std::move(path)) {};
         StatementVariant toVariant() override;
+    };
+    class AliasDeclaration: public Statement
+    {
+    public:
+        Type type;
+        explicit AliasDeclaration(Type t) : type(std::move(t)) {};
+        StatementVariant toVariant() override { return {}; };
+    };
+    class GenericAliasDeclaration: public AliasDeclaration
+    {
+    public:
+        GenericClause clause;
+        explicit GenericAliasDeclaration(Type t, GenericClause gc) : AliasDeclaration(std::move(t)),
+            clause(std::move(gc)) {};
+        StatementVariant toVariant() override { return {}; };
     };
     class VariableDeclaration : public Statement
     {
