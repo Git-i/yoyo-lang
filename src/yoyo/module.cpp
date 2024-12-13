@@ -49,6 +49,18 @@ namespace Yoyo
         return nullptr;
     }
 
+    std::pair<std::string, GenericAliasDeclaration*> Module::findGenericAlias(const std::string& block, const std::string& name)
+    {
+        for(auto&[hash, details_list] : generic_aliases)
+        {
+            if(!block.starts_with(hash)) continue;
+            auto it = std::ranges::find_if(details_list, [&name](auto& details) { return details->name == name;});
+            if(it == details_list.end()) return {"", nullptr};
+            return {hash, it->get()};
+        }
+        return {"",nullptr};
+    }
+
     Module::ClassDetails* Module::findType(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : classes)

@@ -27,6 +27,8 @@ namespace Yoyo
     class WithStatement;
     class OperatorOverload;
     class GenericFunctionDeclaration;
+    class AliasDeclaration;
+    class GenericAliasDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -42,7 +44,9 @@ namespace Yoyo
         ConditionalExtraction*,
         OperatorOverload*,
         WithStatement*,
-        GenericFunctionDeclaration*> StatementVariant;
+        GenericFunctionDeclaration*,
+        GenericAliasDeclaration*,
+        AliasDeclaration*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     class Statement : public ASTNode
     {
@@ -78,16 +82,18 @@ namespace Yoyo
     {
     public:
         Type type;
-        explicit AliasDeclaration(Type t) : type(std::move(t)) {};
-        StatementVariant toVariant() override { return {}; };
+        std::string name;
+        AliasDeclaration(std::string name, Type t) : type(std::move(t)), name(std::move(name)) {};
+        StatementVariant toVariant() override;
     };
     class GenericAliasDeclaration: public AliasDeclaration
     {
     public:
         GenericClause clause;
-        explicit GenericAliasDeclaration(Type t, GenericClause gc) : AliasDeclaration(std::move(t)),
+        explicit GenericAliasDeclaration(std::string name, Type t, GenericClause gc)
+            : AliasDeclaration(std::move(name), std::move(t)),
             clause(std::move(gc)) {};
-        StatementVariant toVariant() override { return {}; };
+        StatementVariant toVariant() override;
     };
     class VariableDeclaration : public Statement
     {

@@ -60,6 +60,7 @@ namespace Yoyo
             }
             node = visistor.node;
         }
+        void operator()(AliasDeclaration*) const {}
         void operator()(ClassDeclaration* stat) const {}
         void operator()(ForStatement* stat){} //TODO
         void operator()(ModuleImport* stat) const {}

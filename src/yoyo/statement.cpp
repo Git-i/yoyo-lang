@@ -10,6 +10,16 @@ namespace Yoyo
         return this;
     }
 
+    StatementVariant AliasDeclaration::toVariant()
+    {
+        return this;
+    }
+
+    StatementVariant GenericAliasDeclaration::toVariant()
+    {
+        return this;
+    }
+
     StatementVariant VariableDeclaration::toVariant()
     {
         return this;

@@ -33,12 +33,12 @@ generic: fn::<T> = {
         param: T
     }
 }
-Type: alias::<T> = generic::<T>::Type;
+FnType: alias::<T> = generic::<T>::Type;
 Int: alias = i32;
 
 takes_foo: fn -> f64 = {
-    a := Type::<Vec2?>{ .param = Vec2{ .x = 1, .y = 1 } };
-    b := Type::<Int>{ .param = 1000000 };
+    a := FnType::<Vec2?>{ .param = Vec2{ .x = 1, .y = 1 } };
+    b := FnType::<Int>{ .param = 1000000 };
     if |vec| (a.param) app::func(&"${vec.x} ${vec.y}");
     else app::func(&"null");
     app::func(&"${b.param}");

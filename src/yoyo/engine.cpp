@@ -59,6 +59,17 @@ namespace Yoyo
             return true;
         }
         bool operator()(OperatorOverload*) {return true;}
+        bool operator()(AliasDeclaration* decl)
+        {
+            md->aliases[md->module_hash].emplace(decl->name, decl->type);
+            return true;
+        }
+        bool operator()(GenericAliasDeclaration* decl)
+        {
+            std::ignore = stmt.release();
+            md->generic_aliases[md->module_hash].emplace_back(decl);
+            return true;
+        }
         bool operator()(Statement*) const {return false;};
     };
     struct ForwardDeclaratorPass2
@@ -123,6 +134,7 @@ namespace Yoyo
 
     bool ForwardDeclaratorPass2::operator()(Statement*)
     { return true; }
+
 
     Engine::Engine()
     {

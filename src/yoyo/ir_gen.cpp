@@ -496,6 +496,20 @@ namespace Yoyo
         raise(SIGTRAP);
     }
 
+    void IRGenerator::operator()(AliasDeclaration* decl)
+    {
+        auto hash = block_hash;
+        block_hash += decl->name + "__"; //in the case of generics
+        decl->type.saturate(module, this);
+        block_hash = std::move(hash);
+        module->aliases[block_hash].emplace(decl->name, decl->type);
+    }
+
+    void IRGenerator::operator()(GenericAliasDeclaration*)
+    {
+        raise(SIGTRAP);
+    }
+
     void IRGenerator::error()
     {
         raise(SIGTRAP);

@@ -224,6 +224,16 @@ namespace Yoyo
             FunctionDeclaration(decl->name, decl->signature, copy_stat(decl->body)));
     }
 
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericAliasDeclaration* decl)
+    {
+        return std::make_unique<GenericAliasDeclaration>(decl->name, decl->type, decl->clause);
+    }
+
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(AliasDeclaration* decl)
+    {
+        return std::make_unique<AliasDeclaration>(decl->name, decl->type);
+    }
+
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)
     {
         return std::visit(*this, s->toVariant());

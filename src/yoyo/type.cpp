@@ -245,8 +245,11 @@ namespace Yoyo
             alias_list = &md->aliases;
         }
         if(auto alias = module->findAlias(block_hash, name))
-        {
             *this = *alias;
+        else if(auto [blk, alias] = module->findGenericAlias(block_hash, name); alias)
+        {
+            ExpressionEvaluator{irgen}.generateGenericAlias(module, blk, alias, subtypes);
+            *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
         }
         for(auto& sub: subtypes) sub.saturate(src, irgen);
     }

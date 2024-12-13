@@ -579,8 +579,9 @@ namespace Yoyo
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         Type tp = parseType(0).value_or(Type{});
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
-        return Statement::attachSLAndParent(clause ? std::make_unique<GenericAliasDeclaration>(std::move(tp), *std::move(clause))
-            : std::make_unique<AliasDeclaration>(std::move(tp)), identifier.loc, discardLocation, parent
+        return Statement::attachSLAndParent(clause ?
+            std::make_unique<GenericAliasDeclaration>(std::string(identifier.text), std::move(tp), *std::move(clause))
+            : std::make_unique<AliasDeclaration>(std::string(identifier.text), std::move(tp)), identifier.loc, discardLocation, parent
             );
     }
 

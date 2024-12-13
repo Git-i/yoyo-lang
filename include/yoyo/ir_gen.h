@@ -106,6 +106,8 @@ namespace Yoyo
         void operator()(WithStatement*);
         void operator()(OperatorOverload*);
         void operator()(GenericFunctionDeclaration*);
+        void operator()(AliasDeclaration*);
+        void operator()(GenericAliasDeclaration*);
 
         void error();
         std::string reset_hash();
@@ -191,6 +193,7 @@ namespace Yoyo
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);
         void generateGenericFunction(Module*, const std::string&,GenericFunctionDeclaration*, std::span<Type>);
+        void generateGenericAlias(Module*, const std::string&,GenericAliasDeclaration*, std::span<Type>);
         //the malloc and the size
         std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator

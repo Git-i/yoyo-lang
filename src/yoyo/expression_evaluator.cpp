@@ -969,6 +969,7 @@ namespace Yoyo
 
     void ExpressionEvaluator::generateGenericFunction(Module* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
     {
+        for(auto& type: types) type.saturate(mod, irgen);
         std::string name = fn->name + IRGenerator::mangleGenericArgs(types);
         if(auto[_,exists] = mod->findFunction(hash, name); exists) return;
         auto module = irgen->module;
@@ -986,6 +987,26 @@ namespace Yoyo
         (*irgen)(reinterpret_cast<FunctionDeclaration*>(ptr.get()));
         fn->signature = std::move(old_sig);
         fn->name = std::move(old_name);
+        irgen->block_hash = std::move(old_hash);
+        irgen->module = module;
+    }
+
+    void ExpressionEvaluator::generateGenericAlias(Module* mod, const std::string& block, GenericAliasDeclaration* decl,
+        std::span<Type> types)
+    {
+        for(auto& type: types) type.saturate(mod, irgen);
+        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
+        if(auto exists = mod->findAlias(block, name)) return;
+        auto old_hash = std::move(irgen->block_hash);
+        irgen->block_hash = block;
+        auto module = irgen->module;
+        irgen->module = mod;
+        for(size_t i = 0; i < types.size(); i++)
+            irgen->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
+        auto new_statement = StatementTreeCloner{}(static_cast<AliasDeclaration*>(decl));
+        auto alias = reinterpret_cast<AliasDeclaration*>(new_statement.get());
+        alias->name = name;
+        (*irgen)(alias);
         irgen->block_hash = std::move(old_hash);
         irgen->module = module;
     }
