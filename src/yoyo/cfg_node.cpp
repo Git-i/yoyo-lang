@@ -54,6 +54,7 @@ namespace Yoyo
             std::visit(while_prep, stat->body->toVariant());
             if(while_prep.node != exit) while_prep.node->addChild(cond);
             if(while_prep.node == exit) node = exit;
+            else node = cond;
         }
         void operator()(BlockStatement* stat)
         {
@@ -350,7 +351,6 @@ namespace Yoyo
             for(size_t i = 0; i < detail.size(); i++)
             {
                 auto& ls = detail[i];
-                if(ls.first == node) continue;
                 //if there is a straight path between ls and any of the nodes ls is not a last use
                 auto child = ls.first;
                 while(child->children.size() == 1)

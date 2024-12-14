@@ -68,7 +68,7 @@ TEST_CASE("Test IR")
     auto addr = j->lookup(unmangled_name).get();
     double(*fn)() = addr.toPtr<double()>();
     auto res = fn();
-    std::cout << res;
+    std::cout << res << std::endl;
     REQUIRE(res == 10.0);
 }
 
@@ -128,10 +128,17 @@ TEST_CASE("Test CFG")
             while (a > 10) {
                 a += 2;
                 if(true) {
-                    return 0;
+                    return a;
                 } else {
                     a = 10;
                 }
+            }
+            if (a) {
+                b := 10;
+            } else {
+                b := 20;
+                if(b) return a;
+                else return b;
             }
         }
     )");
