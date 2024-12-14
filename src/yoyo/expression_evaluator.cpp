@@ -9,6 +9,19 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    llvm::Function* declareFunction(const std::string& mangled_name, IRGenerator* irgen, FunctionSignature& fn_sig)
+    {
+        llvm::Function* fn = nullptr;
+        irgen->saturateSignature(fn_sig, irgen->module);
+        fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
+            irgen->code);
+        if(fn_sig.returnType.should_sret())
+        {
+            const auto return_as_llvm = irgen->ToLLVMType(fn_sig.returnType, false);
+            fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
+        }
+        return fn;
+    }
     int64_t getIntMinOf(const Type& type)
     {
         if(type.is_signed_integral())
@@ -233,6 +246,14 @@ namespace Yoyo
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
         return implicitConvert(rhs, right_type, left_type, lhs);
     }
+    bool isValidCloneMethod(const Type& tp, const FunctionSignature& sig)
+    {
+        if(sig.parameters.size() != 1) return false;
+        if(sig.parameters[0].type.name != "__ref") return false;
+        if(!sig.parameters[0].type.subtypes[0].is_equal(tp)) return false;
+        if(!sig.returnType.is_equal(tp)) return false;
+        return true;
+    }
     /// user defined types can create a @c clone function.\n
     /// The @c clone function's signature looks like @code clone: (&this) -> This @endcode \n
     /// Without it the type is cannot be copied
@@ -327,37 +348,43 @@ namespace Yoyo
         {
             irgen->builder->CreateStore(value, into);
         }
-        //class types
-        else if(auto decl = left_type.get_decl_if_class(irgen))
+        //class types can define custom clone
+        else if(auto decl_tup = left_type.module->findType(left_type.block_hash, left_type.name))
         {
-            as_llvm = irgen->ToLLVMType(left_type, false);
-            //TODO: check for overrides for this method
-            size_t idx = 0;
-            for(auto& var : decl->vars)
+            auto decl = std::get<2>(*decl_tup).get();
+            auto candidate = std::ranges::find_if(decl->methods, [](auto& meth)
             {
-                auto sub_val_ptr = irgen->builder->CreateStructGEP(as_llvm, value, idx);
-                auto sub_into_ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
-                if(!var.type.should_sret())
-                    sub_val_ptr = irgen->builder->CreateLoad(irgen->ToLLVMType(var.type, false), sub_val_ptr);
-                clone(sub_val_ptr, var.type, sub_into_ptr);
-                idx++;
+                return meth.name == "clone";
+            });
+            if(candidate != decl->methods.end() &&
+                isValidCloneMethod(left_type,
+                    reinterpret_cast<FunctionDeclaration*>(candidate->function_decl.get())->signature))
+            {
+                auto& sig = reinterpret_cast<FunctionDeclaration*>(candidate->function_decl.get())->signature;
+                std::string fn_name = std::get<0>(*decl_tup) + "clone";
+                auto fn = irgen->code->getFunction(fn_name);
+                if(!fn) fn = declareFunction(fn_name, irgen, sig);
+                irgen->builder->CreateCall(fn, {into, value});
             }
+            else
+            {
+                //if no custom clone is provided, use memberwise cloning
+                size_t idx = 0;
+                for(auto& var : decl->vars)
+                {
+                    auto sub_val_ptr = irgen->builder->CreateStructGEP(as_llvm, value, idx);
+                    auto sub_into_ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
+                    if(!var.type.should_sret())
+                        sub_val_ptr = irgen->builder->CreateLoad(irgen->ToLLVMType(var.type, false), sub_val_ptr);
+                    clone(sub_val_ptr, var.type, sub_into_ptr);
+                    idx++;
+                }
+            }
+
         }
         return into;
     }
-    llvm::Function* declareFunction(const std::string& mangled_name, IRGenerator* irgen, FunctionSignature& fn_sig)
-    {
-        llvm::Function* fn = nullptr;
-        irgen->saturateSignature(fn_sig, irgen->module);
-        fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
-            irgen->code);
-        if(fn_sig.returnType.should_sret())
-        {
-            const auto return_as_llvm = irgen->ToLLVMType(fn_sig.returnType, false);
-            fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
-        }
-        return fn;
-    }
+
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
         if(left_type.deref().is_tuple())
