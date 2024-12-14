@@ -1,5 +1,6 @@
 #include <codecvt>
 #include <csignal>
+#include <fstream>
 #include <iostream>
 #include <ir_gen.h>
 #include <parser.h>
@@ -20,24 +21,10 @@ int32_t func(void* arg)
 }
 TEST_CASE("Test IR")
 {
-    std::string src2 = 1 + R"(
-app: module = APP
-
-Vec2: struct = {
-    x: i32, y: i32,
-    clone: fn (&this) -> This = {
-        app::func(&"custom clone");
-        return Vec2{ .x = this.x, .y = this.y };
-    }
-}
-new: fn -> Vec2 = return Vec2{ .x = 10, .y = 20 };
-consume: fn (val: Vec2) = return;
-takes_foo: fn -> f64 = {
-    a := new();
-    consume(new());
-    consume(a);
-}
-)";
+    std::ifstream ifs("source.yoyo");
+    std::ostringstream oss;
+    oss << ifs.rdbuf();
+    std::string src2 = oss.str();
     int argc = 1;
     const char* argv[] = {"foo"};
     const char** lol = argv;

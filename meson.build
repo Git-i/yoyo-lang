@@ -28,3 +28,4 @@ irgen_test = executable('ir_gen_test', ['tests/ir_gen_test.cpp'], dependencies: 
                              yoyo_dep,
                              dependency('catch2-with-main'),
                              dependency('libgvc')])
+test('irgen', irgen_test, workdir: meson.current_source_dir() / 'tests')
