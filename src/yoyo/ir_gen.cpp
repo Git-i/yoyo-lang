@@ -312,25 +312,14 @@ namespace Yoyo
             validate_expression_borrows(decl->initializer.get(), this);
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
-            //instead of copying we move
-            if(type->is_lambda() || (!expr_type->is_lvalue && expr_type->should_sret() && expr_type->is_equal(*type)))
+            if(decl->type->name == "ilit" || decl->type->name == "flit")
             {
-                init->setName(decl->identifier.text);
-                alloc = init;
+                decl->type = reduceLiteral(*decl->type, init);
+                type = decl->type;
             }
-            else
-            {
-                //at this point the type may be a literal
-                if(decl->type->name == "ilit" || decl->type->name == "flit")
-                {
-                    decl->type = reduceLiteral(*decl->type, init);
-                    type = decl->type;
-                }
-                alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
-                type->is_mutable = true;
-                ExpressionEvaluator{this}.doAssign(alloc, init, *type, *expr_type);
-            }
-
+            type->is_mutable = true;
+            alloc = ExpressionEvaluator{this}.doAssign(nullptr, init, *type, *expr_type);
+            alloc->setName(decl->identifier.text);
         }
         type->saturate(module, this);
         if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));

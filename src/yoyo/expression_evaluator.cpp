@@ -92,7 +92,7 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::implicitConvert(llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
-        if(dst.is_equal(src)) { return clone(val, dst, out); }
+        if(dst.is_equal(src)) { return clone(val, src, out); }
         if(!dst.is_assignable_from(src)) { irgen->error(); return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);
         if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
@@ -147,7 +147,6 @@ namespace Yoyo
             }
         }
         if(src.name == "flit")
-
         {
             auto as_float = llvm::dyn_cast<llvm::ConstantFP>(val);
             double min_bound = getFloatMinOf(dst);
@@ -235,7 +234,7 @@ namespace Yoyo
         return implicitConvert(rhs, right_type, left_type, lhs);
     }
     /// user defined types can create a @c clone function.\n
-    /// The @c clone function's signature looks like @code clone: (this) -> This @endcode \n
+    /// The @c clone function's signature looks like @code clone: (&this) -> This @endcode \n
     /// Without it the type is cannot be copied
     /// I think it should be implicit for union types
     llvm::Value* ExpressionEvaluator::clone(llvm::Value* value, const Type& left_type, llvm::Value* into) const
@@ -246,6 +245,15 @@ namespace Yoyo
             return value;
         }
         auto as_llvm = irgen->ToLLVMType(left_type, false);
+        if(!left_type.is_lvalue)
+        {
+            //move
+            if(!into) return value;
+            auto& layout = irgen->code->getDataLayout();
+            size_t size = layout.getStructLayout(llvm::dyn_cast<llvm::StructType>(as_llvm))->getSizeInBytes();
+            irgen->builder->CreateMemCpy(into, std::nullopt, value, std::nullopt, size);
+            return into;
+        }
         if(!into) into = irgen->Alloca("clone", as_llvm);
         if(left_type.is_tuple())
         {

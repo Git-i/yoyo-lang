@@ -24,25 +24,11 @@ TEST_CASE("Test IR")
 app: module = APP
 
 Vec2: struct = {
-    x: i32,
-    y: i32
+    x: i32, y: i32
 }
-
-generic: fn::<T> = {
-    Type: struct = {
-        param: T
-    }
-}
-FnType: alias::<T> = generic::<T>::Type;
-Int: alias = i32;
-
+new: fn -> Vec2 = return Vec2{ .x = 10, .y = 20 };
 takes_foo: fn -> f64 = {
-    a := FnType::<Vec2?>{ .param = Vec2{ .x = 1, .y = 1 } };
-    b := FnType::<Int>{ .param = 1000000 };
-    if |vec| (a.param) app::func(&"${vec.x} ${vec.y}");
-    else app::func(&"null");
-    app::func(&"${b.param}");
-    return 10;
+    a := new();
 }
 )";
     int argc = 1;
