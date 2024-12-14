@@ -125,19 +125,14 @@ TEST_CASE("Test CFG")
     Yoyo::Parser p(1 + R"(
         main: fn = {
             a: i32 = 0;
-            if (false) {
+            while (a > 10) {
+                a += 2;
                 if(true) {
-                    a = 10;
+                    return 0;
                 } else {
-                    a = 20;
-                    b = 2;
-                    b = 10;
-                    a + b;
-                    if(b == 10) return b;
-                    else return a;
+                    a = 10;
                 }
             }
-            return a;
         }
     )");
     auto graph = agopen(name, Agdirected, nullptr);

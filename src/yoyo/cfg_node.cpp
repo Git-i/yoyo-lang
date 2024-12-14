@@ -1,5 +1,6 @@
 #include "cfg_node.h"
 
+#include <cassert>
 #include <memory>
 #include <ranges>
 #include <set>
@@ -44,12 +45,15 @@ namespace Yoyo
         }
         void operator()(WhileStatement* stat)
         {
-            node->statements.push_back(stat);
+            auto cond = node->manager->newNode(depth, "while_cond");
+            cond->statements.push_back(stat);
+            node->addChild(cond);
             auto then = node->manager->newNode(depth, "while_then");
-            node->addChild(then);
+            cond->addChild(then);
             auto while_prep = CFGPreparator{then,exit, depth};
             std::visit(while_prep, stat->body->toVariant());
-            if(while_prep.node != exit) while_prep.node->addChild(node);
+            if(while_prep.node != exit) while_prep.node->addChild(cond);
+            if(while_prep.node == exit) node = exit;
         }
         void operator()(BlockStatement* stat)
         {
@@ -346,6 +350,7 @@ namespace Yoyo
             for(size_t i = 0; i < detail.size(); i++)
             {
                 auto& ls = detail[i];
+                if(ls.first == node) continue;
                 //if there is a straight path between ls and any of the nodes ls is not a last use
                 auto child = ls.first;
                 while(child->children.size() == 1)
@@ -366,16 +371,32 @@ namespace Yoyo
         for(auto& [k, det]: rpdetails)
         {
             auto& this_det = details.at(k);
+            //if we have more than child we cannot reposses(parent might need the info)
             auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
                 {
                     return thing.first == node;
                 });
-            this_it->second.second.clear();
-            for(auto& ls : det)
-                this_it->second.second.insert(this_it->second.second.end(),
-                    std::make_move_iterator(ls.second.second.begin()),
-                    std::make_move_iterator(ls.second.second.end()));
+            if(node->children.size() == 1)
+            {
 
+                this_it->second.second.clear();
+                for(auto& ls : det)
+                    this_it->second.second.insert(this_it->second.second.end(),
+                        std::make_move_iterator(ls.second.second.begin()),
+                        std::make_move_iterator(ls.second.second.end()));
+            }
+            else
+            {
+                assert(this_it->second.first.size() == 1);
+                auto first_use = this_it->second.first[0];
+                this_det.erase(this_it);
+                for(auto& sub_det : det)
+                {
+                    assert(sub_det.second.first.size() == 1);
+                    sub_det.second.first[0] = first_use;
+                    this_det.push_back(std::move(sub_det));
+                }
+            }
         }
         return details;
     }
