@@ -101,18 +101,145 @@ namespace Yoyo
             node = cont;
         }
     };
+    struct UsedVariablesExpression
+    {
+        std::set<std::string> operator()(Expression*) {return {};}
+        std::set<std::string> operator()(TupleLiteral* lit)
+        {
+            std::set<std::string> vars;
+            for(auto& expr: lit->elements)
+            {
+                auto st = std::visit(*this, expr->toVariant());
+                vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+            }
+            return vars;
+        }
+        std::set<std::string> operator()(ArrayLiteral* lit)
+        {
+            std::set<std::string> vars;
+            for(auto& expr: lit->elements)
+            {
+                auto st = std::visit(*this, expr->toVariant());
+                vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+            }
+            return vars;
+        }
+        std::set<std::string> operator()(StringLiteral* lit)
+        {
+            std::set<std::string> vars;
+            for(auto& expr : lit->literal)
+                if(std::holds_alternative<std::unique_ptr<Expression>>(expr))
+                {
+                    auto st = std::visit(*this, std::get<1>(expr)->toVariant());
+                    vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+                }
+            return vars;
+        }
+        std::set<std::string> operator()(NameExpression* nm)
+        {
+            return {nm->text};
+        }
+        std::set<std::string> operator()(GenericNameExpression*) { return {}; } //??
+        std::set<std::string> operator()(PrefixOperation* pf)
+        {
+            return std::visit(*this, pf->operand->toVariant());
+        }
+        std::set<std::string> operator()(BinaryOperation* bop)
+        {
+            auto left_uses = std::visit(*this, bop->lhs->toVariant());
+            if(bop->op.type != TokenType::Dot)
+            {
+                auto right_uses = std::visit(*this, bop->rhs->toVariant());
+                left_uses.insert(std::make_move_iterator(right_uses.begin()), std::make_move_iterator(right_uses.end()));
+            }
+            return left_uses;
+        }
+        std::set<std::string> operator()(GroupingExpression* expr)
+        {
+            return std::visit(*this, expr->expr->toVariant());
+        }
+        std::set<std::string> operator()(LogicalOperation* expr)
+        {
+            std::set left = std::visit(*this, expr->lhs->toVariant());
+            std::set right = std::visit(*this, expr->rhs->toVariant());
+            left.insert(std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+            return left;
+        }
+        std::set<std::string> operator()(PostfixOperation* pop)
+        {
+            return std::visit(*this, pop->operand->toVariant());
+        }
+        std::set<std::string> operator()(CallOperation* op)
+        {
+            auto callee_uses = std::visit(*this, op->callee->toVariant());
+            for(auto& arg: op->arguments)
+            {
+                auto arg_uses = std::visit(*this, arg->toVariant());
+                callee_uses.insert(std::make_move_iterator(arg_uses.begin()), std::make_move_iterator(arg_uses.end()));
+            }
+            return callee_uses;
+        }
+        std::set<std::string> operator()(SubscriptOperation* op)
+        {
+            auto obj =  std::visit(*this, op->object->toVariant());
+            auto idx = std::visit(*this, op->index->toVariant());
+            obj.insert(std::make_move_iterator(idx.begin()), std::make_move_iterator(idx.end()));
+            return obj;
+        }
+        std::set<std::string> operator()(LambdaExpression* lmbd){}
+        std::set<std::string> operator()(ScopeOperation*) {} //???
+        std::set<std::string> operator()(ObjectLiteral* lit)
+        {
+            std::set<std::string> vars;
+            for(auto& [_,expr]: lit->values)
+            {
+                auto st = std::visit(*this, expr->toVariant());
+                vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+            }
+            return vars;
+        }
+        std::set<std::string> operator()(AsExpression* lit)
+        {
+            return std::visit(*this, lit->expr->toVariant());
+        }
+    };
     struct UsedVariables
     {
         std::set<std::string> operator()(Statement*) { return {}; }
-        std::set<std::string> operator()(ExpressionStatement* stat);
-        std::set<std::string> operator()(VariableDeclaration* decl);
-        std::set<std::string> operator()(IfStatement* stat);
-        std::set<std::string> operator()(ReturnStatement* stat);
-        std::set<std::string> operator()(WhileStatement* stat);
-        std::set<std::string> operator()(ForStatement* stat);
-        std::set<std::string> operator()(ConditionalExtraction* stat);
-        std::set<std::string> operator()(WithStatement* stat);
+        std::set<std::string> operator()(ExpressionStatement* stat)
+        {
+            return std::visit(UsedVariablesExpression{}, stat->expression->toVariant());
+        }
+        std::set<std::string> operator()(VariableDeclaration* decl)
+        {
+            auto used_in_expr = decl->initializer ?
+                std::visit(UsedVariablesExpression{}, decl->initializer->toVariant()) : std::set<std::string>{};
+            used_in_expr.emplace(decl->identifier.text);
+            return used_in_expr;
+        }
+        std::set<std::string> operator()(IfStatement* stat)
+        {
+            return std::visit(UsedVariablesExpression{}, stat->condition->toVariant());
+        }
+        std::set<std::string> operator()(ReturnStatement* stat)
+        {
+            return std::visit(UsedVariablesExpression{}, stat->expression->toVariant());
+        }
+        std::set<std::string> operator()(WhileStatement* stat)
+        {
+            return std::visit(UsedVariablesExpression{}, stat->condition->toVariant());
+        }
+        std::set<std::string> operator()(ForStatement* stat){}
+        std::set<std::string> operator()(ConditionalExtraction* stat)
+        {
+            return std::visit(UsedVariablesExpression{}, stat->condition->toVariant());
+        }
+        std::set<std::string> operator()(WithStatement* stat)
+        {
+            return std::visit(UsedVariablesExpression{}, stat->expression->toVariant());
+        }
     };
+
     CFGNode* CFGNode::prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl)
     {
         auto entry = mgr.newNode(0, "entry");
@@ -166,12 +293,14 @@ namespace Yoyo
                 //new variable encountered
                 if(!details.contains(var))
                 {
+                    for(auto& ls : det)
+                        if(ls.first == child && child->depth >= node->depth) ls.first = node;
                     details.emplace(var, std::move(det));
                     continue;
                 }
 
                 //we have same name (but maybe not the same variable)
-                auto this_det = details.at(var);
+                auto& this_det = details.at(var);
                 //this_it is a pointer to the pair that belongs to us
                 auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
                 {

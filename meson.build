@@ -1,4 +1,4 @@
-project('yoyo-lang','cpp', default_options: ['cpp_std=c++20'])
+project('yoyo-lang','cpp', default_options: ['cpp_std=c++20', 'b_sanitize=address'])
 
 sources = [
     'src/yoyo/scanner.cpp',

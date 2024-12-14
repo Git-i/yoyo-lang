@@ -83,10 +83,44 @@ void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo:
         prepare_edge(child, graph, nodes, prepared);
     }
 };
+void print_uses(decltype(std::declval<Yoyo::CFGNodeManager>().uses)& uses)
+{
+    auto& cout = std::cout;
+    auto print_sloc = [&cout](Yoyo::SourceLocation loc)
+    {
+        cout << '[' << loc.line << ':' << loc.column << ']';
+    };
+    for(auto& [var, details]: uses)
+    {
+        std::cout << "Uses of " << var << '\n';
+        for(auto& det : details)
+        {
+            std::cout << "    First uses occur here: \n";
+            for(auto& first : det.second.first)
+            {
+                std::cout << "    ";
+                print_sloc(first->beg);
+                std::cout << ' ';
+                print_sloc(first->end);
+                std::cout << '\n';
+            }
+            std::cout << "    Last uses occur here: \n";
+            for(auto& first : det.second.second)
+            {
+                std::cout << "    ";
+                print_sloc(first->beg);
+                std::cout << ' ';
+                print_sloc(first->end);
+                std::cout << '\n';
+            }
+        }
+    }
+    std::cout << std::flush;
+}
 TEST_CASE("Test CFG")
 {
     char name[] = "CFG";
-    Yoyo::Parser p(R"(
+    Yoyo::Parser p(1 + R"(
         main: fn = {
             a: i32;
             b: i32;
@@ -102,8 +136,11 @@ TEST_CASE("Test CFG")
     )");
     auto graph = agopen(name, Agdirected, nullptr);
     Yoyo::CFGNodeManager manager;
-    auto root = Yoyo::CFGNode::prepareFromFunction(manager,
-        dynamic_cast<Yoyo::FunctionDeclaration*>(p.parseDeclaration().get()));
+    auto tree = p.parseDeclaration();
+    auto tree_as_fn = reinterpret_cast<Yoyo::FunctionDeclaration*>(tree.get());
+    auto root = Yoyo::CFGNode::prepareFromFunction(manager, tree_as_fn);
+    manager.annotate();
+    print_uses(manager.uses);
     std::unordered_map<Yoyo::CFGNode*, Agnode_t*> nodes;
     size_t idx = 0;
     for(auto& node: manager.nodes)
