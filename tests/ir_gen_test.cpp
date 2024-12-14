@@ -122,16 +122,21 @@ TEST_CASE("Test CFG")
     char name[] = "CFG";
     Yoyo::Parser p(1 + R"(
         main: fn = {
-            a: i32;
-            b: i32;
-            if(a == 0) {
-                a = 10;
-            } else {
-                b = 10;
-                a + b;
-                if(b == 10) return b;
-                else return a;
+            a: i32 = 0;
+            if (false) {
+                if(true) {
+                    a: i32 = 10;
+                    a = 10;
+                } else {
+                    a: f32 = 20;
+                    b: i32 = 2;
+                    b = 10;
+                    a + b;
+                    if(b == 10) return b;
+                    else return a;
+                }
             }
+            return a;
         }
     )");
     auto graph = agopen(name, Agdirected, nullptr);

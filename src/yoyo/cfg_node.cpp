@@ -25,15 +25,15 @@ namespace Yoyo
             node->addChild(then);
             auto then_prep = CFGPreparator{then,exit, depth};
             std::visit(then_prep, stat->then_stat->toVariant());
-            then_prep.node->addChild(cont);
+            if(then_prep.node != exit) then_prep.node->addChild(cont);
             if(else_node)
             {
                 node->addChild(else_node);
                 auto else_prep = CFGPreparator{else_node,exit, depth};
                 std::visit(else_prep, stat->else_stat->toVariant());
-                else_prep.node->addChild(cont);
+                if(else_prep.node != exit) else_prep.node->addChild(cont);
             }
-            node = cont;
+            node = cont->parents.empty() ? exit : cont;
         }
         void operator()(ReturnStatement* stat)
         {
@@ -48,7 +48,7 @@ namespace Yoyo
             node->addChild(then);
             auto while_prep = CFGPreparator{then,exit, depth};
             std::visit(while_prep, stat->body->toVariant());
-            while_prep.node->addChild(node);
+            if(while_prep.node != exit) while_prep.node->addChild(node);
         }
         void operator()(BlockStatement* stat)
         {
@@ -212,10 +212,13 @@ namespace Yoyo
         }
         std::set<std::string> operator()(VariableDeclaration* decl)
         {
-            auto used_in_expr = decl->initializer ?
-                std::visit(UsedVariablesExpression{}, decl->initializer->toVariant()) : std::set<std::string>{};
-            used_in_expr.emplace(decl->identifier.text);
-            return used_in_expr;
+            if(decl->initializer)
+            {
+                std::set used_in_expr = {std::string(decl->identifier.text)};
+                std::visit(UsedVariablesExpression{}, decl->initializer->toVariant());
+                return used_in_expr;
+            }
+            return {};
         }
         std::set<std::string> operator()(IfStatement* stat)
         {
@@ -245,9 +248,9 @@ namespace Yoyo
         auto entry = mgr.newNode(0, "entry");
         auto exit = mgr.newNode(0, "return");
         std::visit(CFGPreparator{entry, exit, 0}, decl->body->toVariant());
-        for(auto& child : exit->children)
-            child->parents.erase(std::ranges::find(child->parents, exit));
-        exit->children.clear();
+        //for(auto& child : exit->children)
+        //    child->parents.erase(std::ranges::find(child->parents, exit));
+        //exit->children.clear();
         for(int64_t i = 0; i < mgr.nodes.size(); i++)
             if(mgr.nodes[i]->parents.empty() && mgr.nodes[i]->children.empty())
                 mgr.nodes.erase(mgr.nodes.begin() + i++);
@@ -279,7 +282,7 @@ namespace Yoyo
                     bck.second.first.emplace_back(stat);
                     bck.second.second.emplace_back(stat);
                 }
-                auto dets = details.at(var);
+                auto& dets = details.at(var);
                 dets[0].second.second[0] = stat;
             }
         }
@@ -293,8 +296,6 @@ namespace Yoyo
                 //new variable encountered
                 if(!details.contains(var))
                 {
-                    for(auto& ls : det)
-                        if(ls.first == child && child->depth >= node->depth) ls.first = node;
                     details.emplace(var, std::move(det));
                     continue;
                 }
@@ -304,39 +305,35 @@ namespace Yoyo
                 //this_it is a pointer to the pair that belongs to us
                 auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
                 {
-                    return thing.first == node || thing.first == nullptr;
+                    return thing.first == node;
                 });
-                //other_it is the pair that belongs to our child
-                auto other_it = std::ranges::find_if(det, [child](auto& thing)
+                auto* this_ptr = this_it == this_det.end() ? nullptr : &*this_it;
+                //other_it is the pair that belongs to our child that we can reposses
+                auto repossesable = [node](decltype(det)::reference thing)
                 {
-                    return thing.first == child;
-                });
-                //if the child is deeper or same level (cannot shadow) the variable is our own
-                if(other_it != det.end() && child->depth >= node->depth)
-                {
-                    //when repossessing we also propagate the last use
-                    //meaning this node is no longer the last so we clear the vector (ONCE)
-                    if(this_it->first)
+                    //we reverse traverse to parents with lower or same depth values
+                    CFGNode* parent = thing.first;
+                    while(parent && parent != node)
                     {
-                        this_it->second.second.clear();
-                        this_it->first = nullptr;
+                        auto it = std::ranges::find_if(parent->parents, [parent](auto& p)
+                        {
+                            return parent->depth >= p->depth;
+                        });
+                        if(it == parent->parents.end())
+                            parent = nullptr;
+                        else parent = *it;
                     }
-                    this_it->second.second.insert(this_it->second.second.end(),
-                        std::make_move_iterator(other_it->second.second.begin()),
-                        std::make_move_iterator(other_it->second.second.end()));
-                }
-                //all the variables not owned by our child
+                    return static_cast<bool>(parent);
+                };
+
                 for(auto& ls : det)
-                {
-                    if(ls.first == child && child->depth >= node->depth) continue;
-                    details.at(var).emplace_back(std::move(ls));
-                }
+                    if(this_ptr && repossesable(ls))
+                        for(auto& stat : ls.second.second)
+                            this_ptr->second.second.emplace_back(stat);
+                    else
+                        details[var].emplace_back(std::move(ls));
             }
         }
-        //replace all the nullptr's we made
-        for(auto&[k, det] : details)
-            for(auto& ls : det)
-                if(ls.first == nullptr) ls.first = node;
         return details;
     }
 
