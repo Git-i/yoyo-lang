@@ -88,18 +88,15 @@ TEST_CASE("Test CFG")
     char name[] = "CFG";
     Yoyo::Parser p(R"(
         main: fn = {
-            a := 0;
-            b := 0;
-            if(a > b) {
+            a: i32;
+            b: i32;
+            if(a == 0) {
                 a = 10;
             } else {
                 b = 10;
-                if(b == 10) return 8;
-            }
-            while(a > 2) { 10 + 10; }
-            with(a as &mut expr) {
-                if |val| (a) a = 10;
-                return 90;
+                a + b;
+                if(b == 10) return b;
+                else return a;
             }
         }
     )");

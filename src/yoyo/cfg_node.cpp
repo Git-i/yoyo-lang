@@ -1,6 +1,8 @@
 #include "cfg_node.h"
 
 #include <memory>
+#include <set>
+
 #include "statement.h"
 namespace Yoyo
 {
@@ -98,7 +100,18 @@ namespace Yoyo
             with_prep.node->addChild(cont);
             node = cont;
         }
-
+    };
+    struct UsedVariables
+    {
+        std::set<std::string> operator()(Statement*) { return {}; }
+        std::set<std::string> operator()(ExpressionStatement* stat);
+        std::set<std::string> operator()(VariableDeclaration* decl);
+        std::set<std::string> operator()(IfStatement* stat);
+        std::set<std::string> operator()(ReturnStatement* stat);
+        std::set<std::string> operator()(WhileStatement* stat);
+        std::set<std::string> operator()(ForStatement* stat);
+        std::set<std::string> operator()(ConditionalExtraction* stat);
+        std::set<std::string> operator()(WithStatement* stat);
     };
     CFGNode* CFGNode::prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl)
     {
@@ -111,6 +124,7 @@ namespace Yoyo
         for(int64_t i = 0; i < mgr.nodes.size(); i++)
             if(mgr.nodes[i]->parents.empty() && mgr.nodes[i]->children.empty())
                 mgr.nodes.erase(mgr.nodes.begin() + i++);
+        mgr.root_node = entry;
         return entry;
     }
 
@@ -119,6 +133,84 @@ namespace Yoyo
         children.push_back(child);
         child->parents.push_back(this);
     }
+
+    auto CFGNodeManager::annotate_internal(
+        CFGNode* node) -> std::unordered_map<std::string, std::vector<std::pair<
+                                                 CFGNode*, UsageDetails>>>
+    {
+        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, UsageDetails>>> details;
+        for(auto& stat : node->statements)
+        {
+            auto vars = std::visit(UsedVariables{}, stat->toVariant());
+            for(auto& var : vars)
+            {
+                //if it doesn't exist it's a first use else it's the new "latest" use
+                if(!details.contains(var))
+                {
+                    auto& bck = details[var].emplace_back();
+                    bck.first = node;
+                    bck.second.first.emplace_back(stat);
+                    bck.second.second.emplace_back(stat);
+                }
+                auto dets = details.at(var);
+                dets[0].second.second[0] = stat;
+            }
+        }
+        if(node->visited) return details;
+        node->visited = true;
+        for(auto& child : node->children)
+        {
+            auto results = annotate_internal(child);
+            for(auto&[var, det] : results)
+            {
+                //new variable encountered
+                if(!details.contains(var))
+                {
+                    details.emplace(var, std::move(det));
+                    continue;
+                }
+
+                //we have same name (but maybe not the same variable)
+                auto this_det = details.at(var);
+                //this_it is a pointer to the pair that belongs to us
+                auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
+                {
+                    return thing.first == node || thing.first == nullptr;
+                });
+                //other_it is the pair that belongs to our child
+                auto other_it = std::ranges::find_if(det, [child](auto& thing)
+                {
+                    return thing.first == child;
+                });
+                //if the child is deeper or same level (cannot shadow) the variable is our own
+                if(other_it != det.end() && child->depth >= node->depth)
+                {
+                    //when repossessing we also propagate the last use
+                    //meaning this node is no longer the last so we clear the vector (ONCE)
+                    if(this_it->first)
+                    {
+                        this_it->second.second.clear();
+                        this_it->first = nullptr;
+                    }
+                    this_it->second.second.insert(this_it->second.second.end(),
+                        std::make_move_iterator(other_it->second.second.begin()),
+                        std::make_move_iterator(other_it->second.second.end()));
+                }
+                //all the variables not owned by our child
+                for(auto& ls : det)
+                {
+                    if(ls.first == child && child->depth >= node->depth) continue;
+                    details.at(var).emplace_back(std::move(ls));
+                }
+            }
+        }
+        //replace all the nullptr's we made
+        for(auto&[k, det] : details)
+            for(auto& ls : det)
+                if(ls.first == nullptr) ls.first = node;
+        return details;
+    }
+
 
     CFGNode* CFGNodeManager::newNode(uint32_t depth, std::string name)
     {
@@ -130,4 +222,10 @@ namespace Yoyo
         nodes.push_back(std::move(node));
         return node_ptr;
     }
+
+    void CFGNodeManager::annotate()
+    {
+        uses = annotate_internal(root_node);
+    }
 }
+
