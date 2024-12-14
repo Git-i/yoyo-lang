@@ -1,6 +1,7 @@
 #include "cfg_node.h"
 
 #include <memory>
+#include <ranges>
 #include <set>
 
 #include "statement.h"
@@ -263,7 +264,6 @@ namespace Yoyo
         children.push_back(child);
         child->parents.push_back(this);
     }
-
     auto CFGNodeManager::annotate_internal(
         CFGNode* node) -> std::unordered_map<std::string, std::vector<std::pair<
                                                  CFGNode*, UsageDetails>>>
@@ -288,11 +288,13 @@ namespace Yoyo
         }
         if(node->visited) return details;
         node->visited = true;
+        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, UsageDetails>>> rpdetails;
         for(auto& child : node->children)
         {
             auto results = annotate_internal(child);
             for(auto&[var, det] : results)
             {
+
                 //new variable encountered
                 if(!details.contains(var))
                 {
@@ -327,12 +329,53 @@ namespace Yoyo
                 };
 
                 for(auto& ls : det)
+                {
                     if(this_ptr && repossesable(ls))
-                        for(auto& stat : ls.second.second)
-                            this_ptr->second.second.emplace_back(stat);
+                    {
+                        auto& repossess_able_details = rpdetails[var];
+                        repossess_able_details.push_back(std::move(ls));
+                    }
                     else
                         details[var].emplace_back(std::move(ls));
+                }
             }
+        }
+        //before we steal the content of rpdetails, we need to filter it to remove non-last uses
+        for(auto&[_, detail] : rpdetails)
+        {
+            for(size_t i = 0; i < detail.size(); i++)
+            {
+                auto& ls = detail[i];
+                //if there is a straight path between ls and any of the nodes ls is not a last use
+                auto child = ls.first;
+                while(child->children.size() == 1)
+                {
+                    auto keys = detail | std::views::keys;
+                    auto it = std::ranges::find(keys, child->children[0]);
+                    if(it == keys.end()) child = child->children[0];
+                    //we reached it in a straight path
+                    else
+                    {
+                        detail.erase(detail.begin() + static_cast<int64_t>(i++));
+                        break;
+                    }
+                }
+            }
+        }
+        //finally we repossess
+        for(auto& [k, det]: rpdetails)
+        {
+            auto& this_det = details.at(k);
+            auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
+                {
+                    return thing.first == node;
+                });
+            this_it->second.second.clear();
+            for(auto& ls : det)
+                this_it->second.second.insert(this_it->second.second.end(),
+                    std::make_move_iterator(ls.second.second.begin()),
+                    std::make_move_iterator(ls.second.second.end()));
+
         }
         return details;
     }

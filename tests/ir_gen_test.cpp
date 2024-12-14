@@ -102,6 +102,7 @@ void print_uses(decltype(std::declval<Yoyo::CFGNodeManager>().uses)& uses)
                 print_sloc(first->beg);
                 std::cout << ' ';
                 print_sloc(first->end);
+                std::cout << " by node:" << det.first;
                 std::cout << '\n';
             }
             std::cout << "    Last uses occur here: \n";
@@ -111,6 +112,7 @@ void print_uses(decltype(std::declval<Yoyo::CFGNodeManager>().uses)& uses)
                 print_sloc(first->beg);
                 std::cout << ' ';
                 print_sloc(first->end);
+                std::cout << " by node:" << det.first;
                 std::cout << '\n';
             }
         }
@@ -125,11 +127,10 @@ TEST_CASE("Test CFG")
             a: i32 = 0;
             if (false) {
                 if(true) {
-                    a: i32 = 10;
                     a = 10;
                 } else {
-                    a: f32 = 20;
-                    b: i32 = 2;
+                    a = 20;
+                    b = 2;
                     b = 10;
                     a + b;
                     if(b == 10) return b;
@@ -150,7 +151,8 @@ TEST_CASE("Test CFG")
     size_t idx = 0;
     for(auto& node: manager.nodes)
     {
-        std::string name = "Node" + std::to_string(idx) + " " + node->debug_name + ": " + std::to_string(node->depth);
+        std::string name = "Node" + std::format("{:0x}", reinterpret_cast<std::uintptr_t>(node.get()))
+            + " " + node->debug_name + ": " + std::to_string(node->depth);
         nodes[node.get()] = agnode(graph, name.data(), true);
         idx += 1;
     }
