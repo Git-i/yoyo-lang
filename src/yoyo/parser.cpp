@@ -282,7 +282,17 @@ namespace Yoyo
         else if(tk->type == TokenType::This)
         {
             Get();
-            sig.parameters.push_back(FunctionParameter{Type{"This", {}},  "this"});
+            sig.parameters.emplace_back(Type{"This", {}},  "this");
+        }
+        //&this and &mut this is also allowed
+        else if(tk->type == TokenType::Ampersand)
+        {
+            Get(); bool is_mut = discard(TokenType::Mut);
+            if(!discard(TokenType::This)) error("Expected 'this' after '&' or '&mut'", Peek());
+            sig.parameters.emplace_back(Type{
+                is_mut ? "__ref_mut" : "__ref",
+                { Type{"This"}}
+            }, "this");
         }
         while(discard(TokenType::Comma))
         {

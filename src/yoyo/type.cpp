@@ -251,6 +251,8 @@ namespace Yoyo
             ExpressionEvaluator{irgen}.generateGenericAlias(module, blk, alias, subtypes);
             *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
         }
+
+        if(irgen && irgen->in_class && name == "This") *this = irgen->this_t;
         for(auto& sub: subtypes) sub.saturate(src, irgen);
     }
 

@@ -24,11 +24,18 @@ TEST_CASE("Test IR")
 app: module = APP
 
 Vec2: struct = {
-    x: i32, y: i32
+    x: i32, y: i32,
+    clone: fn (&this) -> This = {
+        app::func(&"custom clone");
+        return Vec2{ .x = this.x, .y = this.y };
+    }
 }
 new: fn -> Vec2 = return Vec2{ .x = 10, .y = 20 };
+consume: fn (val: Vec2) = return;
 takes_foo: fn -> f64 = {
     a := new();
+    consume(new());
+    consume(a);
 }
 )";
     int argc = 1;
