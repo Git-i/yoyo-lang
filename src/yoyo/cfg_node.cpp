@@ -304,36 +304,60 @@ namespace Yoyo
         children.push_back(child);
         child->parents.push_back(this);
     }
-    std::unordered_map<std::string, std::set<Expression*>> findFirstUsesInternal(CFGNode* node)
+    //std::vector<std::set<std::string>>
+    std::unordered_map<std::string, std::set<Expression*>> findFirstUsesInternal(CFGNode* node, std::vector<std::set<std::string>> vars)
     {
         std::unordered_map<std::string, std::set<Expression*>> out;
-        std::set<std::string> found_here;
+        std::set<std::string>* found_here = nullptr;
+        //size is either depth + 1, more or one less(same as depth)
+        if(node->depth == vars.size()) found_here = &vars.emplace_back();
+        else if(vars.size() >= node->depth + 1) found_here = &vars[node->depth];
+        else raise(SIGTRAP);
         for(auto stat: node->statements)
         {
             auto uses = std::visit(FirstUsedVariables{}, stat->toVariant());
             for(auto&[var, use] : uses)
-                if(!out.contains(var))
+                if(!found_here->contains(var))
                 {
                     out.emplace(var, std::set{use});
-                    found_here.emplace(var);
+                    found_here->emplace(var);
                 }
         }
+        auto exists_before = [&vars](const std::string& name, uint32_t scope)
+        {
+            if(scope == 0) return false;
+            return std::ranges::any_of(std::ranges::subrange(vars.begin(), vars.begin() + scope - 1), [&name](auto& set)
+            {
+               return set.contains(name);
+            });
+        };
         if(node->visited == true) return out;
         node->visited = true;
         for(auto child: node->children)
         {
-            auto uses = findFirstUsesInternal(child);
+            //if the child used it, but we used it too:
+            //  We probably used our own local copy (child is less deep than us and the variable is defined before)
+            //     In this case we keep the child's use
+            //  Child used our own var (child is deeper or same level)
+            //  None of these and child is first use
+            auto uses = findFirstUsesInternal(child, vars);
             for(auto&[var, use] : uses)
-                if(!found_here.contains(var))
+                //child is deeper, or it's shallow but the var is defined before so its only first use if we don't use it
+                if(child->depth >= node->depth ||
+                    child->depth < node->depth && exists_before(var, node->depth))
                 {
-                    out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
+                    if(!found_here->contains(var))
+                        out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
                 }
+                //child is shallow and var doesn't exist before
+                else
+                    out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
         }
         return out;
     }
     std::unordered_map<std::string, std::set<Expression*>> CFGNodeManager::findFirstUses()
     {
-        return findFirstUsesInternal(root_node);
+        return findFirstUsesInternal(root_node, {});
     }
 
     CFGNode* CFGNodeManager::newNode(uint32_t depth, std::string name)

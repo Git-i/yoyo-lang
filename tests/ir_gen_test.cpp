@@ -87,7 +87,7 @@ void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo:
 TEST_CASE("Test CFG")
 {
     char name[] = "CFG";
-    Yoyo::Parser p(1 + R"(
+    Yoyo::Parser p_resv(1 + R"(
     main: fn = {
         var1: mut = std::env::args()
             .skip(1)
@@ -96,7 +96,6 @@ TEST_CASE("Test CFG")
             .parse::<i32>()
             .expect("that wasn't a number dumbass");
         var2: mut = 0;
-
         while(var1 > var2) {
             temp: i32;
             if(var1 % 2 == 0) {
