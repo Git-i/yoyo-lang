@@ -1,42 +1,55 @@
-Node: struct = {
-    value: i32,
-    next: Node^?
+Node: struct::<T> = {
+    value: T,
+    next: (^mut Node::<T>)?
 }
 
-List: class = {
-    first: Node^?
+List: class::<T> = {
+    first: (^mut Node::<T>)?
+    iter: fn (&this) -> ListIter::<T> = return ListIter::<T>::new(this.first.value());
+    iter_mut: fn (&mut this) -> ListIterMut = return ListIterMut::<T>::new(this.first.value());
+    from_array: fn (arr: mut [T]) -> This = {
+        list: This = This{ .first = null };
+        if (arr.size() >= 1) {
+            list.first = new Node::<T>{ .value = arr.extract(0), .next = null }
+        }
+        current: ^mut Node::<T> = list.first.value();
+        while (arr.size()) {
+            next := new Node::<T>{ .value = arr.extract(0), .next = null };
+            current.next = next;
+            current = next;
+        }
+        return list;
+    }
 }
 
-iter: default fw_iterator::<&i32> for List = {
-    current_node: Node^?
-    //container is a special value holding either a ref or const ref to the container object
-    //ref for iterator_mut and const ref for iterator
-    new: () -> This = return This {.current_node = container.first};
-    is_end: (this) -> bool = return this.current_node is None;
-    value: (this) -> cref i32 = return this.current_node.value; //skipped the optional cuz ive not decided optional semantics
-    advance: (this: inout) = this.current_node = this.current_node.next;
-}
-enumerate: iterator_op(iterator::<'a'> og) -> iterator::<'a' & usize> = {
-    idx: usize;
-    new: () -> This = return This{.idx = 0};
-    is_end: (this) -> bool = return og.is_end();
-    value: = return (og.value, idx);
-    advance:= {idx += 1; og.advance;}
-}
+ListIter: struct::<T> impl Iterator = {
+    node: ^Node::<T>
+    new: fn (node: ^Node::<T>) -> This = return This{ node };
 
-num_digits: (x: u32) -> u32 = {...};
-nth_digit: (x: u32, n: u32) -> u32 = {...};
-digits: ra_iterator::<u32> for u32 = {
-    index: u32,
-
-    new: () -> This = return This {.index = 0};
-    size: () -> usize = return num_digits(container);
-    value: (this) -> u32 = return nth_digit(container, index);
-    seek: (this: inout, idx: usize) = this.index = idx;
+    Iterator {
+        ElementTy: alias = &T;
+        is_end: fn (&this) -> bool = return this.node.next.has_value();
+        advance: fn (&mut this) = if (this.node.next) this.node = *this.node.next.value();
+        value: fn -> ElementTy = return &node.value;
+    }
 }
-
-main: () = {
-    list: List = /* make a list somehow */;
-    for (elem in list) std::print("${elem}");
-    for (digit in 10245.digits()) std::print("${digit}");
+ListIterMut: struct::<T> impl Iterator = {
+    node: ^mut Node::<T>
+    new: fn (node: ^mut Node::<T>) -> This = return This{ node };
+    Iterator {
+        ElementTy: alias = &mut T;
+        is_end: fn (&this) -> bool = return this.node.next.has_value();
+        advance: fn (&mut this) = if (this.node.next) this.node = *this.node.next.value();
+        value: fn -> ElementTy = return &node.value;
+    }
+}
+//prints 10 20 30 40 50 110 120 130 140 150 on different lines
+main: fn = {
+    list := List::<i32>::from_array([10, 20, 30, 40, 50]);
+    print_list: stored = ||(list: &List) for (elem in list.iter()) std::println("${*elem}");
+    print_list(&list);
+    for (elem in iter_mut) {
+        *elem = *elem + 100;
+    }
+    print_list(&list);
 }

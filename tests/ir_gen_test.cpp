@@ -83,64 +83,43 @@ void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo:
         prepare_edge(child, graph, nodes, prepared);
     }
 };
-void print_uses(decltype(std::declval<Yoyo::CFGNodeManager>().uses)& uses)
-{
-    auto& cout = std::cout;
-    auto print_sloc = [&cout](Yoyo::SourceLocation loc)
-    {
-        cout << '[' << loc.line << ':' << loc.column << ']';
-    };
-    for(auto& [var, details]: uses)
-    {
-        std::cout << "Uses of " << var << '\n';
-        for(auto& det : details)
-        {
-            std::cout << "    First uses occur here: \n";
-            for(auto& first : det.second.first)
-            {
-                std::cout << "    ";
-                print_sloc(first->beg);
-                std::cout << ' ';
-                print_sloc(first->end);
-                std::cout << " by node:" << det.first;
-                std::cout << '\n';
-            }
-            std::cout << "    Last uses occur here: \n";
-            for(auto& first : det.second.second)
-            {
-                std::cout << "    ";
-                print_sloc(first->beg);
-                std::cout << ' ';
-                print_sloc(first->end);
-                std::cout << " by node:" << det.first;
-                std::cout << '\n';
-            }
-        }
-    }
-    std::cout << std::flush;
-}
+
 TEST_CASE("Test CFG")
 {
     char name[] = "CFG";
     Yoyo::Parser p(1 + R"(
-        main: fn = {
-            a: i32 = 0;
-            while (a > 10) {
-                a += 2;
-                if(true) {
-                    return a;
-                } else {
-                    a = 10;
-                }
-            }
-            if (a) {
-                b := 10;
+    main: fn = {
+        var1: mut = std::env::args()
+            .skip(1)
+            .next()
+            .expect("gimme a number pls")
+            .parse::<i32>()
+            .expect("that wasn't a number dumbass");
+        var2: mut = 0;
+
+        while(var1 > var2) {
+            temp: i32;
+            if(var1 % 2 == 0) {
+                temp = var1 / 2;
             } else {
-                b := 20;
-                if(b) return a;
-                else return b;
+                temp = var1 * 3 + 1;
+            }
+            if(temp > 30 && temp < 70) {
+                var1 += 1;
+            } else {
+                var1 = temp;
+            }
+
+            var2 += 1;
+            if(var2 > var1) {
+                break;
             }
         }
+        if(var1 % 2 == 0) {
+            var2 += 1 + var1 / 2;
+        }
+        println("{}", var2);
+    }
     )");
     auto graph = agopen(name, Agdirected, nullptr);
     Yoyo::CFGNodeManager manager;
@@ -148,7 +127,6 @@ TEST_CASE("Test CFG")
     auto tree_as_fn = reinterpret_cast<Yoyo::FunctionDeclaration*>(tree.get());
     auto root = Yoyo::CFGNode::prepareFromFunction(manager, tree_as_fn);
     manager.annotate();
-    print_uses(manager.uses);
     std::unordered_map<Yoyo::CFGNode*, Agnode_t*> nodes;
     size_t idx = 0;
     for(auto& node: manager.nodes)

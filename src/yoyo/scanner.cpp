@@ -1,5 +1,6 @@
 #include "scanner.h"
 
+#include <csignal>
 #include <cstdint>
 #include <locale>
 #include <optional>
@@ -70,6 +71,7 @@ namespace Yoyo {
                     }
                     return NextIs('=') ? Token{TokenType::SlashEqual, loc} : Token{TokenType::Slash, loc};
                 }
+            case '%': return NextIs('=') ? Token{TokenType::Percent, loc} : Token{TokenType::PercentEqual, loc};
             case '!': return NextIs('=') ? Token{TokenType::BangEqual, loc} : Token{TokenType::Bang, loc};
             case '&':
                 {

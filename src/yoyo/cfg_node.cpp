@@ -1,6 +1,8 @@
 #include "cfg_node.h"
 
 #include <cassert>
+#include <csignal>
+#include <format>
 #include <memory>
 #include <ranges>
 #include <set>
@@ -109,143 +111,176 @@ namespace Yoyo
     };
     struct UsedVariablesExpression
     {
-        std::set<std::string> operator()(Expression*) {return {};}
-        std::set<std::string> operator()(TupleLiteral* lit)
+        bool is_first;
+        std::unordered_map<std::string, Expression*> operator()(Expression*) {return {};}
+        std::unordered_map<std::string, Expression*> operator()(TupleLiteral* lit)
         {
-            std::set<std::string> vars;
+            std::unordered_map<std::string, Expression*> vars;
             for(auto& expr: lit->elements)
             {
                 auto st = std::visit(*this, expr->toVariant());
-                vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+                for(auto&[name, use] : st)
+                {
+                    if(is_first && vars.contains(name)) continue;
+                    vars[name] = use;
+                }
             }
             return vars;
         }
-        std::set<std::string> operator()(ArrayLiteral* lit)
+        std::unordered_map<std::string, Expression*> operator()(ArrayLiteral* lit)
         {
-            std::set<std::string> vars;
+            std::unordered_map<std::string, Expression*> vars;
             for(auto& expr: lit->elements)
             {
                 auto st = std::visit(*this, expr->toVariant());
-                vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+                for(auto&[name, use] : st)
+                {
+                    if(is_first && vars.contains(name)) continue;
+                    vars[name] = use;
+                }
             }
             return vars;
         }
-        std::set<std::string> operator()(StringLiteral* lit)
+        std::unordered_map<std::string, Expression*> operator()(StringLiteral* lit)
         {
-            std::set<std::string> vars;
+            std::unordered_map<std::string, Expression*> vars;
             for(auto& expr : lit->literal)
                 if(std::holds_alternative<std::unique_ptr<Expression>>(expr))
                 {
                     auto st = std::visit(*this, std::get<1>(expr)->toVariant());
-                    vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+                    for(auto&[name, use] : st)
+                    {
+                        if(is_first && vars.contains(name)) continue;
+                        vars[name] = use;
+                    }
                 }
             return vars;
         }
-        std::set<std::string> operator()(NameExpression* nm)
+        std::unordered_map<std::string, Expression*> operator()(NameExpression* nm)
         {
-            return {nm->text};
+            return {{nm->text, nm}};
         }
-        std::set<std::string> operator()(GenericNameExpression*) { return {}; } //??
-        std::set<std::string> operator()(PrefixOperation* pf)
+        std::unordered_map<std::string, Expression*> operator()(GenericNameExpression*) { return {}; } //??
+        std::unordered_map<std::string, Expression*> operator()(PrefixOperation* pf)
         {
             return std::visit(*this, pf->operand->toVariant());
         }
-        std::set<std::string> operator()(BinaryOperation* bop)
+        std::unordered_map<std::string, Expression*> operator()(BinaryOperation* bop)
         {
             auto left_uses = std::visit(*this, bop->lhs->toVariant());
             if(bop->op.type != TokenType::Dot)
             {
                 auto right_uses = std::visit(*this, bop->rhs->toVariant());
-                left_uses.insert(std::make_move_iterator(right_uses.begin()), std::make_move_iterator(right_uses.end()));
+                for(auto&[name, use] : right_uses)
+                {
+                    if(is_first && left_uses.contains(name)) continue;
+                    left_uses[name] = use;
+                }
             }
             return left_uses;
         }
-        std::set<std::string> operator()(GroupingExpression* expr)
+        std::unordered_map<std::string, Expression*> operator()(GroupingExpression* expr)
         {
             return std::visit(*this, expr->expr->toVariant());
         }
-        std::set<std::string> operator()(LogicalOperation* expr)
+        std::unordered_map<std::string, Expression*> operator()(LogicalOperation* expr)
         {
-            std::set left = std::visit(*this, expr->lhs->toVariant());
-            std::set right = std::visit(*this, expr->rhs->toVariant());
-            left.insert(std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
-            return left;
+            auto left_uses = std::visit(*this, expr->lhs->toVariant());
+            auto right_uses = std::visit(*this, expr->rhs->toVariant());
+            for(auto&[name, use] : right_uses)
+            {
+                if(is_first && left_uses.contains(name)) continue;
+                left_uses[name] = use;
+            }
+            return left_uses;
         }
-        std::set<std::string> operator()(PostfixOperation* pop)
+        std::unordered_map<std::string, Expression*> operator()(PostfixOperation* pop)
         {
             return std::visit(*this, pop->operand->toVariant());
         }
-        std::set<std::string> operator()(CallOperation* op)
+        std::unordered_map<std::string, Expression*> operator()(CallOperation* op)
         {
             auto callee_uses = std::visit(*this, op->callee->toVariant());
             for(auto& arg: op->arguments)
             {
                 auto arg_uses = std::visit(*this, arg->toVariant());
-                callee_uses.insert(std::make_move_iterator(arg_uses.begin()), std::make_move_iterator(arg_uses.end()));
+                for(auto&[name, use] : arg_uses)
+                {
+                    if(is_first && callee_uses.contains(name)) continue;
+                    callee_uses[name] = use;
+                }
             }
             return callee_uses;
         }
-        std::set<std::string> operator()(SubscriptOperation* op)
+        std::unordered_map<std::string, Expression*> operator()(SubscriptOperation* op)
         {
             auto obj =  std::visit(*this, op->object->toVariant());
             auto idx = std::visit(*this, op->index->toVariant());
-            obj.insert(std::make_move_iterator(idx.begin()), std::make_move_iterator(idx.end()));
+            for(auto&[name, use] : idx)
+            {
+                if(is_first && obj.contains(name)) continue;
+                obj[name] = use;
+            }
             return obj;
         }
-        std::set<std::string> operator()(LambdaExpression* lmbd){}
-        std::set<std::string> operator()(ScopeOperation*) {} //???
-        std::set<std::string> operator()(ObjectLiteral* lit)
+        std::unordered_map<std::string, Expression*> operator()(LambdaExpression* lmbd){}
+        std::unordered_map<std::string, Expression*> operator()(ScopeOperation*) { return {}; } //???
+        std::unordered_map<std::string, Expression*> operator()(ObjectLiteral* lit)
         {
-            std::set<std::string> vars;
+            std::unordered_map<std::string, Expression*> vars;
             for(auto& [_,expr]: lit->values)
             {
                 auto st = std::visit(*this, expr->toVariant());
-                vars.insert(std::make_move_iterator(st.begin()), std::make_move_iterator(st.end()));
+                for(auto&[name, use] : st)
+                {
+                    if(is_first && vars.contains(name)) continue;
+                    vars[name] = use;
+                }
             }
             return vars;
         }
-        std::set<std::string> operator()(AsExpression* lit)
+        std::unordered_map<std::string, Expression*> operator()(AsExpression* lit)
         {
             return std::visit(*this, lit->expr->toVariant());
         }
     };
-    struct UsedVariables
+    struct FirstUsedVariables
     {
-        std::set<std::string> operator()(Statement*) { return {}; }
-        std::set<std::string> operator()(ExpressionStatement* stat)
+        std::unordered_map<std::string, Expression*> operator()(Statement*) { return {}; }
+        std::unordered_map<std::string, Expression*> operator()(ExpressionStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{}, stat->expression->toVariant());
+            return std::visit(UsedVariablesExpression{true}, stat->expression->toVariant());
         }
-        std::set<std::string> operator()(VariableDeclaration* decl)
+        std::unordered_map<std::string, Expression*> operator()(VariableDeclaration* decl)
         {
             if(decl->initializer)
             {
-                std::set used_in_expr = {std::string(decl->identifier.text)};
-                std::visit(UsedVariablesExpression{}, decl->initializer->toVariant());
-                return used_in_expr;
+                auto uses = std::visit(UsedVariablesExpression{true}, decl->initializer->toVariant());
+                uses.emplace(decl->identifier.text, decl->initializer.get());
+                return uses;
             }
             return {};
         }
-        std::set<std::string> operator()(IfStatement* stat)
+        std::unordered_map<std::string, Expression*> operator()(IfStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{}, stat->condition->toVariant());
+            return std::visit(UsedVariablesExpression{true}, stat->condition->toVariant());
         }
-        std::set<std::string> operator()(ReturnStatement* stat)
+        std::unordered_map<std::string, Expression*> operator()(ReturnStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{}, stat->expression->toVariant());
+            return std::visit(UsedVariablesExpression{true}, stat->expression->toVariant());
         }
-        std::set<std::string> operator()(WhileStatement* stat)
+        std::unordered_map<std::string, Expression*> operator()(WhileStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{}, stat->condition->toVariant());
+            return std::visit(UsedVariablesExpression{true}, stat->condition->toVariant());
         }
-        std::set<std::string> operator()(ForStatement* stat){}
-        std::set<std::string> operator()(ConditionalExtraction* stat)
+        std::unordered_map<std::string, Expression*> operator()(ForStatement* stat){}
+        std::unordered_map<std::string, Expression*> operator()(ConditionalExtraction* stat)
         {
-            return std::visit(UsedVariablesExpression{}, stat->condition->toVariant());
+            return std::visit(UsedVariablesExpression{true}, stat->condition->toVariant());
         }
-        std::set<std::string> operator()(WithStatement* stat)
+        std::unordered_map<std::string, Expression*> operator()(WithStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{}, stat->expression->toVariant());
+            return std::visit(UsedVariablesExpression{true}, stat->expression->toVariant());
         }
     };
 
@@ -269,138 +304,37 @@ namespace Yoyo
         children.push_back(child);
         child->parents.push_back(this);
     }
-    auto CFGNodeManager::annotate_internal(
-        CFGNode* node) -> std::unordered_map<std::string, std::vector<std::pair<
-                                                 CFGNode*, UsageDetails>>>
+    std::unordered_map<std::string, std::set<Expression*>> findFirstUsesInternal(CFGNode* node)
     {
-        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, UsageDetails>>> details;
-        for(auto& stat : node->statements)
+        std::unordered_map<std::string, std::set<Expression*>> out;
+        std::set<std::string> found_here;
+        for(auto stat: node->statements)
         {
-            auto vars = std::visit(UsedVariables{}, stat->toVariant());
-            for(auto& var : vars)
-            {
-                //if it doesn't exist it's a first use else it's the new "latest" use
-                if(!details.contains(var))
+            auto uses = std::visit(FirstUsedVariables{}, stat->toVariant());
+            for(auto&[var, use] : uses)
+                if(!out.contains(var))
                 {
-                    auto& bck = details[var].emplace_back();
-                    bck.first = node;
-                    bck.second.first.emplace_back(stat);
-                    bck.second.second.emplace_back(stat);
+                    out.emplace(var, std::set{use});
+                    found_here.emplace(var);
                 }
-                auto& dets = details.at(var);
-                dets[0].second.second[0] = stat;
-            }
         }
-        if(node->visited) return details;
+        if(node->visited == true) return out;
         node->visited = true;
-        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, UsageDetails>>> rpdetails;
-        for(auto& child : node->children)
+        for(auto child: node->children)
         {
-            auto results = annotate_internal(child);
-            for(auto&[var, det] : results)
-            {
-
-                //new variable encountered
-                if(!details.contains(var))
+            auto uses = findFirstUsesInternal(child);
+            for(auto&[var, use] : uses)
+                if(!found_here.contains(var))
                 {
-                    details.emplace(var, std::move(det));
-                    continue;
+                    out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
                 }
-
-                //we have same name (but maybe not the same variable)
-                auto& this_det = details.at(var);
-                //this_it is a pointer to the pair that belongs to us
-                auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
-                {
-                    return thing.first == node;
-                });
-                auto* this_ptr = this_it == this_det.end() ? nullptr : &*this_it;
-                //other_it is the pair that belongs to our child that we can reposses
-                auto repossesable = [node](decltype(det)::reference thing)
-                {
-                    //we reverse traverse to parents with lower or same depth values
-                    CFGNode* parent = thing.first;
-                    while(parent && parent != node)
-                    {
-                        auto it = std::ranges::find_if(parent->parents, [parent](auto& p)
-                        {
-                            return parent->depth >= p->depth;
-                        });
-                        if(it == parent->parents.end())
-                            parent = nullptr;
-                        else parent = *it;
-                    }
-                    return static_cast<bool>(parent);
-                };
-
-                for(auto& ls : det)
-                {
-                    if(this_ptr && repossesable(ls))
-                    {
-                        auto& repossess_able_details = rpdetails[var];
-                        repossess_able_details.push_back(std::move(ls));
-                    }
-                    else
-                        details[var].emplace_back(std::move(ls));
-                }
-            }
         }
-        //before we steal the content of rpdetails, we need to filter it to remove non-last uses
-        for(auto&[_, detail] : rpdetails)
-        {
-            for(size_t i = 0; i < detail.size(); i++)
-            {
-                auto& ls = detail[i];
-                //if there is a straight path between ls and any of the nodes ls is not a last use
-                auto child = ls.first;
-                while(child->children.size() == 1)
-                {
-                    auto keys = detail | std::views::keys;
-                    auto it = std::ranges::find(keys, child->children[0]);
-                    if(it == keys.end()) child = child->children[0];
-                    //we reached it in a straight path
-                    else
-                    {
-                        detail.erase(detail.begin() + static_cast<int64_t>(i++));
-                        break;
-                    }
-                }
-            }
-        }
-        //finally we repossess
-        for(auto& [k, det]: rpdetails)
-        {
-            auto& this_det = details.at(k);
-            //if we have more than child we cannot reposses(parent might need the info)
-            auto this_it = std::ranges::find_if(this_det, [node](auto& thing)
-                {
-                    return thing.first == node;
-                });
-            if(node->children.size() == 1)
-            {
-
-                this_it->second.second.clear();
-                for(auto& ls : det)
-                    this_it->second.second.insert(this_it->second.second.end(),
-                        std::make_move_iterator(ls.second.second.begin()),
-                        std::make_move_iterator(ls.second.second.end()));
-            }
-            else
-            {
-                assert(this_it->second.first.size() == 1);
-                auto first_use = this_it->second.first[0];
-                this_det.erase(this_it);
-                for(auto& sub_det : det)
-                {
-                    assert(sub_det.second.first.size() == 1);
-                    sub_det.second.first[0] = first_use;
-                    this_det.push_back(std::move(sub_det));
-                }
-            }
-        }
-        return details;
+        return out;
     }
-
+    std::unordered_map<std::string, std::set<Expression*>> CFGNodeManager::findFirstUses()
+    {
+        return findFirstUsesInternal(root_node);
+    }
 
     CFGNode* CFGNodeManager::newNode(uint32_t depth, std::string name)
     {
@@ -415,7 +349,8 @@ namespace Yoyo
 
     void CFGNodeManager::annotate()
     {
-        uses = annotate_internal(root_node);
+        auto map = findFirstUses();
+        raise(SIGTRAP);
     }
 }
 

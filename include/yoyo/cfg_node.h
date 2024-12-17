@@ -1,7 +1,14 @@
 #pragma once
 #include <memory>
+#include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+namespace Yoyo
+{
+    class Expression;
+}
 
 namespace Yoyo
 {
@@ -12,9 +19,9 @@ namespace Yoyo
     class CFGNode
     {
         CFGNode() = default;
-        bool visited = false;
         friend class CFGNodeManager;
     public:
+        bool visited = false;
         std::string debug_name;
         static CFGNode* prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl);
         std::vector<CFGNode*> children;
@@ -31,13 +38,11 @@ namespace Yoyo
     };
     class CFGNodeManager
     {
-        //pair of first and last uses
-        using UsageDetails = std::pair<std::vector<Statement*>, std::vector<Statement*>>;
-        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, UsageDetails>>> annotate_internal(CFGNode* node);
+        std::unordered_map<std::string, std::set<Expression*>> findFirstUses();
     public:
         std::vector<std::unique_ptr<CFGNode>> nodes;
         ///this stores the first and last uses of every local variable and is filled after @c annotate is called
-        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, UsageDetails>>> uses;
+        std::unordered_map<std::string, std::set<Expression*>> first_uses;
         CFGNode* root_node = nullptr;
         CFGNode* newNode(uint32_t depth, std::string name = "");
         void annotate();
