@@ -309,24 +309,27 @@ namespace Yoyo
     {
         std::unordered_map<std::string, std::set<Expression*>> out;
         std::set<std::string>* found_here = nullptr;
+        std::set<std::string> init_here;
         //size is either depth + 1, more or one less(same as depth)
         if(node->depth == vars.size()) found_here = &vars.emplace_back();
         else if(vars.size() >= node->depth + 1) found_here = &vars[node->depth];
         else raise(SIGTRAP);
         for(auto stat: node->statements)
         {
+            if(auto dcast = dynamic_cast<VariableDeclaration*>(stat))
+                found_here->emplace(dcast->identifier.text);
             auto uses = std::visit(FirstUsedVariables{}, stat->toVariant());
             for(auto&[var, use] : uses)
-                if(!found_here->contains(var))
+                if(!out.contains(var))
                 {
                     out.emplace(var, std::set{use});
                     found_here->emplace(var);
+                    init_here.emplace(var);
                 }
         }
         auto exists_before = [&vars](const std::string& name, uint32_t scope)
         {
-            if(scope == 0) return false;
-            return std::ranges::any_of(std::ranges::subrange(vars.begin(), vars.begin() + scope - 1), [&name](auto& set)
+            return std::ranges::any_of(std::ranges::subrange(vars.begin(), vars.begin() + scope), [&name](auto& set)
             {
                return set.contains(name);
             });
@@ -346,7 +349,7 @@ namespace Yoyo
                 if(child->depth >= node->depth ||
                     child->depth < node->depth && exists_before(var, node->depth))
                 {
-                    if(!found_here->contains(var))
+                    if(!init_here.contains(var))
                         out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
                 }
                 //child is shallow and var doesn't exist before
