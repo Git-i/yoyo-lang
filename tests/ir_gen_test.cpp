@@ -135,11 +135,11 @@ TEST_CASE("Test CFG")
         }
         std::cout << std::flush;
     };
-    std::cout << "First uses:\n";
-    print_uses(manager.first_uses);
-    std::cout << "Last uses:\n";
-    print_uses(manager.last_uses);
-    std::cout << std::endl;
+    //std::cout << "First uses:\n";
+    //print_uses(manager.first_uses);
+    //std::cout << "Last uses:\n";
+    //print_uses(manager.last_uses);
+    //std::cout << std::endl;
     std::unordered_map<Yoyo::CFGNode*, Agnode_t*> nodes;
     size_t idx = 0;
     for(auto& node: manager.nodes)

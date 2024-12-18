@@ -165,6 +165,8 @@ namespace Yoyo
         auto old_hash = block_hash;
         block_hash = name + "__";
         pushScope();
+        CFGNode::prepareFromFunction(function_cfgs.emplace_back(CFGNodeManager{}), decl);
+        function_cfgs.back().annotate();
         size_t idx = 0;
         for(auto& param : decl->signature.parameters)
         {
@@ -216,6 +218,7 @@ namespace Yoyo
         }
         current_Statement = &decl->body;
         std::visit(*this, decl->body->toVariant());
+        function_cfgs.pop_back();
         popScope();
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br)
             builder->CreateBr(returnBlock);

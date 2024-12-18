@@ -1,7 +1,7 @@
 app: module = APP
 Vec2: struct = {
     x: i32, y: i32,
-    make_new_copy: fn (&this) -> This = {
+    clone: fn (&this) -> This = {
         app::func(&"custom clone");
         return Vec2{ .x = this.x, .y = this.y };
     }
@@ -12,5 +12,5 @@ takes_foo: fn -> f64 = {
     a := new();
     consume(new());
     consume(a);
-    return a.x;
+    return 10;
 }

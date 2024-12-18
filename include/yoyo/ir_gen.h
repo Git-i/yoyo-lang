@@ -81,6 +81,7 @@ namespace Yoyo
         std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
+        std::vector<CFGNodeManager> function_cfgs;
         std::string block_hash;
 
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);

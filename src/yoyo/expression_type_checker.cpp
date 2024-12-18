@@ -244,7 +244,9 @@ namespace Yoyo
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
                 auto& type = var->second.second;
-                type.is_lvalue = true;
+                //its only lvalue if its not last use
+                bool is_last_use = irgen->function_cfgs.back().last_uses.at(name).contains(expr);
+                type.is_lvalue = !is_last_use;
                 type.saturate(irgen->module, irgen);
                 return type;
             }

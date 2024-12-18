@@ -270,6 +270,7 @@ namespace Yoyo
         }
         std::unordered_map<std::string, Expression*> operator()(ReturnStatement* stat)
         {
+            if(!stat->expression) return {};
             return std::visit(UsedVariablesExpression{is_first}, stat->expression->toVariant());
         }
         std::unordered_map<std::string, Expression*> operator()(WhileStatement* stat)
