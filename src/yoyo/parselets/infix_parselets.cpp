@@ -79,6 +79,7 @@ namespace Yoyo
                 std::make_unique<ObjectLiteral>(std::move(original_type), std::move(body)), tk.loc,
                 parser.discardLocation, parser.parent);
         }
-        return std::make_unique<ScopeOperation>(std::move(original_type));
+        return Expression::attachSLAndParent(std::make_unique<ScopeOperation>(std::move(original_type)),
+            left->beg, curly->loc, parser.parent);
     }
 }

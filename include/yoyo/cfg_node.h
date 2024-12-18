@@ -22,6 +22,7 @@ namespace Yoyo
         friend class CFGNodeManager;
     public:
         bool visited = false;
+        bool looped = false;
         std::string debug_name;
         static CFGNode* prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl);
         std::vector<CFGNode*> children;
@@ -39,10 +40,12 @@ namespace Yoyo
     class CFGNodeManager
     {
         std::unordered_map<std::string, std::set<Expression*>> findFirstUses();
+        std::unordered_map<std::string, std::set<Expression*>> findLastUses();
     public:
         std::vector<std::unique_ptr<CFGNode>> nodes;
         ///this stores the first and last uses of every local variable and is filled after @c annotate is called
         std::unordered_map<std::string, std::set<Expression*>> first_uses;
+        std::unordered_map<std::string, std::set<Expression*>> last_uses;
         CFGNode* root_node = nullptr;
         CFGNode* newNode(uint32_t depth, std::string name = "");
         void annotate();

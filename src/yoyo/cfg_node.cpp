@@ -3,6 +3,7 @@
 #include <cassert>
 #include <csignal>
 #include <format>
+#include <iostream>
 #include <memory>
 #include <ranges>
 #include <set>
@@ -21,7 +22,6 @@ namespace Yoyo
         void operator()(IfStatement* stat)
         {
             node->statements.push_back(stat);
-
             auto then = node->manager->newNode(depth, "if_then");
             auto else_node = stat->else_stat ? node->manager->newNode(depth, "if_else") : nullptr;
             auto cont = node->manager->newNode(depth, "if_cont");
@@ -48,6 +48,8 @@ namespace Yoyo
         void operator()(WhileStatement* stat)
         {
             auto cond = node->manager->newNode(depth, "while_cond");
+            auto cont = node->manager->newNode(depth, "while_cont");
+            cond->addChild(cont);
             cond->statements.push_back(stat);
             node->addChild(cond);
             auto then = node->manager->newNode(depth, "while_then");
@@ -56,7 +58,7 @@ namespace Yoyo
             std::visit(while_prep, stat->body->toVariant());
             if(while_prep.node != exit) while_prep.node->addChild(cond);
             if(while_prep.node == exit) node = exit;
-            else node = cond;
+            else node = cont;
         }
         void operator()(BlockStatement* stat)
         {
@@ -244,18 +246,19 @@ namespace Yoyo
             return std::visit(*this, lit->expr->toVariant());
         }
     };
-    struct FirstUsedVariables
+    struct UsedVariables
     {
+        bool is_first;
         std::unordered_map<std::string, Expression*> operator()(Statement*) { return {}; }
         std::unordered_map<std::string, Expression*> operator()(ExpressionStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{true}, stat->expression->toVariant());
+            return std::visit(UsedVariablesExpression{is_first}, stat->expression->toVariant());
         }
         std::unordered_map<std::string, Expression*> operator()(VariableDeclaration* decl)
         {
             if(decl->initializer)
             {
-                auto uses = std::visit(UsedVariablesExpression{true}, decl->initializer->toVariant());
+                auto uses = std::visit(UsedVariablesExpression{is_first}, decl->initializer->toVariant());
                 uses.emplace(decl->identifier.text, decl->initializer.get());
                 return uses;
             }
@@ -263,27 +266,34 @@ namespace Yoyo
         }
         std::unordered_map<std::string, Expression*> operator()(IfStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{true}, stat->condition->toVariant());
+            return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
         }
         std::unordered_map<std::string, Expression*> operator()(ReturnStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{true}, stat->expression->toVariant());
+            return std::visit(UsedVariablesExpression{is_first}, stat->expression->toVariant());
         }
         std::unordered_map<std::string, Expression*> operator()(WhileStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{true}, stat->condition->toVariant());
+            return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
         }
         std::unordered_map<std::string, Expression*> operator()(ForStatement* stat){}
         std::unordered_map<std::string, Expression*> operator()(ConditionalExtraction* stat)
         {
-            return std::visit(UsedVariablesExpression{true}, stat->condition->toVariant());
+            return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
         }
         std::unordered_map<std::string, Expression*> operator()(WithStatement* stat)
         {
-            return std::visit(UsedVariablesExpression{true}, stat->expression->toVariant());
+            return std::visit(UsedVariablesExpression{is_first}, stat->expression->toVariant());
         }
     };
-
+    struct FirstUsedVariables : UsedVariables
+    {
+        FirstUsedVariables() : UsedVariables(true){}
+    };
+    struct LastUsedVariables : UsedVariables
+    {
+        LastUsedVariables() : UsedVariables(false){}
+    };
     CFGNode* CFGNode::prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl)
     {
         auto entry = mgr.newNode(0, "entry");
@@ -358,9 +368,104 @@ namespace Yoyo
         }
         return out;
     }
+    std::unordered_map<std::string, std::set<Expression*>> findLastUsesInternal(CFGNode* node, std::vector<std::set<std::string>> vars)
+    {
+        std::unordered_map<std::string, std::set<Expression*>> out;
+        std::set<std::string>* found_here = nullptr;
+        //size is either depth + 1, more or one less(same as depth)
+        if(node->depth == vars.size()) found_here = &vars.emplace_back();
+        else if(vars.size() >= node->depth + 1) found_here = &vars[node->depth];
+        else raise(SIGTRAP);
+        for(auto stat: node->statements)
+        {
+            if(auto dcast = dynamic_cast<VariableDeclaration*>(stat))
+                found_here->emplace(dcast->identifier.text);
+            auto uses = std::visit(LastUsedVariables{}, stat->toVariant());
+            for(auto&[var, use] : uses)
+            {
+                out[var] = std::set{use};
+                found_here->emplace(var);
+            }
+        }
+        auto exists_before = [&vars](const std::string& name, uint32_t scope)
+        {
+            return std::ranges::any_of(std::ranges::subrange(vars.begin(), vars.begin() + scope), [&name](auto& set)
+            {
+               return set.contains(name);
+            });
+        };
+        if(node->visited)
+        {
+            node->looped = true;
+            return out;
+        }
+        node->visited = true;
+        std::unordered_map<std::string, std::vector<std::pair<CFGNode*, std::set<Expression*>>>> child_uses;
+        for(auto child: node->children)
+        {
+            node->looped = false;
+            auto uses = findLastUsesInternal(child, vars);
+            //if we looped then last uses of variables on this depth and lower are not guaranteed
+            if(node->looped)
+            {
+                for(auto& var_set: std::ranges::subrange(vars.begin(), vars.begin() + node->depth + 1))
+                {
+                    for(auto& var : var_set)
+                        out[var].clear();
+                }
+            }
+            for(auto&[var, use] : uses)
+                //child is deeper, or it's shallow but the var is defined before so its only first use if we don't use it
+                if(child->depth >= node->depth ||
+                    child->depth < node->depth && exists_before(var, node->depth))
+                {
+                    //if the node looped we only add variables we don't know
+                    out[var].clear();
+                    if(!node->looped || node->looped && !exists_before(var, node->depth + 1))
+                        child_uses[var].emplace_back(child, std::move(use));
+                }
+                //child is shallow and var doesn't exist before
+                else
+                    out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
+        }
+        //if we can reach any of the uses with no branching from one use, that use is not a last use
+        for(auto&[var, uses] : child_uses)
+        {
+            for(size_t i = 0; i < uses.size(); i++)
+            {
+                auto node = uses[i].first;
+                while(node->children.size() == 1)
+                {
+                    auto child = node->children.front();
+                    auto node_view = uses | std::views::keys;
+                    auto it = std::ranges::find(node_view, child);
+                    if(it != node_view.end())
+                    {
+                        uses.erase(uses.begin() + static_cast<int64_t>(i++));
+                        break;
+                    }
+                    node = child;
+                }
+            }
+        }
+        for(auto&[var, uses] : child_uses)
+        {
+            for(auto& use : uses)
+                out[var].insert(std::make_move_iterator(use.second.begin()), std::make_move_iterator(use.second.end()));
+        }
+
+        node->visited = false;
+        return out;
+    }
+
     std::unordered_map<std::string, std::set<Expression*>> CFGNodeManager::findFirstUses()
     {
         return findFirstUsesInternal(root_node, {});
+    }
+
+    std::unordered_map<std::string, std::set<Expression*>> CFGNodeManager::findLastUses()
+    {
+        return findLastUsesInternal(root_node, {});
     }
 
     CFGNode* CFGNodeManager::newNode(uint32_t depth, std::string name)
@@ -376,8 +481,9 @@ namespace Yoyo
 
     void CFGNodeManager::annotate()
     {
-        auto map = findFirstUses();
-        raise(SIGTRAP);
+        first_uses = findFirstUses();
+        for(auto& node : nodes) node->visited = false;
+        last_uses = findLastUses();
     }
 }
 
