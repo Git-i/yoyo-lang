@@ -192,6 +192,18 @@ namespace Yoyo
         return name == "__ref" || name == "__ref_mut";
     }
 
+    bool Type::is_trivially_destructible() const
+    {
+        if(is_builtin() || is_reference() || is_opaque_pointer()) return true;
+        if(is_tuple() || is_optional() || is_variant())
+        {
+            bool is_not_trivially_destructible = std::ranges::any_of(subtypes, [](auto& subtype)
+            {
+                return !subtype.is_trivially_destructible();
+            });
+        }
+    }
+
     const Type& Type::deref() const
     {
         if(is_reference()) return subtypes[0];

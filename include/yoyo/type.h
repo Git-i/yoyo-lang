@@ -36,6 +36,7 @@ namespace Yoyo
         [[nodiscard]] bool is_non_owning(IRGenerator*) const;
         [[nodiscard]] bool is_non_owning_mut(IRGenerator*) const;
         [[nodiscard]] bool is_reference() const;
+        [[nodiscard]] bool is_trivially_destructible() const;
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)

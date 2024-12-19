@@ -1,0 +1,152 @@
+sdl: module = #import sdl2 //loads the dll and calls sdl init
+std: module = #import std
+
+use std::*;
+use sdl::{Window, Renderer, Texture::load_from_file};
+
+/// Cannot borrow 'a' immutably because it has been borrowed mutably before
+/// 18 | *get_int(a, a.0) = 400;
+///               ^  ^^^──────── Immutable borrow occurs here
+///               └───────────── Mutable borrow occurs here
+/// 
+/// Cannot borrow 'a' mutably because it has been borrowed immutably before
+/// 18 | *get_int(a.0, a.0, a) = 400;
+///               ^^^  ^^^  ^──────── Mutable borrow occurs here
+///                │    └──────────── Immutable borrow here
+///                └───────────────── Immutable borrow here        
+
+//ref types
+const      mut
+&i32       &mut i32
+[i32:&]    [i32:&mut]
+str:&      str:&mut
+iter       iter_mut
+
+iter: iterator::<&mut i32> for [i32:&mut] = {
+    new {
+        return This{};
+    } 
+}
+LintType: enum = {
+    Error, Warn, Info
+}
+Region: struct = {
+    start: SourceLocation,
+    end: SourceLocation,
+    lint_type: LintType
+}
+Error: struct = {
+    suggestions: Vec::<str>
+    regions: Vec::<Region>
+    name: str
+    __str: (this) -> str = {
+        
+    }
+}
+/// error: no operator `+` exists with lhs `i32` and rhs `str`
+/// 
+///
+/// Suggestion: consider `"${b} abc`
+///          
+
+option: mut i32? = null;
+if |value| (option) {
+    //borrowing value borrows option
+}
+opt_ref: (a: &[i32]) -> {&i32}? = {}
+if |rernc| (opt_ref([10, 20, 30])) {
+
+}
+
+MyType: struct = {
+    data: [i32]
+}
+iter: default iterator::<&i32> for MyType = {};
+iter_mut: default iterator_mut::<&mut i32> for MyType = {}
+
+
+use std::iterator::*;
+func: (it: iterator::<&i32>) = {
+    arr: [i32 & usize] = it.map(||(x) return x * 2;).enumerate().collect();
+    std::print(arr);
+}
+access: (arr: inout [i32]) -> &mut i32
+
+operator
+
+access: (arr: inout [i32], idx: i32) -> &mut i32
+
+access_two(arr: inout [i32]) -> &mut i32 & &mut i32 = {
+    return (arr[10], arr[20]);
+}
+
+NonOwning: struct:& = {
+    view: [i32:&mut]
+    new: (arr: &mut [i32]) -> This = {
+        return This{ .view = arr.all() };
+    }
+}
+takes_no: (no: NonOwning) {
+
+}
+arr: mut = [10, 20, 30];
+with a as NonOwning::new(arr) {
+    
+}
+
+arr: mut = [10, 20, 30];
+access(arr, *access(arr));
+//       "borrow mut"      
+//     ┌─────────────┐   
+with elem as access(copy arr) {
+    access(arr); //invalid arr is const
+}
+access(arr, arr[0] + arr[1]);
+IValueProvider::<'a>: interface = {
+    value: () -> 'a;
+}
+INumber: interface = {
+    value: () -> i32;
+}
+IntWrapper: class impl IValueProvider, INumber = {
+    val: Duration;
+    IValueProvider::<i32> {
+        value: () -> i32 = return val;
+    }
+    INumber {
+        value: () -> i32 = return val;
+    }
+}
+
+main: () = {
+    a: IntWrapper = IntWrapper{.val = 20};
+    (a as IValueProvider).value();
+}
+
+enumerate<'a>: iterator::<'a & usize> for iterator::<'a> = {
+
+}
+main: () = {
+    [10, 20, 30].func().iter()
+}
+main: () -> void! = {
+    wnd := Window::new("Wnd", 1280, 720)!;
+    renderer := Renderer::new(wnd)!;
+    a : [i32]? = [10, 20, 30];
+
+    texture := Texture::load_from_file(renderer, "hello.bmp");
+    loop_should_stop: mut = false;
+    get_int(b).*;
+    while (!loop_should_stop) {
+        handle_events(||(ev: Event) {
+            if (ev is QuitEvent) {
+                loop_should_stop = true; break;
+            }
+        });
+
+        renderer.clear();
+        renderer.render_texture(texture);
+        renderer.present();
+    }
+    stde::set_crash_handler(wnd.crash_handler());
+}
