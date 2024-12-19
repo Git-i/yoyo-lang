@@ -115,6 +115,11 @@ namespace Yoyo {
                     return Token{TokenType::Colon, loc};
                 }
             case '^': return Token{TokenType::Caret, loc};
+            case '#':
+                {
+                    if(NextIs('(')) return Token{TokenType::AttrOpen, loc};
+                    return std::nullopt;
+                }
             case '_':
                 {
                     if (const char8_t next = Peek(); std::isalnum(next))

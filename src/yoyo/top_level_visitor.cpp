@@ -34,7 +34,7 @@ namespace Yoyo
             (*irgen)(fn_decl);
             irgen->block_hash = std::move(curr_hash);
         }
-        irgen->annotateClass(decl.get());
+        irgen->annotateClass(decl_ptr);
         irgen->in_class = false;
         return true;
     }

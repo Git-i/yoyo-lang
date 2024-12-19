@@ -106,7 +106,7 @@ namespace Yoyo
     
     llvm::Value* ExpressionEvaluator::implicitConvert(llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
-        if(dst.is_equal(src)) { return clone(val, src, out); }
+        if(dst.is_equal(src)) { return clone(val, src, out); }if(dst.is_equal(src)) { return clone(val, src, out); }
         if(!dst.is_assignable_from(src)) { irgen->error(); return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);
         if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
@@ -247,14 +247,6 @@ namespace Yoyo
         if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
         return implicitConvert(rhs, right_type, left_type, lhs);
     }
-    bool isValidCloneMethod(const Type& tp, const FunctionSignature& sig)
-    {
-        if(sig.parameters.size() != 1) return false;
-        if(sig.parameters[0].type.name != "__ref") return false;
-        if(!sig.parameters[0].type.subtypes[0].is_equal(tp)) return false;
-        if(!sig.returnType.is_equal(tp)) return false;
-        return true;
-    }
     /// user defined types can create a @c clone function.\n
     /// The @c clone function's signature looks like @code clone: (&this) -> This @endcode \n
     /// Without it the type is cannot be copied
@@ -364,7 +356,7 @@ namespace Yoyo
             if(candidate != decl->methods.end())
             {
                 auto& sig = reinterpret_cast<FunctionDeclaration*>(candidate->function_decl.get())->signature;
-                std::string fn_name = std::get<0>(*decl_tup) + "clone";
+                std::string fn_name = std::get<0>(*decl_tup) + candidate->name;
                 auto fn = irgen->code->getFunction(fn_name);
                 if(!fn) fn = declareFunction(fn_name, irgen, sig);
                 irgen->builder->CreateCall(fn, {into, value});

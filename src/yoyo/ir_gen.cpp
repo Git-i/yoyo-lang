@@ -149,13 +149,14 @@ namespace Yoyo
                 clone_ptr = &method;
             }
         }
-        if(!clone_ptr && !has_no_clone) return; //implicit clone method
+        if(has_no_clone) decl->has_clone = false;
+        else decl->has_clone = true;
         if(clone_ptr)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(clone_ptr->function_decl.get());
             if(!isValidCloneMethod(this_t, fn_decl->signature)) error();
         }
-        decl->has_clone = !has_no_clone;
+
     }
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
