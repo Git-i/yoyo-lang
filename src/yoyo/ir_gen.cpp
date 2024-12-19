@@ -123,7 +123,40 @@ namespace Yoyo
             if(map.contains(name)) return true;
         return false;
     }
-
+    bool isValidCloneMethod(const Type& tp, const FunctionSignature& sig)
+    {
+        if(sig.parameters.size() != 1) return false;
+        if(sig.parameters[0].type.name != "__ref") return false;
+        if(!sig.parameters[0].type.subtypes[0].is_equal(tp)) return false;
+        if(!sig.returnType.is_equal(tp)) return false;
+        return true;
+    }
+    void IRGenerator::annotateClass(ClassDeclaration* decl)
+    {
+        bool has_no_clone = std::ranges::find_if(decl->attributes, [](Attribute& attr) {
+            return attr.name == "no_clone";
+        }) != decl->attributes.end();
+        
+        ClassMethod* clone_ptr = nullptr;
+        for(auto& method: decl->methods)
+        {
+            if(auto it = std::ranges::find_if(method.function_decl->attributes, [](Attribute& attr) {
+                return attr.name == "clone";
+            }); it != method.function_decl->attributes.end())
+            {
+                if(clone_ptr) error(); //mutiple clone methods
+                if(has_no_clone) error(); //clone specisifed for no clone class
+                clone_ptr = &method;
+            }
+        }
+        if(!clone_ptr && !has_no_clone) return; //implicit clone method
+        if(clone_ptr)
+        {
+            auto fn_decl = reinterpret_cast<FunctionDeclaration*>(clone_ptr->function_decl.get());
+            if(!isValidCloneMethod(this_t, fn_decl->signature)) error();
+        }
+        decl->has_clone = !has_no_clone;
+    }
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
         std::unique_ptr<llvm::IRBuilder<>> oldBuilder;
@@ -254,17 +287,18 @@ namespace Yoyo
         for(auto& var : decl->vars) var.type.saturate(module, this);
         module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl->vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
 
+        in_class = true;
         for(auto& fn: decl->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
-            in_class = true;
             auto curr_hash = reset_hash();
             block_hash = class_hash;
             current_Statement = &fn.function_decl;
             (*this)(fn_decl);
             block_hash = std::move(curr_hash);
-            in_class = false;
         }
+        annotateClass(decl);
+        in_class = false;
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
     {

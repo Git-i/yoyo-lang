@@ -112,19 +112,23 @@ namespace Yoyo
         Get();//discard the ':'
         auto look_ahead = Peek();
         if(!look_ahead) return nullptr;
+        auto attrs = parseAttributeList();
+        std::unique_ptr<Statement> decl;
         switch (look_ahead->type)
         {
-        case TokenType::Fn: return parseFunctionDeclaration(iden.value());
-        case TokenType::Class: return parseClassDeclaration(iden.value(), false);
-        case TokenType::Struct: return parseClassDeclaration(iden.value(), true);
-        case TokenType::Enum: return parseEnumDeclaration(iden.value());
-        case TokenType::EnumFlag:;//TODO
-        case TokenType::Union:;//TODO
-        case TokenType::Alias: return parseAliasDeclaration(iden.value());
-        case TokenType::Module: return parseModuleImport(iden.value());
+        case TokenType::Fn: decl = parseFunctionDeclaration(iden.value()); break;
+        case TokenType::Class: decl = parseClassDeclaration(iden.value(), false); break;
+        case TokenType::Struct: decl = parseClassDeclaration(iden.value(), true); break;
+        case TokenType::Enum: decl = parseEnumDeclaration(iden.value()); break;
+        case TokenType::EnumFlag: break;//TODO
+        case TokenType::Union: break;//TODO
+        case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
+        case TokenType::Module: decl = parseModuleImport(iden.value()); break;
 
         default: return parseVariableDeclaration(iden.value());
         }
+        decl->attributes = std::move(attrs);
+        return decl;
     }
     std::unique_ptr<Statement> Parser::parseOperatorOverload(const Token& tok)
     {
@@ -222,7 +226,53 @@ namespace Yoyo
         stat_ptr->parent = fn_decl.get();
         return Statement::attachSLAndParent(std::move(fn_decl), identifier.loc, stat_ptr->end, parent);
     }
-
+    Attribute parseAttribute(Parser& p)
+    {
+        Attribute attr;
+        auto name = p.Get();
+        if(!name) p.error("Invalid token", name);
+        attr.name = name->text;
+        if(p.discard(TokenType::LParen))
+        {
+            auto next_tk = p.Get();
+            if(!next_tk) p.error("Invalid token", next_tk);
+            if(next_tk->type != TokenType::Identifier && next_tk->type != TokenType::StringLiteral)
+                p.error("Expected string", next_tk);
+            attr.params.emplace_back(next_tk->text);
+            while(!p.discard(TokenType::RParen))
+            {
+                next_tk = p.Get();
+                if(!next_tk) p.error("Invalid token", next_tk);
+                if(next_tk->type != TokenType::Identifier && next_tk->type != TokenType::StringLiteral)
+                    p.error("Expected string", next_tk);
+                attr.params.emplace_back(next_tk->text);
+                if(!p.discard(TokenType::Comma))
+                {
+                    if(!p.discard(TokenType::RParen))
+                        p.error("Expected ',' or ')'", p.Peek());
+                    else break;
+                }
+            }
+        }
+        return attr;
+    }
+    std::vector<Attribute> Parser::parseAttributeList()
+    {
+        if(!discard(TokenType::AttrOpen)) return {};
+        std::vector<Attribute> attr;
+        attr.push_back(parseAttribute(*this));
+        while(!discard(TokenType::RParen))
+        {
+            attr.push_back(parseAttribute(*this));
+            if(!discard(TokenType::Comma))
+            {
+                if(!discard(TokenType::RParen))
+                    error("Expected ',' or ')'", Peek());
+                else break;
+            }
+        }
+        return attr;
+    }
     std::optional<FunctionSignature> Parser::parseFunctionSignature()
     {
         if(discard(TokenType::Arrow))
@@ -230,7 +280,7 @@ namespace Yoyo
         //empty signature
         if(!discard(TokenType::LParen))
         {
-            return FunctionSignature{.returnType = "__inferred", .return_is_ref = false, .parameters = {}};
+            return FunctionSignature{.returnType = {"__inferred"}, .return_is_ref = false, .parameters = {}};
         }
         FunctionSignature sig;
         auto parseParam = [this](std::string name) -> std::optional<FunctionParameter>
@@ -449,7 +499,6 @@ namespace Yoyo
             std::make_unique<VariableDeclaration>(identifier, type, std::move(init), is_mut),
             identifier.loc, discardLocation, parent);
     }
-
     std::unique_ptr<Statement> Parser::parseEnumDeclaration(Token identifier)
     {
         //Unspecified values cannot equal to specified values unlike in c++
@@ -519,6 +568,7 @@ namespace Yoyo
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
         {
+            auto attr_list = parseAttributeList();
             bool is_static = false;
             AccessSpecifier spec = isStruct ? AccessSpecifier::Public : AccessSpecifier::Private;
             while(true)
@@ -556,6 +606,7 @@ namespace Yoyo
             {
                 if(is_static) error("'static' cannot be applied to methods", next_tk);//static doesn't apply to functions
                 auto stat = parseFunctionDeclaration(iden);
+                stat->attributes = std::move(attr_list);
                 methods.push_back(ClassMethod{.name=std::string{iden.text}, .function_decl = std::move(stat), .access = spec});
                 std::ignore = discard(TokenType::Comma); //comma is optional after function
             }
@@ -565,7 +616,9 @@ namespace Yoyo
                 vars.push_back(ClassVariable{.access = spec,
                     .name = std::string{iden.text},
                     .type = std::move(type).value_or(Type{}),
-                    .is_static = is_static});
+                    .is_static = is_static,
+                    .attributes = std::move(attr_list)
+                });
                 if(!discard(TokenType::Comma))
                 {
                     if(!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());

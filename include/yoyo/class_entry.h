@@ -3,6 +3,7 @@
 #include "type.h"
 namespace Yoyo
 {
+    struct Attribute;
     class Statement;
     enum class AccessSpecifier
     {
@@ -17,6 +18,7 @@ namespace Yoyo
         std::string name;
         Type type;
         bool is_static;
+        std::vector<Attribute> attributes;
     };
     struct ClassMethod
     {

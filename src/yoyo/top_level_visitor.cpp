@@ -20,22 +20,22 @@ namespace Yoyo
         std::ignore = std::get<2>(*ty).release();
         auto decl_ptr = decl.get();
         std::get<2>(*ty) = std::move(decl);
+        irgen->in_class = true;
         for(auto& fn: decl_ptr->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
 
             std::string mangled_name = std::get<0>(*ty) + fn.name;
 
-            irgen->in_class = true;
             auto curr_hash = std::move(irgen->block_hash);
             irgen->block_hash = curr_hash + mangled_name_prefix;
 
             irgen->current_Statement = &fn.function_decl;
             (*irgen)(fn_decl);
             irgen->block_hash = std::move(curr_hash);
-            irgen->in_class = false;
         }
-        //irgen->hanldeClassDeclaration(TODO, TODO, TODO);
+        irgen->annotateClass(decl.get());
+        irgen->in_class = false;
         return true;
     }
     bool handleBinaryOverload(OperatorOverload* decl, IRGenerator* irgen)

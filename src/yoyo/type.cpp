@@ -186,7 +186,7 @@ namespace Yoyo
             return decl->ownership == Ownership::NonOwningMut;
         return false;
     }
-
+    
     bool Type::is_reference() const
     {
         return name == "__ref" || name == "__ref_mut";
@@ -201,7 +201,11 @@ namespace Yoyo
             {
                 return !subtype.is_trivially_destructible();
             });
+            return !is_not_trivially_destructible;
         }
+        if(auto dets = module->findType(block_hash, name))
+            return std::get<2>(*dets)->is_trivially_destructible;
+        return true;
     }
 
     const Type& Type::deref() const
@@ -239,11 +243,9 @@ namespace Yoyo
             subtypes[0].is_mutable = true;
         if(is_reference())
             subtypes[0].is_lvalue = true;
-        decltype(&src->aliases) alias_list = nullptr;
         if(module_path.size() > 1)
         {
             Module* md = src;
-            ClassDeclaration* decl = nullptr;
             std::string hash = irgen ? irgen->block_hash : src->module_hash;
             while(!it.is_end())
             {
@@ -254,7 +256,6 @@ namespace Yoyo
             name = it.last().name;
             module = md;
             block_hash = std::move(hash);
-            alias_list = &md->aliases;
         }
         if(auto alias = module->findAlias(block_hash, name))
             *this = *alias;

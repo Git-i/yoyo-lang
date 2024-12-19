@@ -10,6 +10,7 @@ new: fn -> Vec2 = return Vec2{ .x = 10, .y = 20 };
 consume: fn (val: Vec2) = return;
 takes_foo: fn -> f64 = {
     a := new();
+    clone_a := a;
     consume(new());
     consume(a);
     return 10;

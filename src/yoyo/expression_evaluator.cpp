@@ -103,6 +103,7 @@ namespace Yoyo
         }
         return 0;
     }
+    
     llvm::Value* ExpressionEvaluator::implicitConvert(llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
         if(dst.is_equal(src)) { return clone(val, src, out); }
@@ -198,7 +199,7 @@ namespace Yoyo
         if(dst.is_floating_point())
         {
             if(!dst.is_equal(src))
-                if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dst_as_llvm, "assign_fpext");
+            if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dst_as_llvm, "assign_fpext");
                 else if(src.is_unsigned_integral()) val = irgen->builder->CreateUIToFP(val, dst_as_llvm, "assign_uitofp");
                 else if(src.is_signed_integral()) val = irgen->builder->CreateSIToFP(val, dst_as_llvm, "assign_uitofp");
             irgen->builder->CreateStore(val, out);
@@ -352,13 +353,15 @@ namespace Yoyo
         else if(auto decl_tup = left_type.module->findType(left_type.block_hash, left_type.name))
         {
             auto decl = std::get<2>(*decl_tup).get();
+            if(!decl->has_clone) { irgen->error(); return nullptr; }
             auto candidate = std::ranges::find_if(decl->methods, [](auto& meth)
             {
-                return meth.name == "clone";
+                auto end = meth.function_decl->attributes.end();
+                return std::ranges::find_if(meth.function_decl->attributes, [](auto& attr) {
+                    return static_cast<Attribute&>(attr).name == "clone";
+                }) != end;
             });
-            if(candidate != decl->methods.end() &&
-                isValidCloneMethod(left_type,
-                    reinterpret_cast<FunctionDeclaration*>(candidate->function_decl.get())->signature))
+            if(candidate != decl->methods.end())
             {
                 auto& sig = reinterpret_cast<FunctionDeclaration*>(candidate->function_decl.get())->signature;
                 std::string fn_name = std::get<0>(*decl_tup) + "clone";

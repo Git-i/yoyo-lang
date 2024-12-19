@@ -112,6 +112,7 @@ namespace Yoyo
 
         void error();
         std::string reset_hash();
+        void annotateClass(ClassDeclaration*);
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
         static std::string mangleGenericArgs(std::span<const Type> list);
         void pushScope() {variables.emplace_back();}

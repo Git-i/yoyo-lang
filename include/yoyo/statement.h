@@ -48,11 +48,19 @@ namespace Yoyo
         GenericAliasDeclaration*,
         AliasDeclaration*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
+    struct Attribute {
+        std::string name;
+        std::vector<std::string> params;
+        [[nodiscard]] bool has_params() const {
+            return !params.empty();
+        }
+    };
     class Statement : public ASTNode
     {
     public:
         virtual ~Statement() = default;
         virtual StatementVariant toVariant() = 0;
+        std::vector<Attribute> attributes;
         static auto attachSLAndParent(std::unique_ptr<Statement> self, SourceLocation bg, SourceLocation end,ASTNode* parent = nullptr)
             -> std::unique_ptr<Statement>
         {
@@ -174,7 +182,9 @@ namespace Yoyo
         Token identifier;
         std::vector<ClassVariable> vars;
         std::vector<ClassMethod> methods;
-
+        bool is_trivially_destructible;
+        bool has_clone;
+        std::string destructor_name;
         Ownership ownership;
         ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods, Ownership sh)
             : identifier(ident), vars(std::move(vars)), methods(std::move(methods)), ownership(sh) {}
