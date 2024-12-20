@@ -191,7 +191,21 @@ namespace Yoyo
     {
         return name == "__ref" || name == "__ref_mut";
     }
-
+    void evaluateDestructability(ClassDeclaration* decl)
+    {
+        if(!decl->destructor_name.empty())
+        {
+            decl->is_trivially_destructible = false; return;
+        }
+        for(auto& var : decl->vars)
+        {
+            if(!var.type.is_trivially_destructible())
+            {
+                decl->is_trivially_destructible = false; return;
+            }
+        }
+        decl->is_trivially_destructible = true;
+    }
     bool Type::is_trivially_destructible() const
     {
         if(is_builtin() || is_reference() || is_opaque_pointer()) return true;
@@ -204,7 +218,12 @@ namespace Yoyo
             return !is_not_trivially_destructible;
         }
         if(auto dets = module->findType(block_hash, name))
-            return std::get<2>(*dets)->is_trivially_destructible;
+        {
+            auto decl = std::get<2>(*dets).get();
+            if(decl->is_trivially_destructible) return *decl->is_trivially_destructible;
+            evaluateDestructability(decl);
+            return *decl->is_trivially_destructible;
+        }
         return true;
     }
 

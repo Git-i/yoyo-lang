@@ -182,7 +182,7 @@ namespace Yoyo
         Token identifier;
         std::vector<ClassVariable> vars;
         std::vector<ClassMethod> methods;
-        bool is_trivially_destructible;
+        std::optional<bool> is_trivially_destructible; //we use optional bool because we want to lazy evaluate
         bool has_clone;
         std::string destructor_name;
         Ownership ownership;

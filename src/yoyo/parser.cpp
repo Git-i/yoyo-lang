@@ -105,6 +105,7 @@ namespace Yoyo
     }
     std::unique_ptr<Statement> Parser::parseTopLevelDeclaration()
     {
+        auto attrs = parseAttributeList();
         auto iden = Get();
         if(!iden) return nullptr;
         if(iden->type == TokenType::Operator) return parseOperatorOverload(iden.value());
@@ -112,7 +113,6 @@ namespace Yoyo
         Get();//discard the ':'
         auto look_ahead = Peek();
         if(!look_ahead) return nullptr;
-        auto attrs = parseAttributeList();
         std::unique_ptr<Statement> decl;
         switch (look_ahead->type)
         {

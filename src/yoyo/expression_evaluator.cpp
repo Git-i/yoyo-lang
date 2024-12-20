@@ -1,6 +1,7 @@
 #include <cmath>
 #include <csignal>
 #include <overload_resolve.h>
+#include <ranges>
 #include <set>
 #include <tree_cloner.h>
 #include <llvm/Support/Error.h>
@@ -378,6 +379,75 @@ namespace Yoyo
 
         }
         return into;
+    }
+
+    void ExpressionEvaluator::destroy(llvm::Value* value, const Type& type) const
+    {
+        if(type.is_trivially_destructible()) return;
+        auto as_llvm = irgen->ToLLVMType(type, false);
+        auto parent = irgen->builder->GetInsertBlock()->getParent();
+        if(type.is_optional())
+        {
+            auto is_valid = irgen->builder->CreateStructGEP(as_llvm, value, 1);
+            auto should_destroy = llvm::BasicBlock::Create(irgen->context, "destroy_opt", parent, irgen->returnBlock);
+            auto destroy_cont = llvm::BasicBlock::Create(irgen->context, "destroy_cont", parent, should_destroy);
+            irgen->builder->CreateCondBr(
+                irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context), is_valid), should_destroy, destroy_cont);
+            irgen->builder->SetInsertPoint(should_destroy);
+            destroy(value, type.subtypes[0]);
+            irgen->builder->CreateBr(destroy_cont);
+            irgen->builder->SetInsertPoint(destroy_cont);
+        }
+        else if(type.is_tuple())
+        {
+            for(auto idx : std::views::iota(0u, type.subtypes.size()))
+            {
+                auto sub = irgen->builder->CreateStructGEP(as_llvm, value, idx);
+                destroy(sub, type.subtypes[idx]);
+            }
+        }
+        else if(type.is_variant())
+        {
+            std::set subtypes(type.subtypes.begin(), type.subtypes.end());
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto type_idx_ptr = irgen->builder->CreateStructGEP(as_llvm, value, 1);
+
+            auto type_idx = irgen->builder->CreateLoad(
+                    llvm::Type::getInt32Ty(irgen->context),
+                    irgen->builder->CreateStructGEP(as_llvm, value, 1));
+            llvm::BasicBlock* def = llvm::BasicBlock::Create(irgen->context, "variant_default", fn, irgen->returnBlock);
+            auto sw = irgen->builder->CreateSwitch(type_idx, def, type.subtypes.size());
+            uint32_t idx = 0;
+            for(auto& sub : subtypes)
+            {
+                llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, def);
+                sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
+
+                irgen->builder->SetInsertPoint(blk);
+                auto sub_value = irgen->builder->CreateStructGEP(as_llvm, value, 0);
+                destroy(sub_value, type.subtypes[idx]);
+                irgen->builder->CreateBr(def);
+                idx++;
+            }
+            irgen->builder->SetInsertPoint(def);
+        }
+        else if(auto dets = type.module->findType(type.block_hash, type.name))
+        {
+            auto decl = std::get<2>(*dets).get();
+            if(!decl->destructor_name.empty())
+            {
+                auto fn = irgen->code->getFunction(std::get<0>(*dets) + decl->destructor_name);
+                irgen->builder->CreateCall(fn, {value});
+            }
+            //even after calling the destructor, we still do member wise destruction
+            size_t idx = 0;
+            for(auto& var : decl->vars)
+            {
+                auto sub = irgen->builder->CreateStructGEP(as_llvm, value, idx);
+                destroy(sub, var.type);
+                idx++;
+            }
+        }
     }
 
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)

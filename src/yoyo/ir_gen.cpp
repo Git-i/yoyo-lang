@@ -138,6 +138,7 @@ namespace Yoyo
         }) != decl->attributes.end();
         
         ClassMethod* clone_ptr = nullptr;
+        ClassMethod* destructor = nullptr;
         for(auto& method: decl->methods)
         {
             if(auto it = std::ranges::find_if(method.function_decl->attributes, [](Attribute& attr) {
@@ -148,6 +149,13 @@ namespace Yoyo
                 if(has_no_clone) error(); //clone specisifed for no clone class
                 clone_ptr = &method;
             }
+            if(auto it = std::ranges::find_if(method.function_decl->attributes, [](Attribute& attr) {
+                return attr.name == "destructor";
+            }); it != method.function_decl->attributes.end())
+            {
+                if(destructor) error();
+                destructor = &method;
+            }
         }
         if(has_no_clone) decl->has_clone = false;
         else decl->has_clone = true;
@@ -156,7 +164,7 @@ namespace Yoyo
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(clone_ptr->function_decl.get());
             if(!isValidCloneMethod(this_t, fn_decl->signature)) error();
         }
-
+        decl->destructor_name = destructor->name;
     }
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {

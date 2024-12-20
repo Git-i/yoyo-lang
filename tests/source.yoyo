@@ -1,10 +1,15 @@
 app: module = APP
+
 Vec2: struct = {
     x: i32, y: i32,
     #(clone)
     duplicate_vec: fn (&this) -> This = {
         app::func(&"custom clone");
         return Vec2{ .x = this.x, .y = this.y };
+    }
+    #(destructor)
+    drop: fn (&mut this) = {
+        app::func(&"Dropping vec2");
     }
 }
 new: fn -> Vec2 = return Vec2{ .x = 10, .y = 20 };

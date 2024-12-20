@@ -183,6 +183,7 @@ namespace Yoyo
         llvm::Value* implicitConvert(llvm::Value*, const Type&, const Type&, llvm::Value* = nullptr) const;
         llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
         llvm::Value* clone(llvm::Value* value, const Type& left_type, llvm::Value* into = nullptr) const;
+        void destroy(llvm::Value* value, const Type& type) const;
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
         llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
         llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
