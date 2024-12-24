@@ -41,12 +41,12 @@ or a global variable
 To achieve memory safety using the above assumptions, the language disallows storing references,
 and disallows an owning object to be used more than once per expression if used mutably
 ```rust
-change_arr_and_val: fn (arr: &mut [i32], val: &i32) = {
+change_arr_and_val: fn (arr: &mut [i32], val: &mut i32) = {
     arr.push(90); // can invalidate references to the array
-    val = 10; 
+    *val = 10; 
 }
 /*  call site  */
-arr : mut = [10, 20]
+arr : mut = [10, 20];
 change_arr_and_val(&mut arr, arr[0]); // write to invalid memory
 ```
 If we only allow one source to be used once the above code would fail to compile,
@@ -57,7 +57,7 @@ we have a scene of a game that has to search through a million entities every ti
 ```rust
 Scene: class = {
     entities: [(u64, Entity)]; //id and corresponding entity
-    get_entity_mut: fn (&mut this, id: u64) -> {&mut Entity}? = {
+    get_entity_mut: fn (&mut this, id: u64) -> (&mut Entity)? = {
         for (entity in this.entities) {
             if(entity.0 == id) return entity;
         }
@@ -74,7 +74,7 @@ main: fn = {
     scene: mut Scene;
     // initialize with a million entities somehow
     with entity as scene.get_entity_mut(90) {
-        //entity is a {&mut Entity}? and scene cannot be modified
+        //entity is a (&mut Entity)? and scene cannot be modified
     }
 }
 ```
