@@ -351,6 +351,12 @@ namespace Yoyo
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc = nullptr;
+        llvm::Value* drop_flag = nullptr;
+        if(!type->is_trivially_destructible())
+        {
+            std::string name = "drop_flag_for_" + std::string{decl->identifier.text};
+            drop_flag = Alloca(name, llvm::Type::getInt1Ty(context));
+        }
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
@@ -366,10 +372,14 @@ namespace Yoyo
             type->is_mutable = true;
             alloc = ExpressionEvaluator{this}.doAssign(nullptr, init, *type, *expr_type);
             alloc->setName(decl->identifier.text);
+            if(drop_flag) builder->CreateStore(llvm::ConstantInt::getTrue(context), drop_flag);
         }
+        else
+            if(drop_flag) builder->CreateStore(llvm::ConstantInt::getFalse(context), drop_flag);
         type->saturate(module, this);
         if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
-        variables.back()[name] = {alloc, std::move(type).value()};
+
+        variables.back()[name] = {alloc, std::move(type).value(), drop_flag};
     }
     void IRGenerator::operator()(BlockStatement* stat)
     {

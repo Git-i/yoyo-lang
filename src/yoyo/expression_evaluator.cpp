@@ -744,8 +744,8 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                if(!var->second.second.is_mutable) return nullptr;
-                return var->second.first;
+                if(!std::get<1>(var->second).is_mutable) return nullptr;
+                return std::get<0>(var->second);
             }
         }
     }
@@ -868,16 +868,24 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(NameExpression* nm)
     {
         std::string name(nm->text);
+        auto ret_type = ExpressionTypeChecker{irgen}(nm);
         for(size_t i = irgen->variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                if(!var->second.second.should_sret())
+                if(!std::get<1>(var->second).should_sret())
                 {
-                    return irgen->builder->CreateLoad(irgen->ToLLVMType(var->second.second, false), var->second.first, name);
+                    return irgen->builder->CreateLoad(
+                        irgen->ToLLVMType(std::get<1>(var->second), false), std::get<0>(var->second), name);
                 }
-                return var->second.first;
+                if(!ret_type->is_lvalue)
+                {
+                    //mark the drop flag
+                    auto drop_flag = std::get<2>(var->second);
+                    if(drop_flag) irgen->builder->CreateStore(drop_flag, llvm::ConstantInt::getFalse(irgen->context));
+                }
+                return std::get<0>(var->second);
             }
         }
         if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, name); fn)
