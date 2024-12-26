@@ -77,7 +77,8 @@ namespace Yoyo
         llvm::Module* code;
         std::unique_ptr<llvm::IRBuilder<>> builder;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
-        std::vector<std::unordered_map<std::string, std::pair<llvm::Value*, Type>>> variables;
+        //we keep the alloca of the variable, its type and its drop flag
+        std::vector<std::unordered_map<std::string, std::tuple<llvm::Value*, Type, llvm::Value*>>> variables;
         std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
         std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
@@ -116,7 +117,7 @@ namespace Yoyo
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
         static std::string mangleGenericArgs(std::span<const Type> list);
         void pushScope() {variables.emplace_back();}
-        void popScope() {variables.pop_back();}
+        void popScope();
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);

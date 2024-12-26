@@ -10,6 +10,10 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    struct ExtendedLifetimes
+    {
+        std::vector<std::pair<Type, llvm::Value*>> objects;
+    };
     llvm::Function* declareFunction(const std::string& mangled_name, IRGenerator* irgen, FunctionSignature& fn_sig)
     {
         llvm::Function* fn = nullptr;
@@ -383,6 +387,10 @@ namespace Yoyo
 
     void ExpressionEvaluator::destroy(llvm::Value* value, const Type& type) const
     {
+        if(type.is_reference() && value->getName().starts_with("__del_this"))
+        {
+            destroy(value, type.deref()); return;
+        }
         if(type.is_trivially_destructible()) return;
         auto as_llvm = irgen->ToLLVMType(type, false);
         auto parent = irgen->builder->GetInsertBlock()->getParent();
@@ -460,12 +468,20 @@ namespace Yoyo
                 auto out_type = left_type.deref().subtypes[idx_int];
 
                 auto llvm_t = irgen->ToLLVMType(left_type.deref(), false);
-                auto llvm_idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx_int);
-                auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
                 auto left_ptr = std::visit(*this, lhs->toVariant());
-                auto ptr = irgen->builder->CreateGEP(llvm_t, left_ptr, {zero_const, llvm_idx});
+                auto ptr = irgen->builder->CreateStructGEP(llvm_t, left_ptr, idx_int);
                 if(load_primitive && !out_type.should_sret())
                     return irgen->builder->CreateLoad(irgen->ToLLVMType(out_type, false), ptr);
+                //no partial move allowed, so rvalue binary operations clone the field and destroy the object
+                if (!left_type.is_lvalue)
+                {
+                    if(!left_type.is_trivially_destructible())
+                    {
+                        auto ret = clone(ptr, left_type.subtypes[idx_int]);
+                        destroy(left_ptr, left_type);
+                        return ret;
+                    }
+                }
                 return ptr;
             }
         }
@@ -482,13 +498,21 @@ namespace Yoyo
                     auto llvm_t = irgen->ToLLVMType(left_type.deref(), false);
                     auto out_t = irgen->ToLLVMType(var->type, false);
                     llvm::Value* ptr;
-                    auto idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), std::distance(cls->vars.begin(), var));
-                    auto zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
 
                     auto lalloc = std::visit(*this, lhs->toVariant());
-                    ptr = irgen->builder->CreateGEP(llvm_t, lalloc, {zero, idx});
+                    ptr = irgen->builder->CreateStructGEP(llvm_t, lalloc, std::distance(cls->vars.begin(), var));
+
 
                     if(load_primitive && !var->type.should_sret()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
+                    if (!left_type.is_lvalue)
+                    {
+                        if(!left_type.is_trivially_destructible())
+                        {
+                            auto ret = clone(ptr, var->type);
+                            destroy(lalloc, left_type);
+                            return ret;
+                        }
+                    }
                     return ptr;
                 }
             }
@@ -901,6 +925,12 @@ namespace Yoyo
                     auto val = irgen->Alloca("temp", irgen->ToLLVMType(target->subtypes[0], false));
                     irgen->builder->CreateStore(operand, val);
                     return val;
+                }
+                //taking the address of the lvalue causes the lifetime to be extended till the ref dies
+                if(!target->deref().is_trivially_destructible() && !target->deref().is_lvalue)
+                {
+                    std::string name = "__del_this" + std::string(operand->getName());
+                    operand->setName(name);
                 }
                 return operand;
             }

@@ -647,6 +647,24 @@ namespace Yoyo
         }
         return false;
     }
+
+    void IRGenerator::popScope()
+    {
+        //call destructors
+        auto fn = builder->GetInsertBlock()->getParent();
+        for(auto& var : variables.back() | std::views::values)
+        {
+            auto drop_flag = std::get<2>(var);
+            if(!drop_flag) continue;
+            auto drop = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
+            auto drop_cont = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
+            builder->CreateCondBr(drop_flag, drop, drop_cont);
+            builder->SetInsertPoint(drop);
+            ExpressionEvaluator{this}.destroy(std::get<0>(var), std::get<1>(var));
+        }
+        variables.pop_back();
+    }
+
     //The resultant return type is the type of the first return statement encountered
     std::optional<Type> IRGenerator::inferReturnType(Statement* stat)
     {
