@@ -9,15 +9,16 @@ Vec2: struct = {
     }
     #(destructor)
     drop: fn (&mut this) = {
-        app::func(&"Dropping vec2");
+        app::func(&"Dropping vec2 with x ${this.x}");
     }
 }
-new: fn -> Vec2 = return Vec2{ .x = 10, .y = 20 };
+new: fn(x: i32) -> Vec2 = return Vec2{ .x = x, .y = 20 };
 consume: fn (val: Vec2) = return;
 takes_foo: fn -> f64 = {
-    a := new();
-    clone_a := a;
-    consume(new());
+    a := new(10);
+    clone_a: mut = a;
+    clone_a.x = 15;
+    consume(new(20));
     consume(a);
     return 10;
 }

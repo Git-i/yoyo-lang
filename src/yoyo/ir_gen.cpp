@@ -166,6 +166,13 @@ namespace Yoyo
         }
         decl->destructor_name = destructor->name;
     }
+    llvm::Value* prepareValidDropFlagFor(IRGenerator* irgen, const Type& tp)
+    {
+        if(tp.is_trivially_destructible()) return nullptr;
+        auto flag = irgen->Alloca("drop_flag", llvm::Type::getInt1Ty(irgen->context));
+        irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), flag);
+        return flag;
+    }
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
         std::unique_ptr<llvm::IRBuilder<>> oldBuilder;
@@ -227,9 +234,11 @@ namespace Yoyo
                 {
                     var = func->getArg(idx + uses_sret);
                 }
+                auto flag = prepareValidDropFlagFor(this, type);
                 variables.back()[param.name] = {
                     var,
-                    std::move(type)
+                    std::move(type),
+                    flag
                 };
             }
             //make lambda context visible TODO: fix lambdas
@@ -251,7 +260,8 @@ namespace Yoyo
                         var = builder->CreateLoad(llvm::PointerType::get(context, 0), var);
                     variables.back()[capture] = {
                         var,
-                        std::move(type).value()
+                        std::move(type).value(),
+                        nullptr
                     };
                     capture_idx++;
                 }
@@ -388,7 +398,10 @@ namespace Yoyo
         {
             current_Statement = &sub_stat;
             std::visit(*this, sub_stat->toVariant());
-            if(dynamic_cast<ReturnStatement*>(sub_stat.get())) break;
+            if(dynamic_cast<ReturnStatement*>(sub_stat.get()))
+            {
+                popScope(); return;
+            }
         }
         popScope();
     }
@@ -455,7 +468,7 @@ namespace Yoyo
 
         auto ptr = builder->CreateStructGEP(llvm_t, optional, 0, stat->captured_name);
         tp->subtypes[0].is_lvalue = true; tp->subtypes[0].is_mutable = tp->is_mutable;
-        variables.back()[stat->captured_name] = {ptr, std::move(tp->subtypes[0])};
+        variables.back()[stat->captured_name] = {ptr, std::move(tp->subtypes[0]), nullptr /*TODO*/};
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
 
@@ -484,9 +497,9 @@ namespace Yoyo
             for(auto& i : variables | std::views::reverse)
             {
                 if(!i.contains(str)) continue;
-                Type new_tp = i.at(str).second;
+                Type new_tp = std::get<1>(i.at(str));
                 new_tp.is_mutable = false;
-                variables.back()[str] = {i.at(str).first, std::move(new_tp)};
+                variables.back()[str] = {std::get<0>(i.at(str)), std::move(new_tp), nullptr};
                 break;
             }
         }
@@ -524,7 +537,7 @@ namespace Yoyo
             ty->is_mutable = true;
             ExpressionEvaluator{this}.doAssign(val, expr, *ty, *ty);
         }
-        variables.back()[stat->name] = {val, std::move(ty).value()};
+        variables.back()[stat->name] = {val, std::move(ty).value(), nullptr}; //TODO: capture parents
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
         lifetimeExtensions.erase(stat->name);
@@ -660,6 +673,12 @@ namespace Yoyo
 
     void IRGenerator::popScope()
     {
+        //if there's a `br` we steal it and add it after calling destructors
+        llvm::Instruction* term = nullptr;
+        if(builder->GetInsertBlock()->back().getOpcode() == llvm::Instruction::Br)
+        {
+            term = builder->GetInsertBlock()->getTerminator();
+        }
         //call destructors
         auto fn = builder->GetInsertBlock()->getParent();
         for(auto& var : variables.back() | std::views::values)
@@ -668,10 +687,16 @@ namespace Yoyo
             if(!drop_flag) continue;
             auto drop = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
             auto drop_cont = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
-            builder->CreateCondBr(drop_flag, drop, drop_cont);
+            builder->CreateCondBr(
+                builder->CreateLoad(llvm::Type::getInt1Ty(context), drop_flag),
+                drop, drop_cont);
             builder->SetInsertPoint(drop);
             ExpressionEvaluator{this}.destroy(std::get<0>(var), std::get<1>(var));
+            builder->CreateBr(drop_cont);
+            builder->SetInsertPoint(drop_cont);
         }
+        if(term)
+            term->moveAfter(&builder->GetInsertBlock()->back());
         variables.pop_back();
     }
 

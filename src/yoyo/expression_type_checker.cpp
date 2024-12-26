@@ -243,7 +243,7 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                auto& type = var->second.second;
+                auto& type = std::get<1>(var->second);
                 //its only lvalue if its not last use
                 bool is_last_use = irgen->function_cfgs.back().last_uses.at(name).contains(expr);
                 type.is_lvalue = !is_last_use;

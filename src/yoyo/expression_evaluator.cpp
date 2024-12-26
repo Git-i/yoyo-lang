@@ -883,7 +883,7 @@ namespace Yoyo
                 {
                     //mark the drop flag
                     auto drop_flag = std::get<2>(var->second);
-                    if(drop_flag) irgen->builder->CreateStore(drop_flag, llvm::ConstantInt::getFalse(irgen->context));
+                    if(drop_flag) irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), drop_flag);
                 }
                 return std::get<0>(var->second);
             }

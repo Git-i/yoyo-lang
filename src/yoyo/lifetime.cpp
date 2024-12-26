@@ -71,7 +71,7 @@ namespace Yoyo
 
         for(auto& i : irgen->variables | std::views::reverse)
         {
-            if(i.contains(expr->text) && !i.at(expr->text).second.is_mutable)
+            if(i.contains(expr->text) && !std::get<1>(i.at(expr->text)).is_mutable)
                 irgen->error();
         }
         if(irgen->lifetimeExtensions.contains(expr->text))
