@@ -386,14 +386,12 @@ namespace Yoyo
     }
     void destroyNonOwningParents(const ExpressionEvaluator& eval, llvm::Value* value, const Type& tp)
     {
-        if(value->getName().starts_with("__del_this"))
-            eval.destroy(value, tp);
         if(value->getName().starts_with("__del_parents___"))
         {
             auto nm = value->getName();
             auto& lifetimes = **reinterpret_cast<ExtendedLifetimes* const*>(nm.data() + 16);
             for(auto& [type, obj] : lifetimes.objects)
-                eval.destroy(obj, tp);
+                eval.destroy(obj, type);
             delete &lifetimes;
         }
     }
@@ -954,7 +952,10 @@ namespace Yoyo
                 //taking the address of the lvalue causes the lifetime to be extended till the ref dies
                 if(!target->deref().is_trivially_destructible() && !target->deref().is_lvalue)
                 {
-                    std::string name = "__del_this" + std::string(operand->getName());
+                    auto lf = new ExtendedLifetimes;
+                    lf->objects.emplace_back(std::move(target->subtypes[0]), operand);
+                    std::string name = "__del_parents___aaaa";
+                    memcpy(name.data() + 16, &lf, sizeof(void*));
                     operand->setName(name);
                 }
                 return operand;

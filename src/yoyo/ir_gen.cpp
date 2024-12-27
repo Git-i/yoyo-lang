@@ -291,7 +291,8 @@ namespace Yoyo
         validate_expression_borrows(stat->expression.get(), this);
         auto eval = ExpressionEvaluator{this};
         auto val = std::visit(eval, as_var);
-        if(!ty->is_lvalue) eval.destroy(val, ty.value());
+        if(!ty->is_lvalue)
+            eval.destroy(val, ty.value());
     }
 
     void IRGenerator::operator()(ClassDeclaration* decl)

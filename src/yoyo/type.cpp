@@ -208,7 +208,7 @@ namespace Yoyo
     }
     bool Type::is_trivially_destructible() const
     {
-        if(is_non_owning()) return true;
+        if(is_non_owning()) return false;
         if(is_builtin() || is_opaque_pointer()) return true;
         if(is_tuple() || is_optional() || is_variant())
         {
