@@ -14,6 +14,43 @@ namespace Yoyo
     {
         std::vector<std::pair<Type, llvm::Value*>> objects;
     };
+    void stealUsages(std::vector<llvm::Value*>& args, llvm::Value* out)
+    {
+        ExtendedLifetimes* ext = nullptr;
+        for(auto value: args)
+        {
+            if(value->getName().starts_with("__del_parents___"))
+            {
+                if(!ext) ext = new ExtendedLifetimes;
+                auto nm = value->getName();
+                auto& lifetimes = **reinterpret_cast<ExtendedLifetimes* const*>(nm.data() + 16);
+                ext->objects.insert(ext->objects.end(),
+                    std::make_move_iterator(lifetimes.objects.begin()),
+                    std::make_move_iterator(lifetimes.objects.end()));
+                delete &lifetimes;
+            }
+        }
+        if(ext)
+        {
+            std::string name = "__del_parents___aaaa";
+            memcpy(name.data() + 16, ext, sizeof(void*));
+            out->setName(name);
+        }
+    }
+    void clearUsages(std::vector<llvm::Value*>& args, const ExpressionEvaluator& eval)
+    {
+        for(auto value: args)
+        {
+            if(value->getName().starts_with("__del_parents___"))
+            {
+                auto nm = value->getName();
+                auto& lifetimes = **reinterpret_cast<ExtendedLifetimes* const*>(nm.data() + 16);
+                for(auto&[type, obj]: lifetimes.objects)
+                    eval.destroy(obj, type);
+                delete &lifetimes;
+            }
+        }
+    }
     llvm::Function* declareFunction(const std::string& mangled_name, IRGenerator* irgen, FunctionSignature& fn_sig)
     {
         llvm::Function* fn = nullptr;
@@ -37,7 +74,7 @@ namespace Yoyo
             case 16: return std::numeric_limits<int16_t>::min();
             case 32: return std::numeric_limits<int32_t>::min();
             case 64: return std::numeric_limits<int64_t>::min();
-                default: return 0;/*unreachable*/
+            default: return 0;/*unreachable*/
             }
         }
         if(type.is_unsigned_integral())
@@ -108,7 +145,7 @@ namespace Yoyo
         }
         return 0;
     }
-    
+
     llvm::Value* ExpressionEvaluator::implicitConvert(llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
         if(dst.is_equal(src)) { return clone(val, src, out); }if(dst.is_equal(src)) { return clone(val, src, out); }
@@ -204,7 +241,7 @@ namespace Yoyo
         if(dst.is_floating_point())
         {
             if(!dst.is_equal(src))
-            if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dst_as_llvm, "assign_fpext");
+                if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dst_as_llvm, "assign_fpext");
                 else if(src.is_unsigned_integral()) val = irgen->builder->CreateUIToFP(val, dst_as_llvm, "assign_uitofp");
                 else if(src.is_signed_integral()) val = irgen->builder->CreateSIToFP(val, dst_as_llvm, "assign_uitofp");
             irgen->builder->CreateStore(val, out);
@@ -395,6 +432,17 @@ namespace Yoyo
             delete &lifetimes;
         }
     }
+    extern "C" void string_destroy_debug()
+    {
+        printf("string destroyed\n");
+    }
+    llvm::Function* getStringDestroy(IRGenerator* irgen)
+    {
+        auto fn = irgen->code->getFunction("string_destroy_debug");
+        if(fn) return fn;
+        auto ty = llvm::FunctionType::get(llvm::Type::getVoidTy(irgen->context), false);
+        return llvm::Function::Create(ty, llvm::GlobalValue::ExternalLinkage, "string_destroy_debug", irgen->code);
+    }
     void ExpressionEvaluator::destroy(llvm::Value* value, const Type& type) const
     {
         if(type.is_trivially_destructible()) return;
@@ -449,7 +497,8 @@ namespace Yoyo
         else if(type.is_str())
         {
             auto mem_ptr = irgen->builder->CreateStructGEP(as_llvm, value, 0);
-            irgen->Free(mem_ptr);
+            irgen->Free(irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context,0), mem_ptr));
+            irgen->builder->CreateCall(getStringDestroy(irgen));
         }
         else if(auto dets = type.module->findType(type.block_hash, type.name))
         {
@@ -613,7 +662,12 @@ namespace Yoyo
         args.push_back(implicitConvert(lhs, left_type, target->left));
         args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
-        return target->result.should_sret() ? args[0] : ret;
+        auto final  =target->result.should_sret() ? args[0] : ret;
+        if(target->result.is_non_owning())
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
     }
     llvm::Value* ExpressionEvaluator::doMinus(
         llvm::Value* lhs,
@@ -629,7 +683,12 @@ namespace Yoyo
         args.push_back(implicitConvert(lhs, left_type, target->left));
         args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
-        return target->result.should_sret() ? args[0] : ret;
+        auto final  =target->result.should_sret() ? args[0] : ret;
+        if(target->result.is_non_owning())
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
     }
     llvm::Value* ExpressionEvaluator::doMult(
         llvm::Value* lhs,
@@ -645,7 +704,12 @@ namespace Yoyo
         args.push_back(implicitConvert(lhs, left_type, target->left));
         args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
-        return target->result.should_sret() ? args[0] : ret;
+        auto final  =target->result.should_sret() ? args[0] : ret;
+        if(target->result.is_non_owning())
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
     }
     llvm::Value* ExpressionEvaluator::doDiv(
         llvm::Value* lhs,
@@ -662,7 +726,12 @@ namespace Yoyo
         args.push_back(implicitConvert(lhs, left_type, target->left));
         args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
-        return target->result.should_sret() ? args[0] : ret;
+        auto final  =target->result.should_sret() ? args[0] : ret;
+        if(target->result.is_non_owning())
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
     }
     llvm::Value* ExpressionEvaluator::doRem(
         llvm::Value* lhs,
@@ -678,7 +747,12 @@ namespace Yoyo
         args.push_back(implicitConvert(lhs, left_type, target->left));
         args.push_back(implicitConvert(rhs, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
-        return target->result.should_sret() ? args[0] : ret;
+        auto final  =target->result.should_sret() ? args[0] : ret;
+        if(target->result.is_non_owning())
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
     }
     llvm::Value* ExpressionEvaluator::doCmp(
         ComparisonPredicate p,
@@ -694,22 +768,22 @@ namespace Yoyo
             if(is_signed)
                 switch(p)
                 {
-                case EQ: return llvm::CmpInst::ICMP_EQ;
-                case GT: return llvm::CmpInst::ICMP_SGT;
-                case LT: return llvm::CmpInst::ICMP_SLT;
-                case EQ_GT: return llvm::CmpInst::ICMP_SGE;
-                case EQ_LT: return llvm::CmpInst::ICMP_SLE;
-                case NE: return llvm::CmpInst::ICMP_NE;
+            case EQ: return llvm::CmpInst::ICMP_EQ;
+            case GT: return llvm::CmpInst::ICMP_SGT;
+            case LT: return llvm::CmpInst::ICMP_SLT;
+            case EQ_GT: return llvm::CmpInst::ICMP_SGE;
+            case EQ_LT: return llvm::CmpInst::ICMP_SLE;
+            case NE: return llvm::CmpInst::ICMP_NE;
                 }
             else
                 switch(p)
                 {
-                case EQ: return llvm::CmpInst::ICMP_EQ;
-                case GT: return llvm::CmpInst::ICMP_UGT;
-                case LT: return llvm::CmpInst::ICMP_ULT;
-                case EQ_GT: return llvm::CmpInst::ICMP_UGE;
-                case EQ_LT: return llvm::CmpInst::ICMP_ULE;
-                case NE: return llvm::CmpInst::ICMP_NE;
+            case EQ: return llvm::CmpInst::ICMP_EQ;
+            case GT: return llvm::CmpInst::ICMP_UGT;
+            case LT: return llvm::CmpInst::ICMP_ULT;
+            case EQ_GT: return llvm::CmpInst::ICMP_UGE;
+            case EQ_LT: return llvm::CmpInst::ICMP_ULE;
+            case NE: return llvm::CmpInst::ICMP_NE;
                 }
             return llvm::CmpInst::BAD_ICMP_PREDICATE;
         };
@@ -1002,7 +1076,7 @@ namespace Yoyo
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
 
         case Equal:
-                return doAssign(std::visit(LValueEvaluator{irgen}, l_as_var), std::visit(*this, r_as_var), *left_t, *right_t);
+            return doAssign(std::visit(LValueEvaluator{irgen}, l_as_var), std::visit(*this, r_as_var), *left_t, *right_t);
         default:; //TODO
         }
         return nullptr;
@@ -1011,6 +1085,7 @@ namespace Yoyo
     {
         return std::visit(*this, op->expr->toVariant());
     }
+
     llvm::Value* ExpressionEvaluator::operator()(LogicalOperation*) {}
     llvm::Value* ExpressionEvaluator::operator()(PostfixOperation*) {}
     llvm::Value* ExpressionEvaluator::fillArgs(bool uses_sret,
@@ -1176,7 +1251,8 @@ namespace Yoyo
         ExpressionTypeChecker type_checker{irgen};
         auto t = std::visit(type_checker, op->callee->toVariant());
         if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(); return nullptr;}
-        if(!type_checker(op))
+        auto return_t = type_checker(op);
+        if(!return_t)
             {irgen->error(); return nullptr;}
         bool is_lambda = t->is_lambda();
         auto fn = reinterpret_cast<FunctionType&>(*t);
@@ -1212,6 +1288,10 @@ namespace Yoyo
                         llvm::Value* return_value = fillArgs(uses_sret, decl->signature, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
                         auto call_val = irgen->builder->CreateCall(callee, args);
                         if(!uses_sret) return_value = call_val;
+                        if(return_t->is_non_owning())
+                            stealUsages(args, return_value);
+                        else
+                            clearUsages(args, *this);
                         return return_value;
                     }
                 }
@@ -1227,6 +1307,10 @@ namespace Yoyo
             if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
             auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
             if(!uses_sret) return_value = call_val;
+            if(return_t->is_non_owning())
+                stealUsages(args, return_value);
+            else
+                clearUsages(args, *this);
             return return_value;
         }
 
@@ -1241,6 +1325,10 @@ namespace Yoyo
         if(is_lambda) args.push_back(callee_val);
         auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
         if(!uses_sret) return_value = call_val;
+        if(return_t->is_non_owning())
+            stealUsages(args, return_value);
+        else
+            clearUsages(args, *this);
         return return_value;
     }
     llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation*) {}

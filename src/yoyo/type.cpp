@@ -218,6 +218,7 @@ namespace Yoyo
             });
             return !is_not_trivially_destructible;
         }
+        if(is_str()) return false;
         if(auto dets = module->findType(block_hash, name))
         {
             auto decl = std::get<2>(*dets).get();

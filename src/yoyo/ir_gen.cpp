@@ -514,7 +514,7 @@ namespace Yoyo
         if(!ty->is_non_owning()) {error(); return;}
         if(isShadowing(stat->name)) {error(); return;}
 
-        ty->is_mutable = ty->is_non_owning();
+        ty->is_mutable = ty->is_non_owning_mut();
 
         std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
         borrow_res[0].first = stat->expression.get();

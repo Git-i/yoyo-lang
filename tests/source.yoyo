@@ -16,7 +16,11 @@ new: fn(x: i32) -> Vec2 = return Vec2{ .x = x, .y = 20 };
 consume: fn (val: Vec2) = return;
 takes_foo: fn -> f64 = {
     a := new(10);
-    new(50);
+    new(134);
+    "lol";
+    with(b as &new(50)) {
+        app::func(&"works");
+    }
     clone_a: mut = a;
     consume(new(20));
     consume(a);
