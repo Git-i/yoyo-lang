@@ -289,7 +289,9 @@ namespace Yoyo
         auto ty = std::visit(ExpressionTypeChecker{this}, as_var);
         if(!ty) error();
         validate_expression_borrows(stat->expression.get(), this);
-        std::visit(ExpressionEvaluator{this}, as_var);
+        auto eval = ExpressionEvaluator{this};
+        auto val = std::visit(eval, as_var);
+        if(!ty->is_lvalue) eval.destroy(val, ty.value());
     }
 
     void IRGenerator::operator()(ClassDeclaration* decl)
@@ -356,7 +358,7 @@ namespace Yoyo
             error();
             return;
         }
-        if(type->is_non_owning(this)) { error(); return;}
+        if(type->is_non_owning()) { error(); return;}
         type->is_mutable = decl->is_mut;
         decl->type = type;
         //TODO probably consider copying lambda contexts??
@@ -508,10 +510,10 @@ namespace Yoyo
     {
         auto ty = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant());
         if(!ty) {error(); return;}
-        if(!ty->is_non_owning(this)) {error(); return;}
+        if(!ty->is_non_owning()) {error(); return;}
         if(isShadowing(stat->name)) {error(); return;}
 
-        ty->is_mutable = ty->is_non_owning(this);
+        ty->is_mutable = ty->is_non_owning();
 
         std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
         borrow_res[0].first = stat->expression.get();
@@ -608,7 +610,7 @@ namespace Yoyo
             if(!return_t.is_assignable_from(*t)) {error(); return;}
             // `doAssign` for reference types works like c++ (dereference and assign) rather than rebind the ref, because
             // references cannot be rebound, except in return statements, which is why we handle them specially
-            if(return_t.is_non_owning(this))
+            if(return_t.is_non_owning())
                 if(!std::visit(LifetimeExceedsFunctionChecker{this}, stat->expression->toVariant())) {error(); return;}
             auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());
             ExpressionEvaluator{this}.doAssign(currentReturnAddress, value, return_t, *t);
@@ -730,8 +732,8 @@ namespace Yoyo
         std::vector<llvm::Type*> args(vars.size());
         std::ranges::transform(vars, args.begin(), [this, own](const ClassVariable& p)
         {
-            if(own == Ownership::Owning && p.type.is_non_owning(this)) error();
-            if(own == Ownership::NonOwning && p.type.is_non_owning_mut(this)) error();
+            if(own == Ownership::Owning && p.type.is_non_owning()) error();
+            if(own == Ownership::NonOwning && p.type.is_non_owning_mut()) error();
             return ToLLVMType(p.type, false);
         });
         if(name.empty())

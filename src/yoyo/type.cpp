@@ -161,28 +161,28 @@ namespace Yoyo
         return name == other.name && subtypes == other.subtypes && module == other.module && block_hash == other.block_hash;
     }
 
-    bool Type::is_non_owning(IRGenerator* irgen) const
+    bool Type::is_non_owning() const
     {
         if(is_reference()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
-                if(subtype.is_non_owning(irgen)) return true;
+                if(subtype.is_non_owning()) return true;
         }
-        if(auto decl = get_decl_if_class(irgen))
+        if(auto decl = get_decl_if_class())
             return decl->ownership == Ownership::NonOwning || decl->ownership == Ownership::NonOwningMut;
         return false;
     }
 
-    bool Type::is_non_owning_mut(IRGenerator* irgen) const
+    bool Type::is_non_owning_mut() const
     {
         if(is_mutable_reference()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
-                if(subtype.is_non_owning_mut(irgen)) return true;
+                if(subtype.is_non_owning_mut()) return true;
         }
-        if(auto decl = get_decl_if_class(irgen))
+        if(auto decl = get_decl_if_class())
             return decl->ownership == Ownership::NonOwningMut;
         return false;
     }
@@ -208,7 +208,8 @@ namespace Yoyo
     }
     bool Type::is_trivially_destructible() const
     {
-        if(is_builtin() || is_reference() || is_opaque_pointer()) return true;
+        if(is_non_owning()) return true;
+        if(is_builtin() || is_opaque_pointer()) return true;
         if(is_tuple() || is_optional() || is_variant())
         {
             bool is_not_trivially_destructible = std::ranges::any_of(subtypes, [](auto& subtype)
@@ -338,7 +339,7 @@ namespace Yoyo
         return {.name = "__var", .subtypes = {std::move(a), std::move(b)}};
     }
 
-    ClassDeclaration* Type::get_decl_if_class(IRGenerator* gen) const
+    ClassDeclaration* Type::get_decl_if_class() const
     {
         if(module)
         {
@@ -443,7 +444,7 @@ namespace Yoyo
         if(auto float_w = float_width()) return *float_w;
         if(is_void()) return 0;
         if(is_boolean()) return 1;
-        if(auto decl = get_decl_if_class(irgen))
+        if(auto decl = get_decl_if_class())
         {
             size_t sz = 0;
             for(auto& var : decl->vars)

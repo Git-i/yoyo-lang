@@ -179,9 +179,9 @@ namespace Yoyo
         {
             auto as_bexp = reinterpret_cast<BinaryOperation*>(expr->callee.get());
             auto& type = callee_ty->sig.parameters[0].type;
-            auto is_mut_borrow = type.is_non_owning_mut(irgen);
+            auto is_mut_borrow = type.is_non_owning_mut();
 
-            if(type.is_non_owning(irgen))
+            if(type.is_non_owning())
                 borrows.emplace_back(as_bexp->lhs.get(),
                     is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, as_bexp->lhs->toVariant())
                     : std::visit(*this, as_bexp->lhs->toVariant()));
@@ -190,16 +190,16 @@ namespace Yoyo
         {
             auto& arg = expr->arguments[i];
             auto& type = callee_ty->sig.parameters[i + is_bound].type;
-            auto is_mut_borrow = type.is_non_owning_mut(irgen);
+            auto is_mut_borrow = type.is_non_owning_mut();
 
-            if(type.is_non_owning(irgen))
+            if(type.is_non_owning())
                 borrows.emplace_back(arg.get(),
                     is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, arg->toVariant())
                     : std::visit(*this, arg->toVariant()));
         }
         validate_borrows(borrows, irgen);
         borrow_result_t out;
-        if(callee_ty->sig.returnType.is_non_owning_mut(irgen))
+        if(callee_ty->sig.returnType.is_non_owning_mut())
         {
             for(auto& borrow : borrows)
             {
@@ -209,7 +209,7 @@ namespace Yoyo
             }
         }
         //immutable non owning borrows all args, but does so immutably
-        else if(callee_ty->sig.returnType.is_non_owning(irgen))
+        else if(callee_ty->sig.returnType.is_non_owning())
         {
             for(auto& borrow : borrows)
             {

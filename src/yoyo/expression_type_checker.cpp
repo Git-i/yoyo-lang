@@ -44,7 +44,7 @@ namespace Yoyo
     }
     static std::optional<Type> checkAssign(const Type &a, const Type &b)
     {
-        if(!a.is_mutable) return std::nullopt;
+        if(!a.is_mutable || !a.is_lvalue) return std::nullopt;
         if(!a.is_assignable_from(b))
         {
             return std::nullopt;
@@ -159,7 +159,7 @@ namespace Yoyo
             }
             return std::nullopt;
         }
-        if(auto cls = lhs.deref().get_decl_if_class(irgen))
+        if(auto cls = lhs.deref().get_decl_if_class())
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
             {
@@ -361,7 +361,7 @@ namespace Yoyo
     std::optional<FunctionType> ExpressionTypeChecker::operator()(ObjectLiteral* obj)
     {
         obj->t.saturate(irgen->module, irgen);
-        auto decl = obj->t.get_decl_if_class(irgen);
+        auto decl = obj->t.get_decl_if_class();
         if(!decl) return std::nullopt;
         if(obj->values.size() != decl->vars.size()) return std::nullopt;
         //TODO: access specifier checking

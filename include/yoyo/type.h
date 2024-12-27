@@ -33,8 +33,8 @@ namespace Yoyo
         [[nodiscard]] bool is_assignable_from(const Type& other) const;
         [[nodiscard]] bool can_accept_as_arg(const Type& other) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
-        [[nodiscard]] bool is_non_owning(IRGenerator*) const;
-        [[nodiscard]] bool is_non_owning_mut(IRGenerator*) const;
+        [[nodiscard]] bool is_non_owning() const;
+        [[nodiscard]] bool is_non_owning_mut() const;
         [[nodiscard]] bool is_reference() const;
         [[nodiscard]] bool is_trivially_destructible() const;
         /// returns a dereferenced version of a reference type or itself if not a reference
@@ -62,7 +62,7 @@ namespace Yoyo
         /// if @c b is a variant is does the same
         /// if not it makes @c a a variant with subtypes @c a and @c b
         static Type variant_merge(Type a, Type b);
-        ClassDeclaration* get_decl_if_class(IRGenerator*) const;
+        ClassDeclaration* get_decl_if_class() const;
         [[nodiscard]] bool is_builtin() const;
         [[nodiscard]] bool is_signed_integral() const;
 

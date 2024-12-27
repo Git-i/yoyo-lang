@@ -384,14 +384,23 @@ namespace Yoyo
         }
         return into;
     }
-
+    void destroyNonOwningParents(const ExpressionEvaluator& eval, llvm::Value* value, const Type& tp)
+    {
+        if(value->getName().starts_with("__del_this"))
+            eval.destroy(value, tp);
+        if(value->getName().starts_with("__del_parents___"))
+        {
+            auto nm = value->getName();
+            auto& lifetimes = **reinterpret_cast<ExtendedLifetimes* const*>(nm.data() + 16);
+            for(auto& [type, obj] : lifetimes.objects)
+                eval.destroy(obj, tp);
+            delete &lifetimes;
+        }
+    }
     void ExpressionEvaluator::destroy(llvm::Value* value, const Type& type) const
     {
-        if(type.is_reference() && value->getName().starts_with("__del_this"))
-        {
-            destroy(value, type.deref()); return;
-        }
         if(type.is_trivially_destructible()) return;
+
         auto as_llvm = irgen->ToLLVMType(type, false);
         auto parent = irgen->builder->GetInsertBlock()->getParent();
         if(type.is_optional())
@@ -439,6 +448,11 @@ namespace Yoyo
             }
             irgen->builder->SetInsertPoint(def);
         }
+        else if(type.is_str())
+        {
+            auto mem_ptr = irgen->builder->CreateStructGEP(as_llvm, value, 0);
+            irgen->Free(mem_ptr);
+        }
         else if(auto dets = type.module->findType(type.block_hash, type.name))
         {
             auto decl = std::get<2>(*dets).get();
@@ -456,6 +470,9 @@ namespace Yoyo
                 idx++;
             }
         }
+
+        if(type.is_non_owning())
+            destroyNonOwningParents(*this, value, type);
     }
 
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
@@ -485,7 +502,7 @@ namespace Yoyo
                 return ptr;
             }
         }
-        if(auto cls = left_type.deref().get_decl_if_class(irgen))
+        if(auto cls = left_type.deref().get_decl_if_class())
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(rhs))
             {
@@ -1044,7 +1061,10 @@ namespace Yoyo
                 }
                 args[i + is_bound + uses_sret] = buffer;
             }
-            else args[i + is_bound + uses_sret] = implicitConvert(arg, *tp, sig.parameters[i + is_bound].type);
+            else
+            {
+                args[i + is_bound + uses_sret] = implicitConvert(arg, *tp, sig.parameters[i + is_bound].type);
+            }
         }
         return return_value;
     }
@@ -1171,7 +1191,7 @@ namespace Yoyo
             //expr is guaranteed to be valid if the function is bound
             //callee is a binary dot expr
             auto left_t = std::visit(ExpressionTypeChecker{irgen}, expr->lhs->toVariant());
-            if(auto cls = left_t->get_decl_if_class(irgen))
+            if(auto cls = left_t->get_decl_if_class())
             {
                 //handle member functions
                 if(auto rhs = dynamic_cast<NameExpression*>(expr->rhs.get()))
@@ -1289,7 +1309,7 @@ namespace Yoyo
         auto t = ExpressionTypeChecker{irgen}(lit);
         if(!t) {irgen->error();return nullptr;}
         auto as_llvm_type = irgen->ToLLVMType(*t, false);
-        auto decl = t->get_decl_if_class(irgen);
+        auto decl = t->get_decl_if_class();
         auto value = irgen->Alloca("obj_lit",as_llvm_type);
 
         auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
