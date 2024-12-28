@@ -32,7 +32,7 @@ namespace Yoyo
         }
         if(ext)
         {
-            std::string name = "__del_parents___aaaa";
+            std::string name = "__del_parents___aaaaaaaa";
             memcpy(name.data() + 16, ext, sizeof(void*));
             out->setName(name);
         }
@@ -1028,7 +1028,7 @@ namespace Yoyo
                 {
                     auto lf = new ExtendedLifetimes;
                     lf->objects.emplace_back(std::move(target->subtypes[0]), operand);
-                    std::string name = "__del_parents___aaaa";
+                    std::string name = "__del_parents___aaaaaaaa";
                     memcpy(name.data() + 16, &lf, sizeof(void*));
                     operand->setName(name);
                 }

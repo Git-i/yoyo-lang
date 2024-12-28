@@ -529,18 +529,20 @@ namespace Yoyo
         pushScopeWithConstLock(names.begin(), names.end());
         lifetimeExtensions[stat->name] = std::move(borrow_res[0].second);
 
-        if(ty->should_sret())
-        {
-            expr->setName(stat->name);
-            val = expr;
-        }
-        else
+        if(!ty->should_sret())
         {
             val = Alloca(stat->name, ToLLVMType(*ty, false));
-            ty->is_mutable = true;
-            ExpressionEvaluator{this}.doAssign(val, expr, *ty, *ty);
+            ExpressionEvaluator{this}.clone(expr, *ty, val);
+        } else val = ExpressionEvaluator{this}.clone(expr, *ty);
+
+        if(!ty->is_lvalue && expr->getName().starts_with("__del_parents"))
+        {
+            std::string name(16 + sizeof(void*), 'c');
+            memcpy(name.data(), expr->getName().data(), 16 + sizeof(void*));
+            val->setName(name);
         }
-        variables.back()[stat->name] = {val, std::move(ty).value(), nullptr}; //TODO: capture parents
+        ty->is_lvalue = true;
+        variables.back()[stat->name] = {val, std::move(ty).value(), prepareValidDropFlagFor(this, *ty)}; //TODO: capture parents
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
         lifetimeExtensions.erase(stat->name);
@@ -687,6 +689,7 @@ namespace Yoyo
         for(auto& var : variables.back() | std::views::values)
         {
             auto drop_flag = std::get<2>(var);
+            auto& type = std::get<1>(var);
             if(!drop_flag) continue;
             auto drop = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
             auto drop_cont = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
@@ -694,7 +697,15 @@ namespace Yoyo
                 builder->CreateLoad(llvm::Type::getInt1Ty(context), drop_flag),
                 drop, drop_cont);
             builder->SetInsertPoint(drop);
-            ExpressionEvaluator{this}.destroy(std::get<0>(var), std::get<1>(var));
+            auto to_drop = std::get<0>(var);
+            if(!type.should_sret())
+            {
+                std::string name(16 + sizeof(void*), 'c');
+                if(to_drop->getName().starts_with("__del_parents"))
+                    memcpy(name.data(), to_drop->getName().data(), 16 + sizeof(void*));
+                to_drop = builder->CreateLoad(ToLLVMType(type, false), to_drop, name);
+            }
+            ExpressionEvaluator{this}.destroy(to_drop, std::get<1>(var));
             builder->CreateBr(drop_cont);
             builder->SetInsertPoint(drop_cont);
         }
