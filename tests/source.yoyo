@@ -12,7 +12,7 @@ Vec2: struct = {
         app::func(&"Dropping vec2 with x ${this.x}");
     }
 }
-new: fn(x: i32) -> Vec2 = return Vec2{ .x = x, .y = 20 };
+new: fn(x: i32) -> (Vec2) = return Vec2{ .x = x, .y = 20 };
 consume: fn (val: Vec2) = return;
 takes_foo: fn -> f64 = {
     a := new(10);

@@ -925,19 +925,36 @@ namespace Yoyo
         if(is_mut) return Type{"__ref_mut", {std::move(t)}};
         return Type("__ref", {std::move(t)});
     }
-    std::optional<Type> parseTupleType(Parser& p)
+    std::optional<Type> parseGroupType(Parser& p)
     {
         if(p.discard(TokenType::RParen)) return Type{"void"};
-        Type t{"__tup"};
+        std::optional<TokenType> seperator;
+        std::vector<Type> subtypes;
         while(!p.discard(TokenType::RParen))
         {
-            t.subtypes.push_back(p.parseType(0).value_or(Type{}));
-            if(!p.discard(TokenType::Comma))
+            subtypes.push_back(p.parseType(0).value_or(Type{}));
+            if(p.discard(TokenType::RParen)) break;
+            if(!seperator)
             {
-                if(!p.discard(TokenType::RParen)) p.error("Expected ','", p.Peek());
-                else break;
+                auto tk = p.Peek();
+                if(!tk) return std::nullopt;
+                seperator = tk->type;
+                if(tk->type != TokenType::Comma || tk->type != TokenType::Pipe)
+                {
+                    p.error("Expected ',' or '|'", tk);
+                    seperator = TokenType::Comma;
+                }
             }
+            if(!p.discard(TokenType::Comma))
+                p.error("Expected ','", p.Peek());
         }
+        Type t {.module = nullptr};
+        if(subtypes.size() == 1) t = std::move(subtypes[0]);
+        else t.subtypes = std::move(subtypes);
+
+        if(*seperator == TokenType::Pipe) t.name = "__var";
+        else if(*seperator == TokenType::Comma) t.name = "__tup";
+
         return t;
     }
     std::optional<Type> Parser::parseType(uint32_t precedence)
@@ -949,9 +966,8 @@ namespace Yoyo
         {
         case TokenType::Identifier: Get(); t = Type(std::string(tk->text), {}); break;
         case TokenType::LSquare: Get(); t = parseArrayType(*tk, *this); break;
-        case TokenType::LCurly: Get(); t = parseTypeGroup(*tk, *this); break;
         case TokenType::Ampersand: Get(); t = parseRefType(*tk, *this); break;
-        case TokenType::LParen: Get(); t = parseTupleType(*this); break;
+        case TokenType::LParen: Get(); t = parseGroupType(*this); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())
@@ -959,7 +975,6 @@ namespace Yoyo
             tk = Get();
             switch(tk->type)
             {
-            case TokenType::Pipe: t = parsePipeTypeExpr(*this, std::move(t).value()); break;
             case TokenType::TemplateOpen: t = parseTemplateTypeExpr(*this, std::move(t).value()); break;
             case TokenType::Question: t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk); break;
             case TokenType::DoubleColon:
