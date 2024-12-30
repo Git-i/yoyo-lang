@@ -118,6 +118,10 @@ namespace Yoyo
         {
             return other.name == "__null" || subtypes[0].is_assignable_from(other);
         }
+        if(is_reference())
+        {
+            if(other.is_mutable_reference()) return true;
+        }
         //for variants, the rhs must be assignable to only one of the subtypes
         if(is_variant())
         {

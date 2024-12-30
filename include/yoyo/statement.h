@@ -230,8 +230,8 @@ namespace Yoyo
             std::unique_ptr<Statement> else_,
             std::string else_name = "",
             bool else_is_ref = false)
-                : captured_name(std::move(name)), condition(std::move(cond)), body(std::move(body))
-                , else_capture(std::move(else_name)), else_body(std::move(else_)) {}
+                : captured_name(std::move(name)), is_ref(is_ref), condition(std::move(cond)), body(std::move(body))
+                , else_capture(std::move(else_name)), else_is_ref(else_is_ref), else_body(std::move(else_)) {}
         StatementVariant toVariant() override;
 
     };
