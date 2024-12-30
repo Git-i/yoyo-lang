@@ -52,4 +52,13 @@ namespace Yoyo {
         explicit ScopeOperationParselet(uint32_t precedence) : prec(precedence) {}
         std::unique_ptr<Expression> parse(Parser& parser, std::unique_ptr<Expression> left, Token tk) override;
     };
+    class AsExpressionParselet: public InfixParselet
+    {
+        uint32_t prec;
+    public:
+        uint32_t precedence() override {return prec;}
+        explicit AsExpressionParselet(uint32_t precedence) : prec(precedence) {}
+        std::unique_ptr<Expression> parse(Parser& parser, std::unique_ptr<Expression> left, Token tk) override;
+    };
+
 }

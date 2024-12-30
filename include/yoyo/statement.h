@@ -216,16 +216,20 @@ namespace Yoyo
     {
     public:
         std::string captured_name;
+        bool is_ref;
         std::unique_ptr<Expression> condition;
         std::unique_ptr<Statement> body;
         std::string else_capture;
+        bool else_is_ref;
         std::unique_ptr<Statement> else_body;
         ConditionalExtraction(
             std::string name,
+            bool is_ref,
             std::unique_ptr<Expression> cond,
             std::unique_ptr<Statement> body,
             std::unique_ptr<Statement> else_,
-            std::string else_name = "")
+            std::string else_name = "",
+            bool else_is_ref = false)
                 : captured_name(std::move(name)), condition(std::move(cond)), body(std::move(body))
                 , else_capture(std::move(else_name)), else_body(std::move(else_)) {}
         StatementVariant toVariant() override;

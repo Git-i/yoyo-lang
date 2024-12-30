@@ -385,12 +385,21 @@ namespace Yoyo
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(AsExpression* expr)
     {
-        auto to = std::visit(*this, expr->expr->toVariant());
-        if(!to || to->is_void()) return std::nullopt;
-        if(to->is_integral())
+        auto from = std::visit(*this, expr->expr->toVariant());
+        if(!from || from->is_void()) return std::nullopt;
+        expr->dest.saturate(irgen->module, irgen);
+        if(from->is_variant())
         {
-
+            for(auto& sub :  from->subtypes)
+            {
+                if(sub.is_equal(expr->dest))
+                    return Type{
+                    "__conv_result_ref", {std::move(sub)}, nullptr,
+                    irgen->module->engine->modules.at("__builtin").get(),from->is_mutable,from->is_lvalue
+                };
+            }
         }
+        return std::nullopt;
     }
 
     std::optional<FunctionType> ExpressionTypeChecker::operator()(CharLiteral*)

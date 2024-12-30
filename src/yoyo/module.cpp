@@ -154,7 +154,15 @@ namespace Yoyo
         {
             return llvm::Type::getInt32Ty(context);
         }
-
+        if(type.is_ref_conversion_result())
+        {
+            return llvm::StructType::get(context, {llvm::PointerType::get(context, 0), llvm::Type::getInt1Ty(context)});
+        }
+        if(type.is_value_conversion_result())
+        {
+            return llvm::StructType::get(context, {
+                ToLLVMType(type.subtypes[0], hash, disallowed_types), llvm::Type::getInt1Ty(context)});
+        }
         //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         if(type.is_lambda()) return nullptr;
         if(auto t = findType(type.block_hash, type.name))

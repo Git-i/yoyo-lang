@@ -359,6 +359,7 @@ namespace Yoyo
             error();
             return;
         }
+        if(!type->can_be_stored()) { error(); return; }
         if(type->is_non_owning()) { error(); return;}
         type->is_mutable = decl->is_mut;
         decl->type = type;
@@ -439,9 +440,10 @@ namespace Yoyo
     void IRGenerator::operator()(ConditionalExtraction* stat)
     {
         auto tp = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
-        if(!tp || !tp->is_optional()) { error(); return;}
+        if(!tp) { error(); return;}
+        if(!tp->is_optional() && !tp->is_conversion_result()) {error(); return;}
         if(!stat->else_capture.empty()) {error(); return;}
-
+        if(stat->is_ref && tp->is_value_conversion_result()) { error();return; }
         std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
         borrow_res[0].first = stat->condition.get();
         borrow_res[0].second = tp->is_mutable ?
@@ -452,9 +454,9 @@ namespace Yoyo
         if(isShadowing(stat->captured_name)) {error(); return;}
 
         auto llvm_t = ToLLVMType(tp.value(), false);
-        auto optional = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
+        auto expression = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
 
-        auto is_valid = builder->CreateLoad(llvm::Type::getInt1Ty(context), builder->CreateStructGEP(llvm_t, optional, 1));
+        auto is_valid = builder->CreateLoad(llvm::Type::getInt1Ty(context), builder->CreateStructGEP(llvm_t, expression, 1));
 
         auto fn = builder->GetInsertBlock()->getParent();
         auto then_bb = llvm::BasicBlock::Create(context, "then", fn, returnBlock);
@@ -467,12 +469,41 @@ namespace Yoyo
         builder->SetInsertPoint(then_bb);
 
         auto names = borrow_res[0].second | std::views::keys;
-        pushScopeWithConstLock(names.begin(), names.end());
-        lifetimeExtensions[stat->captured_name] = std::move(borrow_res[0].second);
+        if(stat->is_ref)
+        {
+            pushScopeWithConstLock(names.begin(), names.end());
+            lifetimeExtensions[stat->captured_name] = std::move(borrow_res[0].second);
+        }
+        else pushScope();
 
-        auto ptr = builder->CreateStructGEP(llvm_t, optional, 0, stat->captured_name);
-        tp->subtypes[0].is_lvalue = true; tp->subtypes[0].is_mutable = tp->is_mutable;
-        variables.back()[stat->captured_name] = {ptr, std::move(tp->subtypes[0]), nullptr /*TODO*/};
+        auto ptr = builder->CreateStructGEP(llvm_t, expression, 0, stat->captured_name);
+        if(!tp->is_value_conversion_result())
+        {
+            if(tp->is_ref_conversion_result())
+                ptr = builder->CreateLoad(llvm::PointerType::get(context, 0), ptr);
+            //if it's not a `ref` we clone the value
+            if(!stat->is_ref)
+            {
+                llvm::Value* into = nullptr;
+                if(!tp->subtypes[0].should_sret())
+                {
+                    auto as_llvm = ToLLVMType(tp->subtypes[0], false);
+                    into = Alloca("", as_llvm);
+                    ptr = builder->CreateLoad(as_llvm, ptr);
+                }
+                ptr = ExpressionEvaluator{this}.clone(ptr, tp->subtypes[0], into);
+                if(into) ptr = into;
+            }
+        }
+        Type variable_type = stat->is_ref ?
+            Type{tp->is_mutable ? "__ref_mut" : "__ref", {std::move(tp->subtypes[0])}} :
+            std::move(tp->subtypes[0]);
+        variable_type.saturate(module, this);
+        auto flg = prepareValidDropFlagFor(this, variable_type);
+        variables.back()[stat->captured_name] = {ptr,
+            std::move(variable_type),
+            flg
+        };
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
 

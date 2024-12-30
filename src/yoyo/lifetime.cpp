@@ -107,6 +107,19 @@ namespace Yoyo
         return {};
     }
 
+    BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(AsExpression* expr)
+    {
+        auto dst_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
+        std::array<std::pair<Expression*, borrow_result_t>, 1> borrows = {
+            {
+                {expr,  std::visit(*this, expr->expr->toVariant())}
+            }
+        };
+        validate_borrows(borrows, irgen);
+        if(dst_ty->is_non_owning()) return borrows[0].second;
+        return {};
+    }
+
     BorrowResult::borrow_result_t BorrowResult::operator()(NameExpression* expr)
     {
         if(irgen->lifetimeExtensions.contains(expr->text))
@@ -220,6 +233,19 @@ namespace Yoyo
             }
         }
         return out;
+    }
+
+    BorrowResult::borrow_result_t BorrowResult::operator()(AsExpression* expr)
+    {
+        auto dst_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
+        std::array<std::pair<Expression*, borrow_result_t>, 1> borrows = {
+            {
+                {expr,  std::visit(*this, expr->expr->toVariant())}
+            }
+        };
+        validate_borrows(borrows, irgen);
+        if(dst_ty->is_non_owning()) return borrows[0].second;
+        return {};
     }
 
     void validate_expression_borrows(Expression* expr, IRGenerator* irgen)

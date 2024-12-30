@@ -1,4 +1,6 @@
 #pragma once
+#include <statement.h>
+
 #include "type.h"
 #include "func_sig.h"
 namespace Yoyo

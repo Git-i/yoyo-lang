@@ -34,6 +34,7 @@ namespace Yoyo
             borrow_result_t operator()(Expression*){}
             borrow_result_t operator()(CallOperation*);
             borrow_result_t operator()(PrefixOperation*);
+            borrow_result_t operator()(AsExpression*);
             borrow_result_t operator()(GroupingExpression*){}
         };
 
@@ -61,7 +62,7 @@ namespace Yoyo
         borrow_result_t operator()(SubscriptOperation*){}
         borrow_result_t operator()(LambdaExpression*){}
         borrow_result_t operator()(ScopeOperation*){}
-        borrow_result_t operator()(AsExpression*){}
+        borrow_result_t operator()(AsExpression*);
     };
     class IRGenerator
     {

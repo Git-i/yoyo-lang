@@ -15,6 +15,7 @@ namespace Yoyo
         static constexpr uint32_t BitShift = 9;
         static constexpr uint32_t Sum = 10;
         static constexpr uint32_t Product = 11;
+        static constexpr uint32_t As = 12;
         static constexpr uint32_t Prefix = 12;
         static constexpr uint32_t MemberAccess = 13;
         static constexpr uint32_t InvalidPropagate = 13;

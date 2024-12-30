@@ -1,28 +1,12 @@
 app: module = APP
 
-Vec2: struct = {
-    x: i32, y: i32,
-    #(clone)
-    duplicate_vec: fn (&this) -> This = {
-        app::func(&"custom clone");
-        return Vec2{ .x = this.x, .y = this.y };
-    }
-    #(destructor)
-    drop: fn (&mut this) = {
-        app::func(&"Dropping vec2 with x ${this.x}");
-    }
-}
-new: fn(x: i32) -> (Vec2) = return Vec2{ .x = x, .y = 20 };
-consume: fn (val: Vec2) = return;
 takes_foo: fn -> f64 = {
-    a := new(10);
-    new(134);
-    "lol";
-    with(b as &new(50)) {
-        app::func(&"works");
+    a: mut (i32 | str) = "Hello";
+    if |&string| (a as str) {
+        *string = "World";
     }
-    clone_a: mut = a;
-    consume(new(20));
-    consume(a);
+    if |&string| (a as str) {
+        app::func(string);
+    }
     return 10;
 }

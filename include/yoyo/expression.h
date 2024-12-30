@@ -38,7 +38,7 @@ namespace Yoyo
     class GroupingExpression;
     class NameExpression;
     class GenericNameExpression;
-
+    class AsExpression;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -59,7 +59,8 @@ namespace Yoyo
         ObjectLiteral*,
         NullLiteral*,
         CharLiteral*,
-        GenericNameExpression*>;
+        GenericNameExpression*,
+        AsExpression*>;
     class Expression : public ASTNode {
     public:
         ~Expression() override = default;
@@ -214,6 +215,7 @@ namespace Yoyo
         std::unique_ptr<Expression> expr;
         Type dest;
         AsExpression(std::unique_ptr<Expression> expr, Type dest) : expr(std::move(expr)), dest(std::move(dest)) {}
+        ExpressionVariant toVariant() override;
     };
     class CharLiteral : public Expression
     {

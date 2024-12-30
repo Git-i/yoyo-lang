@@ -37,6 +37,10 @@ namespace Yoyo
         [[nodiscard]] bool is_non_owning_mut() const;
         [[nodiscard]] bool is_reference() const;
         [[nodiscard]] bool is_trivially_destructible() const;
+        [[nodiscard]] bool can_be_stored() const;
+        [[nodiscard]] bool is_conversion_result() const;
+        [[nodiscard]] bool is_value_conversion_result() const;
+        [[nodiscard]] bool is_ref_conversion_result() const;
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)

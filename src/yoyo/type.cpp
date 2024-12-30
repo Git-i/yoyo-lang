@@ -169,6 +169,7 @@ namespace Yoyo
             for(auto& subtype : subtypes)
                 if(subtype.is_non_owning()) return true;
         }
+        if(name == "__conv_result_ref") return true;
         if(auto decl = get_decl_if_class())
             return decl->ownership == Ownership::NonOwning || decl->ownership == Ownership::NonOwningMut;
         return false;
@@ -229,6 +230,28 @@ namespace Yoyo
         return true;
     }
 
+    bool Type::can_be_stored() const
+    {
+        return name != "void" &&
+            !name.starts_with("__conv_result");
+    }
+
+    bool Type::is_conversion_result() const
+    {
+        return name.starts_with("__conv_result");
+    }
+
+    bool Type::is_value_conversion_result() const
+    {
+        return name == "__conv_result_val";
+    }
+
+    bool Type::is_ref_conversion_result() const
+    {
+        return name == "__conv_result_ref";
+    }
+
+
     const Type& Type::deref() const
     {
         if(is_reference()) return subtypes[0];
@@ -250,7 +273,7 @@ namespace Yoyo
         if(it.is_end())
         {
             name = it.last().name;
-            if(!(is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
+            if(!(is_conversion_result() || is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
             {
                 module = src;
                 block_hash = irgen ? irgen->block_hash : src->module_hash;

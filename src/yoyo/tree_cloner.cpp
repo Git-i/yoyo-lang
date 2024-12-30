@@ -114,6 +114,11 @@ namespace Yoyo
         return std::make_unique<NullLiteral>();
     }
 
+    std::unique_ptr<Expression> ExpressionTreeCloner::operator()(AsExpression* expr)
+    {
+        return std::make_unique<AsExpression>(copy_expr(expr->expr), expr->dest);
+    }
+
 
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(CharLiteral* lit)
     {
@@ -202,10 +207,11 @@ namespace Yoyo
     std::unique_ptr<Statement> StatementTreeCloner::operator()(ConditionalExtraction* stat)
     {
         return std::make_unique<ConditionalExtraction>(stat->captured_name,
+            stat->is_ref,
             copy_expr(stat->condition),
             copy_stat(stat->body),
             copy_stat(stat->else_body),
-            stat->else_capture);
+            stat->else_capture, stat->else_is_ref);
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(WithStatement* stat)

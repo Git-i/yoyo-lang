@@ -63,6 +63,7 @@ namespace Yoyo
         infixParselets[TokenType::AmpersandEqual] = assign_parselet;
         infixParselets[TokenType::PipeEqual] = assign_parselet;
         infixParselets[TokenType::CaretEqual] = assign_parselet;
+        infixParselets[TokenType::As] = std::make_shared<AsExpressionParselet>(Precedences::As);
 
         infixParselets[TokenType::DoubleAmpersand] = std::make_shared<LogicalOperationParselet>(Precedences::LogicAnd);
         infixParselets[TokenType::DoublePipe] = std::make_shared<LogicalOperationParselet>(Precedences::LogicOr);
@@ -710,7 +711,10 @@ namespace Yoyo
     std::unique_ptr<Statement> Parser::parseConditionalExtraction(Token tk)
     {
         //parse the capture
+        bool is_ref = false;
+        bool else_is_ref = false;
         if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
+        if(discard(TokenType::Ampersand)) is_ref = true;
         auto iden = Get();
         if(!iden) return nullptr;
         if(iden->type != TokenType::Identifier) error("Expected identifier", iden);
@@ -732,6 +736,7 @@ namespace Yoyo
             Get();
             if(discard(TokenType::Pipe))
             {
+                if(discard(TokenType::Ampersand)) else_is_ref = true;
                 auto else_iden = Peek();
                 if(!else_iden) return nullptr;
                 if(else_iden->type != TokenType::Identifier) error("Expected identifier", else_iden);
@@ -742,7 +747,7 @@ namespace Yoyo
             end = else_stat->end;
         }
         return Statement::attachSLAndParent(
-            std::make_unique<ConditionalExtraction>(name, std::move(condition), std::move(then), std::move(else_stat), else_name),
+            std::make_unique<ConditionalExtraction>(name, is_ref, std::move(condition), std::move(then), std::move(else_stat), else_name, else_is_ref),
             tk.loc, end, parent
         );
     }
@@ -873,7 +878,6 @@ namespace Yoyo
         if(!tk) return 0;
         switch(tk->type)
         {
-        case TokenType::Pipe: return PipePrecedence;
         case TokenType::TemplateOpen: return TemplatePrecedence;
         case TokenType::DoubleColon: return ScopePrecedence;
         case TokenType::Question: return OptionalPreference;
@@ -939,21 +943,21 @@ namespace Yoyo
                 auto tk = p.Peek();
                 if(!tk) return std::nullopt;
                 seperator = tk->type;
-                if(tk->type != TokenType::Comma || tk->type != TokenType::Pipe)
+                if(tk->type != TokenType::Comma && tk->type != TokenType::Pipe)
                 {
                     p.error("Expected ',' or '|'", tk);
                     seperator = TokenType::Comma;
                 }
             }
-            if(!p.discard(TokenType::Comma))
+            if(!p.discard(*seperator))
                 p.error("Expected ','", p.Peek());
         }
         Type t {.module = nullptr};
         if(subtypes.size() == 1) t = std::move(subtypes[0]);
         else t.subtypes = std::move(subtypes);
 
-        if(*seperator == TokenType::Pipe) t.name = "__var";
-        else if(*seperator == TokenType::Comma) t.name = "__tup";
+        if(seperator && *seperator == TokenType::Pipe) t.name = "__var";
+        else if(seperator && *seperator == TokenType::Comma) t.name = "__tup";
 
         return t;
     }

@@ -90,6 +90,12 @@ namespace Yoyo
     {
         return this;
     }
+
+    ExpressionVariant AsExpression::toVariant()
+    {
+        return this;
+    }
+
     ExpressionVariant CharLiteral::toVariant()
     {
         return this;
