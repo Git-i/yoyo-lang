@@ -466,7 +466,8 @@ namespace Yoyo
             else_bb ? else_bb : merge_bb);
         builder->SetInsertPoint(then_bb);
 
-        pushScope();
+        auto names = borrow_res[0].second | std::views::keys;
+        pushScopeWithConstLock(names.begin(), names.end());
         lifetimeExtensions[stat->captured_name] = std::move(borrow_res[0].second);
 
         auto ptr = builder->CreateStructGEP(llvm_t, optional, 0, stat->captured_name);
