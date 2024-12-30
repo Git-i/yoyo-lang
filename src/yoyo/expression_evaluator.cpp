@@ -1432,17 +1432,17 @@ namespace Yoyo
         auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
         auto final_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
         auto as_llvm = irgen->ToLLVMType(*final_ty, false);
-
+        auto internal_as_llvm = irgen->ToLLVMType(*ty, true);
         auto internal = std::visit(*this, expr->expr->toVariant());
         if(ty->is_variant())
         {
             const std::set subtypes(ty->subtypes.begin(), ty->subtypes.end());
             auto val = irgen->Alloca("variant_conv", as_llvm);
             auto ptr = irgen->builder->CreateStructGEP(as_llvm, val, 0);
-            auto internal_ptr = irgen->builder->CreateStructGEP(as_llvm, internal, 0);
+            auto internal_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 0);
             irgen->builder->CreateStore(internal_ptr, ptr);
             auto is_valid_ptr = irgen->builder->CreateStructGEP(as_llvm, val, 1);
-            auto idx_ptr = irgen->builder->CreateStructGEP(as_llvm, internal, 1);
+            auto idx_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 1);
 
             auto i32_ty = llvm::Type::getInt32Ty(irgen->context);
             auto this_idx = llvm::ConstantInt::get(i32_ty, std::distance(subtypes.begin(), subtypes.find(expr->dest)));
