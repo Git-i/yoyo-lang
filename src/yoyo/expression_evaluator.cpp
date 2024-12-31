@@ -1450,6 +1450,14 @@ namespace Yoyo
 
             auto is_valid = irgen->builder->CreateICmpEQ(this_idx, correct_idx);
             irgen->builder->CreateStore(is_valid, is_valid_ptr);
+            if(!ty->deref().is_trivially_destructible() && !ty->deref().is_lvalue)
+            {
+                auto lf = new ExtendedLifetimes;
+                lf->objects.emplace_back(std::move(ty).value(), internal);
+                std::string name = "__del_parents___aaaaaaaa";
+                memcpy(name.data() + 16, &lf, sizeof(void*));
+                val->setName(name);
+            }
             return val;
         }
         irgen->error();

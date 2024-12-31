@@ -496,8 +496,8 @@ namespace Yoyo
             }
         }
         Type variable_type = stat->is_ref ?
-            Type{tp->is_mutable ? "__ref_mut" : "__ref", {std::move(tp->subtypes[0])}} :
-            std::move(tp->subtypes[0]);
+            Type{tp->is_mutable ? "__ref_mut" : "__ref", {tp->subtypes[0]}} :
+            tp->subtypes[0];
         variable_type.saturate(module, this);
         auto flg = prepareValidDropFlagFor(this, variable_type);
         variables.back()[stat->captured_name] = {ptr,
@@ -522,6 +522,7 @@ namespace Yoyo
             if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
         }
         builder->SetInsertPoint(merge_bb);
+        ExpressionEvaluator{this}.destroy(expression, tp.value());
     }
     template <std::input_iterator It>
     void IRGenerator::pushScopeWithConstLock(It begin, It end)

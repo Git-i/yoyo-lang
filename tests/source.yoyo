@@ -2,6 +2,7 @@ app: module = APP
 
 takes_foo: fn -> f64 = {
     a: mut (i32 | str) = "Hello";
+
     if |&string| (a as str) {
         *string = "World";
     }
