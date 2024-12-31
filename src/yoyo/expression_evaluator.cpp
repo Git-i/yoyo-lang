@@ -503,7 +503,7 @@ namespace Yoyo
         {
             auto mem_ptr = irgen->builder->CreateStructGEP(as_llvm, value, 0);
             irgen->Free(irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context,0), mem_ptr));
-            irgen->builder->CreateCall(getStringDestroy(irgen));
+            //irgen->builder->CreateCall(getStringDestroy(irgen));
         }
         else if(auto dets = type.module->findType(type.block_hash, type.name))
         {
@@ -912,7 +912,7 @@ namespace Yoyo
         {
             for(size_t i = 0; i < lit->elements.size(); ++i)
             {
-                auto elem = irgen->builder->CreateConstGEP1_32(as_llvm, val, i);
+                auto elem = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
                 implicitConvert(
                     std::visit(*this, lit->elements[i]->toVariant()),
                     std::visit(tp_check, lit->elements[i]->toVariant()).value(),
@@ -1363,7 +1363,10 @@ namespace Yoyo
         auto obj = std::visit(*this, op->object->toVariant());
         auto idx = std::visit(*this, op->index->toVariant());
         if(obj_ty->is_static_array())
-            return irgen->builder->CreateGEP(llvm_t, obj, {idx});
+        {
+            auto const_zero = llvm::ConstantInt::get(idx->getType(), 0);
+            return irgen->builder->CreateGEP(llvm_t, obj, {const_zero, idx});
+        }
         irgen->error();
     }
 
