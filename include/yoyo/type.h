@@ -45,6 +45,8 @@ namespace Yoyo
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)
         [[nodiscard]] Type saturated(Module* src, IRGenerator* irgen) const;
+        [[nodiscard]] Type reference_to() const;
+        [[nodiscard]] Type mutable_reference_to() const;
         void saturate(Module* src, IRGenerator* irgen);
 
         [[nodiscard]] bool is_shallow_equal(const Type& other) const

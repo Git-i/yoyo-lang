@@ -331,16 +331,19 @@ namespace Yoyo
             {
                 int64_t int_val = as_int->getSExtValue();
                 if(int_val >= std::numeric_limits<int32_t>::min() && int_val <= std::numeric_limits<int32_t>::max())
-                    return Type{.name="i32", .module = src.module};
-                return Type{.name="i64",.module = src.module};
+                    return Type{.name="i32", .module = src.module,.is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue};
+                return Type{.name="i64",.module = src.module,.is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue};
             }
             uint64_t int_val = as_int->getZExtValue();
-            if(int_val <= std::numeric_limits<int32_t>::max()) return Type{.name="i32",.module = src.module};
-            if(int_val <= std::numeric_limits<uint32_t>::max()) return Type{.name="u32",.module = src.module};
-            if(int_val <= std::numeric_limits<int64_t>::max()) return Type{.name="i64",.module = src.module};
-            return Type{.name="u64",.module = src.module};
+            if(int_val <= std::numeric_limits<int32_t>::max())
+                return Type{.name="i32",.module = src.module,.is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue};
+            if(int_val <= std::numeric_limits<uint32_t>::max())
+                return Type{.name="u32",.module = src.module,.is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue};
+            if(int_val <= std::numeric_limits<int64_t>::max())
+                return Type{.name="i64",.module = src.module,.is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue};
+            return Type{.name="u64",.module = src.module, .is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue,};
         }
-        if(src.name == "flit") return Type{.name = "f64",.module = src.module};
+        if(src.name == "flit") return Type{.name = "f64",.module = src.module,.is_mutable = src.is_mutable,.is_lvalue = src.is_lvalue};
         //unreachble
         return Type{};
     }
@@ -362,6 +365,7 @@ namespace Yoyo
         if(!type->can_be_stored()) { error(); return; }
         if(type->is_non_owning()) { error(); return;}
         type->is_mutable = decl->is_mut;
+        type->is_lvalue = true;
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc = nullptr;
@@ -383,8 +387,11 @@ namespace Yoyo
                 decl->type = reduceLiteral(*decl->type, init);
                 type = decl->type;
             }
-            type->is_mutable = true;
-            alloc = ExpressionEvaluator{this}.doAssign(nullptr, init, *type, *expr_type);
+            if(!type->should_sret())
+            {
+                alloc = Alloca(decl->identifier.text, ToLLVMType(*type, false));
+                ExpressionEvaluator{this}.implicitConvert(init, *expr_type, *type, alloc);
+            } else alloc = ExpressionEvaluator{this}.implicitConvert(init, *expr_type, *type, nullptr);
             alloc->setName(decl->identifier.text);
             if(drop_flag) builder->CreateStore(llvm::ConstantInt::getTrue(context), drop_flag);
         }

@@ -1356,7 +1356,16 @@ namespace Yoyo
             clearUsages(args, *this);
         return return_value;
     }
-    llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation*) {}
+    llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation* op)
+    {
+        auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
+        auto llvm_t = irgen->ToLLVMType(*obj_ty, false);
+        auto obj = std::visit(*this, op->object->toVariant());
+        auto idx = std::visit(*this, op->index->toVariant());
+        if(obj_ty->is_static_array())
+            return irgen->builder->CreateGEP(llvm_t, obj, {idx});
+        irgen->error();
+    }
 
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
     {

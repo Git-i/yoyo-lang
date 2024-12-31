@@ -268,6 +268,22 @@ namespace Yoyo
         tp.saturate(src, irgen);
         return tp;
     }
+
+    Type Type::reference_to() const
+    {
+        if(is_reference()) return *this;
+        auto tp = Type{"__ref", {*this}};
+        tp.saturate(module, nullptr);
+        return tp;
+    }
+    Type Type::mutable_reference_to() const
+    {
+        if(is_reference()) return *this;
+        auto tp = Type{"__ref_mut", {*this}};
+        tp.saturate(module, nullptr);
+        return tp;
+    }
+
     bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen);
     void Type::saturate(Module* src, IRGenerator* irgen)
     {
