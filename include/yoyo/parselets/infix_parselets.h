@@ -60,5 +60,12 @@ namespace Yoyo {
         explicit AsExpressionParselet(uint32_t precedence) : prec(precedence) {}
         std::unique_ptr<Expression> parse(Parser& parser, std::unique_ptr<Expression> left, Token tk) override;
     };
-
+    class SubscriptParselet: public InfixParselet
+    {
+        uint32_t prec;
+    public:
+        uint32_t precedence() override {return prec;}
+        explicit SubscriptParselet(uint32_t precedence) : prec(precedence) {}
+        std::unique_ptr<Expression> parse(Parser& parser, std::unique_ptr<Expression> left, Token tk) override;
+    };
 }

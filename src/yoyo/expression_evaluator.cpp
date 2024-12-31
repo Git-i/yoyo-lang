@@ -901,7 +901,27 @@ namespace Yoyo
         }
         return tuple_tmp;
     }
-    llvm::Value* ExpressionEvaluator::operator()(ArrayLiteral*) {}
+    llvm::Value* ExpressionEvaluator::operator()(ArrayLiteral* lit)
+    {
+        auto tp_check = ExpressionTypeChecker{irgen};
+        auto type = std::visit(tp_check, lit->toVariant());
+        if(!type) return nullptr;
+        auto as_llvm = irgen->ToLLVMType(type.value(), false);
+        auto val = irgen->Alloca("array_literal", as_llvm);
+        if(type->is_static_array())
+        {
+            for(size_t i = 0; i < lit->elements.size(); ++i)
+            {
+                auto elem = irgen->builder->CreateConstGEP1_32(as_llvm, val, i);
+                implicitConvert(
+                    std::visit(*this, lit->elements[i]->toVariant()),
+                    std::visit(tp_check, lit->elements[i]->toVariant()).value(),
+                    type->subtypes[0],
+                    elem);
+            }
+        }
+        return val;
+    }
     llvm::Value* ExpressionEvaluator::operator()(RealLiteral* lit)
     {
         return llvm::ConstantFP::get(llvm::Type::getDoubleTy(irgen->context), lit->token.text);

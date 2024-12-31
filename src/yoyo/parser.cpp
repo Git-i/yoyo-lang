@@ -72,6 +72,8 @@ namespace Yoyo
         infixParselets[TokenType::LParen] = std::make_shared<CallOperationParselet>(Precedences::Call);
 
         infixParselets[TokenType::DoubleColon] = std::make_shared<ScopeOperationParselet>(Precedences::ScopeResolve);
+
+        infixParselets[TokenType::LSquare] = std::make_shared<SubscriptParselet>(Precedences::Call);
     }
     PrefixParselet* Parser::GetPrefixParselet(TokenType t)
     {

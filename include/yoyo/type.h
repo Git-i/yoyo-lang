@@ -58,6 +58,10 @@ namespace Yoyo
         [[nodiscard]] bool is_variant() const {return name == "__var";}
         [[nodiscard]] bool is_char() const {return name == "char";}
         [[nodiscard]] bool is_mutable_reference() const {return name == "__ref_mut";}
+        [[nodiscard]] bool is_static_array() const;
+        [[nodiscard]] uint32_t static_array_size() const;
+        [[nodiscard]] bool is_dynamic_array() const;
+        [[nodiscard]] bool is_array() const;
         [[nodiscard]] Type make_mut() const;
         [[nodiscard]] Type make_lvalue() const;
         [[nodiscard]] Type take_mutability_characteristics(const Type&) const;

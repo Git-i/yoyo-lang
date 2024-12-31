@@ -132,8 +132,7 @@ namespace Yoyo
             return std::make_pair(std::visit(*this, elem->toVariant()).value_or(Type{}), elem.get());
         }));
         if(!subtype) return std::nullopt;
-
-        return Type{.name = "__arr" + std::to_string(lit->elements.size()), .subtypes = {*subtype},
+        return Type{.name = "__arr_s" + std::to_string(lit->elements.size()), .subtypes = {*subtype},
             .module = subtype->module->engine->modules.at("__builtin").get()};
     }
 

@@ -317,6 +317,19 @@ namespace Yoyo
         for(auto& sub: subtypes) sub.saturate(src, irgen);
     }
 
+    bool Type::is_static_array() const
+    {
+        return name.starts_with("__arr_s");
+    }
+
+    uint32_t Type::static_array_size() const
+    {
+        if(!is_static_array()) return 0;
+        // __arr_s is 7 chars
+        std::string number(name.begin() + 7, name.end());
+        return std::stoi(number);
+    }
+
     Type Type::make_mut() const
     {
         Type t = *this;

@@ -87,4 +87,11 @@ namespace Yoyo
     {
         return std::make_unique<AsExpression>(std::move(left), parser.parseType(0).value_or(Type{}));
     }
+
+    std::unique_ptr<Expression> SubscriptParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
+    {
+        auto expr = parser.parseExpression(0);
+        if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
+        return std::make_unique<SubscriptOperation>(std::move(left), std::move(expr));
+    }
 }
