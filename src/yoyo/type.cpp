@@ -277,7 +277,7 @@ namespace Yoyo
         if(it.is_end())
         {
             name = it.last().name;
-            if(!(is_conversion_result() || is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
+            if(!(is_conversion_result() || is_array() || is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
             {
                 module = src;
                 block_hash = irgen ? irgen->block_hash : src->module_hash;
@@ -328,6 +328,16 @@ namespace Yoyo
         // __arr_s is 7 chars
         std::string number(name.begin() + 7, name.end());
         return std::stoi(number);
+    }
+
+    bool Type::is_dynamic_array() const
+    {
+        return name == "__arr_d";
+    }
+
+    bool Type::is_array() const
+    {
+        return is_dynamic_array() || is_static_array();
     }
 
     Type Type::make_mut() const

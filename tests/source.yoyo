@@ -1,6 +1,6 @@
 app: module = APP
 
 takes_foo: fn -> f64 = {
-    array := ['H', 'e', 'l', 'l', 'o'];
+    array: [char; 5] = ['H', 'e', 'l', 'l', 'o'];
     return 10;
 }

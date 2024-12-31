@@ -859,8 +859,16 @@ namespace Yoyo
     {
         auto next = parser.parseType(0);
         if(!next) parser.synchronizeTo({{TokenType::RSquare}});
+        size_t numElems = 0;
+        if(parser.discard(TokenType::SemiColon))
+        {
+            auto size = parser.Peek();
+            if(!size || size->type != TokenType::IntegerLiteral) parser.error("Invalid array size", size);
+            else { parser.Get(); numElems = std::stoi(std::string(size->text)); }
+        }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
-        return Type("__arr", {std::move(next).value_or(Type{})});
+        std::string name = numElems == 0 ? "__arr_d" : "__arr_s" + std::to_string(numElems);
+        return Type(name, {std::move(next).value_or(Type{})});
     }
     std::optional<Type> parseTypeGroup(Token t, Parser& parser)
     {
