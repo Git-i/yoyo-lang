@@ -167,7 +167,13 @@ namespace Yoyo
         {
             return llvm::ArrayType::get(ToLLVMType(type.subtypes[0], hash, disallowed_types), type.static_array_size());
         }
-        //if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
+        if (type.is_slice())
+        {
+            return llvm::StructType::get(context, {
+                llvm::PointerType::get(context, 0), //data
+                llvm::Type::getInt64Ty(context) //size
+            });
+        }
         if(type.is_lambda()) return nullptr;
         if(auto t = findType(type.block_hash, type.name))
         {

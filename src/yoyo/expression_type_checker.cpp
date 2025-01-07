@@ -291,8 +291,12 @@ namespace Yoyo
     std::optional<FunctionType> ExpressionTypeChecker::operator()(SubscriptOperation* op)
     {
         auto tp = std::visit(*this, op->object->toVariant());
-        if(tp->is_array())
+        if (tp->is_array())
             return tp->is_mutable ? tp->subtypes[0].mutable_reference_to() : tp->subtypes[0].reference_to();
+        if (tp->is_mut_slice())
+            return tp->subtypes[0].mutable_reference_to();
+        if (tp->is_slice())
+            return tp->subtypes[0].reference_to();
         return std::nullopt;
     }
 

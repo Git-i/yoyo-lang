@@ -120,7 +120,7 @@ namespace Yoyo
         }
         if(is_reference())
         {
-            if(other.is_mutable_reference()) return true;
+            if(other.is_mutable_reference() && deref().is_equal(other.deref())) return true;
         }
         //for variants, the rhs must be assignable to only one of the subtypes
         if(is_variant())
@@ -136,7 +136,20 @@ namespace Yoyo
             }
             return is_valid;
         }
-
+        if (is_mut_slice())
+        {
+            if (other.is_mutable_reference())
+                if (other.deref().is_array()) return other.deref().subtypes[0].is_equal(subtypes[0]);
+            return false;
+        }
+        if (is_slice())
+        {
+            if (other.is_reference())
+                if (other.deref().is_array()) return other.deref().subtypes[0].is_equal(subtypes[0]);
+            if (other.is_mutable_reference())
+                return other.subtypes[0].is_equal(subtypes[0]);
+            return false;
+        }
         return false;
     }
 
@@ -167,7 +180,7 @@ namespace Yoyo
 
     bool Type::is_non_owning() const
     {
-        if(is_reference()) return true;
+        if(is_reference() || is_slice()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
@@ -181,7 +194,7 @@ namespace Yoyo
 
     bool Type::is_non_owning_mut() const
     {
-        if(is_mutable_reference()) return true;
+        if(is_mutable_reference() || is_mut_slice()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
@@ -195,6 +208,14 @@ namespace Yoyo
     bool Type::is_reference() const
     {
         return name == "__ref" || name == "__ref_mut";
+    }
+    bool Type::is_slice() const
+    {
+        return name == "__slice" || name == "__slice_mut";
+    }
+    bool Type::is_mut_slice() const
+    {
+        return name == "__slice_mut";
     }
     void evaluateDestructability(ClassDeclaration* decl)
     {
@@ -293,7 +314,18 @@ namespace Yoyo
         if(it.is_end())
         {
             name = it.last().name;
-            if(!(is_conversion_result() || is_array() || is_char() || is_void() || is_builtin() || is_tuple() || is_str() || name == "__called_fn" || is_optional() || is_variant() || is_reference()))
+            if(!(is_conversion_result() || 
+                is_array() || 
+                is_char() || 
+                is_void() || 
+                is_builtin() || 
+                is_tuple() || 
+                is_str() || 
+                name == "__called_fn" || 
+                is_optional() || 
+                is_variant() || 
+                is_reference() ||
+                is_slice()))
             {
                 module = src;
                 block_hash = irgen ? irgen->block_hash : src->module_hash;

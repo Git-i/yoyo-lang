@@ -14,7 +14,7 @@ namespace Yoyo
     {
         std::vector<std::pair<Type, llvm::Value*>> objects;
     };
-    void stealUsages(std::vector<llvm::Value*>& args, llvm::Value* out)
+    void stealUsages(std::span<llvm::Value*> args, llvm::Value* out)
     {
         ExtendedLifetimes* ext = nullptr;
         for(auto value: args)
@@ -282,6 +282,26 @@ namespace Yoyo
                 irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
                     type_idx_ptr);
                 break;
+            }
+        }
+        if (dst.is_slice())
+        {
+            if (src.is_reference())
+            {
+                auto ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 0);
+                auto size = irgen->builder->CreateStructGEP(dst_as_llvm, out, 1);
+                if (src.deref().is_static_array())
+                {
+                    irgen->builder->CreateStore(val, ptr);
+                    auto sz = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), src.deref().static_array_size());
+                    irgen->builder->CreateStore(sz, size);
+                }
+                
+                if (!src.is_lvalue)
+                {
+                    auto arr = std::array{ val };
+                    stealUsages(arr, out);
+                }
             }
         }
         return out;
@@ -1367,6 +1387,13 @@ namespace Yoyo
         {
             auto const_zero = llvm::ConstantInt::get(idx->getType(), 0);
             return irgen->builder->CreateGEP(llvm_t, obj, {const_zero, idx});
+        }
+        if (obj_ty->is_slice())
+        {
+            auto data_ptr = irgen->builder->CreateStructGEP(llvm_t, obj, 0);
+            data_ptr = irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context, 0), data_ptr);
+            auto sub_ty = irgen->ToLLVMType(obj_ty->subtypes[0], false);
+            return irgen->builder->CreateGEP(sub_ty, data_ptr, { idx });
         }
         irgen->error();
     }

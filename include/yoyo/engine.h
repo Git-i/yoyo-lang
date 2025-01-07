@@ -28,5 +28,6 @@ namespace Yoyo {
         static std::string_view viewString(void* str);
         llvm::orc::ThreadSafeContext llvm_context;
         std::unique_ptr<llvm::orc::LLJIT> jit;
+        
     };
 }
