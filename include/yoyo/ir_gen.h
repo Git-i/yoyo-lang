@@ -122,7 +122,7 @@ namespace Yoyo
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
-        void GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md);
+        void GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng);
     };
 
 

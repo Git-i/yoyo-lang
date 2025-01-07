@@ -88,7 +88,7 @@ namespace Yoyo
 
     llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)
     {
-        auto& context = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
+        auto& context = *engine->llvm_context.getContext();
         if(type.is_integral())
             return llvm::Type::getIntNTy(context, *type.integer_width());
         if(type.is_floating_point())
@@ -136,7 +136,7 @@ namespace Yoyo
         {
             std::array<llvm::Type*, 2> args{};
             size_t size = 0;
-            auto& layout = code->getDataLayout();
+            auto& layout = code.getModuleUnlocked()->getDataLayout();
             for(auto& subtype : type.subtypes)
             {
                 auto sub_t = subtype.module->ToLLVMType(subtype, hash, disallowed_types);
@@ -202,8 +202,8 @@ namespace Yoyo
             Type{"u16", {}, nullptr, module},
             Type{"u8", {}, nullptr, module},
             };
-        auto& ctx = *static_cast<llvm::LLVMContext*>(eng->llvm_context);
-        module->code = std::make_unique<llvm::Module>("__builtin", ctx);
+        auto& ctx = *eng->llvm_context.getContext();
+        module->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>("__builtin", ctx), eng->llvm_context);
         llvm::IRBuilder<> builder(ctx);
         for(auto& t : types)
         {
@@ -215,13 +215,13 @@ namespace Yoyo
                 return "__operator__" + op_name + "__" + t.name + "__" + t.name;
             };
             auto plus_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
-                mangled_name_for("plus"), module->code.get());
+                mangled_name_for("plus"), module->code.getModuleUnlocked());
             auto minus_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
-                mangled_name_for("minus"), module->code.get());
+                mangled_name_for("minus"), module->code.getModuleUnlocked());
             auto mul_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
-                mangled_name_for("mul"), module->code.get());
+                mangled_name_for("mul"), module->code.getModuleUnlocked());
             auto div_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
-                mangled_name_for("div"), module->code.get());
+                mangled_name_for("div"), module->code.getModuleUnlocked());
 
             plus_fn->addFnAttr(llvm::Attribute::AlwaysInline);
             minus_fn->addFnAttr(llvm::Attribute::AlwaysInline);
@@ -258,7 +258,7 @@ namespace Yoyo
                 return "__operator__" + op_name + "__" + t.name;
             };
             auto fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("un_neg"),
-                module->code.get());
+                module->code.getModuleUnlocked());
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
             if(t.is_integral()) builder.CreateRet(builder.CreateNeg(fn->getArg(0)));
             else builder.CreateRet(builder.CreateFNeg(fn->getArg(0)));
@@ -273,7 +273,7 @@ namespace Yoyo
                 return "__operator__" + op_name + "__" + t.name + "__" + t.name;
             };
             auto fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("mod"),
-                module->code.get());
+                module->code.getModuleUnlocked());
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
             if(t.is_signed_integral()) builder.CreateRet(builder.CreateSRem(fn->getArg(0), fn->getArg(1)));
             else builder.CreateRet(builder.CreateURem(fn->getArg(0), fn->getArg(1)));
@@ -281,5 +281,9 @@ namespace Yoyo
         }
 
 
+    }
+    void Module::dumpIR()
+    {
+        code.getModuleUnlocked()->print(llvm::outs(), nullptr);
     }
 }

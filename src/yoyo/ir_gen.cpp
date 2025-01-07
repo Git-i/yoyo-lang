@@ -13,6 +13,10 @@ namespace Yoyo
         __debugbreak();
 #endif
     }
+    void dumpModule(IRGenerator* irgen)
+    {
+        irgen->code->print(llvm::outs(), nullptr);
+    }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
         //type is not required not have a module (built-ins)
@@ -801,12 +805,12 @@ namespace Yoyo
         return llvm::StructType::create(context, args, name);
     }
 
-    void IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md)
+    void IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng)
     {
         block_hash = md->module_hash;
-        md->code = std::make_unique<llvm::Module>(name, context);
+        md->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>(name, context), eng->llvm_context);
         module = md;
-        code = md->code.get();
+        code = md->code.getModuleUnlocked();
         builder = std::make_unique<llvm::IRBuilder<>>(context);
         pushScope();
         for(auto& stat : statements)

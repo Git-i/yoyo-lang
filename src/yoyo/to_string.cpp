@@ -7,6 +7,11 @@
 namespace Yoyo
 {
     extern "C" {
+        YOYO_API char* YOYO_to_string_signed_integer_dont_use_name(int64_t value, size_t* buffer_length);
+        YOYO_API char* YOYO_to_string_unsigned_integer_dont_use_name(uint64_t value, size_t* buffer_length);
+        YOYO_API char* YOYO_to_string_float32_dont_use_name(float value, size_t* buffer_length);
+        YOYO_API char* YOYO_to_string_float64_dont_use_name(double value, size_t* buffer_length);
+        YOYO_API char* YOYO_to_string_enum_dont_use_name(int32_t value, EnumDeclaration* decl, size_t* buffer_length);
         char* YOYO_to_string_signed_integer_dont_use_name(int64_t value, size_t* buffer_length)
         {
             *buffer_length = std::formatted_size("{}", value);

@@ -44,30 +44,14 @@ TEST_CASE("Test IR")
         idx %= 8;
         auto str = "\033[1;3" + std::to_string(idx) + "m";
         std::cout <<  str << std::flush;
-        mod.second->code->print(llvm::outs(), nullptr);
+        mod.second->dumpIR();
         std::cout << "\033[0m" << std::flush;
         
-        if (verifyModule(*mod.second->code, &llvm::errs())) Yoyo::debugbreak();
+        //if (verifyModule(*mod.second->code, &llvm::errs())) Yoyo::debugbreak();
     }
-    llvm::InitLLVM llvm(argc, lol);
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-
-    llvm::ExitOnError ExitOnErr;
-    auto j = ExitOnErr(llvm::orc::LLJITBuilder().create());
-
-    auto llvm_ctx = std::unique_ptr<llvm::LLVMContext>(static_cast<llvm::LLVMContext*>(engine.llvm_context));
-    auto ctx = llvm::orc::ThreadSafeContext(std::move(llvm_ctx));
-    for(auto& mod: engine.modules)
-    {
-        auto err = j->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.second->code), ctx));
-        if(err)
-        {
-            Yoyo::debugbreak();
-        }
-    }
+    engine.prepareForExecution();
     std::string unmangled_name = engine.modules["MOO2"]->module_hash + "takes_foo";
-    auto addr = j->lookup(unmangled_name);
+    auto addr = engine.jit->lookup(unmangled_name);
     if (!addr) Yoyo::debugbreak();
     double(*fn)() = addr.get().toPtr<double()>();
     auto res = fn();

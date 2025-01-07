@@ -5,12 +5,13 @@
 #include <parser.h>
 #include <ranges>
 #include <statement.h>
+#include <llvm/Support/TargetSelect.h>
 
 namespace Yoyo
 {
     llvm::LLVMContext* getLLVMContext(Module* md)
     {
-        return static_cast<llvm::LLVMContext*>(md->engine->llvm_context);
+        return md->engine->llvm_context.getContext();
     }
     struct ForwardDeclaratorPass1
     {
@@ -138,7 +139,12 @@ namespace Yoyo
 
     Engine::Engine()
     {
-        llvm_context = new llvm::LLVMContext();
+        llvm_context = llvm::orc::ThreadSafeContext(std::make_unique<llvm::LLVMContext>());
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        auto value = llvm::orc::LLJITBuilder().create();
+        if (!value) Yoyo::debugbreak();
+        std::move(value).moveInto(jit);
         makeBuiltinModule(this);
     }
 
@@ -150,12 +156,12 @@ namespace Yoyo
 
     AppModule* Engine::addAppModule(const std::string& name)
     {
-        auto& ctx = *static_cast<llvm::LLVMContext*>(llvm_context);
+        auto& ctx = *llvm_context.getContext();
         if(modules.contains(name)) return nullptr;
         auto& md = modules[name];
         md = std::make_unique<AppModule>();
         md->engine = this;
-        md->code = std::make_unique<llvm::Module>(name, ctx);
+        md->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>(name, ctx), llvm_context);
         return reinterpret_cast<AppModule*>(md.get());
     }
 
@@ -183,17 +189,17 @@ namespace Yoyo
 
     void Engine::compile()
     {
-        IRGenerator irgen(*static_cast<llvm::LLVMContext*>(llvm_context));
+        IRGenerator irgen(*llvm_context.getContext());
         auto keys_view = std::ranges::views::keys(modules);
         std::vector module_names(keys_view.begin(), keys_view.end());
-        for(const auto & module_name : module_names)
+        for (const auto& module_name : module_names)
         {
-            if(sources.contains(module_name))
+            if (sources.contains(module_name))
             {
-                for(auto& stat : sources[module_name])
+                for (auto& stat : sources[module_name])
                 {
-                    if(!stat) continue; //by this point some statements have already been handled(enums)
-                    if (!std::visit(ForwardDeclaratorPass2{modules[module_name].get()}, stat->toVariant()))
+                    if (!stat) continue; //by this point some statements have already been handled(enums)
+                    if (!std::visit(ForwardDeclaratorPass2{ modules[module_name].get() }, stat->toVariant()))
                     {
                         modules.erase(module_name);
                         break;
@@ -201,12 +207,12 @@ namespace Yoyo
                 }
             }
         }
-        for(auto& mod : modules)
+        for (auto& mod : modules)
         {
-            if(mod.second->code == nullptr)
+            if (!mod.second->code)
             {
                 auto src = sources.extract(mod.first);
-                irgen.GenerateIR(mod.first, std::move(src.mapped()), mod.second.get());
+                irgen.GenerateIR(mod.first, std::move(src.mapped()), mod.second.get(), this);
             }
         }
     }
@@ -216,5 +222,10 @@ namespace Yoyo
         struct String{char* data; uint64_t len; uint64_t cap;};
         auto arg_as_str = static_cast<String*>(str);
         return std::string_view{arg_as_str->data, arg_as_str->len};
+    }
+    void Engine::prepareForExecution()
+    {
+        for (auto& [name, module] : modules)
+            jit->addIRModule(std::move(module->code));
     }
 }

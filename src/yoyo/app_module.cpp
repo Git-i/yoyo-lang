@@ -7,7 +7,7 @@ namespace Yoyo
 {
     llvm::FunctionType* toLLVMSignature(const FunctionSignature& sig, AppModule* module)
     {
-        llvm::LLVMContext& ctx = *static_cast<llvm::LLVMContext*>(module->engine->llvm_context);
+        llvm::LLVMContext& ctx = *module->engine->llvm_context.getContext();
         std::vector<llvm::Type*> argTypes;
         //sret
         auto return_t = module->ToLLVMType(sig.returnType, module->module_hash, {});
@@ -30,7 +30,7 @@ namespace Yoyo
         auto sig = *p.parseFunctionSignature();
         if(p.failed()) debugbreak();
         auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, {});
-        llvm::LLVMContext& ctx = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
+        llvm::LLVMContext& ctx = *engine->llvm_context.getContext();
         auto llvm_sig = toLLVMSignature(sig, this);
 
 
@@ -38,7 +38,7 @@ namespace Yoyo
         std::string mangled_name = module_hash + name;
         functions[module_hash].emplace_back(name, std::move(sig));
 
-        auto fn = llvm::Function::Create(llvm_sig, llvm::GlobalValue::ExternalLinkage, mangled_name, code.get());
+        auto fn = llvm::Function::Create(llvm_sig, llvm::GlobalValue::ExternalLinkage, mangled_name, code.getModuleUnlocked());
         if(uses_sret)
             fn->addAttributeAtIndex(1, llvm::Attribute::get(ctx, llvm::Attribute::StructRet, return_as_llvm));
         auto bb = llvm::BasicBlock::Create(ctx, "entry", fn);

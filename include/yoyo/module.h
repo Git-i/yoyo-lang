@@ -5,12 +5,12 @@
 #include <unordered_map>
 #include <llvm/IR/Module.h>
 #include "overload_details.h"
-
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 
 namespace Yoyo
 {
     class Engine;
-    struct Module
+    struct YOYO_API Module
     {
         using ClassDetails = std::tuple<std::string,llvm::StructType*, std::unique_ptr<ClassDeclaration>>;
         struct FunctionDetails
@@ -18,7 +18,7 @@ namespace Yoyo
             std::string name;
             FunctionSignature sig;
         };
-        std::unique_ptr<llvm::Module> code;
+        llvm::orc::ThreadSafeModule code;
         std::unordered_map<std::string, std::vector<FunctionDetails>> functions;
         std::unordered_map<std::string, std::vector<ClassDetails>> classes;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericFunctionDeclaration>>> generic_fns;
@@ -36,6 +36,7 @@ namespace Yoyo
         ClassDetails* findType(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types);
+        void dumpIR();
     };
     void makeBuiltinModule(Engine* eng);
     /*
