@@ -7,6 +7,12 @@
 
 namespace Yoyo
 {
+    void debugbreak()
+    {
+#if _MSC_VER
+        __debugbreak();
+#endif
+    }
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
         //type is not required not have a module (built-ins)
@@ -596,7 +602,7 @@ namespace Yoyo
 
     void IRGenerator::operator()(GenericFunctionDeclaration*)
     {
-        raise(SIGTRAP);
+        debugbreak();
     }
 
     void IRGenerator::operator()(AliasDeclaration* decl)
@@ -610,12 +616,12 @@ namespace Yoyo
 
     void IRGenerator::operator()(GenericAliasDeclaration*)
     {
-        raise(SIGTRAP);
+        debugbreak();
     }
 
     void IRGenerator::error()
     {
-        raise(SIGTRAP);
+        debugbreak();
     }
 
     std::string IRGenerator::reset_hash()

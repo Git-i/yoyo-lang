@@ -264,6 +264,6 @@ namespace Yoyo
             irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, ')'), current_ptr);
             return {memory, total_size};
         }
-        raise(SIGTRAP);
+        debugbreak();
     }
 }

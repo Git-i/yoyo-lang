@@ -1,0 +1,1 @@
+option('llvm_static', type: 'boolean', value: true)

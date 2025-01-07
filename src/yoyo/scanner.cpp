@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <locale>
 #include <optional>
+#include <bit>
 
 namespace Yoyo {
     Scanner::Scanner(std::string_view view): source(view),
@@ -100,7 +101,7 @@ namespace Yoyo {
             case '(': return Token{TokenType::LParen, loc};
             case ')': return Token{TokenType::RParen, loc};
             case '{': return Token{TokenType::LCurly, loc};
-            case '}': return Token{TokenType::RCurly, loc, {source.begin() + position -1, 1}};
+            case '}': return Token{TokenType::RCurly, loc, {source.data() + position -1, 1}};
             case '[': return Token{TokenType::LSquare, loc};
             case ']': return Token{TokenType::RSquare, loc};
             case '.': return Token{TokenType::Dot, loc};

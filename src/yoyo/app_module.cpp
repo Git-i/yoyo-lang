@@ -28,7 +28,7 @@ namespace Yoyo
     {
         Parser p(std::move(signature));
         auto sig = *p.parseFunctionSignature();
-        if(p.failed()) raise(SIGTRAP);
+        if(p.failed()) debugbreak();
         auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, {});
         llvm::LLVMContext& ctx = *static_cast<llvm::LLVMContext*>(engine->llvm_context);
         auto llvm_sig = toLLVMSignature(sig, this);

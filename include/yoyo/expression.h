@@ -61,7 +61,7 @@ namespace Yoyo
         CharLiteral*,
         GenericNameExpression*,
         AsExpression*>;
-    class Expression : public ASTNode {
+    class YOYO_API Expression : public ASTNode {
     public:
         ~Expression() override = default;
         virtual ExpressionVariant toVariant() = 0;
@@ -74,52 +74,55 @@ namespace Yoyo
             return self;
         }
     };
-    class IntegerLiteral : public Expression {
+    class YOYO_API IntegerLiteral : public Expression {
     public:
         std::string text;
         explicit IntegerLiteral(std::string tk) : text(std::move(tk)) {}
         explicit IntegerLiteral(const std::string_view tk) : text(tk) {}
         ExpressionVariant toVariant() override;
     };
-    class BooleanLiteral : public Expression {
+    class YOYO_API BooleanLiteral : public Expression {
     public:
         Token token;
         explicit BooleanLiteral(const Token& tk) : token(tk) {}
         ExpressionVariant toVariant() override;
 
     };
-    class NullLiteral : public Expression { ExpressionVariant toVariant() override {return this;}};
-    class TupleLiteral : public Expression {
+    class YOYO_API NullLiteral : public Expression { ExpressionVariant toVariant() override {return this;}};
+    class YOYO_API TupleLiteral : public Expression {
     public:
         std::vector<std::unique_ptr<Expression>> elements;
+        TupleLiteral(TupleLiteral&&) noexcept = default;
         explicit TupleLiteral(std::vector<std::unique_ptr<Expression>> elems) : elements(std::move(elems)) {}
         ExpressionVariant toVariant() override;
     };
-    class ArrayLiteral : public Expression {
+    class YOYO_API ArrayLiteral : public Expression {
     public:
         std::vector<std::unique_ptr<Expression>> elements;
+        ArrayLiteral(ArrayLiteral&&) noexcept = default;
         explicit ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems) : elements(std::move(elems)) {}
         ExpressionVariant toVariant() override;
     };
-    class RealLiteral : public Expression {
+    class YOYO_API RealLiteral : public Expression {
     public:
         Token token;
         explicit RealLiteral(const Token& tk) : token(tk) {}
         ExpressionVariant toVariant() override;
     };
-    class StringLiteral : public Expression {
+    class YOYO_API StringLiteral : public Expression {
     public:
+        StringLiteral(StringLiteral&&) noexcept = default;
         std::vector<std::variant<std::string, std::unique_ptr<Expression>>> literal;
         explicit StringLiteral(decltype(literal) value) : literal(std::move(value)) {}
         ExpressionVariant toVariant() override;
     };
-    class NameExpression : public Expression {
+    class YOYO_API NameExpression : public Expression {
     public:
         std::string text;
         explicit NameExpression(std::string tk) : text(std::move(tk)) {}
         ExpressionVariant toVariant() override;
     };
-    class GenericNameExpression: public NameExpression
+    class YOYO_API GenericNameExpression: public NameExpression
     {
     public:
         std::vector<Type> arguments;
@@ -127,20 +130,20 @@ namespace Yoyo
             : NameExpression(std::move(name)), arguments(std::move(arguments)) {}
         ExpressionVariant toVariant() override;
     };
-    class PrefixOperation : public Expression {
+    class YOYO_API PrefixOperation : public Expression {
     public:
         Token op;
         std::unique_ptr<Expression> operand;
         PrefixOperation(const Token& op, std::unique_ptr<Expression> operand) : op(op), operand(std::move(operand)) {}
         ExpressionVariant toVariant() override;
     };
-    class GroupingExpression : public Expression {
+    class YOYO_API GroupingExpression : public Expression {
     public:
         std::unique_ptr<Expression> expr;
         explicit GroupingExpression(std::unique_ptr<Expression> expr) : expr(std::move(expr)) {}
         ExpressionVariant toVariant() override;
     };
-    class BinaryOperation : public Expression {
+    class YOYO_API BinaryOperation : public Expression {
     public:
         Token op;
         std::unique_ptr<Expression> lhs;
@@ -149,7 +152,7 @@ namespace Yoyo
             : op(op), lhs(std::move(left)), rhs(std::move(right)) {}
         ExpressionVariant toVariant() override;
     };
-    class LogicalOperation : public Expression {
+    class YOYO_API LogicalOperation : public Expression {
     public:
         Token op;
         std::unique_ptr<Expression> lhs;
@@ -158,14 +161,14 @@ namespace Yoyo
             : op(op), lhs(std::move(left)), rhs(std::move(right)) {}
         ExpressionVariant toVariant() override;
     };
-    class PostfixOperation : public Expression {
+    class YOYO_API PostfixOperation : public Expression {
     public:
         Token op;
         std::unique_ptr<Expression> operand;
         PostfixOperation(const Token& op, std::unique_ptr<Expression> operand) : op(op), operand(std::move(operand)) {}
         ExpressionVariant toVariant() override;
     };
-    class CallOperation : public Expression {
+    class YOYO_API CallOperation : public Expression {
     public:
         std::unique_ptr<Expression> callee;
         std::vector<std::unique_ptr<Expression>> arguments;
@@ -173,7 +176,7 @@ namespace Yoyo
             callee(std::move(callee)), arguments(std::move(args)) {}
         ExpressionVariant toVariant() override;
     };
-    class SubscriptOperation : public Expression {
+    class YOYO_API SubscriptOperation : public Expression {
     public:
         std::unique_ptr<Expression> object;
         std::unique_ptr<Expression> index;
@@ -181,7 +184,7 @@ namespace Yoyo
             : object(std::move(obj)), index(std::move(idx)) {}
         ExpressionVariant toVariant() override;
     };
-    class LambdaExpression : public Expression {
+    class YOYO_API LambdaExpression : public Expression {
     public:
         std::vector<std::string> captures;
         FunctionSignature sig;
@@ -190,16 +193,17 @@ namespace Yoyo
         LambdaExpression(std::vector<std::string> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
         ExpressionVariant toVariant() override;
     };
-    class ObjectLiteral : public Expression
+    class YOYO_API ObjectLiteral : public Expression
     {
     public:
         Type t;
         std::unordered_map<std::string, std::unique_ptr<Expression>> values;
+        ObjectLiteral(ObjectLiteral&&) noexcept = default;
         ObjectLiteral(Type t, std::unordered_map<std::string, std::unique_ptr<Expression>> values)
             : t(std::move(t)), values(std::move(values)) {}
         ExpressionVariant toVariant() override;
     };
-    class ScopeOperation : public Expression
+    class YOYO_API ScopeOperation : public Expression
     {
     public:
         Type type;
@@ -209,7 +213,7 @@ namespace Yoyo
 
     };
     /// Used for primitive casts; ex: @code i32_value as i64 @endcode
-    class AsExpression : public Expression
+    class YOYO_API AsExpression : public Expression
     {
     public:
         std::unique_ptr<Expression> expr;
@@ -217,7 +221,7 @@ namespace Yoyo
         AsExpression(std::unique_ptr<Expression> expr, Type dest) : expr(std::move(expr)), dest(std::move(dest)) {}
         ExpressionVariant toVariant() override;
     };
-    class CharLiteral : public Expression
+    class YOYO_API CharLiteral : public Expression
     {
     public:
         uint32_t value;

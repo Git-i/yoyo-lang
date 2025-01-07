@@ -9,7 +9,9 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#ifdef USE_GRAPHVIZ
 #include "graphviz/gvc.h"
+#endif
 
 Yoyo::AppModule* md;
 
@@ -45,7 +47,7 @@ TEST_CASE("Test IR")
         mod.second->code->print(llvm::outs(), nullptr);
         std::cout << "\033[0m" << std::flush;
         
-        if(verifyModule(*mod.second->code, &llvm::errs())) raise(SIGTRAP);
+        if (verifyModule(*mod.second->code, &llvm::errs())) Yoyo::debugbreak();
     }
     llvm::InitLLVM llvm(argc, lol);
     llvm::InitializeNativeTarget();
@@ -61,18 +63,19 @@ TEST_CASE("Test IR")
         auto err = j->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod.second->code), ctx));
         if(err)
         {
-            raise(SIGTRAP);
+            Yoyo::debugbreak();
         }
     }
     std::string unmangled_name = engine.modules["MOO2"]->module_hash + "takes_foo";
-    auto addr = j->lookup(unmangled_name).get();
-    double(*fn)() = addr.toPtr<double()>();
+    auto addr = j->lookup(unmangled_name);
+    if (!addr) Yoyo::debugbreak();
+    double(*fn)() = addr.get().toPtr<double()>();
     auto res = fn();
     std::cout << res << std::endl;
     REQUIRE(res == 10.0);
 }
 
-
+#ifdef USE_GRAPHVIZ
 void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo::CFGNode*, Agnode_t*>& nodes, std::set<Yoyo::CFGNode*>& prepared)
 {
     if(prepared.contains(node)) return;
@@ -154,3 +157,4 @@ TEST_CASE("Test CFG")
     auto f = fopen("test_result.graphviz", "w");
     agwrite(graph, f);
 }
+#endif

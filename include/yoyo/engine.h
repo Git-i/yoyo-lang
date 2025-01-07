@@ -11,11 +11,12 @@ namespace Yoyo {
     struct Module;
     class Statement;
 
-    class Engine
+    class YOYO_API Engine
     {
     public:
         Engine();
         ~Engine();
+        Engine(Engine&&) noexcept = default;
         /// Adds an app module
         AppModule* addAppModule(const std::string& name);
         void addModule(const std::string& module_name, std::string source);

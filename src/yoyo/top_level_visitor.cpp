@@ -73,6 +73,6 @@ namespace Yoyo
             if(decl->signature.parameters.size() == 2) return handleBinaryOverload(decl.get(), irgen);
             if(decl->signature.parameters.size() != 1) {irgen->error(); return false;}
         }
-        raise(SIGTRAP);
+        debugbreak();
     }
 }

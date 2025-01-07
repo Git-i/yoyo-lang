@@ -865,6 +865,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(Expression* expr)
     {
         //TODO
+        return nullptr;
     }
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(GroupingExpression* gre)
@@ -1111,8 +1112,8 @@ namespace Yoyo
         return std::visit(*this, op->expr->toVariant());
     }
 
-    llvm::Value* ExpressionEvaluator::operator()(LogicalOperation*) {}
-    llvm::Value* ExpressionEvaluator::operator()(PostfixOperation*) {}
+    llvm::Value* ExpressionEvaluator::operator()(LogicalOperation*) { return nullptr; }
+    llvm::Value* ExpressionEvaluator::operator()(PostfixOperation*) { return nullptr; }
     llvm::Value* ExpressionEvaluator::fillArgs(bool uses_sret,
         const FunctionSignature& sig,
         std::vector<llvm::Value*>& args, llvm::Value* first, std::vector<std::unique_ptr<Expression>>& exprs)

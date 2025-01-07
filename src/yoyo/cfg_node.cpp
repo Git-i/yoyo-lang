@@ -1,7 +1,6 @@
 #include "cfg_node.h"
 
 #include <cassert>
-#include <csignal>
 #include <format>
 #include <iostream>
 #include <memory>
@@ -11,6 +10,7 @@
 #include "statement.h"
 namespace Yoyo
 {
+    void YOYO_API debugbreak();
     struct CFGPreparator
     {
         CFGNode* node;
@@ -225,7 +225,7 @@ namespace Yoyo
             }
             return obj;
         }
-        std::unordered_map<std::string, Expression*> operator()(LambdaExpression* lmbd){}
+        std::unordered_map<std::string, Expression*> operator()(LambdaExpression* lmbd){ return {}; }
         std::unordered_map<std::string, Expression*> operator()(ScopeOperation*) { return {}; } //???
         std::unordered_map<std::string, Expression*> operator()(ObjectLiteral* lit)
         {
@@ -277,7 +277,7 @@ namespace Yoyo
         {
             return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
         }
-        std::unordered_map<std::string, Expression*> operator()(ForStatement* stat){}
+        std::unordered_map<std::string, Expression*> operator()(ForStatement* stat){ return {}; }
         std::unordered_map<std::string, Expression*> operator()(ConditionalExtraction* stat)
         {
             return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
@@ -324,7 +324,7 @@ namespace Yoyo
         //size is either depth + 1, more or one less(same as depth)
         if(node->depth == vars.size()) found_here = &vars.emplace_back();
         else if(vars.size() >= node->depth + 1) found_here = &vars[node->depth];
-        else raise(SIGTRAP);
+        else debugbreak();
         for(auto stat: node->statements)
         {
             if(auto dcast = dynamic_cast<VariableDeclaration*>(stat))
@@ -376,7 +376,7 @@ namespace Yoyo
         //size is either depth + 1, more or one less(same as depth)
         if(node->depth == vars.size()) found_here = &vars.emplace_back();
         else if(vars.size() >= node->depth + 1) found_here = &vars[node->depth];
-        else raise(SIGTRAP);
+        else debugbreak();
         for(auto stat: node->statements)
         {
             if(auto dcast = dynamic_cast<VariableDeclaration*>(stat))

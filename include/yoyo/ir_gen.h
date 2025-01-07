@@ -31,11 +31,11 @@ namespace Yoyo
             IRGenerator* irgen;
             borrow_result_t operator()(NameExpression*);
             borrow_result_t operator()(BinaryOperation*);
-            borrow_result_t operator()(Expression*){}
+            borrow_result_t operator()(Expression*){ return {}; }
             borrow_result_t operator()(CallOperation*);
             borrow_result_t operator()(PrefixOperation*);
             borrow_result_t operator()(AsExpression*);
-            borrow_result_t operator()(GroupingExpression*){}
+            borrow_result_t operator()(GroupingExpression*){ return {}; }
         };
 
         //literals don't borrow (hopefully)
@@ -57,11 +57,11 @@ namespace Yoyo
         borrow_result_t operator()(GroupingExpression*);
         borrow_result_t operator()(CallOperation*);
         borrow_result_t doCall(CallOperation* expr);
-
-        borrow_result_t operator()(PostfixOperation*){}
-        borrow_result_t operator()(SubscriptOperation*){}
-        borrow_result_t operator()(LambdaExpression*){}
-        borrow_result_t operator()(ScopeOperation*){}
+        //TODO
+        borrow_result_t operator()(PostfixOperation*){ return {}; }
+        borrow_result_t operator()(SubscriptOperation*){ return {}; }
+        borrow_result_t operator()(LambdaExpression*){ return {}; }
+        borrow_result_t operator()(ScopeOperation*){ return {}; }
         borrow_result_t operator()(AsExpression*);
     };
     class IRGenerator

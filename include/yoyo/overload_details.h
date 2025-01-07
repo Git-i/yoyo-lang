@@ -3,6 +3,7 @@
 
 namespace Yoyo
 {
+    void YOYO_API debugbreak();
     enum class OverloadType
     {
         Invalid,
@@ -25,7 +26,7 @@ namespace Yoyo
             case TokenType::Minus: middle = "minus__"; break;
             case TokenType::Star: middle = "mul__"; break;
             case TokenType::Slash: middle = "div__"; break;
-            default: raise(SIGTRAP);
+            default: debugbreak();
             }
             return "__operator__" + middle + left.full_name() + "__" + right.full_name();
         }

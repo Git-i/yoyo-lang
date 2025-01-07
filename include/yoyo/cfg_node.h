@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <string>
+#include "common.h"
 
 namespace Yoyo
 {
@@ -16,7 +18,7 @@ namespace Yoyo
     class FunctionDeclaration;
     class CFGNodeManager;
 
-    class CFGNode
+    class YOYO_API CFGNode
     {
         CFGNode() = default;
         friend class CFGNodeManager;
@@ -37,11 +39,14 @@ namespace Yoyo
         std::string name;
         uint32_t depth;
     };
-    class CFGNodeManager
+    class YOYO_API CFGNodeManager
     {
         std::unordered_map<std::string, std::set<Expression*>> findFirstUses();
         std::unordered_map<std::string, std::set<Expression*>> findLastUses();
     public:
+        CFGNodeManager() = default;
+        CFGNodeManager(const CFGNodeManager&) = delete;
+        CFGNodeManager(CFGNodeManager&&) noexcept = default;
         std::vector<std::unique_ptr<CFGNode>> nodes;
         ///this stores the first and last uses of every local variable and is filled after @c annotate is called
         std::unordered_map<std::string, std::set<Expression*>> first_uses;

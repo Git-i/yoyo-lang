@@ -11,9 +11,8 @@ namespace Yoyo
     {
         constexpr size_t max_freq = std::numeric_limits<size_t>::max();
         std::vector<std::pair<size_t, OverloadDetailsBinary*>> overloads;
-        for(auto module : lhs.module == rhs.module ?
-            std::initializer_list{lhs.module} :
-            std::initializer_list{lhs.module, rhs.module})
+        auto module = lhs.module;
+        while(module)
         {
             for(auto& pl_def : get_vec(module->overloads))
             {
@@ -26,6 +25,8 @@ namespace Yoyo
                 else continue;
                 overloads.emplace_back(fric, &pl_def);
             }
+            if (module == lhs.module) module = rhs.module;
+            if (module == rhs.module) module = nullptr;
         }
         if(overloads.empty()) return nullptr;
         std::pair<size_t, OverloadDetailsBinary*>* result = &overloads.front();
