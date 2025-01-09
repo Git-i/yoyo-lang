@@ -351,7 +351,7 @@ namespace Yoyo
         }
         if(auto [name,fn] = md->findFunction(hash, type.name); fn)
         {
-            hash = name + type.name + "__";
+            hash = name + type.name + "__%";
             return true;
         }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
@@ -361,7 +361,7 @@ namespace Yoyo
             auto mangled_name = fn->name + IRGenerator::mangleGenericArgs(type.subtypes);
             if(auto [_, exists] = md->findFunction(this_hash, mangled_name); !exists)
                 ExpressionEvaluator{irgen}.generateGenericFunction(md, this_hash, fn, type.subtypes);
-            hash = this_hash + mangled_name + "__";
+            hash = this_hash + mangled_name + "__%";
             return true;
         }
         if(auto alias = md->findAlias(hash, type.name); alias)
@@ -559,7 +559,9 @@ namespace Yoyo
         auto& as_fn = reinterpret_cast<FunctionType&>(callee_ty);
         //If the function is bound (something.function()) we skip checking the first args type
         if (op->arguments.size() + callee_ty.is_bound != as_fn.sig.parameters.size()) {
-            return { Error(op, "Function argument count mismatch") };
+            Error err(op, "Function argument count mismatch");
+            err.markers.emplace_back(SourceSpan{ op->callee->beg, op->callee->end }, "This function was defined as: " + as_fn.sig.pretty_name(irgen->block_hash));
+            return { err };
         }
         for(size_t i = 0; i < op->arguments.size(); ++i)
         {

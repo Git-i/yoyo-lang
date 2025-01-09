@@ -175,7 +175,7 @@ namespace Yoyo
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(clone_ptr->function_decl.get());
             if(!isValidCloneMethod(this_t, fn_decl->signature)) error(Error(fn_decl, "Invalid clone method signature"));
         }
-        decl->destructor_name = destructor->name;
+        if (destructor)decl->destructor_name = destructor->name;
     }
     llvm::Value* prepareValidDropFlagFor(IRGenerator* irgen, const Type& tp)
     {
@@ -223,7 +223,7 @@ namespace Yoyo
         if(!return_t.is_void()) currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
             static_cast<llvm::Value*>(Alloca("return_address", return_as_llvm_type));
         auto old_hash = block_hash;
-        block_hash = name + "__";
+        block_hash = name + "__%";
         pushScope();
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(CFGNodeManager{}), decl);
         function_cfgs.back().annotate();
@@ -298,7 +298,7 @@ namespace Yoyo
     {
         auto as_var = stat->expression->toVariant();
         auto ty = std::visit(ExpressionTypeChecker{this}, as_var).value_or_error();
-        validate_expression_borrows(stat->expression.get(), this);
+        if(!ty.is_error_ty()) validate_expression_borrows(stat->expression.get(), this);
         auto eval = ExpressionEvaluator{this};
         auto val = std::visit(eval, as_var);
         if(!ty.is_lvalue)
@@ -315,7 +315,7 @@ namespace Yoyo
         }
         auto ptr = current_Statement->release();
         assert(ptr == decl);
-        std::string class_hash = block_hash + "__class__" + name + "__";
+        std::string class_hash = block_hash + "__class__" + name + "__%";
         for(auto& var : decl->vars) var.type.saturate(module, this);
         module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl->vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
 
@@ -604,7 +604,7 @@ namespace Yoyo
     void IRGenerator::operator()(AliasDeclaration* decl)
     {
         auto hash = block_hash;
-        block_hash += decl->name + "__"; //in the case of generics
+        block_hash += decl->name + "__%"; //in the case of generics
         decl->type.saturate(module, this);
         block_hash = std::move(hash);
         module->aliases[block_hash].emplace(decl->name, decl->type);

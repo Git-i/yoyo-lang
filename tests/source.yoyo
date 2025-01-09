@@ -1,13 +1,13 @@
 app: module = APP
 
-test_views: fn (arr: [char:&]) = {
+test_views: fn (arr: [char:&mut]) = {
     *arr[1] = '😁';
 }
 
 takes_foo: fn -> f64 = {
-    array: mut [char; 5] = ['H', "lmao", 'l', 'l', 'o'];
+    array: mut [char; 5] = ['H', 'o', 'l', 'l', 'o'];
     idx: mut = 0;
-    test_views(&array);
+    test_views(&mut array, 40);
     while(idx < 5) {
         app::func(&"${*array[idx]}");
         idx = idx + 1;

@@ -102,6 +102,7 @@ namespace Yoyo
         [[nodiscard]] bool is_opaque_pointer() const {return name == "__ptr";}
         [[nodiscard]] bool is_lambda() const {return name.starts_with("__lambda");}
         [[nodiscard]] std::string full_name() const;
+        [[nodiscard]] std::string pretty_name(const std::string& block) const;
 
         [[nodiscard]] size_t bitsize(IRGenerator* irgen) const;
         //there's no actual sorting, just to fulfill `set` requirements

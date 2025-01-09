@@ -239,6 +239,7 @@ namespace Yoyo
     bool Type::is_trivially_destructible() const
     {
         if(is_non_owning()) return false;
+        if (is_error_ty()) return true;
         if(is_builtin() || is_opaque_pointer()) return true;
         if(is_tuple() || is_optional() || is_variant())
         {
@@ -610,6 +611,56 @@ namespace Yoyo
             return Token{Name, ret_val};
         }
     };
+    std::string pretty_name_suffix(const Type& tp)
+    {
+        if (tp.is_mutable_reference())
+            return "&mut " + pretty_name_suffix(tp.subtypes[0]);
+        if (tp.is_reference())
+            return "&" + pretty_name_suffix(tp.subtypes[0]);
+        if (tp.is_static_array())
+            return "[" + pretty_name_suffix(tp.subtypes[0]) + "; " + std::to_string(tp.static_array_size()) + "]";
+        if (tp.is_mut_slice())
+            return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&mut]";
+        if (tp.is_slice())
+            return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&]";
+        return tp.name;
+    }
+    std::string Type::pretty_name(const std::string& block) const
+    {
+        if (block_hash.empty()) return pretty_name_suffix(*this);
+        std::string name_pf;
+        auto this_split = split(block_hash, "%");
+        auto other_split = split(block, "%");
+        size_t start_idx = 0;
+        while (true)
+        {
+            if (this_split[start_idx] == other_split[start_idx]) start_idx++;
+            else break;
+        }
+        for (auto& spl : std::ranges::subrange(this_split.begin() + start_idx, this_split.end()))
+        {
+            for(auto&[md_name, module] : module->engine->modules)
+            {
+                if (module->module_hash == spl) name_pf.append(md_name + "::");
+                continue;
+            }
+            if (spl.starts_with("__class__")) spl = std::string_view(spl.begin() + 9, spl.end());
+            spl = std::string_view(spl.begin(), spl.end() - 3);
+            name_pf.append(std::string(spl) + "::");
+        }
+        return name_pf + pretty_name_suffix(*this);
+    }
+    std::string FunctionSignature::pretty_name(const std::string& block_hash) const
+    {
+        std::string final_str = "fn(";
+        if (parameters.size() >= 1) final_str.append(parameters[0].type.pretty_name(block_hash));
+        for (auto& param : std::ranges::subrange(parameters.begin() + 1, parameters.end()))
+        {
+            final_str.append(", " + param.type.pretty_name(block_hash));
+        }
+        final_str.append(")");
+        return final_str;
+    }
     // for this we assume 100% correctness because its only called in that case
     Type parseType(MangleScanner& scanner)
     {
