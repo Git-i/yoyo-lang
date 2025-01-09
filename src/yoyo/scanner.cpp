@@ -45,8 +45,8 @@ namespace Yoyo {
     {
         while(!IsEof())
         {
-            char c = Get();
             auto loc = GetSourceLocation();
+            char c = Get();
             switch (c)
             {
             case ';': return Token{TokenType::SemiColon, loc};

@@ -79,6 +79,7 @@ namespace Yoyo
     bool Type::is_assignable_from(const Type& other) const
     {
         if(is_equal(other)) return true;
+        if (is_error_ty() || other.is_error_ty()) return true;
         if(is_unsigned_integral())
         {
             if(other.name == "ilit") return true;

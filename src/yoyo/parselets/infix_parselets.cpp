@@ -92,6 +92,7 @@ namespace Yoyo
     {
         auto expr = parser.parseExpression(0);
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
-        return std::make_unique<SubscriptOperation>(std::move(left), std::move(expr));
+        return Expression::attachSLAndParent(std::make_unique<SubscriptOperation>(std::move(left), std::move(expr)),
+            left->beg, parser.discardLocation, parser.parent);
     }
 }

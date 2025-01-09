@@ -382,7 +382,7 @@ namespace Yoyo
         }
         if(decl->initializer)
         {
-            auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
+            auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant()).value_or_error();
             validate_expression_borrows(decl->initializer.get(), this);
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
@@ -394,8 +394,8 @@ namespace Yoyo
             if(!type.should_sret())
             {
                 alloc = Alloca(decl->identifier.text, ToLLVMType(type, false));
-                ExpressionEvaluator{this}.implicitConvert(decl->initializer.get(), init, *expr_type, type, alloc);
-            } else alloc = ExpressionEvaluator{this}.implicitConvert(decl->initializer.get(), init, *expr_type, type, nullptr);
+                ExpressionEvaluator{this}.implicitConvert(decl->initializer.get(), init, expr_type, type, alloc);
+            } else alloc = ExpressionEvaluator{this}.implicitConvert(decl->initializer.get(), init, expr_type, type, nullptr);
             alloc->setName(decl->identifier.text);
             if(drop_flag) builder->CreateStore(llvm::ConstantInt::getTrue(context), drop_flag);
         }
@@ -617,7 +617,8 @@ namespace Yoyo
 
     void IRGenerator::error(const Error& e)
     {
-        std::cout << e.to_string(*view, true) << std::endl;
+        auto str = e.to_string(*view, true);
+        std::cout << str << std::endl;
         debugbreak();
     }
 

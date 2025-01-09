@@ -152,6 +152,7 @@ namespace Yoyo
         if(!dst.is_assignable_from(src)) { irgen->error(Error(xp, "Expression of type tp cannot be converted to type tp")); return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);
         if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
+        if (src.is_error_ty() || dst.is_error_ty()) return out;
         if(src.name == "ilit")
         {
             auto as_int = llvm::dyn_cast<llvm::ConstantInt>(val);

@@ -219,7 +219,7 @@ namespace Yoyo
         expr->value = 0;
         for(size_t i = 0; i < tk.text.size(); i++)
             reinterpret_cast<uint8_t*>(&expr->value)[i] = tk.text[i];
-        SourceLocation end{.line = tk.loc.line, .column = tk.loc.column + tk.text.size() + 1};
+        SourceLocation end{.line = tk.loc.line, .column = tk.loc.column + tk.text.size() + 2};
         return Expression::attachSLAndParent(std::move(expr), tk.loc, end, parser.parent);
     }
 
