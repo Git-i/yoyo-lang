@@ -4,6 +4,7 @@
 #include <iostream>
 #include <ir_gen.h>
 #include <parser.h>
+#include "error.h"
 #include <catch2/catch_test_macros.hpp>
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/IR/Verifier.h"
@@ -55,6 +56,29 @@ TEST_CASE("Test IR")
     auto res = fn();
     std::cout << res << std::endl;
     REQUIRE(res == 10.0);
+}
+
+TEST_CASE("Error formatting", "[errors]")
+{
+    std::string source = 1 + R"(
+main: fn = {
+    variable := 100;
+    variable = 40;
+    var2: i32 = "Hello";
+    std::print(variable);
+})";
+    Yoyo::Parser p(source);
+    auto prg = p.parseProgram();
+    REQUIRE(!p.failed());
+    REQUIRE(prg.size() == 1);
+    auto decl = dynamic_cast<Yoyo::FunctionDeclaration*>(prg[0].get());
+    auto body = dynamic_cast<Yoyo::BlockStatement*>(decl->body.get());
+    Yoyo::Error e(body->statements[1].get(), "Attempting to assign to immutable value");
+    auto expr_stat = dynamic_cast<Yoyo::ExpressionStatement*>(body->statements[1].get());
+    auto expr = dynamic_cast<Yoyo::BinaryOperation*>(expr_stat->expression.get());
+    e.markers.emplace_back(Yoyo::SourceSpan{expr->lhs->beg, expr->lhs->end}, "expression is immutable");
+    Yoyo::SourceView vw(source, "source.yoyo");
+    std::cout << e.to_string(vw, true) << std::endl;
 }
 
 #ifdef USE_GRAPHVIZ

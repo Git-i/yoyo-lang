@@ -10,7 +10,7 @@
 #include <vector>
 namespace Yoyo
 {
-    class Parser
+    class YOYO_API Parser
     {
     public:
         explicit Parser(std::string source);

@@ -703,10 +703,9 @@ namespace Yoyo
 
     std::unique_ptr<Statement> Parser::parseExpressionStatement()
     {
-        auto [nonsense, sl] = *PeekWithEndLocation();
         auto expr = parseExpression(0);
         if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
-        return Statement::attachSLAndParent(std::make_unique<ExpressionStatement>(std::move(expr)), sl,
+        return Statement::attachSLAndParent(std::make_unique<ExpressionStatement>(std::move(expr)), expr->beg,
             discardLocation, parent);
     }
 
