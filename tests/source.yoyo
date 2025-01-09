@@ -13,4 +13,4 @@ takes_foo: fn -> f64 = {
         idx = idx + 1;
     }
     return 10.0;
-}
+} 

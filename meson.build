@@ -20,6 +20,7 @@ sources = [
     'src/yoyo/cfg_node.cpp',
     'src/yoyo/overload_resolve.cpp',
     'src/yoyo/tree_cloner.cpp',
+    'src/yoyo/error.cpp'
 ]
 llvm_static = get_option('llvm_static')
 yoyo_args = ['-DYOYO_DLL']
