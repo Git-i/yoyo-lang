@@ -152,7 +152,10 @@ namespace Yoyo
         }
         return false;
     }
-
+    bool Type::is_error_ty() const
+    {
+        return name == "__error_type";
+    }
     bool Type::can_accept_as_arg(const Type& other) const
     {
         if(is_equal(other)) return true;
@@ -346,8 +349,8 @@ namespace Yoyo
             while(!it.is_end())
             {
                 auto type = it.next();
-                if(!advanceScope(type, md, hash, irgen))
-                    if(irgen) irgen->error();
+                if (!advanceScope(type, md, hash, irgen))
+                    debugbreak();
             }
             name = it.last().name;
             module = md;

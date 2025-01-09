@@ -4,6 +4,7 @@
 #include <list>
 #include <ranges>
 #include <set>
+#include <iostream>
 
 namespace Yoyo
 {
@@ -64,7 +65,7 @@ namespace Yoyo
             return llvm::StructType::get(context, args);
         }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
-        error();
+        error(Error({}, {}, "Encountered unexpected type", ""));
         return nullptr;
     }
     void IRGenerator::saturateSignature(FunctionSignature& sig, Module* module)
@@ -155,15 +156,15 @@ namespace Yoyo
                 return attr.name == "clone";
             }); it != method.function_decl->attributes.end())
             {
-                if(clone_ptr) error(); //mutiple clone methods
-                if(has_no_clone) error(); //clone specisifed for no clone class
+                if(clone_ptr) error(Error(method.function_decl.get(), "Multiple methods marked with #(clone)")); //mutiple clone methods
+                if(has_no_clone) error(Error(method.function_decl.get(), "Clone method specified for class with #(no_clone)"));
                 clone_ptr = &method;
             }
             if(auto it = std::ranges::find_if(method.function_decl->attributes, [](Attribute& attr) {
                 return attr.name == "destructor";
             }); it != method.function_decl->attributes.end())
             {
-                if(destructor) error();
+                if(destructor) error(Error(method.function_decl.get(), "Multiple destructors specified for class"));
                 destructor = &method;
             }
         }
@@ -172,7 +173,7 @@ namespace Yoyo
         if(clone_ptr)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(clone_ptr->function_decl.get());
-            if(!isValidCloneMethod(this_t, fn_decl->signature)) error();
+            if(!isValidCloneMethod(this_t, fn_decl->signature)) error(Error(fn_decl, "Invalid clone method signature"));
         }
         decl->destructor_name = destructor->name;
     }
@@ -198,7 +199,7 @@ namespace Yoyo
         llvm::Type* return_as_llvm_type;
         if((func = code->getFunction(name)))
         {
-            if(!func->empty()) { error(); return; }
+            if(!func->empty()) { error(Error(decl, "Function already exists")); return; }
             uses_sret = func->hasStructRetAttr();
             return_as_llvm_type = func->getParamStructRetType(0);
         }
@@ -251,10 +252,10 @@ namespace Yoyo
                     flag
                 };
             }
-            //make lambda context visible TODO: fix lambdas
+            //make lambda context visible TODO: really fix lambdas
             if(param.type.is_lambda())
             {
-                if(!lambdas.contains(param.type.name)) {error(); return;}
+                //if(!lambdas.contains(param.type.name)) {error(); return;}
                 auto llvm_type = lambdas[param.type.name].second;
                 auto caps = lambdas[param.type.name].first;
                 size_t capture_idx = 0;
@@ -296,13 +297,12 @@ namespace Yoyo
     void IRGenerator::operator()(ExpressionStatement* stat)
     {
         auto as_var = stat->expression->toVariant();
-        auto ty = std::visit(ExpressionTypeChecker{this}, as_var);
-        if(!ty) error();
+        auto ty = std::visit(ExpressionTypeChecker{this}, as_var).value_or_error();
         validate_expression_borrows(stat->expression.get(), this);
         auto eval = ExpressionEvaluator{this};
         auto val = std::visit(eval, as_var);
-        if(!ty->is_lvalue)
-            eval.destroy(val, ty.value());
+        if(!ty.is_lvalue)
+            eval.destroy(val, ty);
     }
 
     void IRGenerator::operator()(ClassDeclaration* decl)
@@ -310,7 +310,7 @@ namespace Yoyo
         std::string name(decl->identifier.text);
         if(isShadowing(name))
         {
-            error();
+            error(Error(decl, "The name '" + name + "' is already defined"));
             return;
         }
         auto ptr = current_Statement->release();
@@ -363,24 +363,19 @@ namespace Yoyo
         std::string name(decl->identifier.text);
         if(isShadowing(name))
         {
-            error(); return;
+            error(Error(decl, "The name '" + name + "' already exists")); return;
         }
         if(decl->type) decl->type->saturate(module, this);
-        auto type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant());
-        if(!type)
-        {
-            error();
-            return;
-        }
-        if(!type->can_be_stored()) { error(); return; }
-        if(type->is_non_owning()) { error(); return;}
-        type->is_mutable = decl->is_mut;
-        type->is_lvalue = true;
+        FunctionType type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant()).value_or_error();
+        if(!type.can_be_stored()) { error(Error(decl, "The type tp cannot be stored")); return; }
+        if(type.is_non_owning()) { error(Error(decl, "Variable types must not be non-owning")); return; }
+        type.is_mutable = decl->is_mut;
+        type.is_lvalue = true;
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc = nullptr;
         llvm::Value* drop_flag = nullptr;
-        if(!type->is_trivially_destructible())
+        if(!type.is_trivially_destructible())
         {
             std::string name = "drop_flag_for_" + std::string{decl->identifier.text};
             drop_flag = Alloca(name, llvm::Type::getInt1Ty(context));
@@ -388,29 +383,28 @@ namespace Yoyo
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant());
-            if(!expr_type) error();
             validate_expression_borrows(decl->initializer.get(), this);
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
             if(decl->type->name == "ilit" || decl->type->name == "flit")
             {
                 decl->type = reduceLiteral(*decl->type, init);
-                type = decl->type;
+                type = decl->type.value();
             }
-            if(!type->should_sret())
+            if(!type.should_sret())
             {
-                alloc = Alloca(decl->identifier.text, ToLLVMType(*type, false));
-                ExpressionEvaluator{this}.implicitConvert(init, *expr_type, *type, alloc);
-            } else alloc = ExpressionEvaluator{this}.implicitConvert(init, *expr_type, *type, nullptr);
+                alloc = Alloca(decl->identifier.text, ToLLVMType(type, false));
+                ExpressionEvaluator{this}.implicitConvert(decl->initializer.get(), init, *expr_type, type, alloc);
+            } else alloc = ExpressionEvaluator{this}.implicitConvert(decl->initializer.get(), init, *expr_type, type, nullptr);
             alloc->setName(decl->identifier.text);
             if(drop_flag) builder->CreateStore(llvm::ConstantInt::getTrue(context), drop_flag);
         }
         else
             if(drop_flag) builder->CreateStore(llvm::ConstantInt::getFalse(context), drop_flag);
-        type->saturate(module, this);
-        if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type.value(), false));
+        type.saturate(module, this);
+        if(!alloc) alloc = Alloca(decl->identifier.text, ToLLVMType(type, false));
 
-        variables.back()[name] = {alloc, std::move(type).value(), drop_flag};
+        variables.back()[name] = {alloc, std::move(type), drop_flag};
     }
     void IRGenerator::operator()(BlockStatement* stat)
     {
@@ -435,7 +429,7 @@ namespace Yoyo
         auto fn = builder->GetInsertBlock()->getParent();
         if(!std::visit(ExpressionTypeChecker{this}, expr->condition->toVariant())->is_boolean())
         {
-            error();
+            error(Error(expr->condition.get(), "Condition in 'while' must evaluate to a boolean"));
             return;
         }
         validate_expression_borrows(expr->condition.get(), this);
@@ -456,21 +450,20 @@ namespace Yoyo
 
     void IRGenerator::operator()(ConditionalExtraction* stat)
     {
-        auto tp = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
-        if(!tp) { error(); return;}
-        if(!tp->is_optional() && !tp->is_conversion_result()) {error(); return;}
-        if(!stat->else_capture.empty()) {error(); return;}
-        if(stat->is_ref && tp->is_value_conversion_result()) { error();return; }
+        auto tp = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value_or_error();
+        if(!tp.is_optional() && !tp.is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
+        if (!stat->else_capture.empty()) { debugbreak(); return; }
+        if (stat->is_ref && tp.is_value_conversion_result()) { error(Error({}, {}, "Expanded expression cannot be borrowed", "")); return; }
         std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
         borrow_res[0].first = stat->condition.get();
-        borrow_res[0].second = tp->is_mutable ?
+        borrow_res[0].second = tp.is_mutable ?
             std::visit(BorrowResult::LValueBorrowResult{this}, stat->condition->toVariant()):
             std::visit(BorrowResult{this}, stat->condition->toVariant());
         validate_borrows(borrow_res, this);
 
-        if(isShadowing(stat->captured_name)) {error(); return;}
+        if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
 
-        auto llvm_t = ToLLVMType(tp.value(), false);
+        auto llvm_t = ToLLVMType(tp, false);
         auto expression = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
 
         auto is_valid = builder->CreateLoad(llvm::Type::getInt1Ty(context), builder->CreateStructGEP(llvm_t, expression, 1));
@@ -494,27 +487,27 @@ namespace Yoyo
         else pushScope();
 
         auto ptr = builder->CreateStructGEP(llvm_t, expression, 0, stat->captured_name);
-        if(!tp->is_value_conversion_result())
+        if(!tp.is_value_conversion_result())
         {
-            if(tp->is_ref_conversion_result())
+            if(tp.is_ref_conversion_result())
                 ptr = builder->CreateLoad(llvm::PointerType::get(context, 0), ptr);
             //if it's not a `ref` we clone the value
             if(!stat->is_ref)
             {
                 llvm::Value* into = nullptr;
-                if(!tp->subtypes[0].should_sret())
+                if(!tp.subtypes[0].should_sret())
                 {
-                    auto as_llvm = ToLLVMType(tp->subtypes[0], false);
+                    auto as_llvm = ToLLVMType(tp.subtypes[0], false);
                     into = Alloca("", as_llvm);
                     ptr = builder->CreateLoad(as_llvm, ptr);
                 }
-                ptr = ExpressionEvaluator{this}.clone(ptr, tp->subtypes[0], into);
+                ptr = ExpressionEvaluator{this}.clone(stat->condition.get(), ptr, tp.subtypes[0], into);
                 if(into) ptr = into;
             }
         }
         Type variable_type = stat->is_ref ?
-            Type{tp->is_mutable ? "__ref_mut" : "__ref", {tp->subtypes[0]}} :
-            tp->subtypes[0];
+            Type{tp.is_mutable ? "__ref_mut" : "__ref", {tp.subtypes[0]}} :
+            tp.subtypes[0];
         variable_type.saturate(module, this);
         auto flg = prepareValidDropFlagFor(this, variable_type);
         variables.back()[stat->captured_name] = {ptr,
@@ -539,7 +532,7 @@ namespace Yoyo
             if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
         }
         builder->SetInsertPoint(merge_bb);
-        ExpressionEvaluator{this}.destroy(expression, tp.value());
+        ExpressionEvaluator{this}.destroy(expression, tp);
     }
     template <std::input_iterator It>
     void IRGenerator::pushScopeWithConstLock(It begin, It end)
@@ -559,16 +552,15 @@ namespace Yoyo
     }
     void IRGenerator::operator()(WithStatement* stat)
     {
-        auto ty = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant());
-        if(!ty) {error(); return;}
-        if(!ty->is_non_owning()) {error(); return;}
-        if(isShadowing(stat->name)) {error(); return;}
+        auto ty = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant()).value_or_error();
+        if (!ty.is_non_owning()) { error(Error(stat->expression.get(), "'with' statement can only capture non-owning types")); return; }
+        if (isShadowing(stat->name)) { error(Error({}, {}, "Name is already in use")); return; }
 
-        ty->is_mutable = ty->is_non_owning_mut();
+        ty.is_mutable = ty.is_non_owning_mut();
 
         std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
         borrow_res[0].first = stat->expression.get();
-        borrow_res[0].second = ty->is_mutable ?
+        borrow_res[0].second = ty.is_mutable ?
             std::visit(BorrowResult::LValueBorrowResult{this}, stat->expression->toVariant()):
             std::visit(BorrowResult{this}, stat->expression->toVariant());
         validate_borrows(borrow_res, this);
@@ -579,20 +571,20 @@ namespace Yoyo
         pushScopeWithConstLock(names.begin(), names.end());
         lifetimeExtensions[stat->name] = std::move(borrow_res[0].second);
 
-        if(!ty->should_sret())
+        if(!ty.should_sret())
         {
-            val = Alloca(stat->name, ToLLVMType(*ty, false));
-            ExpressionEvaluator{this}.clone(expr, *ty, val);
-        } else val = ExpressionEvaluator{this}.clone(expr, *ty);
+            val = Alloca(stat->name, ToLLVMType(ty, false));
+            ExpressionEvaluator{this}.clone(stat->expression.get(), expr, ty, val);
+        } else val = ExpressionEvaluator{this}.clone(stat->expression.get(), expr, ty);
 
-        if(!ty->is_lvalue && expr->getName().starts_with("__del_parents"))
+        if(!ty.is_lvalue && expr->getName().starts_with("__del_parents"))
         {
             std::string name(16 + sizeof(void*), 'c');
             memcpy(name.data(), expr->getName().data(), 16 + sizeof(void*));
             val->setName(name);
         }
-        ty->is_lvalue = true;
-        variables.back()[stat->name] = {val, std::move(ty).value(), prepareValidDropFlagFor(this, *ty)}; //TODO: capture parents
+        ty.is_lvalue = true;
+        variables.back()[stat->name] = {val, std::move(ty), prepareValidDropFlagFor(this, ty)}; //TODO: capture parents
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
         lifetimeExtensions.erase(stat->name);
@@ -601,7 +593,7 @@ namespace Yoyo
 
     void IRGenerator::operator()(OperatorOverload*)
     {
-        error();
+        debugbreak();
     }
 
     void IRGenerator::operator()(GenericFunctionDeclaration*)
@@ -623,8 +615,9 @@ namespace Yoyo
         debugbreak();
     }
 
-    void IRGenerator::error()
+    void IRGenerator::error(const Error& e)
     {
+        std::cout << e.to_string(*view, true) << std::endl;
         debugbreak();
     }
 
@@ -658,15 +651,14 @@ namespace Yoyo
     {
         if(stat->expression)
         {
-            auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant());
-            if(!t) {error(); return;}
-            if(!return_t.is_assignable_from(*t)) {error(); return;}
+            auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant()).value_or_error();
+            if(!return_t.is_assignable_from(t)) { error(Error(stat, "Type is not convertible to return type")); return; }
             // `doAssign` for reference types works like c++ (dereference and assign) rather than rebind the ref, because
             // references cannot be rebound, except in return statements, which is why we handle them specially
-            if(return_t.is_non_owning())
-                if(!std::visit(LifetimeExceedsFunctionChecker{this}, stat->expression->toVariant())) {error(); return;}
+            if (return_t.is_non_owning())
+                if (!std::visit(LifetimeExceedsFunctionChecker{ this }, stat->expression->toVariant())) debugbreak();
             auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());
-            ExpressionEvaluator{this}.doAssign(currentReturnAddress, value, return_t, *t);
+            ExpressionEvaluator{ this }.implicitConvert(stat->expression.get(), value, t, return_t, currentReturnAddress);
             builder->CreateBr(returnBlock);
         }
         else
@@ -676,10 +668,10 @@ namespace Yoyo
     void IRGenerator::operator()(IfStatement* stat)
     {
         auto fn = builder->GetInsertBlock()->getParent();
-        auto expr_type = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
-        if(!expr_type->is_boolean())
+        auto expr_type = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value();
+        if(!expr_type.is_boolean())
         {
-            error(); return;
+            error(Error(stat->condition.get(), "'if' condition must evaluate to a boolean")); return;
         }
         auto then_bb = llvm::BasicBlock::Create(context, "then", fn, returnBlock);
         llvm::BasicBlock* else_bb = nullptr;
@@ -769,7 +761,7 @@ namespace Yoyo
     {
         if(!canReturn(stat)) return Type{.name = "void"};
         if(auto res = dynamic_cast<ReturnStatement*>(stat))
-            return std::visit(ExpressionTypeChecker{this}, res->expression->toVariant());
+            return std::visit(ExpressionTypeChecker{this}, res->expression->toVariant()).to_optional();
         if(auto res = dynamic_cast<IfStatement*>(stat))
         {
             if(canReturn(res->then_stat.get())) return inferReturnType(res->then_stat.get());
@@ -794,8 +786,8 @@ namespace Yoyo
         std::vector<llvm::Type*> args(vars.size());
         std::ranges::transform(vars, args.begin(), [this, own](const ClassVariable& p)
         {
-            if(own == Ownership::Owning && p.type.is_non_owning()) error();
-            if(own == Ownership::NonOwning && p.type.is_non_owning_mut()) error();
+                if (own == Ownership::Owning && p.type.is_non_owning()) error(Error({}, {}, "Non owning type in owning class"));
+                if (own == Ownership::NonOwning && p.type.is_non_owning_mut()) error(Error({}, {}, "Mutably non owning type in non owning class"));
             return ToLLVMType(p.type, false);
         });
         if(name.empty())

@@ -32,7 +32,7 @@ namespace Yoyo
 			span{ node->beg, node->end },
 			summary(std::move(sum)),
 			description(std::move(desc)) {}
-		std::string to_string(const SourceView& view, bool enable_color);
+		std::string to_string(const SourceView& view, bool enable_color) const;
 		std::string to_string_ascii(const SourceView& view);
 	};
 }

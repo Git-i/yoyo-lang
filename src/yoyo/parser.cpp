@@ -5,7 +5,7 @@
 #include "func_sig.h"
 namespace Yoyo
 {
-    Parser::Parser(std::string src) : source(std::move(src)), scn(source)
+    Parser::Parser(std::string& src) : source(src), scn(source)
     {
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
         auto name_parselet = std::make_shared<NameParselet>();

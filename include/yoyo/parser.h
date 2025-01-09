@@ -13,7 +13,7 @@ namespace Yoyo
     class YOYO_API Parser
     {
     public:
-        explicit Parser(std::string source);
+        explicit Parser(std::string& source);
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
         std::unique_ptr<Statement> parseVariableDeclaration(Token identifier);
         std::unique_ptr<Statement> parseEnumDeclaration(Token identifier);
@@ -61,7 +61,7 @@ namespace Yoyo
         bool isTopLevelDeclaration();
         PrefixParselet* GetPrefixParselet(TokenType t);
         InfixParselet* GetInfixParselet(TokenType t);
-        std::string source;
+        std::string& source;
         Scanner scn;
         std::unordered_map<TokenType, std::shared_ptr<PrefixParselet>> prefixParselets;
         std::unordered_map<TokenType, std::shared_ptr<InfixParselet>> infixParselets;

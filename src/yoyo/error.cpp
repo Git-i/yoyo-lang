@@ -21,7 +21,7 @@ namespace Yoyo
 			start_pos += repl.length();
 		}
 	}
-	std::string markers_for(std::string prefix, size_t line, std::span<std::pair<SourceSpan, std::string>> markers, const SourceView& view)
+	std::string markers_for(std::string prefix, bool color, size_t line, std::span<const std::pair<SourceSpan, std::string>> markers, const SourceView& view)
 	{
 		using namespace std::views;
 		using namespace std::ranges;
@@ -39,7 +39,7 @@ namespace Yoyo
 		{
 			consider = true;
 			auto& span = marker.first;
-			size_t col_begin = span.begin.line == line ? span.begin.column : 1;
+			size_t col_begin = span.begin.line == line ? span.begin.column : 1;//view.lines[line - 1].find_first_not_of(' ') + 1;
 			size_t col_end = span.end.column;
 			// $ will be replaced with hyper horizontal line
 			// char{5} will be replaced with the T thing
@@ -53,7 +53,8 @@ namespace Yoyo
 			rows.emplace_back(line_size + 3, ' ');
 			rows.back()[bar_position] = char{ 7 };
 			rows.back()[bar_position + 1] = '$';
-			rows.back().insert(bar_position + 3, marker.second);
+			if(color) rows.back().insert(bar_position + 3, std::format("\033[1;35m{}\033[0m", marker.second));
+			else rows.back().insert(bar_position + 3,  marker.second);
 		}
 		for (auto& span : markers | filter(begins_but_not_ends) | keys)
 		{
@@ -73,7 +74,7 @@ namespace Yoyo
 		}
 		return final_str;
 	}
-	std::string Error::to_string(const SourceView& view, bool enable_color)
+	std::string Error::to_string(const SourceView& view, bool enable_color) const
 	{
 		std::vector<std::string> lines;
 		size_t begin = std::max(size_t(1), span.begin.line - 1);
@@ -92,7 +93,7 @@ namespace Yoyo
 				line_body.insert(col_end + red.size(), reset);
 			}
 			lines.emplace_back(std::format("{: >4} │ {}\n", line, line_body));
-			lines.emplace_back(markers_for("       ", line, markers, view));
+			lines.emplace_back(markers_for("       ", enable_color, line, markers, view));
 		}
 		auto result = std::format("{}:{}:{} error: {}\n", view.filename, span.begin.line, span.begin.column, summary);
 		for (const auto& line : lines)

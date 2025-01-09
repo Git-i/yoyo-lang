@@ -26,7 +26,7 @@ namespace Yoyo
     }
     void AppModule::addFunction(std::string signature, void* func, std::string name)
     {
-        Parser p(std::move(signature));
+        Parser p(signature);
         auto sig = *p.parseFunctionSignature();
         if(p.failed()) debugbreak();
         auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, {});

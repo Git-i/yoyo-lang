@@ -24,7 +24,7 @@ namespace Yoyo {
         void compile();
         void prepareForExecution();
         std::unordered_map<std::string, std::unique_ptr<Module>> modules;
-        std::unordered_map<std::string, std::vector<std::unique_ptr<Statement>>> sources;
+        std::unordered_map<std::string, std::pair<std::string, std::vector<std::unique_ptr<Statement>>>> sources;
         static std::string_view viewString(void* str);
         llvm::orc::ThreadSafeContext llvm_context;
         std::unique_ptr<llvm::orc::LLJIT> jit;

@@ -5,7 +5,7 @@ test_views: fn (arr: [char:&mut]) = {
 }
 
 takes_foo: fn -> f64 = {
-    array: mut [char; 5] = ['H', 'e', 'l', 'l', 'o'];
+    array: mut [char; 5] = ['H', "lmao", 'l', 'l', 'o'];
     idx: mut = 0;
     test_views(&mut array);
     while(idx < 5) {

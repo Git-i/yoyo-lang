@@ -76,9 +76,17 @@ main: fn = {
     Yoyo::Error e(body->statements[1].get(), "Attempting to assign to immutable value");
     auto expr_stat = dynamic_cast<Yoyo::ExpressionStatement*>(body->statements[1].get());
     auto expr = dynamic_cast<Yoyo::BinaryOperation*>(expr_stat->expression.get());
-    e.markers.emplace_back(Yoyo::SourceSpan{expr->lhs->beg, expr->lhs->end}, "expression is immutable");
+    e.markers.emplace_back(Yoyo::SourceSpan{expr->lhs->beg, expr->lhs->end}, "Expression is immutable");
     Yoyo::SourceView vw(source, "source.yoyo");
     std::cout << e.to_string(vw, true) << std::endl;
+
+    Yoyo::Error e2(body->statements[2].get(), "Attempting to assign between incompatible types");
+    auto var_decl = dynamic_cast<Yoyo::VariableDeclaration*>(body->statements[2].get());
+    Yoyo::SourceLocation end{ var_decl->beg.line, var_decl->beg.column + var_decl->identifier.text.size() };
+    e2.markers.emplace_back(Yoyo::SourceSpan{ var_decl->beg, end }, "Expression is of type 'i32'");
+    e2.markers.emplace_back(Yoyo::SourceSpan{ var_decl->initializer->beg, var_decl->initializer->end }, "Expression is of type 'str'");
+    std::cout << e2.to_string(vw, true) << std::endl;
+
 }
 
 #ifdef USE_GRAPHVIZ

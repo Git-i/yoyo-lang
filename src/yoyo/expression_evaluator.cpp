@@ -146,10 +146,10 @@ namespace Yoyo
         return 0;
     }
 
-    llvm::Value* ExpressionEvaluator::implicitConvert(llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
+    llvm::Value* ExpressionEvaluator::implicitConvert(Expression* xp, llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
-        if(dst.is_equal(src)) { return clone(val, src, out); }if(dst.is_equal(src)) { return clone(val, src, out); }
-        if(!dst.is_assignable_from(src)) { irgen->error(); return nullptr; }
+        if(dst.is_equal(src)) { return clone(xp, val, src, out); }
+        if(!dst.is_assignable_from(src)) { irgen->error(Error(xp, "Expression of type tp cannot be converted to type tp")); return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);
         if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
         if(src.name == "ilit")
@@ -167,7 +167,7 @@ namespace Yoyo
                         irgen->builder->CreateStore(val, out);
                         return val;
                     }
-                    irgen->error();
+                    irgen->error(Error(xp, "Literal out of bounds for destination type"));
                     return nullptr;
                 }
                 if(as_int->getZExtValue() <= max_bound)
@@ -176,7 +176,7 @@ namespace Yoyo
                     irgen->builder->CreateStore(val, out);
                     return val;
                 }
-                irgen->error();
+                irgen->error(Error(xp, "Literal out of bound for destination type"));
                 return nullptr;
             }
             if(dst.is_floating_point())
@@ -189,7 +189,7 @@ namespace Yoyo
                         irgen->builder->CreateStore(val, out);
                         return val;
                     }
-                    irgen->error();
+                    irgen->error(Error(xp, "Literal out of bound for destination type"));
                     return nullptr;
                 }
                 if(as_int->getZExtValue() <= max_bound)
@@ -198,7 +198,7 @@ namespace Yoyo
                     irgen->builder->CreateStore(val, out);
                     return val;
                 }
-                irgen->error();
+                irgen->error(Error(xp, "Literal out of bound for destination type"));
                 return nullptr;
             }
         }
@@ -266,7 +266,7 @@ namespace Yoyo
             }
 
             //subtype implicit conversion
-            implicitConvert(val, src, dst.subtypes[0], irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
+            implicitConvert(xp, val, src, dst.subtypes[0], irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
             irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
         }
         if(dst.is_variant())
@@ -278,7 +278,7 @@ namespace Yoyo
             for(auto& sub : subtypes)
             {
                 if(!sub.is_assignable_from(src)) { i++; continue; }
-                implicitConvert(val, src, sub, irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
+                implicitConvert(xp, val, src, sub, irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
                 irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
                     type_idx_ptr);
                 break;
@@ -306,19 +306,12 @@ namespace Yoyo
         }
         return out;
     }
-    /// IMPORTANT:\n
-    /// I don't know where to place this, but all structural types are pointers
-    llvm::Value* ExpressionEvaluator::doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type)
-    {
-        if(!left_type.is_mutable) {irgen->error(); return nullptr;}
-        if(!left_type.is_assignable_from(right_type)) {irgen->error(); return nullptr;}
-        return implicitConvert(rhs, right_type, left_type, lhs);
-    }
+
     /// user defined types can create a @c clone function.\n
     /// The @c clone function's signature looks like @code clone: (&this) -> This @endcode \n
     /// Without it the type is cannot be copied
     /// I think it should be implicit for union types
-    llvm::Value* ExpressionEvaluator::clone(llvm::Value* value, const Type& left_type, llvm::Value* into) const
+    llvm::Value* ExpressionEvaluator::clone(Expression* xp, llvm::Value* value, const Type& left_type, llvm::Value* into) const
     {
         if(!left_type.should_sret())
         {
@@ -345,7 +338,7 @@ namespace Yoyo
                 auto ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
                 auto val = irgen->builder->CreateStructGEP(as_llvm, value, idx);
                 if(!sub.should_sret()) val = irgen->builder->CreateLoad(sub_as_llvm, val);
-                clone(val, sub, ptr);
+                clone(xp, val, sub, ptr);
                 idx++;
             }
         }
@@ -367,7 +360,7 @@ namespace Yoyo
                 auto subtype = llvm::dyn_cast<llvm::StructType>(opt_ty)->getElementType(0);
                 sub_value = irgen->builder->CreateLoad(subtype, sub_value);
             }
-            clone(sub_value, left_type.subtypes[0], irgen->builder->CreateStructGEP(opt_ty, into, 0));
+            clone(xp, sub_value, left_type.subtypes[0], irgen->builder->CreateStructGEP(opt_ty, into, 0));
             irgen->builder->CreateBr(opt_assign_cont);
 
             irgen->builder->SetInsertPoint(opt_assign_cont);
@@ -396,7 +389,7 @@ namespace Yoyo
                 auto sub_value = irgen->builder->CreateStructGEP(llvm_ty, value, 0);
                 if(!sub.should_sret()) sub_value = irgen->builder->CreateLoad(sub_as_llvm, sub_value);
 
-                clone(sub_value, sub, irgen->builder->CreateStructGEP(llvm_ty, into, 1));
+                clone(xp, sub_value, sub, irgen->builder->CreateStructGEP(llvm_ty, into, 1));
 
                 irgen->builder->CreateBr(def);
                 idx++;
@@ -412,7 +405,7 @@ namespace Yoyo
         else if(auto decl_tup = left_type.module->findType(left_type.block_hash, left_type.name))
         {
             auto decl = std::get<2>(*decl_tup).get();
-            if(!decl->has_clone) { irgen->error(); return nullptr; }
+            if(!decl->has_clone) { irgen->error(Error(xp, "Expression cannot be cloned")); return nullptr; }
             auto candidate = std::ranges::find_if(decl->methods, [](auto& meth)
             {
                 auto end = meth.function_decl->attributes.end();
@@ -438,7 +431,7 @@ namespace Yoyo
                     auto sub_into_ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
                     if(!var.type.should_sret())
                         sub_val_ptr = irgen->builder->CreateLoad(irgen->ToLLVMType(var.type, false), sub_val_ptr);
-                    clone(sub_val_ptr, var.type, sub_into_ptr);
+                    clone(xp, sub_val_ptr, var.type, sub_into_ptr);
                     idx++;
                 }
             }
@@ -566,7 +559,7 @@ namespace Yoyo
                 {
                     if(!left_type.is_trivially_destructible())
                     {
-                        auto ret = clone(ptr, left_type.subtypes[idx_int]);
+                        auto ret = clone(lhs, ptr, left_type.subtypes[idx_int]);
                         destroy(left_ptr, left_type);
                         return ret;
                     }
@@ -597,7 +590,7 @@ namespace Yoyo
                     {
                         if(!left_type.is_trivially_destructible())
                         {
-                            auto ret = clone(ptr, var->type);
+                            auto ret = clone(lhs, ptr, var->type);
                             destroy(lalloc, left_type);
                             return ret;
                         }
@@ -635,13 +628,13 @@ namespace Yoyo
                 else *lhs = irgen->builder->CreateUIToFP(*lhs, llvm::Type::getDoubleTy(irgen->context));
                 return;
             }
-            *lhs = eval->implicitConvert(*lhs, left_type, right_type);
+            *lhs = eval->implicitConvert(nullptr, *lhs, left_type, right_type);
             return;
         }
         if(left_type.name == "flit")
         {
             if(right_type.name == "flit") return;
-            *lhs = eval->implicitConvert(*lhs, left_type, right_type);
+            *lhs = eval->implicitConvert(nullptr, *lhs, left_type, right_type);
             return;
         }
         if(right_type.name == "ilit" || right_type.name == "flit")
@@ -674,18 +667,20 @@ namespace Yoyo
         return fn;
     }
     llvm::Value* ExpressionEvaluator::doAddition(
-        llvm::Value* lhs,
-        llvm::Value* rhs,
+        Expression* lhs,
+        Expression* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type)
     {
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
         auto target = resolveAdd(left_type, right_type);
         auto fn = getOperatorFunction(TokenType::Plus, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, left_type, target->left));
-        args.push_back(implicitConvert(rhs, right_type, target->right));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
         if(target->result.is_non_owning())
@@ -695,18 +690,20 @@ namespace Yoyo
         return final;
     }
     llvm::Value* ExpressionEvaluator::doMinus(
-        llvm::Value* lhs,
-        llvm::Value* rhs,
+        Expression* lhs,
+        Expression* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type)
     {
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
         auto target = resolveSub(left_type, right_type);
         auto fn = getOperatorFunction(TokenType::Minus, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, left_type, target->left));
-        args.push_back(implicitConvert(rhs, right_type, target->right));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
         if(target->result.is_non_owning())
@@ -716,18 +713,20 @@ namespace Yoyo
         return final;
     }
     llvm::Value* ExpressionEvaluator::doMult(
-        llvm::Value* lhs,
-        llvm::Value* rhs,
+        Expression* lhs,
+        Expression* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type)
     {
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
         auto target = resolveMul(left_type, right_type);
         auto fn = getOperatorFunction(TokenType::Star, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, left_type, target->left));
-        args.push_back(implicitConvert(rhs, right_type, target->right));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
         if(target->result.is_non_owning())
@@ -737,19 +736,20 @@ namespace Yoyo
         return final;
     }
     llvm::Value* ExpressionEvaluator::doDiv(
-        llvm::Value* lhs,
-        llvm::Value* rhs,
+        Expression* lhs,
+        Expression* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type)
     {
-
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
         auto target = resolveDiv(left_type, right_type);
         auto fn = getOperatorFunction(TokenType::Slash, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, left_type, target->left));
-        args.push_back(implicitConvert(rhs, right_type, target->right));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
         if(target->result.is_non_owning())
@@ -759,18 +759,20 @@ namespace Yoyo
         return final;
     }
     llvm::Value* ExpressionEvaluator::doRem(
-        llvm::Value* lhs,
-        llvm::Value* rhs,
+        Expression* lhs,
+        Expression* rhs,
         const Type& left_type,
-        const Type& right_type) const
+        const Type& right_type)
     {
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
         auto target = resolveRem(left_type, right_type);
         auto fn = getOperatorFunction(TokenType::Percent, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
             args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, left_type, target->left));
-        args.push_back(implicitConvert(rhs, right_type, target->right));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
         if(target->result.is_non_owning())
@@ -781,12 +783,14 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::doCmp(
         ComparisonPredicate p,
-        llvm::Value* lhs,
-        llvm::Value* rhs,
+        Expression* lhse,
+        Expression* rhse,
         const Type& left_type,
         const Type& right_type,
-        const Type& result_type) const
+        const Type& result_type)
     {
+        auto lhs = std::visit(*this, lhse->toVariant());
+        auto rhs = std::visit(*this, rhse->toVariant());
         llvm::CmpInst::Predicate pred{};
         auto get_int_cmp_pred = [](const bool is_signed, ComparisonPredicate p)
         {
@@ -906,7 +910,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(TupleLiteral* tup)
     {
         auto tuple_t = ExpressionTypeChecker{irgen, target}(tup);
-        if(!tuple_t) { irgen->error(); return nullptr; }
+        if(!tuple_t) { irgen->error(tuple_t.error()); return nullptr; }
         auto llvm_t = irgen->ToLLVMType(*tuple_t, false);
         auto tuple_tmp = irgen->Alloca("tuple_lit", llvm_t);
         auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
@@ -916,8 +920,7 @@ namespace Yoyo
             auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
             auto idx_ptr = irgen->builder->CreateGEP(llvm_t, tuple_tmp, {zero_const, idx_const}, "tuple_elem");
             auto type = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
-            tuple_t->subtypes[idx].is_mutable = true;
-            doAssign(idx_ptr, std::visit(*this, expr->toVariant()), tuple_t->subtypes[idx], *type);
+            implicitConvert(expr.get(), std::visit(*this, expr->toVariant()), *type, tuple_t->subtypes[idx], idx_ptr);
             idx++;
         }
         return tuple_tmp;
@@ -926,7 +929,7 @@ namespace Yoyo
     {
         auto tp_check = ExpressionTypeChecker{irgen};
         auto type = std::visit(tp_check, lit->toVariant());
-        if(!type) return nullptr;
+        if (!type) { irgen->error(type.error()); return nullptr; }
         auto as_llvm = irgen->ToLLVMType(type.value(), false);
         auto val = irgen->Alloca("array_literal", as_llvm);
         if(type->is_static_array())
@@ -934,7 +937,7 @@ namespace Yoyo
             for(size_t i = 0; i < lit->elements.size(); ++i)
             {
                 auto elem = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
-                implicitConvert(
+                implicitConvert(lit->elements[i].get(),
                     std::visit(*this, lit->elements[i]->toVariant()),
                     std::visit(tp_check, lit->elements[i]->toVariant()).value(),
                     type->subtypes[0],
@@ -951,7 +954,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(StringLiteral* lit)
     {
         ExpressionTypeChecker type_checker{irgen};
-        if(!type_checker(lit)) {irgen->error(); return nullptr;}
+        if (auto tp = type_checker(lit); !tp) { irgen->error(tp.error()); return nullptr; }
         std::vector<std::pair<llvm::Value*, llvm::Value*>> substrings;
         for(auto& substr: lit->literal)
         {
@@ -1048,7 +1051,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(PrefixOperation* op)
     {
         auto target = ExpressionTypeChecker{irgen}(op);
-        if(!target) {irgen->error(); return nullptr;}
+        if(!target) {irgen->error(target.error()); return nullptr;}
 
         switch(op->op.type)
         {
@@ -1090,21 +1093,15 @@ namespace Yoyo
     {
         auto type_checker = ExpressionTypeChecker{irgen};
         auto res =  type_checker(op);
-        if(!res) {irgen->error(); return nullptr;}
+        if(!res) {irgen->error(res.error()); return nullptr;}
 
         auto l_as_var = op->lhs->toVariant();
         auto r_as_var = op->rhs->toVariant();
 
-        llvm::Value* lhs;
-        llvm::Value* rhs;
-        if(op->op.type != TokenType::Dot && !op->op.is_assignment())
-        {
-            lhs = std::visit(*this, l_as_var);
-            rhs = std::visit(*this, r_as_var);
-        }
         auto left_t = std::visit(type_checker, l_as_var);
         auto right_t = std::visit(type_checker, r_as_var);
 
+        auto lhs = op->lhs.get(); auto rhs = op->rhs.get();
         switch(op->op.type)
         {
             using enum TokenType;
@@ -1122,7 +1119,7 @@ namespace Yoyo
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
 
         case Equal:
-            return doAssign(std::visit(LValueEvaluator{irgen}, l_as_var), std::visit(*this, r_as_var), *left_t, *right_t);
+            return implicitConvert(rhs, std::visit(*this, r_as_var), *right_t, *left_t, std::visit(LValueEvaluator{ irgen }, l_as_var));
         default:; //TODO
         }
         return nullptr;
@@ -1185,7 +1182,7 @@ namespace Yoyo
             }
             else
             {
-                args[i + is_bound + uses_sret] = implicitConvert(arg, *tp, sig.parameters[i + is_bound].type);
+                args[i + is_bound + uses_sret] = implicitConvert(exprs[i].get(), arg, *tp, sig.parameters[i + is_bound].type);
             }
         }
         return return_value;
@@ -1296,14 +1293,15 @@ namespace Yoyo
     {
         ExpressionTypeChecker type_checker{irgen};
         auto t = std::visit(type_checker, op->callee->toVariant());
-        if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(); return nullptr;}
+        if (t && t->is_error_ty()) debugbreak();
+        if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(t.error()); return nullptr;}
         auto return_t = type_checker(op);
         if(!return_t)
-            {irgen->error(); return nullptr;}
+            {irgen->error(return_t.error()); return nullptr;}
         bool is_lambda = t->is_lambda();
         auto fn = reinterpret_cast<FunctionType&>(*t);
         auto expr = dynamic_cast<BinaryOperation*>(op->callee.get());
-        std::optional<FunctionType> left_ty;
+        ExpressionTypeChecker::Result left_ty;
         if(expr) left_ty = std::visit(type_checker, expr->lhs->toVariant());
         if(left_ty && left_ty->name == "__called_fn")
         {
@@ -1346,7 +1344,7 @@ namespace Yoyo
             auto* callee = is_lambda ?
                 irgen->code->getFunction(irgen->block_hash + right_t->name) :
                 llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
-            if(!callee) { irgen->error(); return nullptr; }
+            if(!callee) { /* return an llvm invalid value*/ return nullptr; }
             bool uses_sret = callee->hasStructRetAttr();
             std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
             llvm::Value* return_value = fillArgs(uses_sret, fn.sig, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
@@ -1364,7 +1362,7 @@ namespace Yoyo
         auto* callee = is_lambda ?
             irgen->code->getFunction(irgen->block_hash + t->name) :
             llvm::dyn_cast_or_null<llvm::Function>(callee_val);
-        if(!callee) { irgen->error(); return nullptr; }
+        if(!callee) { return nullptr; }
         bool uses_sret = callee->hasStructRetAttr();
         std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
         llvm::Value* return_value = fillArgs(uses_sret, fn.sig, args, nullptr, op->arguments);
@@ -1380,6 +1378,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(SubscriptOperation* op)
     {
         auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
+        if (!obj_ty) { irgen->error(obj_ty.error()); return nullptr; }
         auto llvm_t = irgen->ToLLVMType(*obj_ty, false);
         auto obj = std::visit(*this, op->object->toVariant());
         auto idx = std::visit(*this, op->index->toVariant());
@@ -1395,7 +1394,6 @@ namespace Yoyo
             auto sub_ty = irgen->ToLLVMType(obj_ty->subtypes[0], false);
             return irgen->builder->CreateGEP(sub_ty, data_ptr, { idx });
         }
-        irgen->error();
     }
 
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
@@ -1412,7 +1410,7 @@ namespace Yoyo
             Token tk{.type = TokenType::Identifier, .text = capture};
             NameExpression name(std::string(tk.text));
             auto type = ExpressionTypeChecker{irgen}(&name);
-            if(type->is_function()) { irgen->error(); return nullptr; }
+            //if(type->is_function()) { irgen->error(); return nullptr; }
             llvm::Type* tp = irgen->ToLLVMType(*type, false);
             context_types.push_back(tp->getPointerTo());
         }
@@ -1461,7 +1459,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(ObjectLiteral* lit)
     {
         auto t = ExpressionTypeChecker{irgen}(lit);
-        if(!t) {irgen->error();return nullptr;}
+        if(!t) {irgen->error(t.error());return nullptr;}
         auto as_llvm_type = irgen->ToLLVMType(*t, false);
         auto decl = t->get_decl_if_class();
         auto value = irgen->Alloca("obj_lit",as_llvm_type);
@@ -1475,9 +1473,7 @@ namespace Yoyo
             auto val = std::visit(ExpressionEvaluator{irgen, var.type}, lit->values[var.name]->toVariant());
 
             auto mem_ptr = irgen->builder->CreateGEP(as_llvm_type, value, {zero_const, idx_const});
-            auto as_mut = var.type;
-            as_mut.is_mutable = true; as_mut.is_lvalue = true;
-            doAssign(mem_ptr, val, as_mut, *val_ty);
+            implicitConvert(lit->values[var.name].get(), val, *val_ty, var.type, mem_ptr);
         }
         return value;
     }
@@ -1491,6 +1487,7 @@ namespace Yoyo
     {
         auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
         auto final_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
+        if (!final_ty) { irgen->error(final_ty.error()); return nullptr; }
         auto as_llvm = irgen->ToLLVMType(*final_ty, false);
         auto internal_as_llvm = irgen->ToLLVMType(*ty, true);
         auto internal = std::visit(*this, expr->expr->toVariant());
@@ -1520,7 +1517,6 @@ namespace Yoyo
             }
             return val;
         }
-        irgen->error();
     }
 
     llvm::Value* ExpressionEvaluator::operator()(CharLiteral* lit)

@@ -43,6 +43,7 @@ namespace Yoyo
         [[nodiscard]] bool is_ref_conversion_result() const;
         [[nodiscard]] bool is_slice() const;
         [[nodiscard]] bool is_mut_slice() const;
+        [[nodiscard]] bool is_error_ty() const;
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)

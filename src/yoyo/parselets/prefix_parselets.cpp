@@ -54,7 +54,7 @@ namespace Yoyo
             }
             pos += 2; //skip the ${
             std::string str(tk.text.begin() + pos, tk.text.end());
-            Parser subparser(std::move(str));
+            Parser subparser(str);
             auto expr = subparser.parseExpression(0);
             if(subparser.failed()) parser.error("Failed to parse sub expression in string literal", std::nullopt);
             auto rbrace = subparser.Peek(); // has to be a '}'
@@ -76,7 +76,7 @@ namespace Yoyo
                 std::get<1>(v)->parent = expr.get();
 
         return Expression::attachSLAndParent(std::move(expr), tk.loc,
-            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size()}, parser.parent);
+            SourceLocation{tk.loc.line, tk.loc.column + tk.text.size() + 2}, parser.parent); //+1 to account for the "
     }
     std::unique_ptr<Expression> NameParselet::parse(Parser& parser, Token tk)
     {

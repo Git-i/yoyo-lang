@@ -5,7 +5,7 @@
 #include <statement.h>
 #include "engine.h"
 #include <utility>
-
+#include "error.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
 #include "module.h"
@@ -68,6 +68,7 @@ namespace Yoyo
     {
         template<std::input_iterator It> void pushScopeWithConstLock(It begin, It end);
     public:
+        SourceView* view;
         llvm::Value* currentReturnAddress;
         Type this_t;
         Type return_t;
@@ -112,7 +113,7 @@ namespace Yoyo
         void operator()(AliasDeclaration*);
         void operator()(GenericAliasDeclaration*);
 
-        void error();
+        void error(const Error& err);
         std::string reset_hash();
         void annotateClass(ClassDeclaration*);
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
@@ -147,27 +148,51 @@ namespace Yoyo
         bool hasToStr(const Type& t);
         /// We return FunctionType because it's a subclass of Type and some
         /// expressions ( @c NameExpression and @c BinaryExpression ) can be a function
-        std::optional<FunctionType> operator()(IntegerLiteral*);
-        std::optional<FunctionType> operator()(BooleanLiteral*);
-        std::optional<FunctionType> operator()(TupleLiteral*);
-        std::optional<FunctionType> operator()(ArrayLiteral*);
-        std::optional<FunctionType> operator()(RealLiteral*);
-        std::optional<FunctionType> operator()(StringLiteral*);
-        std::optional<FunctionType> operator()(NameExpression*);
-        std::optional<FunctionType> operator()(GenericNameExpression*);
-        std::optional<FunctionType> operator()(PrefixOperation*);
-        std::optional<FunctionType> operator()(BinaryOperation*);
-        std::optional<FunctionType> operator()(GroupingExpression*);
-        std::optional<FunctionType> operator()(LogicalOperation*);
-        std::optional<FunctionType> operator()(PostfixOperation*);
-        std::optional<FunctionType> operator()(CallOperation*);
-        std::optional<FunctionType> operator()(SubscriptOperation*);
-        std::optional<FunctionType> operator()(LambdaExpression*);
-        std::optional<FunctionType> operator()(ScopeOperation*);
-        std::optional<FunctionType> operator()(ObjectLiteral*);
-        std::optional<FunctionType> operator()(NullLiteral*);
-        std::optional<FunctionType> operator()(AsExpression*);
-        std::optional<FunctionType> operator()(CharLiteral*);
+        struct Result : std::variant<FunctionType, Error>
+        {
+            operator bool() const {
+                return std::holds_alternative<FunctionType>(*this);
+            }
+            FunctionType* operator->() {
+                return &std::get<0>(*this);
+            }
+            FunctionType& value()& { if (!*this) debugbreak(); return std::get<0>(*this); }
+            FunctionType&& value() && { if (!*this) debugbreak(); return std::get<0>(std::move(*this)); }
+            const FunctionType& value() const& { if (!*this) debugbreak(); return std::get<0>(*this); }
+            FunctionType& operator*() & { return value(); }
+            FunctionType&& operator*() && { return std::move(*this).value(); }
+            const FunctionType& operator*() const& { return value(); }
+            std::optional<FunctionType> to_optional() {
+                return (*this) ? std::optional{ value() } : std::nullopt;
+            }
+            FunctionType value_or_error() const {
+                return (*this) ? value() : FunctionType{ Type{ "__error_type" } };
+            }
+            const Error& error() const {
+                return std::get<1>(*this);
+            }
+        };
+        Result operator()(IntegerLiteral*);
+        Result operator()(BooleanLiteral*);
+        Result operator()(TupleLiteral*);
+        Result operator()(ArrayLiteral*);
+        Result operator()(RealLiteral*);
+        Result operator()(StringLiteral*);
+        Result operator()(NameExpression*);
+        Result operator()(GenericNameExpression*);
+        Result operator()(PrefixOperation*);
+        Result operator()(BinaryOperation*);
+        Result operator()(GroupingExpression*);
+        Result operator()(LogicalOperation*);
+        Result operator()(PostfixOperation*);
+        Result operator()(CallOperation*);
+        Result operator()(SubscriptOperation*);
+        Result operator()(LambdaExpression*);
+        Result operator()(ScopeOperation*);
+        Result operator()(ObjectLiteral*);
+        Result operator()(NullLiteral*);
+        Result operator()(AsExpression*);
+        Result operator()(CharLiteral*);
 
     };
     class ExpressionEvaluator
@@ -182,18 +207,17 @@ namespace Yoyo
         };
         explicit ExpressionEvaluator(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}
-        llvm::Value* implicitConvert(llvm::Value*, const Type&, const Type&, llvm::Value* = nullptr) const;
-        llvm::Value* doAssign(llvm::Value* lhs, llvm::Value* rhs, const Type& left_type, const Type& right_type);
-        llvm::Value* clone(llvm::Value* value, const Type& left_type, llvm::Value* into = nullptr) const;
+        llvm::Value* implicitConvert(Expression* xp, llvm::Value*, const Type&, const Type&, llvm::Value* = nullptr) const;
+        llvm::Value* clone(Expression* xp, llvm::Value* value, const Type& left_type, llvm::Value* into = nullptr) const;
         void destroy(llvm::Value* value, const Type& type) const;
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
-        llvm::Value* doAddition(llvm::Value*,llvm::Value*,const Type&,const Type&) const;
-        llvm::Value* doMinus(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doMult(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doDiv(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doRem(llvm::Value*, llvm::Value*, const Type&, const Type&) const;
-        llvm::Value* doCmp(ComparisonPredicate p, llvm::Value* lhs, llvm::Value* rhs, const Type& left_type,
-                           const Type& right_type, const Type&) const;
+        llvm::Value* doAddition(Expression*,Expression*,const Type&,const Type&);
+        llvm::Value* doMinus(Expression*, Expression*, const Type&, const Type&);
+        llvm::Value* doMult(Expression*, Expression*, const Type&, const Type&);
+        llvm::Value* doDiv(Expression*, Expression*, const Type&, const Type&);
+        llvm::Value* doRem(Expression*, Expression*, const Type&, const Type&);
+        llvm::Value* doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
+                           const Type& right_type, const Type&);
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);

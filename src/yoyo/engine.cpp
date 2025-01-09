@@ -167,10 +167,10 @@ namespace Yoyo
 
     void Engine::addModule(const std::string& module_name, std::string source)
     {
-        auto p = new Parser (std::move(source));
+        auto p = Parser(source);
         if(modules.contains(module_name)) return;
-        auto prog = p->parseProgram();
-        if(p->failed()) return;
+        auto prog = p.parseProgram();
+        if(p.failed()) return;
         auto& md = modules[module_name];
         md = std::make_unique<Module>();
         md->engine = this;
@@ -183,7 +183,7 @@ namespace Yoyo
                 break;
             };
         }
-        sources[module_name] = std::move(prog);
+        sources[module_name] = { std::move(source), std::move(prog) };
 
     }
 
@@ -196,7 +196,7 @@ namespace Yoyo
         {
             if (sources.contains(module_name))
             {
-                for (auto& stat : sources[module_name])
+                for (auto& stat : sources[module_name].second)
                 {
                     if (!stat) continue; //by this point some statements have already been handled(enums)
                     if (!std::visit(ForwardDeclaratorPass2{ modules[module_name].get() }, stat->toVariant()))
@@ -212,7 +212,9 @@ namespace Yoyo
             if (!mod.second->code)
             {
                 auto src = sources.extract(mod.first);
-                irgen.GenerateIR(mod.first, std::move(src.mapped()), mod.second.get(), this);
+                SourceView vw(src.mapped().first, mod.first);
+                irgen.view = &vw;
+                irgen.GenerateIR(mod.first, std::move(src.mapped().second), mod.second.get(), this);
             }
         }
     }

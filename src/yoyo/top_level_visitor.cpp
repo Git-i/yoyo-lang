@@ -40,7 +40,7 @@ namespace Yoyo
     }
     bool handleBinaryOverload(OperatorOverload* decl, IRGenerator* irgen)
     {
-        if(decl->signature.parameters.size() != 2) irgen->error();
+        if(decl->signature.parameters.size() != 2) irgen->error(Error(decl, "More or less than 2 operands for binary operator"));
         OverloadDetailsBinary bin {.left = decl->signature.parameters[0].type,
             .right = decl->signature.parameters[1].type,
             .result = decl->signature.returnType};
@@ -61,7 +61,7 @@ namespace Yoyo
         if(!std::ranges::any_of(decl->signature.parameters, [this](FunctionParameter& param)
         {
             return param.type.module == irgen->module;
-        })) {irgen->error(); return false;}
+        })) {irgen->error(Error(decl.get(), "This module does not own any type being overloaded")); return false; }
         //check if overload already exists
         if(Token{decl->tok}.can_be_overloaded_binary_only())
         {
@@ -71,7 +71,7 @@ namespace Yoyo
         if(decl->tok == TokenType::Minus)
         {
             if(decl->signature.parameters.size() == 2) return handleBinaryOverload(decl.get(), irgen);
-            if(decl->signature.parameters.size() != 1) {irgen->error(); return false;}
+            if(decl->signature.parameters.size() != 1) {irgen->error(Error(decl.get(), "Unary '-' with too many / too few operands")); return false; }
         }
         debugbreak();
     }

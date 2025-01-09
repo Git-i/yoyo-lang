@@ -53,14 +53,14 @@ namespace Yoyo
                 if(borrow.second == BorrowResult::Const)
                 {
                     //if the value has been mutably borrowed before its error
-                    if(mut_borrow.contains(borrow.first)) { irgen->error(); return; }
+                    if(mut_borrow.contains(borrow.first)) { irgen->error(Error(expr.first, "Attempt to borrow mutably borrowed value")); return; }
                     const_borrows[borrow.first].push_back(expr.first);
                 }
                 else if(borrow.second == BorrowResult::Mut)
                 {
                     //if it's been mutably or immutably borrowed its error
-                    if(mut_borrow.contains(borrow.first)) { irgen->error(); return; }
-                    if(const_borrows.contains(borrow.first)) { irgen->error(); return; }
+                    if(mut_borrow.contains(borrow.first)) { irgen->error(Error(expr.first, "Attempt to borrow mutably borrowed value")); return; }
+                    if(const_borrows.contains(borrow.first)) { irgen->error(Error(expr.first, "Attempt to mutably borrow already borrowed value")); return; }
                     mut_borrow[borrow.first] = expr.first;
                 }
             }
@@ -72,7 +72,7 @@ namespace Yoyo
         for(auto& i : irgen->variables | std::views::reverse)
         {
             if(i.contains(expr->text) && !std::get<1>(i.at(expr->text)).is_mutable)
-                irgen->error();
+                irgen->error(Error(expr, "'" + expr->text + "' cannot be mutably borrowed"));
         }
         if(irgen->lifetimeExtensions.contains(expr->text))
         {
@@ -103,7 +103,7 @@ namespace Yoyo
             return std::visit(*this, expr->operand->toVariant());
         if(expr->op.type == TokenType::RefMut)
             return std::visit(*this, expr->operand->toVariant());
-        irgen->error();//expression cannot be mutably borrowed
+        irgen->error(Error(expr, "Expression cannot be mutably borrowed"));//expression cannot be mutably borrowed
         return {};
     }
 
