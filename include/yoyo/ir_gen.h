@@ -62,6 +62,7 @@ namespace Yoyo
         borrow_result_t operator()(SubscriptOperation*){ return {}; }
         borrow_result_t operator()(LambdaExpression*){ return {}; }
         borrow_result_t operator()(ScopeOperation*){ return {}; }
+        borrow_result_t operator()(GCNewExpression*){ return {}; }
         borrow_result_t operator()(AsExpression*);
     };
     class IRGenerator
@@ -122,8 +123,9 @@ namespace Yoyo
         void popScope();
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
+        bool has_error = false;
         llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
-        void GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng);
+        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng);
     };
 
 
@@ -193,7 +195,7 @@ namespace Yoyo
         Result operator()(NullLiteral*);
         Result operator()(AsExpression*);
         Result operator()(CharLiteral*);
-
+        Result operator()(GCNewExpression*);
     };
     class ExpressionEvaluator
     {
@@ -255,6 +257,7 @@ namespace Yoyo
         llvm::Value* operator()(NullLiteral*);
         llvm::Value* operator()(AsExpression*);
         llvm::Value* operator()(CharLiteral*);
+        llvm::Value* operator()(GCNewExpression*);
     };
     //TODO: rename
     class LifetimeExceedsFunctionChecker

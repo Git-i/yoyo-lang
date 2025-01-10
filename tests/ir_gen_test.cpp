@@ -35,7 +35,7 @@ TEST_CASE("Test IR")
     Yoyo::Engine engine;
     md = engine.addAppModule("APP");
     md->addFunction("(x: &str) -> i32", reinterpret_cast<void*>(&func), "func");
-    engine.addModule("MOO2", src2);
+    engine.addModule("source.yoyo", src2);
     engine.compile();
 
     uint32_t idx = 3;
@@ -49,7 +49,7 @@ TEST_CASE("Test IR")
         std::cout << "\033[0m" << std::flush;
     }
     engine.prepareForExecution();
-    std::string unmangled_name = engine.modules["MOO2"]->module_hash + "takes_foo";
+    std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "takes_foo";
     auto addr = engine.jit->lookup(unmangled_name);
     if (!addr) Yoyo::debugbreak();
     double(*fn)() = addr.get().toPtr<double()>();

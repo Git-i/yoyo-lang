@@ -100,6 +100,11 @@ namespace Yoyo
     {
         return this;
     }
+
+    ExpressionVariant GCNewExpression::toVariant()
+    {
+        return this;
+    }
     LambdaExpression::LambdaExpression(std::vector<std::string> captures, FunctionSignature sig, std::unique_ptr<Statement> body)
     : captures(std::move(captures)), sig(std::move(sig)), body(std::move(body)) {}
 

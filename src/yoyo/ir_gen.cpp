@@ -619,6 +619,7 @@ namespace Yoyo
     {
         auto str = e.to_string(*view, true);
         std::cout << str << std::endl;
+        has_error = true;
         debugbreak();
     }
 
@@ -725,7 +726,8 @@ namespace Yoyo
         llvm::Instruction* term = nullptr;
         if(builder->GetInsertBlock()->back().getOpcode() == llvm::Instruction::Br)
         {
-            term = builder->GetInsertBlock()->getTerminator();
+            term = &builder->GetInsertBlock()->back();
+            term->removeFromParent();
         }
         //call destructors
         auto fn = builder->GetInsertBlock()->getParent();
@@ -735,7 +737,7 @@ namespace Yoyo
             auto& type = std::get<1>(var);
             if(!drop_flag) continue;
             auto drop = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
-            auto drop_cont = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
+            auto drop_cont = llvm::BasicBlock::Create(context, "drop_cont", fn, returnBlock);
             builder->CreateCondBr(
                 builder->CreateLoad(llvm::Type::getInt1Ty(context), drop_flag),
                 drop, drop_cont);
@@ -752,8 +754,8 @@ namespace Yoyo
             builder->CreateBr(drop_cont);
             builder->SetInsertPoint(drop_cont);
         }
-        if(term)
-            term->moveAfter(&builder->GetInsertBlock()->back());
+        if (term)
+            term->insertInto(builder->GetInsertBlock(), builder->GetInsertPoint());
         variables.pop_back();
     }
 
@@ -798,7 +800,7 @@ namespace Yoyo
         return llvm::StructType::create(context, args, name);
     }
 
-    void IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng)
+    bool IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng)
     {
         block_hash = md->module_hash;
         md->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>(name, context), eng->llvm_context);
@@ -831,6 +833,7 @@ namespace Yoyo
             std::visit(TopLevelVisitor{this}, std::move(vnt));
         }
         builder = nullptr;
+        return !has_error;
     }
 
 }

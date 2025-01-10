@@ -26,7 +26,7 @@ namespace Yoyo
                 left = it;
             }
         }
-        result.emplace_back(str.begin() + left, str.end());
+        result.emplace_back(str.begin() + left, str.ends_with(delim) ? str.end() - delim.size() : str.end());
         return result;
     }
 
@@ -119,10 +119,9 @@ namespace Yoyo
         {
             return other.name == "__null" || subtypes[0].is_assignable_from(other);
         }
-        if(is_reference())
-        {
-            if(other.is_mutable_reference() && deref().is_equal(other.deref())) return true;
-        }
+        if (is_gc_reference()) return false;
+        if (is_mutable_reference()) other.is_gc_reference() && other.is_mutable && deref().is_equal(other.deref());
+        if (is_reference()) return other.is_reference() && deref().is_equal(other.deref());
         //for variants, the rhs must be assignable to only one of the subtypes
         if(is_variant())
         {
@@ -184,7 +183,7 @@ namespace Yoyo
 
     bool Type::is_non_owning() const
     {
-        if(is_reference() || is_slice()) return true;
+        if((is_reference() && !is_gc_reference()) || is_slice()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
@@ -211,7 +210,11 @@ namespace Yoyo
     
     bool Type::is_reference() const
     {
-        return name == "__ref" || name == "__ref_mut";
+        return name == "__ref" || name == "__ref_mut" || name == "__gcref";
+    }
+    bool Type::is_gc_reference() const
+    {
+        return name == "__gcref";
     }
     bool Type::is_slice() const
     {
@@ -615,6 +618,8 @@ namespace Yoyo
     {
         if (tp.is_mutable_reference())
             return "&mut " + pretty_name_suffix(tp.subtypes[0]);
+        if (tp.is_gc_reference())
+            return "^" + pretty_name_suffix(tp.subtypes[0]);
         if (tp.is_reference())
             return "&" + pretty_name_suffix(tp.subtypes[0]);
         if (tp.is_static_array())
@@ -634,6 +639,7 @@ namespace Yoyo
         size_t start_idx = 0;
         while (true)
         {
+            if (start_idx >= this_split.size() || start_idx >= other_split.size()) break;
             if (this_split[start_idx] == other_split[start_idx]) start_idx++;
             else break;
         }

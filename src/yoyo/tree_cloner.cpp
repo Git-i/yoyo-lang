@@ -119,7 +119,10 @@ namespace Yoyo
         return std::make_unique<AsExpression>(copy_expr(expr->expr), expr->dest);
     }
 
-
+    std::unique_ptr<Expression> ExpressionTreeCloner::operator()(GCNewExpression* expr)
+    {
+        return std::make_unique<GCNewExpression>(copy_expr(expr->target_expression), expr->dest);
+    }
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(CharLiteral* lit)
     {
         auto lt =  std::make_unique<CharLiteral>();

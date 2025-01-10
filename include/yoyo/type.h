@@ -36,6 +36,7 @@ namespace Yoyo
         [[nodiscard]] bool is_non_owning() const;
         [[nodiscard]] bool is_non_owning_mut() const;
         [[nodiscard]] bool is_reference() const;
+        [[nodiscard]] bool is_gc_reference() const;
         [[nodiscard]] bool is_trivially_destructible() const;
         [[nodiscard]] bool can_be_stored() const;
         [[nodiscard]] bool is_conversion_result() const;

@@ -39,6 +39,7 @@ namespace Yoyo
     class NameExpression;
     class GenericNameExpression;
     class AsExpression;
+    class GCNewExpression;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -60,6 +61,7 @@ namespace Yoyo
         NullLiteral*,
         CharLiteral*,
         GenericNameExpression*,
+        GCNewExpression*,
         AsExpression*>;
     class YOYO_API Expression : public ASTNode {
     public:
@@ -226,5 +228,14 @@ namespace Yoyo
     public:
         uint32_t value;
         ExpressionVariant toVariant() override;
+    };
+    class YOYO_API GCNewExpression : public Expression
+    {
+    public:
+        std::optional<Type> dest;
+        std::unique_ptr<Expression> target_expression;
+        ExpressionVariant toVariant() override;
+        GCNewExpression(std::unique_ptr<Expression> expr, std::optional<Type> dst)
+            : target_expression(std::move(expr)), dest(std::move(dst)) {}
     };
 }

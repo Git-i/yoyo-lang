@@ -30,6 +30,7 @@ namespace Yoyo
         prefixParselets[TokenType::Pipe] = lambda_parselet;
         prefixParselets[TokenType::DoublePipe] = lambda_parselet;
         prefixParselets[TokenType::Null] = std::make_shared<NullLiteralParselet>();
+        prefixParselets[TokenType::GCNew] = std::make_shared<GCNewParselet>();
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);
@@ -945,6 +946,11 @@ namespace Yoyo
         if(is_mut) return Type{"__ref_mut", {std::move(t)}};
         return Type("__ref", {std::move(t)});
     }
+    std::optional<Type> parseGCRefType(Token tk, Parser& p)
+    {
+        auto t = *p.parseType(0);
+        return Type("__gcref", { std::move(t) });
+    }
     std::optional<Type> parseGroupType(Parser& p)
     {
         if(p.discard(TokenType::RParen)) return Type{"void"};
@@ -988,6 +994,7 @@ namespace Yoyo
         case TokenType::LSquare: Get(); t = parseArrayType(*tk, *this); break;
         case TokenType::Ampersand: Get(); t = parseRefType(*tk, *this); break;
         case TokenType::LParen: Get(); t = parseGroupType(*this); break;
+        case TokenType::Caret: Get(); t = parseGCRefType(*tk, *this); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())

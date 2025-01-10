@@ -41,6 +41,7 @@ namespace Yoyo
     {
         for(auto value: args)
         {
+            if (!value) continue;
             if(value->getName().starts_with("__del_parents___"))
             {
                 auto nm = value->getName();
@@ -1102,6 +1103,9 @@ namespace Yoyo
         auto left_t = std::visit(type_checker, l_as_var);
         auto right_t = std::visit(type_checker, r_as_var);
 
+        if (!left_t) { irgen->error(left_t.error()); return nullptr; }
+        if (!right_t) { irgen->error(right_t.error()); return nullptr; }
+
         auto lhs = op->lhs.get(); auto rhs = op->rhs.get();
         switch(op->op.type)
         {
@@ -1149,6 +1153,7 @@ namespace Yoyo
         {
             auto arg = std::visit(*this, exprs[i]->toVariant());
             auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
+            if (!tp) continue;
             if(sig.parameters[i + is_bound].type.name == "__called_fn")
             {
                 auto llvm_t = irgen->ToLLVMType(sig.parameters[i + is_bound].type, false);
@@ -1396,7 +1401,13 @@ namespace Yoyo
             return irgen->builder->CreateGEP(sub_ty, data_ptr, { idx });
         }
     }
-
+    llvm::Value* ExpressionEvaluator::operator()(GCNewExpression* expr)
+    {
+        auto tp = ExpressionTypeChecker{ irgen }(expr);
+        if (!tp) 
+            irgen->error(tp.error());
+        return nullptr;
+    }
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
     {
         //TODO: check for capture/parameter duplicates

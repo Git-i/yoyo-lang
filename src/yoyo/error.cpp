@@ -95,7 +95,13 @@ namespace Yoyo
 			lines.emplace_back(std::format("{: >4} │ {}\n", line, line_body));
 			lines.emplace_back(markers_for("       ", enable_color, line, markers, view));
 		}
-		auto result = std::format("{}:{}:{} error: {}\n", view.filename, span.begin.line, span.begin.column, summary);
+		auto result = std::format("{}{}:{}:{} error: {}{}\n",
+			enable_color ? "\033[1;31m" : "",
+			view.filename,
+			span.begin.line,
+			span.begin.column,
+			summary,
+			enable_color ? "\033[0m" : "");
 		for (const auto& line : lines)
 			result.append(line);
 		return result;

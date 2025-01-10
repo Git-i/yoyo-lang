@@ -6,7 +6,6 @@
 #include <ranges>
 #include <statement.h>
 #include <llvm/Support/TargetSelect.h>
-
 namespace Yoyo
 {
     llvm::LLVMContext* getLLVMContext(Module* md)
@@ -137,12 +136,18 @@ namespace Yoyo
     { return true; }
 
 
+    extern "C"
+        const char* __asan_default_options() {
+        // Clang reports ODR Violation errors in mbedtls/library/certs.c.
+        // NEED TO REPORT THIS ISSUE
+        return "detect_container_overflow=0";
+    }
     Engine::Engine()
     {
-        llvm_context = llvm::orc::ThreadSafeContext(std::make_unique<llvm::LLVMContext>());
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         auto value = llvm::orc::LLJITBuilder().create();
+        llvm_context = llvm::orc::ThreadSafeContext(std::make_unique<llvm::LLVMContext>());
         if (!value) Yoyo::debugbreak();
         std::move(value).moveInto(jit);
         makeBuiltinModule(this);
@@ -215,7 +220,8 @@ namespace Yoyo
                 auto src = sources.extract(mod.first);
                 SourceView vw(src.mapped().first, mod.first);
                 irgen.view = &vw;
-                irgen.GenerateIR(mod.first, std::move(src.mapped().second), mod.second.get(), this);
+                if (!irgen.GenerateIR(mod.first, std::move(src.mapped().second), mod.second.get(), this))
+                    mod.second->code.~ThreadSafeModule();
             }
         }
     }
@@ -229,6 +235,6 @@ namespace Yoyo
     void Engine::prepareForExecution()
     {
         for (auto& [name, module] : modules)
-            jit->addIRModule(std::move(module->code));
+            if(module->code) jit->addIRModule(std::move(module->code));
     }
 }
