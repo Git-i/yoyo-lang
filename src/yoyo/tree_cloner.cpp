@@ -153,7 +153,24 @@ namespace Yoyo
         {
             new_methods.emplace_back(method.name, copy_stat(method.function_decl), method.access);
         }
-        return std::make_unique<ClassDeclaration>(decl->identifier, decl->vars, std::move(new_methods), decl->ownership);
+        std::vector<InterfaceImplementation> new_impls;
+        for (auto& impl : decl->impls)
+        {
+            decltype(InterfaceImplementation::methods) mth;
+            for (auto& method : impl.methods)
+            {
+                auto ptr = copy_stat(method.get());
+                mth.emplace_back(reinterpret_cast<FunctionDeclaration*>(ptr.release()));
+            }
+            new_impls.emplace_back(impl.impl_for, std::move(mth));
+        }
+        return std::make_unique<ClassDeclaration>(
+            decl->identifier,
+            decl->vars,
+            std::move(new_methods),
+            decl->ownership,
+            decl->interfaces,
+            std::move(new_impls));
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(VariableDeclaration* decl)
@@ -242,7 +259,16 @@ namespace Yoyo
     {
         return std::make_unique<AliasDeclaration>(decl->name, decl->type);
     }
-
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(InterfaceDeclaration* stat)
+    {
+        auto final = std::make_unique<InterfaceDeclaration>();
+        for (auto& method : stat->methods)
+        {
+            auto mth = copy_stat(method.get());
+            final->methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(mth.release()));
+        }
+        return final;
+    }
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)
     {
         return std::visit(*this, s->toVariant());

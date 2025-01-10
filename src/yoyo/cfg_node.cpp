@@ -19,6 +19,7 @@ namespace Yoyo
         void operator()(ExpressionStatement* stat) const{ node->statements.push_back(stat); }
         void operator()(VariableDeclaration* decl) const{ node->statements.push_back(decl); }
         void operator()(FunctionDeclaration* stat) const {}
+        void operator()(InterfaceDeclaration* stat) const {}
         void operator()(IfStatement* stat)
         {
             node->statements.push_back(stat);

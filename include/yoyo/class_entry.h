@@ -5,6 +5,7 @@ namespace Yoyo
 {
     struct Attribute;
     class Statement;
+    class FunctionDeclaration;
     enum class AccessSpecifier
     {
         Public, ///< Every entity can access
@@ -14,10 +15,10 @@ namespace Yoyo
     };
     struct ClassVariable
     {
-        AccessSpecifier access;
         std::string name;
         Type type;
         bool is_static;
+        AccessSpecifier access;
         std::vector<Attribute> attributes;
     };
     struct ClassMethod
@@ -26,5 +27,9 @@ namespace Yoyo
         std::unique_ptr<Statement> function_decl;
         AccessSpecifier access;
     };
-
+    struct InterfaceImplementation
+    {
+        Type impl_for;
+        std::vector<std::unique_ptr<FunctionDeclaration>> methods;
+    };
 }

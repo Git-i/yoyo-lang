@@ -124,6 +124,7 @@ namespace Yoyo
         case TokenType::Class: decl = parseClassDeclaration(iden.value(), false); break;
         case TokenType::Struct: decl = parseClassDeclaration(iden.value(), true); break;
         case TokenType::Enum: decl = parseEnumDeclaration(iden.value()); break;
+        case TokenType::Interface: decl = parseInterfaceDeclaration(iden.value()); break;
         case TokenType::EnumFlag: break;//TODO
         case TokenType::Union: break;//TODO
         case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
@@ -194,6 +195,7 @@ namespace Yoyo
 
     void Parser::error(std::string message, std::optional<Token> tk)
     {
+        __debugbreak();
         has_error = true;
         std::cerr << message << std::endl;
         std::cerr << "at token: " << (tk ? "Invalid" : tk->text) << std::endl;
@@ -229,6 +231,29 @@ namespace Yoyo
             fn_decl = std::make_unique<FunctionDeclaration>(std::string{identifier.text}, *std::move(sig), std::move(stat));
         stat_ptr->parent = fn_decl.get();
         return Statement::attachSLAndParent(std::move(fn_decl), identifier.loc, stat_ptr->end, parent);
+    }
+    std::unique_ptr<Statement> Parser::parseInterfaceDeclaration(Token identifier)
+    {
+        if (!discard(TokenType::Interface)) error("Expected 'interface'", Peek());
+        if (!discard(TokenType::Equal)) error("Expected '='", Peek());
+        if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
+        auto intf = std::make_unique<InterfaceDeclaration>();
+        while (!discard(TokenType::RCurly))
+        {
+            auto tk = Get();
+            if (!tk) return nullptr;
+            if (tk->type != TokenType::Identifier) error("Expected identifier", tk);
+            std::string name(tk->text);
+            if (!discard(TokenType::Colon)) error("Expected ':'", Peek());
+            if (!discard(TokenType::Fn)) error("Expected 'fn'", Peek());
+            auto sig = parseFunctionSignature().value_or(FunctionSignature{});
+            if (sig.returnType.name == "__inferred") sig.returnType.name = "void";
+            if (!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
+            auto decl = Statement::attachSLAndParent(std::make_unique<FunctionDeclaration>(std::move(name), std::move(sig), nullptr),
+                tk->loc, discardLocation, intf.get());
+            intf->methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(decl.release()));
+        }
+        return Statement::attachSLAndParent(std::move(intf), identifier.loc, discardLocation, parent);
     }
     Attribute parseAttribute(Parser& p)
     {
@@ -555,11 +580,13 @@ namespace Yoyo
         return Statement::attachSLAndParent(
             std::make_unique<EnumDeclaration>(identifier, std::move(values)), identifier.loc, discardLocation, parent);
     }
-    //struct and classes are virtually the same, except structs don't have access specs and cant implement interfaces
+    //struct and classes are virtually the same, except structs don't have access specs
     std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct)
     {
         std::vector<ClassMethod> methods;
         std::vector<ClassVariable> vars;
+        std::vector<Type> intfs;
+        std::vector<InterfaceImplementation> impls;
         Get(); //skip the "class" or "struct" keyword
         Ownership own_method = Ownership::Owning;
         if(discard(TokenType::Colon))
@@ -568,6 +595,12 @@ namespace Yoyo
             if(discard(TokenType::Mut)) own_method = Ownership::NonOwningMut;
             else own_method = Ownership::NonOwning;
         }
+        if (discard(TokenType::Impl))
+        {
+            intfs.emplace_back(parseType(0).value_or(Type{}));
+            while (discard(TokenType::Comma))
+                intfs.emplace_back(parseType(0).value_or(Type{}));
+        }
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
@@ -575,6 +608,23 @@ namespace Yoyo
             auto attr_list = parseAttributeList();
             bool is_static = false;
             AccessSpecifier spec = isStruct ? AccessSpecifier::Public : AccessSpecifier::Private;
+            if (discard(TokenType::Impl))
+            {
+                auto& impl = impls.emplace_back();
+                impl.impl_for = parseType(0).value_or(Type{});
+                if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
+                while (!discard(TokenType::RCurly))
+                {
+                    auto iden = Get();
+                    if (!iden) return nullptr;
+                    if (iden->type != TokenType::Identifier) error("Expected identifier", Peek());
+                    if (!discard(TokenType::Colon)) error("Expected ':'", Peek());
+                    auto stat = parseFunctionDeclaration(iden.value());
+                    if (dynamic_cast<GenericFunctionDeclaration*>(stat.get())) error("Generic not allowed here", iden);
+                    impl.methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(stat.release()));
+                }
+                continue;
+            }
             while(true)
             {
                 auto tk = Peek();
@@ -617,10 +667,11 @@ namespace Yoyo
             else
             {
                 auto type = parseType(0);
-                vars.push_back(ClassVariable{.access = spec,
+                vars.push_back(ClassVariable{
                     .name = std::string{iden.text},
                     .type = std::move(type).value_or(Type{}),
                     .is_static = is_static,
+                    .access = spec,
                     .attributes = std::move(attr_list)
                 });
                 if(!discard(TokenType::Comma))
@@ -631,7 +682,13 @@ namespace Yoyo
             }
         }
         return Statement::attachSLAndParent(
-            std::make_unique<ClassDeclaration>(identifier, std::move(vars), std::move(methods), own_method), identifier.loc,
+            std::make_unique<ClassDeclaration>(
+                identifier,
+                std::move(vars),
+                std::move(methods),
+                own_method,
+                std::move(intfs),
+                std::move(impls)), identifier.loc,
             discardLocation, parent
         );
     }

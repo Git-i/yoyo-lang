@@ -29,6 +29,7 @@ namespace Yoyo
     class GenericFunctionDeclaration;
     class AliasDeclaration;
     class GenericAliasDeclaration;
+    class InterfaceDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -46,7 +47,8 @@ namespace Yoyo
         WithStatement*,
         GenericFunctionDeclaration*,
         GenericAliasDeclaration*,
-        AliasDeclaration*> StatementVariant;
+        AliasDeclaration*,
+        InterfaceDeclaration*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     struct Attribute {
         std::string name;
@@ -182,12 +184,22 @@ namespace Yoyo
         Token identifier;
         std::vector<ClassVariable> vars;
         std::vector<ClassMethod> methods;
+        //consider an unordered map, although types should generally implement too many interfaces
+        std::vector<Type> interfaces;
+        std::vector<InterfaceImplementation> impls;
+        std::string destructor_name;
         std::optional<bool> is_trivially_destructible; //we use optional bool because we want to lazy evaluate
         bool has_clone;
-        std::string destructor_name;
         Ownership ownership;
-        ClassDeclaration(Token ident, std::vector<ClassVariable> vars, std::vector<ClassMethod> methods, Ownership sh)
-            : identifier(ident), vars(std::move(vars)), methods(std::move(methods)), ownership(sh) {}
+        ClassDeclaration(
+            Token ident,
+            std::vector<ClassVariable> vars,
+            std::vector<ClassMethod> methods,
+            Ownership sh,
+            std::vector<Type> intfs,
+            std::vector<InterfaceImplementation> impls)
+            : identifier(ident), vars(std::move(vars)), methods(std::move(methods)), ownership(sh), 
+            interfaces(std::move(intfs)), impls(std::move(impls)){}
         StatementVariant toVariant() override;
     };
     class ForStatement : public Statement
@@ -247,6 +259,9 @@ namespace Yoyo
     };
     class InterfaceDeclaration : public Statement
     {
-
+    public:
+        std::string name;
+        std::vector<std::unique_ptr<FunctionDeclaration>> methods;
+        StatementVariant toVariant() override;
     };
 }

@@ -23,7 +23,7 @@ namespace Yoyo {
         SemiColon, In, InOut, This, Operator, Return, Called, Tilde, Pub, Static, Mod, With,
         Question, Null, As, Fn, Alias,
         AttrOpen, /// #(
-        Underscore, Mut, RefMut, GCNew,
+        Underscore, Mut, RefMut, GCNew, Impl,
     };
     struct Token
     {

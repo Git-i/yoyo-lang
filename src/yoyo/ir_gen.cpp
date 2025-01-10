@@ -328,7 +328,10 @@ namespace Yoyo
         if(!ty.is_lvalue)
             eval.destroy(val, ty);
     }
-
+    void IRGenerator::operator()(InterfaceDeclaration* decl)
+    {
+        __debugbreak();
+    }
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
         std::string name(decl->identifier.text);

@@ -76,5 +76,8 @@ namespace Yoyo
     {
         return this;
     }
-
+    StatementVariant InterfaceDeclaration::toVariant()
+    {
+        return this;
+    }
 }

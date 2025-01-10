@@ -50,6 +50,7 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(GenericFunctionDeclaration*);
         std::unique_ptr<Statement> operator()(GenericAliasDeclaration*);
         std::unique_ptr<Statement> operator()(AliasDeclaration*);
+        std::unique_ptr<Statement> operator()(InterfaceDeclaration*);
 
         std::unique_ptr<Statement> copy_stat(Statement*);
         std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&);

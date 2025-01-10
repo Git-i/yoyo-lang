@@ -1,12 +1,39 @@
 app: module = APP
 
-Vector: struct = {
+Vector: struct impl IToStr = {
     x: f32,
     y: f32,
     new: fn (x: f32, y: f32) -> Vector = return Vector{.x = x, .y = y};
+    impl IToStr {
+        to_str: fn (&this) -> str = {
+            return "Vector: ${self.x}, ${self.y}";
+        }
+    }
 }
+
+OtherType: struct impl IToStr = {
+    value: f32,
+    impl IToStr {
+        to_str: fn (&this) -> str = {
+            return "Other Object: {self.value}";
+        }
+    }
+}
+
+
+IToStr: interface = {
+    to_str: fn (&this) -> str;
+}
+//IToStr: interface = to_str: fn (&this) -> str;
+
+//print_custom_type: fn (obj: IToStr:&) = {
+//    app::func(&obj.to_str());
+//}
 
 takes_foo: fn -> f64 = {
     vec: ^Vector = gcnew Vector::new(10, 20);
+    other := OtherType{ .value = 100.0 };
+    //print_custom_type(other as IToStr:&);
+    //print_custom_type(vec as IToStr:&);
     return vec.x;
 } 

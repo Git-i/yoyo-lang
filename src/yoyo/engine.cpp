@@ -70,6 +70,10 @@ namespace Yoyo
             md->generic_aliases[md->module_hash].emplace_back(decl);
             return true;
         }
+        bool operator()(InterfaceDeclaration* decl)
+        {
+            return true;
+        }
         bool operator()(Statement*) const {return false;};
     };
     struct ForwardDeclaratorPass2

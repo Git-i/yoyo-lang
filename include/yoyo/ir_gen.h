@@ -115,6 +115,7 @@ namespace Yoyo
         void operator()(GenericFunctionDeclaration*);
         void operator()(AliasDeclaration*);
         void operator()(GenericAliasDeclaration*);
+        void operator()(InterfaceDeclaration*);
 
         void error(const Error& err);
         std::string reset_hash();
