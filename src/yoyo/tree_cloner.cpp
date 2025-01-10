@@ -121,7 +121,7 @@ namespace Yoyo
 
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(GCNewExpression* expr)
     {
-        return std::make_unique<GCNewExpression>(copy_expr(expr->target_expression), expr->dest);
+        return std::make_unique<GCNewExpression>(copy_expr(expr->target_expression));
     }
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(CharLiteral* lit)
     {

@@ -1,21 +1,12 @@
 app: module = APP
 
-test_views: fn (arr: [char:&mut]) = {
-    *arr[1] = '😁';
-}
 Vector: struct = {
     x: f32,
     y: f32,
     new: fn (x: f32, y: f32) -> Vector = return Vector{.x = x, .y = y};
 }
+
 takes_foo: fn -> f64 = {
-    vec := gcnew(^ i32) Vector::new(10, 20);
-    array: mut [char; 5] = ['H', 'o', 'l', 'l', 'o'];
-    idx: mut = 0;
-    test_views(&mut array);
-    while(idx < 5) {
-        app::func(&"${*array[idx]}");
-        idx = idx + 1;
-    }
-    return 10.0;
+    vec: ^Vector = gcnew Vector::new(10, 20);
+    return vec.x;
 } 

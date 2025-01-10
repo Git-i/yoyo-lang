@@ -93,6 +93,8 @@ namespace Yoyo
         llvm::FunctionType* ToLLVMSignature(const FunctionSignature& sig);
         llvm::AllocaInst* Alloca(std::string_view name, llvm::Type* type);
         llvm::Value* Malloc(std::string_view name, llvm::Value* size);
+        llvm::Value* GCMalloc(llvm::Value* size);
+        llvm::Value* GCMalloc(size_t size);
         void Free(llvm::Value* value);
         bool isShadowing(const std::string&) const;
         Type reduceLiteral(const Type& src, llvm::Value* val);

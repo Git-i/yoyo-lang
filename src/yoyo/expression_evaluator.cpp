@@ -1104,7 +1104,8 @@ namespace Yoyo
         auto right_t = std::visit(type_checker, r_as_var);
 
         if (!left_t) { irgen->error(left_t.error()); return nullptr; }
-        if (!right_t) { irgen->error(right_t.error()); return nullptr; }
+        if(op->op.type != TokenType::Dot)
+            if (!right_t) { irgen->error(right_t.error()); return nullptr; }
 
         auto lhs = op->lhs.get(); auto rhs = op->rhs.get();
         switch(op->op.type)
@@ -1403,10 +1404,16 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::operator()(GCNewExpression* expr)
     {
-        auto tp = ExpressionTypeChecker{ irgen }(expr);
-        if (!tp) 
-            irgen->error(tp.error());
-        return nullptr;
+        auto gc_tp = std::visit(ExpressionTypeChecker{ irgen }, expr->toVariant());
+        if (!gc_tp) { irgen->error(gc_tp.error()); return nullptr; }
+        auto tp = &gc_tp.value();
+        auto value = std::visit(*this, expr->target_expression->toVariant());
+        if (tp->is_error_ty()) return nullptr;
+        auto llvm_ty = irgen->ToLLVMType(*tp, false);
+        size_t type_size = irgen->code->getDataLayout().getTypeAllocSize(llvm_ty);
+        auto memory = irgen->GCMalloc(type_size);
+        irgen->builder->CreateMemCpy(memory, std::nullopt, value, std::nullopt, type_size);
+        return memory;
     }
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
     {

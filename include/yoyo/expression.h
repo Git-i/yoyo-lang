@@ -232,10 +232,9 @@ namespace Yoyo
     class YOYO_API GCNewExpression : public Expression
     {
     public:
-        std::optional<Type> dest;
         std::unique_ptr<Expression> target_expression;
         ExpressionVariant toVariant() override;
-        GCNewExpression(std::unique_ptr<Expression> expr, std::optional<Type> dst)
-            : target_expression(std::move(expr)), dest(std::move(dst)) {}
+        GCNewExpression(std::unique_ptr<Expression> expr)
+            : target_expression(std::move(expr)){}
     };
 }

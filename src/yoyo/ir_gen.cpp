@@ -5,7 +5,7 @@
 #include <ranges>
 #include <set>
 #include <iostream>
-
+#include "gc/gc.h"
 namespace Yoyo
 {
     void debugbreak()
@@ -67,6 +67,30 @@ namespace Yoyo
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         error(Error({}, {}, "Encountered unexpected type", ""));
         return nullptr;
+    }
+    extern "C"
+    {
+        YOYO_API  void* Yoyo_malloc_wrapper_dont_use_name(size_t size);
+        void* Yoyo_malloc_wrapper_dont_use_name(size_t size)
+        {
+            return GC_malloc(size);
+        }
+    }
+    
+    llvm::Function* getMallocFunction(IRGenerator* irgen)
+    {
+        auto fn = irgen->code->getFunction("Yoyo_malloc_wrapper_dont_use_name");
+        if (fn) return fn;
+        auto type = llvm::FunctionType::get(llvm::PointerType::get(irgen->context, 0),
+            { llvm::Type::getInt64Ty(irgen->context) }, false);
+        fn = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage, "Yoyo_malloc_wrapper_dont_use_name", irgen->code);
+        return fn;
+    }
+    llvm::Value* IRGenerator::GCMalloc(size_t size)
+    {
+        auto fn = getMallocFunction(this);
+        auto value = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), size);
+        return builder->CreateCall(fn, {value});
     }
     void IRGenerator::saturateSignature(FunctionSignature& sig, Module* module)
     {

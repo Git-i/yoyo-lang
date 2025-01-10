@@ -617,41 +617,16 @@ namespace Yoyo
         using namespace std::ranges;
         using namespace std::views;
         auto internal_ty = std::visit(*this, expr->target_expression->toVariant()).value_or_error();
-        if (!expr->dest) return { internal_ty };
-        expr->dest->saturate(irgen->module, irgen);
-        if (!expr->dest->is_assignable_from(internal_ty))
+        if (internal_ty.is_error_ty()) return { internal_ty };
+        if (internal_ty.is_non_owning())
         {
-            Error err(expr, "Incompatible types in gcnew expression");
-            SourceLocation type_begin, type_end;
-            type_begin.line = expr->beg.line;
-            type_end.line = expr->target_expression->beg.line;
-            size_t off = expr->beg.column;
-            for (auto& line : subrange(irgen->view->lines.begin() + expr->beg.line - 1, irgen->view->lines.end()))
-            {
-                if (auto pos = line.find_first_of('(', off); pos != std::string_view::npos)
-                {
-                    type_begin.column = pos + 2;
-                    break;
-                }
-                type_begin.line++;
-                off = 0;
-            }
-            off = expr->target_expression->beg.column;
-            for (auto& line : subrange(irgen->view->lines.begin(), irgen->view->lines.begin() + type_end.line) | views::reverse)
-            {
-                if (off == 0) off = line.size();
-                if (auto pos = line.find_last_of(')', off); pos != std::string_view::npos)
-                {
-                    type_end.column = pos + 1;
-                    break;
-                }
-                type_end.line++;
-                off = 0;
-            }
-            err.markers.emplace_back(SourceSpan{ type_begin, type_end }, "Specified type is " + expr->dest->pretty_name(irgen->block_hash));
-            err.markers.emplace_back(SourceSpan{ expr->target_expression->beg, expr->target_expression->end }, "Expression is of type: " + internal_ty.pretty_name(irgen->block_hash));
+            Error err(expr, "Cannot store non-owning type with the garbage collector");
+            err.markers.emplace_back(SourceSpan{ expr->target_expression->beg, expr->target_expression->end },
+                "Expression is of type '" + internal_ty.pretty_name(irgen->block_hash) + "' which is non owning");
             return { err };
         }
-        return { expr->dest.value() };
+        auto tp = internal_ty.reference_to();
+        tp.name = "__gcref";
+        return { tp };
     }
 }

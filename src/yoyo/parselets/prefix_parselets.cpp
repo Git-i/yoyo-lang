@@ -224,13 +224,7 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> GCNewParselet::parse(Parser& parser, Token tk)
     {
-        std::optional<Type> tp;
-        if (parser.discard(TokenType::LParen))
-        {
-            tp = parser.parseType(0);
-            if (!parser.discard(TokenType::RParen)) parser.error("Expected ')'", parser.Peek());
-        }
-        auto self = std::make_unique<GCNewExpression>(nullptr, std::move(tp));
+        auto self = std::make_unique<GCNewExpression>(nullptr);
         auto expr = parser.parseExpression(0);
         auto end = expr->end;
         expr->parent = self.get();

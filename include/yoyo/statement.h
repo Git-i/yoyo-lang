@@ -245,4 +245,8 @@ namespace Yoyo
             : name(std::move(name)), expression(std::move(exp)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
+    class InterfaceDeclaration : public Statement
+    {
+
+    };
 }
