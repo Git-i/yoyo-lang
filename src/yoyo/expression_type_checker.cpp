@@ -164,7 +164,8 @@ namespace Yoyo
             }
             return std::nullopt;
         }
-        if(auto cls = lhs.deref().get_decl_if_class())
+        auto cls = lhs.deref().get_decl_if_class();
+        if(cls)
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
             {
@@ -194,7 +195,23 @@ namespace Yoyo
             }
         }
         auto rhs = std::visit(ExpressionTypeChecker{irgen}, expr->rhs->toVariant());
-        if(!rhs || !rhs->is_function()) return std::nullopt;
+        if (!rhs) return std::nullopt;
+        if (rhs->is_interface_function() && cls)
+        {
+            using namespace std::string_view_literals;
+            auto pos = rhs->name.find_first_of('$');
+            std::string name = rhs->name.substr("__interface_fn"sv.size(), pos - "__interface_fn"sv.size());
+            std::string fn_name = rhs->name.substr(pos + 1);
+            auto it = std::ranges::find_if(cls->impls, [&name](auto& tp) {
+                return tp.impl_for.full_name() == name;
+                });
+            if (it == cls->impls.end()) return std::nullopt;
+            auto method = std::ranges::find_if(it->methods, [&fn_name](auto& tp) {
+                return tp->name == fn_name;
+                });
+            return FunctionType{ (*method)->signature, true };
+        }
+        if (!rhs->is_function()) return std::nullopt;
         auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
         if(as_function.is_bound) return std::nullopt;
         if(!as_function.sig.parameters[0].type.can_accept_as_arg(lhs))
@@ -212,7 +229,7 @@ namespace Yoyo
         if (lhs.is_error_ty()) return { lhs };
         if (rhs.is_error_ty()) return { rhs };
 
-        std::optional<Type> result;
+        std::optional<FunctionType> result;
         switch(expr->op.type)
         {
             using enum TokenType;
@@ -363,6 +380,11 @@ namespace Yoyo
             hash = name + type.name + "__%";
             return true;
         }
+        if (auto [hsh, interface] = md->findInterface(hash, type.name); interface)
+        {
+            hash = hsh + "%%" + type.name + "%%interface"; //interfaces are terminal and cannot have subtyes
+            return true;
+        }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
         {
             if(type.subtypes.size() != fn->clause.types.size()) return false;
@@ -381,11 +403,11 @@ namespace Yoyo
     }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(ScopeOperation* scp)
     {
+        using namespace std::string_view_literals;
         Module* md = irgen->module;
         std::string hash = irgen->block_hash;
         Module::ClassDetails* det = nullptr;
         auto iterator = UnsaturatedTypeIterator(scp->type);
-        std::vector<Type> tps;
         while(!iterator.is_end())
         {
             auto type = iterator.next();
@@ -394,6 +416,17 @@ namespace Yoyo
             }
         }
         auto last = iterator.last();
+        if (hash.ends_with("%%interface"))
+        {
+            auto pos = hash.find_last_of('%', hash.size() - "%%interface"sv.size() - 1);
+            auto name = hash.substr(pos + 1, hash.size() - "%%interface"sv.size() - pos - 1);
+            auto [actual_hash, interface] = md->findInterface(hash, name);
+            auto it = std::ranges::find_if(interface->methods, [&last](auto& mth) {
+                return mth->name == last.name;
+                });
+            if (it == interface->methods.end()) return { Error(scp, "No method name '" + last.name + "' in the specified interface") };
+            return { Type{"__interface_fn" + actual_hash + interface->name + "$" + last.name }};
+        }
         if(auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
             irgen->saturateSignature(fn->sig, md);

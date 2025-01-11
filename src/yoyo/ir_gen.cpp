@@ -219,7 +219,7 @@ namespace Yoyo
                 continue;
             }
             decl->interfaces.erase(it);
-            auto decl = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            auto [_, decl] = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
             if (!decl)
             {
                 SourceLocation beg, end;

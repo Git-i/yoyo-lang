@@ -1,12 +1,17 @@
 app: module = APP
 
-Vector: struct impl IToStr = {
+Vector: struct impl IToStr, IToStrShort = {
     x: f32,
     y: f32,
     new: fn (x: f32, y: f32) -> Vector = return Vector{.x = x, .y = y};
     impl IToStr {
         to_str: fn (&this) -> str = {
             return "Vector: ${this.x}, ${this.y}";
+        }
+    }
+    impl IToStrShort {
+        to_str: fn (&this) -> str = {
+            return "Vector";
         }
     }
 }
@@ -24,6 +29,9 @@ OtherType: struct impl IToStr = {
 IToStr: interface = {
     to_str: fn (&this) -> str;
 }
+IToStrShort: interface = {
+    to_str: fn (&this) -> str;
+}
 //IToStr: interface = to_str: fn (&this) -> str;
 
 //print_custom_type: fn (obj: IToStr:&) = {
@@ -32,6 +40,8 @@ IToStr: interface = {
 
 takes_foo: fn -> f64 = {
     vec: ^Vector = gcnew Vector::new(10, 20);
+    app::func(&vec.IToStr::to_str());
+    app::func(&vec.IToStrShort::to_str());
     other := OtherType{ .value = 100.0 };
     //print_custom_type(other as IToStr:&);
     //print_custom_type(vec as IToStr:&);

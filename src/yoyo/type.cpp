@@ -75,7 +75,10 @@ namespace Yoyo
         }
         return max;
     }
-
+    bool Type::is_interface_function() const
+    {
+        return name.starts_with("__interface_fn");
+    }
     bool Type::is_assignable_from(const Type& other) const
     {
         if(is_equal(other)) return true;

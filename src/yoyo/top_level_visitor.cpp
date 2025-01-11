@@ -47,13 +47,14 @@ namespace Yoyo
         for (auto& impl : decl_ptr->impls)
         {
             if (!impl.impl_for.module) continue;
-            auto interface = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            auto [_,interface] = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
             if (!interface) continue;
             if (impl.methods.size() != interface->methods.size())
             {
                 continue;
             }
-            irgen->block_hash += "__interface" + impl.impl_for.full_name() + "__%";
+            auto class_hash = std::move(irgen->block_hash);
+            irgen->block_hash = class_hash + "__interface" + impl.impl_for.full_name() + "__%";
             for (auto& mth : impl.methods)
             {
                 auto it = std::ranges::find_if(interface->methods, [&mth](auto& method) {
@@ -72,6 +73,7 @@ namespace Yoyo
                 }
                 (*irgen)(mth.get());
             }
+            irgen->block_hash = std::move(class_hash);
         }
         irgen->block_hash = std::move(curr_hash);
         irgen->in_class = false;

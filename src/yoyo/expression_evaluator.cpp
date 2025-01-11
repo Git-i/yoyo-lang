@@ -1319,7 +1319,8 @@ namespace Yoyo
             //expr is guaranteed to be valid if the function is bound
             //callee is a binary dot expr
             auto left_t = std::visit(ExpressionTypeChecker{irgen}, expr->lhs->toVariant());
-            if(auto cls = left_t->get_decl_if_class())
+            auto cls = left_t->deref().get_decl_if_class();
+            if(cls)
             {
                 //handle member functions
                 if(auto rhs = dynamic_cast<NameExpression*>(expr->rhs.get()))
@@ -1347,7 +1348,29 @@ namespace Yoyo
                     }
                 }
             }
-            auto right_t = std::visit(ExpressionTypeChecker{irgen}, expr->rhs->toVariant());
+            auto right_t = std::visit(ExpressionTypeChecker{ irgen }, expr->rhs->toVariant());
+            if (right_t->is_interface_function() && cls)
+            {
+                using namespace std::string_view_literals;
+                auto pos = right_t->name.find_first_of('$');
+                std::string name = right_t->name.substr("__interface_fn"sv.size(), pos - "__interface_fn"sv.size());
+                std::string fn_name = right_t->name.substr(pos + 1);
+                auto dets = irgen->module->findType(irgen->block_hash, left_t->deref().name);
+                fn_name = std::get<0>(*dets) + "__interface" + name + "__%" + fn_name;
+                auto callee = irgen->code->getFunction(fn_name);
+                bool uses_sret = callee->hasStructRetAttr();
+                std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
+
+                llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
+                auto call_val = irgen->builder->CreateCall(callee, args);
+                if (!uses_sret) return_value = call_val;
+                if (return_t->is_non_owning())
+                    stealUsages(args, return_value);
+                else
+                    clearUsages(args, *this);
+                return return_value;
+                
+            }
             auto* callee = is_lambda ?
                 irgen->code->getFunction(irgen->block_hash + right_t->name) :
                 llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
