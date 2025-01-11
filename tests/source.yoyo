@@ -34,16 +34,14 @@ IToStrShort: interface = {
 }
 //IToStr: interface = to_str: fn (&this) -> str;
 
-//print_custom_type: fn (obj: IToStr:&) = {
-//    app::func(&obj.to_str());
-//}
+print_custom_type: fn (obj: IToStr:&) = {
+    app::func(&obj.to_str());
+}
 
 takes_foo: fn -> f64 = {
     vec: ^Vector = gcnew Vector::new(10, 20);
-    app::func(&vec.IToStr::to_str());
-    app::func(&vec.IToStrShort::to_str());
     other := OtherType{ .value = 100.0 };
-    //print_custom_type(other as IToStr:&);
-    //print_custom_type(vec as IToStr:&);
+    print_custom_type((&other) as IToStr:&);
+    print_custom_type(vec as IToStr:&);
     return vec.x;
 } 

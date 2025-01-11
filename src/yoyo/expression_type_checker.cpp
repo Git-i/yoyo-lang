@@ -194,6 +194,23 @@ namespace Yoyo
                 }
             }
         }
+        if (lhs.deref().is_view())
+        {
+            auto& viewed = lhs.deref().subtypes[0];
+            auto [hsh, interface] = viewed.module->findInterface(viewed.block_hash, viewed.name);
+            if (auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()); name_expr && interface)
+            {
+                auto it = std::ranges::find_if(interface->methods, [name_expr](auto& mth) {
+                    return mth->name == name_expr->text;
+                    });
+                if (it != interface->methods.end())
+                {
+                    FunctionSignature sig = (*it)->signature;
+                    sig.parameters[0].type = lhs;
+                    return FunctionType{ std::move(sig), true};
+                }
+            }
+        }
         auto rhs = std::visit(ExpressionTypeChecker{irgen}, expr->rhs->toVariant());
         if (!rhs) return std::nullopt;
         if (rhs->is_interface_function() && cls)
@@ -485,6 +502,29 @@ namespace Yoyo
                 } };
             }
             return { Error(expr, "The type tp must be one of the variant subtypes") };
+        }
+        if (expr->dest.is_view())
+        {
+            //interface casts for dynamic dispatch
+            auto& viewed = expr->dest.subtypes[0];
+            if (!from.is_reference()) return { Error(expr, "Interface cast must be from a reference type") };
+            if (auto cls = from.deref().get_decl_if_class())
+            {
+                auto it = std::ranges::find_if(cls->impls, [&viewed](auto& impl) {
+                    return impl.impl_for.is_equal(viewed);
+                    });
+                if (it != cls->impls.end())
+                {
+                    if (expr->dest.is_mut_view())
+                        if(from.is_mutable_reference() || from.is_gc_reference()) return { expr->dest };
+                    if (expr->dest.is_gc_view())
+                        if (from.is_gc_reference()) return { expr->dest };
+                    if (expr->dest.is_view())
+                        return { expr->dest };
+                    return { Error(expr, "Reference characteristic mismatch") };
+                }
+                return { Error(expr, "Cannot perform interface cast as class does not implement interface") };
+            }
         }
         if (from.is_error_ty()) return { from };
         return { Error(expr, "The as operator is undefined for type tp") };

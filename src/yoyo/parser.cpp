@@ -950,6 +950,7 @@ namespace Yoyo
     static constexpr uint32_t OptionalPreference = 3;
     static constexpr uint32_t TemplatePrecedence = 4;
     static constexpr uint32_t ScopePrecedence = 5;
+    //does thid even matter since there's no infix operators?
     uint32_t Parser::GetNextTypePrecedence()
     {
         auto tk = Peek();
@@ -959,6 +960,7 @@ namespace Yoyo
         case TokenType::TemplateOpen: return TemplatePrecedence;
         case TokenType::DoubleColon: return ScopePrecedence;
         case TokenType::Question: return OptionalPreference;
+        case TokenType::Colon: return OptionalPreference;
         default: return 0;
         }
     }
@@ -1044,6 +1046,16 @@ namespace Yoyo
 
         return t;
     }
+    std::optional<Type> parseViewTypeExpr(Parser& p, Type left)
+    {
+        if (p.discard(TokenType::Ampersand))
+        {
+            bool is_mut = p.discard(TokenType::Mut);
+            return Type{ is_mut ? "__view_mut" : "__view", {std::move(left)} };
+        }
+        if (!p.discard(TokenType::Caret)) p.error("Expected '^' or '&'", p.Peek());
+        return Type{ "__view_gc", {std::move(left)} };
+    }
     std::optional<Type> Parser::parseType(uint32_t precedence)
     {
         auto tk = Peek();
@@ -1070,7 +1082,9 @@ namespace Yoyo
                     auto tp = parseType(precedence);
                     tp->name = t->full_name() + "::" + tp->name;
                     t = std::move(tp);
+                    break;
                 }
+            case TokenType::Colon: t = parseViewTypeExpr(*this, std::move(t).value()); break;
             default: /*unreachable*/;
             }
         }

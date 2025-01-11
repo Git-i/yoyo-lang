@@ -85,7 +85,9 @@ namespace Yoyo
 
     std::unique_ptr<Expression> AsExpressionParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
     {
-        return std::make_unique<AsExpression>(std::move(left), parser.parseType(0).value_or(Type{}));
+        auto bg = left->beg;
+        return Expression::attachSLAndParent(std::make_unique<AsExpression>(std::move(left), parser.parseType(0).value_or(Type{})),
+            bg, parser.Peek()->loc, parser.parent);
     }
 
     std::unique_ptr<Expression> SubscriptParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)

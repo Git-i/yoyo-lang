@@ -93,9 +93,12 @@ namespace Yoyo
             });
             if(it != details_list.end()) return hash;
         }
+        if (auto [hash, intf] = findInterface(block, name); intf)
+        {
+            return hash;
+        }
         return std::nullopt;
     }
-
     llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)
     {
         auto& context = *engine->llvm_context.getContext();
@@ -183,6 +186,19 @@ namespace Yoyo
                 llvm::PointerType::get(context, 0), //data
                 llvm::Type::getInt64Ty(context) //size
             });
+        }
+        if (type.is_view())
+        {
+            if (type.subtypes[0].is_str()) debugbreak();
+            auto& sub = type.subtypes[0];
+            auto [hsh, intf] = sub.module->findInterface(sub.block_hash, sub.name);
+            if (intf)
+            {
+                //we add 1 to store the actual class
+                std::vector<llvm::Type*> subtypes(intf->methods.size() + 1, llvm::PointerType::get(context, 0));
+                return llvm::StructType::get(context, subtypes);
+            }
+            return nullptr;
         }
         if(type.is_lambda()) return nullptr;
         if(auto t = findType(type.block_hash, type.name))

@@ -172,7 +172,18 @@ namespace Yoyo
         }
         return is_assignable_from(other);
     }
-
+    bool Type::is_view() const
+    {
+        return name.starts_with("__view");
+    }
+    bool Type::is_mut_view() const
+    {
+        return name == "__view_mut";
+    }
+    bool Type::is_gc_view() const
+    {
+        return name == "__view_gc";
+    }
     bool Type::is_equal(const Type& other) const
     {
         if(is_variant() && other.is_variant())
@@ -336,7 +347,8 @@ namespace Yoyo
                 is_optional() || 
                 is_variant() || 
                 is_reference() ||
-                is_slice()))
+                is_slice() ||
+                is_view()))
             {
                 module = src;
                 block_hash = irgen ? irgen->block_hash : src->module_hash;

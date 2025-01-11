@@ -46,6 +46,9 @@ namespace Yoyo
         [[nodiscard]] bool is_mut_slice() const;
         [[nodiscard]] bool is_error_ty() const;
         [[nodiscard]] bool is_interface_function() const;
+        [[nodiscard]] bool is_view() const;
+        [[nodiscard]] bool is_mut_view() const;
+        [[nodiscard]] bool is_gc_view() const;
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)

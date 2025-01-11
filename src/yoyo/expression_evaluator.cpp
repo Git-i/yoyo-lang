@@ -1348,6 +1348,38 @@ namespace Yoyo
                     }
                 }
             }
+            if (left_t->deref().is_view())
+            {
+                auto& viewed = left_t->deref().subtypes[0];
+                auto [hsh, interface] = viewed.module->findInterface(viewed.block_hash, viewed.name);
+                if (auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()); name_expr && interface)
+                {
+                    auto it = std::ranges::find_if(interface->methods, [name_expr](auto& mth) {
+                        return mth->name == name_expr->text;
+                        });
+                    auto fty = irgen->ToLLVMSignature((*it)->signature);
+                    bool uses_sret = (*it)->signature.returnType.should_sret();
+                    std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
+                    auto as_llvm_type = irgen->ToLLVMType(left_ty->deref(), false);
+                    auto value = std::visit(*this, expr->lhs->toVariant());
+
+                    auto pointer_type = llvm::PointerType::get(irgen->context, 0);
+
+                    auto param = irgen->builder->CreateLoad(pointer_type,
+                        irgen->builder->CreateStructGEP(as_llvm_type, value, 0));
+                    auto callee = irgen->builder->CreateLoad(pointer_type, 
+                        irgen->builder->CreateStructGEP(as_llvm_type, value, 1 + std::distance(interface->methods.begin(), it)));
+
+                    llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, param, op->arguments);
+                    auto call_val = irgen->builder->CreateCall(fty, callee, args);
+                    if (!uses_sret) return_value = call_val;
+                    if (return_t->is_non_owning())
+                        stealUsages(args, return_value);
+                    else
+                        clearUsages(args, *this);
+                    return return_value;
+                }
+            }
             auto right_t = std::visit(ExpressionTypeChecker{ irgen }, expr->rhs->toVariant());
             if (right_t->is_interface_function() && cls)
             {
@@ -1558,6 +1590,29 @@ namespace Yoyo
                 val->setName(name);
             }
             return val;
+        }
+        if (final_ty->is_view())
+        {
+            auto& viewed = expr->dest.subtypes[0];
+            std::string full_name = viewed.full_name();
+            auto [name, intf] = viewed.module->findInterface(viewed.block_hash, viewed.name);
+            if (auto cls = ty->deref().get_decl_if_class())
+            {
+                auto details = ty->deref().module->findType(ty->deref().block_hash, ty->deref().name);
+                auto result = irgen->Alloca("interface_cast", as_llvm);
+                auto this_ptr = irgen->builder->CreateStructGEP(as_llvm, result, 0);
+                irgen->builder->CreateStore(internal, this_ptr);
+                size_t idx = 0;
+                for (auto& method : intf->methods)
+                {
+                    idx++;
+                    auto fn_ptr = irgen->builder->CreateStructGEP(as_llvm, result, idx);
+                    std::string method_name = std::get<0>(*details) + "__interface" + full_name + "__%" + method->name;
+                    auto fn = irgen->code->getFunction(method_name);
+                    irgen->builder->CreateStore(fn, fn_ptr);
+                }
+                return result;
+            }
         }
     }
 
