@@ -1,6 +1,7 @@
 #pragma once
 
 #include "type.h"
+#include "error.h"
 namespace Yoyo
 {
     struct Attribute;
@@ -30,6 +31,7 @@ namespace Yoyo
     struct InterfaceImplementation
     {
         Type impl_for;
+        SourceSpan location;
         std::vector<std::unique_ptr<FunctionDeclaration>> methods;
     };
 }

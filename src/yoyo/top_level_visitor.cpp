@@ -8,10 +8,23 @@ namespace Yoyo
         (*irgen)(reinterpret_cast<FunctionDeclaration*>(stat.get()));
         return true;
     }
+    bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface)
+    {
+        if (cls.parameters.size() != interface.parameters.size()) return false;
+        if (!cls.returnType.is_equal(interface.returnType)) return false;
+        for (size_t i = 0; i < cls.parameters.size(); i++)
+        {
+            auto& cls_param = cls.parameters[i];
+            auto& intf_param = interface.parameters[i];
+            if (!cls_param.type.is_equal(intf_param.type))
+                if (cls_param.name != "this" || intf_param.name != "this") return false;
+        }
+        return true;
+    }
     bool TopLevelVisitor::operator()(std::unique_ptr<ClassDeclaration> decl) const
     {
         std::string name = std::string{decl->identifier.text};
-        std::string mangled_name_prefix = "__class__" + name + "__";
+        std::string mangled_name_prefix = "__class__" + name + "__%";
 
         auto ty = irgen->module->findType(irgen->block_hash, name);
 
@@ -21,20 +34,46 @@ namespace Yoyo
         auto decl_ptr = decl.get();
         std::get<2>(*ty) = std::move(decl);
         irgen->in_class = true;
+        irgen->checkClass(decl_ptr);
+        auto curr_hash = std::move(irgen->block_hash);
+        irgen->block_hash = curr_hash + mangled_name_prefix;
         for(auto& fn: decl_ptr->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
-
-            std::string mangled_name = std::get<0>(*ty) + fn.name;
-
-            auto curr_hash = std::move(irgen->block_hash);
-            irgen->block_hash = curr_hash + mangled_name_prefix;
-
+            irgen->saturateSignature(fn_decl->signature, irgen->module);
             irgen->current_Statement = &fn.function_decl;
             (*irgen)(fn_decl);
-            irgen->block_hash = std::move(curr_hash);
         }
-        irgen->annotateClass(decl_ptr);
+        for (auto& impl : decl_ptr->impls)
+        {
+            if (!impl.impl_for.module) continue;
+            auto interface = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            if (!interface) continue;
+            if (impl.methods.size() != interface->methods.size())
+            {
+                continue;
+            }
+            irgen->block_hash += "__interface" + impl.impl_for.full_name() + "__%";
+            for (auto& mth : impl.methods)
+            {
+                auto it = std::ranges::find_if(interface->methods, [&mth](auto& method) {
+                    return method->name == mth->name;
+                    });
+                if (it == interface->methods.end())
+                    irgen->error(Error(mth.get(), "Function does not exist as part of the interface"));
+                else
+                {
+                    irgen->saturateSignature(mth->signature, irgen->module);
+                    irgen->in_class = false;
+                    irgen->saturateSignature((*it)->signature, impl.impl_for.module);
+                    irgen->in_class = true;
+                    if (!implementsInterfaceMethod(mth->signature, (*it)->signature))
+                        irgen->error(Error(mth.get(), "Provided function is not a valid implementation of the interface"));
+                }
+                (*irgen)(mth.get());
+            }
+        }
+        irgen->block_hash = std::move(curr_hash);
         irgen->in_class = false;
         return true;
     }

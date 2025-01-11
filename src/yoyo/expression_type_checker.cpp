@@ -605,7 +605,8 @@ namespace Yoyo
             {
                 auto& expr = std::get<std::unique_ptr<Expression>>(val);
                 auto ty = std::visit(*this, expr->toVariant()).value_or_error();
-                if (!hasToStr(ty)) return { Error(expr.get(), "Expression cannot be converted to string") };
+                if (!hasToStr(ty)) 
+                    return { Error(expr.get(), "Expression cannot be converted to string") };
             }
         }
         return { Type{.name = "str",

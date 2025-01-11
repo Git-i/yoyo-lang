@@ -6,7 +6,7 @@ Vector: struct impl IToStr = {
     new: fn (x: f32, y: f32) -> Vector = return Vector{.x = x, .y = y};
     impl IToStr {
         to_str: fn (&this) -> str = {
-            return "Vector: ${self.x}, ${self.y}";
+            return "Vector: ${this.x}, ${this.y}";
         }
     }
 }
@@ -15,7 +15,7 @@ OtherType: struct impl IToStr = {
     value: f32,
     impl IToStr {
         to_str: fn (&this) -> str = {
-            return "Other Object: {self.value}";
+            return "Other Object: ${this.value}";
         }
     }
 }

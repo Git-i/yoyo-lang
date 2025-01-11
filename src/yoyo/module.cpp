@@ -48,6 +48,16 @@ namespace Yoyo
         }
         return nullptr;
     }
+    InterfaceDeclaration* Module::findInterface(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, interface_list] : interfaces)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& intf : interface_list)
+                if (intf->name == name) return intf.get();
+        }
+        return nullptr;
+    }
 
     std::pair<std::string, GenericAliasDeclaration*> Module::findGenericAlias(const std::string& block, const std::string& name)
     {

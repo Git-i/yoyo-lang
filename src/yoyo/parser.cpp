@@ -238,6 +238,7 @@ namespace Yoyo
         if (!discard(TokenType::Equal)) error("Expected '='", Peek());
         if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         auto intf = std::make_unique<InterfaceDeclaration>();
+        intf->name = std::string(identifier.text);
         while (!discard(TokenType::RCurly))
         {
             auto tk = Get();
@@ -608,8 +609,10 @@ namespace Yoyo
             auto attr_list = parseAttributeList();
             bool is_static = false;
             AccessSpecifier spec = isStruct ? AccessSpecifier::Public : AccessSpecifier::Private;
-            if (discard(TokenType::Impl))
+            auto peek_tk = Peek();
+            if (peek_tk && peek_tk->type == TokenType::Impl)
             {
+                Get();
                 auto& impl = impls.emplace_back();
                 impl.impl_for = parseType(0).value_or(Type{});
                 if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
@@ -623,6 +626,7 @@ namespace Yoyo
                     if (dynamic_cast<GenericFunctionDeclaration*>(stat.get())) error("Generic not allowed here", iden);
                     impl.methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(stat.release()));
                 }
+                impl.location = SourceSpan{ peek_tk->loc, discardLocation };
                 continue;
             }
             while(true)

@@ -162,7 +162,7 @@ namespace Yoyo
                 auto ptr = copy_stat(method.get());
                 mth.emplace_back(reinterpret_cast<FunctionDeclaration*>(ptr.release()));
             }
-            new_impls.emplace_back(impl.impl_for, std::move(mth));
+            new_impls.emplace_back(impl.impl_for, impl.location, std::move(mth));
         }
         return std::make_unique<ClassDeclaration>(
             decl->identifier,

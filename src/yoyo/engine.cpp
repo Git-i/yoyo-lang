@@ -30,7 +30,7 @@ namespace Yoyo
         bool operator()(ClassDeclaration* decl) const
         {
             std::string name = std::string{decl->identifier.text};
-            std::string mangled_name_prefix = md->module_hash + "__class__" + name + "__";
+            std::string mangled_name_prefix = md->module_hash + "__class__" + name + "__%";
             if(md->classes.contains(name)) return false;
 
             for(auto& fn : decl->methods)
@@ -72,6 +72,8 @@ namespace Yoyo
         }
         bool operator()(InterfaceDeclaration* decl)
         {
+            std::ignore = stmt.release();
+            md->interfaces[md->module_hash].emplace_back(decl);
             return true;
         }
         bool operator()(Statement*) const {return false;};

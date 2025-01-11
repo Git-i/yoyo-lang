@@ -201,6 +201,64 @@ namespace Yoyo
         }
         if (destructor)decl->destructor_name = destructor->name;
     }
+    void IRGenerator::checkClass(ClassDeclaration* decl)
+    {
+        using namespace std::string_view_literals;
+        using namespace std::ranges;
+        for (auto& tp : decl->interfaces) tp.saturate(module, this);
+        //TODO: check that all decl->interfaces is unique
+        for (auto& impl : decl->impls)
+        {
+            impl.impl_for.saturate(module, this);
+            auto it = std::ranges::find(decl->interfaces, impl.impl_for);
+            if (it == decl->interfaces.end())
+            {
+                Error err(impl.location.begin, impl.location.end,
+                    "Implementation is either a reimplementation or does not implement a previously declared interface");
+                error(err);
+                continue;
+            }
+            decl->interfaces.erase(it);
+            auto decl = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            if (!decl)
+            {
+                SourceLocation beg, end;
+                beg.line = impl.location.begin.line;
+                size_t off = impl.location.begin.column + "impl"sv.size();
+                for (auto& line : subrange(view->lines.begin() + beg.line - 1, view->lines.end()))
+                {
+                    if (auto pos = line.find_first_not_of(" \n\t\r", off); pos != std::string_view::npos)
+                    {
+                        beg.column = pos + 1; break;
+                    }
+                    beg.line++; off = 0;
+                }
+                end.line = beg.line;
+                off = beg.column - 1;
+                for (auto& line : subrange(view->lines.begin() + beg.line - 1, view->lines.end()))
+                {
+                    if (auto pos = line.find_first_of('{', off); pos != std::string_view::npos)
+                    {
+                        off = pos; break;
+                    }
+                    end.line++; off = 0;
+                }
+                for (auto& line : subrange(view->lines.begin(), view->lines.begin() + end.line) | views::reverse)
+                {
+                    if (off == 0) off = line.size();
+                    if (auto pos = line.find_last_not_of("{} \n\r\t", off); pos != std::string_view::npos)
+                    {
+                        end.column = pos + 2; break;
+                    }
+                    end.line--; off = 0;
+                }
+                Error err(impl.location.begin, impl.location.end, "Attempt to implement non-existent interface");
+                err.markers.emplace_back(SourceSpan{ beg, end }, "Unrecognized interface type");
+                error(err);
+            }
+        }
+        annotateClass(decl);
+    }
     llvm::Value* prepareValidDropFlagFor(IRGenerator* irgen, const Type& tp)
     {
         if(tp.is_trivially_destructible()) return nullptr;
@@ -356,7 +414,7 @@ namespace Yoyo
             (*this)(fn_decl);
             block_hash = std::move(curr_hash);
         }
-        annotateClass(decl);
+        checkClass(decl);
         in_class = false;
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
