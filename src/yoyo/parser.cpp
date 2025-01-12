@@ -927,13 +927,6 @@ namespace Yoyo
             if(!size || size->type != TokenType::IntegerLiteral) parser.error("Invalid array size", size);
             else { parser.Get(); numElems = std::stoi(std::string(size->text)); }
         }
-        else if (parser.discard(TokenType::Colon))
-        {
-            if (!parser.discard(TokenType::Ampersand)) parser.error("Expected '{'", parser.Peek());
-            bool is_mut = parser.discard(TokenType::Mut);
-            if (!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
-            return Type(is_mut ? "__slice_mut" : "__slice", { std::move(next).value_or(Type{}) });
-        }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
         std::string name = numElems == 0 ? "__arr_d" : "__arr_s" + std::to_string(numElems);
         return Type(name, { std::move(next).value_or(Type{}) });
@@ -1051,6 +1044,8 @@ namespace Yoyo
         if (p.discard(TokenType::Ampersand))
         {
             bool is_mut = p.discard(TokenType::Mut);
+            if (left.name == "__arr_d")
+                return Type(is_mut ? "__slice_mut" : "__slice", { left.subtypes[0] });
             return Type{ is_mut ? "__view_mut" : "__view", {std::move(left)} };
         }
         if (!p.discard(TokenType::Caret)) p.error("Expected '^' or '&'", p.Peek());

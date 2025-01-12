@@ -34,8 +34,9 @@ IToStrShort: interface = {
 }
 //IToStr: interface = to_str: fn (&this) -> str;
 
-print_custom_type: fn (obj: IToStr:&) = {
-    app::func(&obj.to_str());
+print_custom_type: fn (obj: [IToStr:^]:&) = {
+    app::func(&obj[0].to_str());
+    app::func(&obj[1].to_str());
 }
 
 return_itfs: fn -> [IToStr:^; 2] = return [
@@ -45,7 +46,6 @@ return_itfs: fn -> [IToStr:^; 2] = return [
 
 takes_foo: fn -> f64 = {
     intfs := return_itfs();
-    print_custom_type(*intfs[0]);
-    print_custom_type(*intfs[1]);
+    print_custom_type(&intfs);
     return 10.0;
 } 
