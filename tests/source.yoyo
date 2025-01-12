@@ -38,10 +38,14 @@ print_custom_type: fn (obj: IToStr:&) = {
     app::func(&obj.to_str());
 }
 
+return_itfs: fn -> [IToStr:^; 2] = return [
+        (gcnew Vector::new(10, 20)) as IToStr:^,
+        (gcnew OtherType{ .value = 100.0 }) as IToStr:^
+    ];
+
 takes_foo: fn -> f64 = {
-    vec: ^Vector = gcnew Vector::new(10, 20);
-    other := OtherType{ .value = 100.0 };
-    print_custom_type((&other) as IToStr:&);
-    print_custom_type(vec as IToStr:&);
-    return vec.x;
+    intfs := return_itfs();
+    print_custom_type(*intfs[0]);
+    print_custom_type(*intfs[1]);
+    return 10.0;
 } 

@@ -153,6 +153,34 @@ namespace Yoyo
                 return other.subtypes[0].is_equal(subtypes[0]);
             return false;
         }
+        if (is_view())
+        {
+            if (is_mut_view()) {
+                if (other.is_gc_view() && subtypes[0].is_equal(other.subtypes[0])) return true;
+            } else if (is_gc_view()) {}
+            else {
+                if (other.is_view() && subtypes[0].is_equal(other.subtypes[0])) return true;
+            }
+                
+
+            auto& viewed = subtypes[0];
+            if (!other.module) return false;
+            if (!other.is_reference()) return false;
+            if (auto cls = other.get_decl_if_class())
+            {
+                auto it = std::ranges::find_if(cls->impls, [&viewed](auto& impl) {
+                    return impl.impl_for.is_equal(viewed);
+                    });
+                if (it != cls->impls.end())
+                {
+                    if (is_mut_view())
+                        if (other.is_mutable_reference() || other.is_gc_reference()) return true;
+                    if (is_gc_view())
+                        if (other.is_gc_reference()) return true;
+                    return true;
+                }
+            }
+        }
         return false;
     }
     bool Type::is_error_ty() const

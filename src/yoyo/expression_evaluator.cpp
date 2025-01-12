@@ -306,6 +306,35 @@ namespace Yoyo
                 }
             }
         }
+        if (dst.is_view())
+        {
+            if (src.is_view())
+            {
+                auto& layout = irgen->code->getDataLayout();
+                size_t size = layout.getTypeAllocSize(dst_as_llvm);
+                irgen->builder->CreateMemCpy(out, std::nullopt, val, std::nullopt, size);
+                return out;
+            }
+            auto& viewed = dst.subtypes[0];
+            std::string full_name = viewed.full_name();
+            auto [name, intf] = viewed.module->findInterface(viewed.block_hash, viewed.name);
+            if (auto cls = src.deref().get_decl_if_class())
+            {
+                auto details = src.deref().module->findType(src.deref().block_hash, src.deref().name);
+                auto this_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 0);
+                irgen->builder->CreateStore(val, this_ptr);
+                size_t idx = 0;
+                for (auto& method : intf->methods)
+                {
+                    idx++;
+                    auto fn_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, idx);
+                    std::string method_name = std::get<0>(*details) + "__interface" + full_name + "__%" + method->name;
+                    auto fn = irgen->code->getFunction(method_name);
+                    irgen->builder->CreateStore(fn, fn_ptr);
+                }
+                return out;
+            }
+        }
         return out;
     }
 
@@ -326,7 +355,7 @@ namespace Yoyo
             //move
             if(!into) return value;
             auto& layout = irgen->code->getDataLayout();
-            size_t size = layout.getStructLayout(llvm::dyn_cast<llvm::StructType>(as_llvm))->getSizeInBytes();
+            size_t size = layout.getTypeAllocSize(as_llvm);
             irgen->builder->CreateMemCpy(into, std::nullopt, value, std::nullopt, size);
             return into;
         }
@@ -939,9 +968,11 @@ namespace Yoyo
             for(size_t i = 0; i < lit->elements.size(); ++i)
             {
                 auto elem = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
+                auto tp = std::visit(tp_check, lit->elements[i]->toVariant());
+                if (!tp) {irgen->error(tp.error()); continue;}
                 implicitConvert(lit->elements[i].get(),
                     std::visit(*this, lit->elements[i]->toVariant()),
-                    std::visit(tp_check, lit->elements[i]->toVariant()).value(),
+                    tp.value(),
                     type->subtypes[0],
                     elem);
             }

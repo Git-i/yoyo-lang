@@ -82,7 +82,6 @@ namespace Yoyo
         return Expression::attachSLAndParent(std::make_unique<ScopeOperation>(std::move(original_type)),
             left->beg, curly->loc, parser.parent);
     }
-
     std::unique_ptr<Expression> AsExpressionParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
     {
         auto bg = left->beg;
