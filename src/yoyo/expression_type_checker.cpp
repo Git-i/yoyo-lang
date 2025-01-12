@@ -220,7 +220,7 @@ namespace Yoyo
             std::string name = rhs->name.substr("__interface_fn"sv.size(), pos - "__interface_fn"sv.size());
             std::string fn_name = rhs->name.substr(pos + 1);
             auto it = std::ranges::find_if(cls->impls, [&name](auto& tp) {
-                return tp.impl_for.full_name() == name;
+                return (tp.impl_for.block_hash + tp.impl_for.name + IRGenerator::mangleGenericArgs(tp.impl_for.subtypes)) == name;
                 });
             if (it == cls->impls.end()) return std::nullopt;
             auto method = std::ranges::find_if(it->methods, [&fn_name](auto& tp) {
@@ -401,6 +401,19 @@ namespace Yoyo
         {
             hash = hsh + "%%" + type.name + "%%interface"; //interfaces are terminal and cannot have subtyes
             return true;
+        }
+        if (auto [hsh, interface] = md->findGenericInterface(hash, type.name); interface)
+        {
+            if (type.subtypes.size() != interface->clause.types.size()) return false;
+            for (auto& sub : type.subtypes) sub.saturate(md, irgen);
+            ExpressionEvaluator{ irgen }.generateGenericInterface(md, hsh, interface, type.subtypes);
+            std::string name = interface->name + IRGenerator::mangleGenericArgs(type.subtypes);
+            if (auto [_, exists] = md->findInterface(hsh, name); exists)
+            {
+                hash = hsh + "%%" + name + "%%interface";
+                return true;
+            }
+            return false;
         }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
         {

@@ -30,6 +30,7 @@ namespace Yoyo
     class AliasDeclaration;
     class GenericAliasDeclaration;
     class InterfaceDeclaration;
+    class GenericInterfaceDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -48,7 +49,8 @@ namespace Yoyo
         GenericFunctionDeclaration*,
         GenericAliasDeclaration*,
         AliasDeclaration*,
-        InterfaceDeclaration*> StatementVariant;
+        InterfaceDeclaration*,
+        GenericInterfaceDeclaration*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     struct Attribute {
         std::string name;
@@ -262,6 +264,12 @@ namespace Yoyo
     public:
         std::string name;
         std::vector<std::unique_ptr<FunctionDeclaration>> methods;
+        StatementVariant toVariant() override;
+    };
+    class GenericInterfaceDeclaration : public InterfaceDeclaration
+    {
+    public:
+        GenericClause clause;
         StatementVariant toVariant() override;
     };
 }

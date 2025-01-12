@@ -219,7 +219,14 @@ namespace Yoyo
                 continue;
             }
             decl->interfaces.erase(it);
-            auto [_, decl] = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            Yoyo::InterfaceDeclaration* decl;
+            if (!impl.impl_for.subtypes.empty())
+            {
+                auto [hash, generic] = impl.impl_for.module->findGenericInterface(impl.impl_for.block_hash, impl.impl_for.name);
+                ExpressionEvaluator{ this }.generateGenericInterface(impl.impl_for.module, hash, generic, impl.impl_for.subtypes);
+                decl = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name + mangleGenericArgs(impl.impl_for.subtypes)).second;
+            }
+            else decl = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name).second;
             if (!decl)
             {
                 SourceLocation beg, end;
@@ -727,6 +734,7 @@ namespace Yoyo
 
     std::string IRGenerator::mangleGenericArgs(std::span<const Type> list)
     {
+        if (list.empty()) return "";
         std::string final = "@@__gscope_beg@@" + list[0].full_name();
         for(auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
             final += "@@" + tp.full_name();

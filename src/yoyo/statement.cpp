@@ -80,4 +80,8 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant GenericInterfaceDeclaration::toVariant()
+    {
+        return this;
+    }
 }

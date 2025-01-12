@@ -58,6 +58,16 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
+    std::pair<std::string, GenericInterfaceDeclaration*> Module::findGenericInterface(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, interface_list] : generic_interfaces)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& intf : interface_list)
+                if (intf->name == name) return { hash, intf.get() };
+        }
+        return { "", nullptr };
+    }
 
     std::pair<std::string, GenericAliasDeclaration*> Module::findGenericAlias(const std::string& block, const std::string& name)
     {
@@ -263,23 +273,23 @@ namespace Yoyo
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", plus_fn));
             if(t.is_integral()) builder.CreateRet(builder.CreateAdd(plus_fn->getArg(0), plus_fn->getArg(1)));
             else builder.CreateRet(builder.CreateFAdd(plus_fn->getArg(0), plus_fn->getArg(1)));
-            operators.plus.emplace_back(t,t, t);
+            operators.add_binary_detail_for(TokenType::Plus, t,t, t);
 
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", minus_fn));
             if(t.is_integral()) builder.CreateRet(builder.CreateSub(minus_fn->getArg(0), minus_fn->getArg(1)));
             else builder.CreateRet(builder.CreateFSub(minus_fn->getArg(0), minus_fn->getArg(1)));
-            operators.minus.emplace_back(t,t,t);
+            operators.add_binary_detail_for(TokenType::Minus, t,t,t);
 
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", mul_fn));
             if(t.is_integral()) builder.CreateRet(builder.CreateMul(mul_fn->getArg(0), mul_fn->getArg(1)));
             else builder.CreateRet(builder.CreateFMul(mul_fn->getArg(0), mul_fn->getArg(1)));
-            operators.mul.emplace_back(t,t,t);
+            operators.add_binary_detail_for(TokenType::Star, t,t,t);
 
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", div_fn));
             if(t.is_signed_integral()) builder.CreateRet(builder.CreateSDiv(div_fn->getArg(0), div_fn->getArg(1)));
             else if(t.is_unsigned_integral()) builder.CreateRet(builder.CreateUDiv(div_fn->getArg(0), div_fn->getArg(1)));
             else builder.CreateRet(builder.CreateFDiv(div_fn->getArg(0), div_fn->getArg(1)));
-            operators.div.emplace_back(t,t,t);
+            operators.add_binary_detail_for(TokenType::Slash, t,t,t);
         }
         for(auto& t : std::ranges::subrange(types.begin(), types.begin() + 6))
         {
@@ -294,7 +304,7 @@ namespace Yoyo
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
             if(t.is_integral()) builder.CreateRet(builder.CreateNeg(fn->getArg(0)));
             else builder.CreateRet(builder.CreateFNeg(fn->getArg(0)));
-            operators.un_neg.emplace_back(t,t);
+            operators.un_overloads.emplace_back(t,t);
         }
         for(auto& t : std::ranges::subrange(types.begin() + 2, types.end()))
         {
@@ -309,7 +319,7 @@ namespace Yoyo
             builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
             if(t.is_signed_integral()) builder.CreateRet(builder.CreateSRem(fn->getArg(0), fn->getArg(1)));
             else builder.CreateRet(builder.CreateURem(fn->getArg(0), fn->getArg(1)));
-            operators.mod.emplace_back(t,t,t);
+            operators.add_binary_detail_for(TokenType::Percent, t,t,t);
         }
 
 

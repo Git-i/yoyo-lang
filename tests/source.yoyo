@@ -1,6 +1,6 @@
 app: module = APP
 
-Vector: struct impl IToStr, IToStrShort = {
+Vector: struct impl IToStr, IAddSomething::<i32> = {
     x: f32,
     y: f32,
     new: fn (x: f32, y: f32) -> Vector = return Vector{.x = x, .y = y};
@@ -9,18 +9,23 @@ Vector: struct impl IToStr, IToStrShort = {
             return "Vector: ${this.x}, ${this.y}";
         }
     }
-    impl IToStrShort {
-        to_str: fn (&this) -> str = {
-            return "Vector";
+    impl IAddSomething::<i32> {
+        add_obj: fn (&this, thing: &i32) -> str = {
+            return "Vector plus integer: ${this.x + *thing}, ${this.y + *thing}";
         }
     }
 }
 
-OtherType: struct impl IToStr = {
+OtherType: struct impl IToStr, IAddSomething::<char> = {
     value: f32,
+    impl IAddSomething::<char> {
+        add_obj: fn (&this, thing: &char) -> str = {
+            return "Other Object plus char: ' ${*thing} '";
+        }
+    }
     impl IToStr {
         to_str: fn (&this) -> str = {
-            return "Other Object: ${this.value}";
+            return "Other object";
         }
     }
 }
@@ -29,10 +34,9 @@ OtherType: struct impl IToStr = {
 IToStr: interface = {
     to_str: fn (&this) -> str;
 }
-IToStrShort: interface = {
-    to_str: fn (&this) -> str;
+IAddSomething: interface::<T> = {
+    add_obj: fn (&this, thing: &T) -> str;
 }
-//IToStr: interface = to_str: fn (&this) -> str;
 
 print_custom_type: fn (obj: [IToStr:^]:&) = {
     app::func(&obj[0].to_str());
@@ -41,11 +45,14 @@ print_custom_type: fn (obj: [IToStr:^]:&) = {
 
 return_itfs: fn -> [IToStr:^; 2] = return [
         (gcnew Vector::new(10, 20)) as IToStr:^,
-        (gcnew OtherType{ .value = 100.0 }) as IToStr:^
+        gcnew OtherType{ .value = 100.0 }
     ];
 
 takes_foo: fn -> f64 = {
     intfs := return_itfs();
+    num := 15;
     print_custom_type(&intfs);
+    app::func(&OtherType{.value=0}.IAddSomething::<char>::add_obj(&'👍'));
+    app::func(&Vector::new(10, 20).IAddSomething::<i32>::add_obj(&num));
     return 10.0;
 } 

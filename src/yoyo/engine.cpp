@@ -76,6 +76,12 @@ namespace Yoyo
             md->interfaces[md->module_hash].emplace_back(decl);
             return true;
         }
+        bool operator()(GenericInterfaceDeclaration* decl)
+        {
+            std::ignore = stmt.release();
+            md->generic_interfaces[md->module_hash].emplace_back(decl);
+            return true;
+        }
         bool operator()(Statement*) const {return false;};
     };
     struct ForwardDeclaratorPass2

@@ -47,14 +47,18 @@ namespace Yoyo
         for (auto& impl : decl_ptr->impls)
         {
             if (!impl.impl_for.module) continue;
-            auto [_,interface] = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            std::pair<std::string, InterfaceDeclaration*> pair;
+            if (!impl.impl_for.subtypes.empty())
+                pair = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name + IRGenerator::mangleGenericArgs(impl.impl_for.subtypes));
+            else pair = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            auto [hash, interface] = std::move(pair);
             if (!interface) continue;
             if (impl.methods.size() != interface->methods.size())
             {
                 continue;
             }
             auto class_hash = std::move(irgen->block_hash);
-            irgen->block_hash = class_hash + "__interface" + impl.impl_for.full_name() + "__%";
+            irgen->block_hash = class_hash + "__interface" + hash + interface->name + "__%";
             for (auto& mth : impl.methods)
             {
                 auto it = std::ranges::find_if(interface->methods, [&mth](auto& method) {
@@ -93,7 +97,7 @@ namespace Yoyo
         //remove the module hash infront of the final name
         auto fn = irgen->code->getFunction(irgen->module->module_hash + name);
         fn->setName(name);
-        irgen->module->overloads.binary_details_for(decl->tok)->emplace_back(std::move(bin));
+        irgen->module->overloads.add_binary_detail_for(decl->tok, std::move(bin));
         return true;
     }
     bool TopLevelVisitor::operator()(std::unique_ptr<OperatorOverload> decl)

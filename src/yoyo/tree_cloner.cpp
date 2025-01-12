@@ -262,11 +262,24 @@ namespace Yoyo
     std::unique_ptr<Statement> StatementTreeCloner::operator()(InterfaceDeclaration* stat)
     {
         auto final = std::make_unique<InterfaceDeclaration>();
+        final->name = stat->name;
         for (auto& method : stat->methods)
         {
-            auto mth = copy_stat(method.get());
+            auto mth = std::make_unique<FunctionDeclaration>(method->name, method->signature, nullptr);
             final->methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(mth.release()));
         }
+        return final;
+    }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericInterfaceDeclaration* stat)
+    {
+        auto final = std::make_unique<GenericInterfaceDeclaration>();
+        final->name = stat->name;
+        for (auto& method : stat->methods)
+        {
+            auto mth = std::make_unique<FunctionDeclaration>(method->name, method->signature, nullptr);
+            final->methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(mth.release()));
+        }
+        final->clause = stat->clause;
         return final;
     }
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)

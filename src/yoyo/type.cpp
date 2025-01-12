@@ -166,7 +166,7 @@ namespace Yoyo
             auto& viewed = subtypes[0];
             if (!other.module) return false;
             if (!other.is_reference()) return false;
-            if (auto cls = other.get_decl_if_class())
+            if (auto cls = other.deref().get_decl_if_class())
             {
                 auto it = std::ranges::find_if(cls->impls, [&viewed](auto& impl) {
                     return impl.impl_for.is_equal(viewed);
@@ -190,6 +190,7 @@ namespace Yoyo
     bool Type::can_accept_as_arg(const Type& other) const
     {
         if(is_equal(other)) return true;
+        if (is_assignable_from(other)) return true;
         if(is_mutable_reference())
         {
             return deref().is_equal(other) && other.is_mutable;
@@ -198,7 +199,7 @@ namespace Yoyo
         {
             return deref().is_equal(other.deref());
         }
-        return is_assignable_from(other);
+        return false;
     }
     bool Type::is_view() const
     {

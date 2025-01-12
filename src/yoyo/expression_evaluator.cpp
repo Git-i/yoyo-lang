@@ -316,8 +316,8 @@ namespace Yoyo
                 return out;
             }
             auto& viewed = dst.subtypes[0];
-            std::string full_name = viewed.full_name();
             auto [name, intf] = viewed.module->findInterface(viewed.block_hash, viewed.name);
+            std::string full_name = name + intf->name;
             if (auto cls = src.deref().get_decl_if_class())
             {
                 auto details = src.deref().module->findType(src.deref().block_hash, src.deref().name);
@@ -1326,7 +1326,28 @@ namespace Yoyo
         irgen->block_hash = std::move(old_hash);
         irgen->module = module;
     }
+    void ExpressionEvaluator::generateGenericInterface(Module* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types)
+    {
+        for (auto& type : types) type.saturate(md, irgen);
+        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
+        if (auto [_, exists] = md->findInterface(block, name); exists) return;
+        auto new_interface = StatementTreeCloner{}(static_cast<InterfaceDeclaration*>(decl));
+        auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.release());
+        itf->name = name;
+        //TODO interface visitors to automatically saturate signatures
+        for (size_t i = 0; i < types.size(); i++)
+            irgen->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
+        auto old_mod = irgen->module;
+        auto old_hash = irgen->reset_hash();
 
+        irgen->module = md;
+        irgen->block_hash = block + name + "__";
+        for (auto& fn : itf->methods)
+            irgen->saturateSignature(fn->signature, md);
+        irgen->block_hash.swap(old_hash);
+        irgen->module = old_mod;
+        md->interfaces[block].emplace_back(itf);
+    }
     llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)
     {
         ExpressionTypeChecker type_checker{irgen};
@@ -1625,8 +1646,8 @@ namespace Yoyo
         if (final_ty->is_view())
         {
             auto& viewed = expr->dest.subtypes[0];
-            std::string full_name = viewed.full_name();
             auto [name, intf] = viewed.module->findInterface(viewed.block_hash, viewed.name);
+            std::string full_name = name + intf->name;
             if (auto cls = ty->deref().get_decl_if_class())
             {
                 auto details = ty->deref().module->findType(ty->deref().block_hash, ty->deref().name);

@@ -229,6 +229,7 @@ namespace Yoyo
         llvm::Value* doInvoke(CallOperation* op, const Type&);
         void generateGenericFunction(Module*, const std::string&,GenericFunctionDeclaration*, std::span<Type>);
         void generateGenericAlias(Module*, const std::string&,GenericAliasDeclaration*, std::span<Type>);
+        void generateGenericInterface(Module*, const std::string&, GenericInterfaceDeclaration*, std::span<Type>);
         //the malloc and the size
         std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator

@@ -234,10 +234,17 @@ namespace Yoyo
     }
     std::unique_ptr<Statement> Parser::parseInterfaceDeclaration(Token identifier)
     {
+        std::unique_ptr<InterfaceDeclaration> intf;
         if (!discard(TokenType::Interface)) error("Expected 'interface'", Peek());
+        if (Peek() && Peek()->type == TokenType::TemplateOpen)
+        {
+            auto generic = std::make_unique<GenericInterfaceDeclaration>();
+            generic->clause = parseGenericClause().value_or(GenericClause{});
+            intf = std::move(generic);
+        }
+        else intf = std::make_unique<InterfaceDeclaration>();
         if (!discard(TokenType::Equal)) error("Expected '='", Peek());
         if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
-        auto intf = std::make_unique<InterfaceDeclaration>();
         intf->name = std::string(identifier.text);
         while (!discard(TokenType::RCurly))
         {
