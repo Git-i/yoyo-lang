@@ -46,7 +46,7 @@ namespace Yoyo
 			// char{6} will be replaced with the hyper vertical bar
 			// char{7} will be replaced with the L thing
 			rows.front().replace(col_begin - 1, col_end - col_begin, std::string(col_end - col_begin, '$'));
-			size_t bar_position = col_begin + (col_end - col_begin - 2) / 2;
+			size_t bar_position = col_end - col_begin == 1 ? col_begin - 1 : col_begin + (col_end - col_begin - 2) / 2;
 			rows.front()[bar_position] = char{ 5 };
 			for (auto& line : subrange(rows.begin() + 1, rows.end()))
 				line[bar_position] = char{ 6 };

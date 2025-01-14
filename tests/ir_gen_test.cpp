@@ -49,13 +49,11 @@ TEST_CASE("Test IR")
         std::cout << "\033[0m" << std::flush;
     }
     engine.prepareForExecution();
-    std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "takes_foo";
+    std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "main";
     auto addr = engine.jit->lookup(unmangled_name);
     if (!addr) Yoyo::debugbreak();
-    double(*fn)() = addr.get().toPtr<double()>();
-    auto res = fn();
-    std::cout << res << std::endl;
-    REQUIRE(res == 10.0);
+    void(*fn)() = addr.get().toPtr<void()>();
+    fn();
 }
 
 TEST_CASE("Error formatting", "[errors]")

@@ -246,6 +246,10 @@ namespace Yoyo
         {
             return std::visit(*this, lit->expr->toVariant());
         }
+        std::unordered_map<std::string, Expression*> operator()(GCNewExpression* lit)
+        {
+            return std::visit(*this, lit->target_expression->toVariant());
+        }
     };
     struct UsedVariables
     {

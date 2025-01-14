@@ -227,6 +227,7 @@ namespace Yoyo
     bool Type::is_non_owning() const
     {
         if((is_reference() && !is_gc_reference()) || is_slice()) return true;
+        if (is_view() && !is_gc_view()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)

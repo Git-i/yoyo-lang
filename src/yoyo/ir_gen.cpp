@@ -412,6 +412,9 @@ namespace Yoyo
         module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl->vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
 
         in_class = true;
+        auto old_this = std::move(this_t);
+        this_t = Type{ .name = name, .subtypes = {} };
+        this_t.saturate(module, this);
         for(auto& fn: decl->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
@@ -421,6 +424,7 @@ namespace Yoyo
             (*this)(fn_decl);
             block_hash = std::move(curr_hash);
         }
+        this_t = std::move(old_this);
         checkClass(decl);
         in_class = false;
     }
@@ -475,7 +479,7 @@ namespace Yoyo
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant()).value_or_error();
-            validate_expression_borrows(decl->initializer.get(), this);
+            if(!expr_type.is_error_ty()) validate_expression_borrows(decl->initializer.get(), this);
             auto eval = ExpressionEvaluator{this, type};
             auto init = std::visit(eval, decl->initializer->toVariant());
             if(decl->type->name == "ilit" || decl->type->name == "flit")

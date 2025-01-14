@@ -45,9 +45,11 @@ namespace Yoyo
     }
     static std::optional<Type> checkAssign(const Type &a, const Type &b)
     {
-        if(!a.is_mutable || !a.is_lvalue) return std::nullopt;
+        if (!a.is_mutable)
+            return std::nullopt;
         if(!a.is_assignable_from(b))
         {
+            __debugbreak();
             return std::nullopt;
         }
         return Type{.name="void", .module = a.module->engine->modules.at("__builtin").get()};
@@ -178,8 +180,8 @@ namespace Yoyo
                     var->type.saturate(irgen->module, irgen);
                     //accessing an l-value struct yields an l-value
                     Type t = var->type;
-                    t.is_mutable = lhs.is_mutable;
-                    t.is_lvalue = lhs.is_lvalue;
+                    t.is_mutable = lhs.is_mutable || lhs.is_mutable_reference();
+                    t.is_lvalue = lhs.is_reference() ? true : lhs.is_lvalue;
                     return t;
                 }
                 if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
@@ -429,6 +431,10 @@ namespace Yoyo
         {
             advanceScope(*alias, md, hash, irgen);
         }
+        if (auto [hsh, galias] = md->findGenericAlias(hash, type.name); galias)
+        {
+            __debugbreak();
+        }
         return false;
     }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(ScopeOperation* scp)
@@ -596,6 +602,7 @@ namespace Yoyo
         if(t.is_enum()) return true;
         if(t.is_optional()) return hasToStr(t.subtypes[0]);
         if(t.is_char()) return true;
+        if (t.is_str()) return true;
         return false;
     }
 

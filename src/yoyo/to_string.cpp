@@ -125,6 +125,17 @@ namespace Yoyo
     }
     std::pair<llvm::Value*, llvm::Value*> ExpressionEvaluator::doToStr(llvm::Value* val, const Type& tp)
     {   
+        if (tp.is_str())
+        {
+            auto as_llvm = irgen->ToLLVMType(tp, false);
+            auto str = clone(nullptr, val, tp);
+            auto ptr = irgen->builder->CreateStructGEP(as_llvm, str, 0);
+            auto size = irgen->builder->CreateStructGEP(as_llvm, str, 1);
+            return {
+                irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context, 0), ptr),
+                irgen->builder->CreateLoad(llvm::Type::getInt64Ty(irgen->context), size)
+            };
+        }
         if(tp.is_signed_integral())
         {
             auto as64 = irgen->builder->CreateSExt(val, llvm::Type::getInt64Ty(irgen->context));

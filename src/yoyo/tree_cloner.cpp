@@ -284,11 +284,13 @@ namespace Yoyo
     }
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)
     {
+        if (s == nullptr) return nullptr;
         return std::visit(*this, s->toVariant());
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(std::unique_ptr<Statement>& s)
     {
+        if (s == nullptr) return nullptr;
         return std::visit(*this, s->toVariant());
     }
 

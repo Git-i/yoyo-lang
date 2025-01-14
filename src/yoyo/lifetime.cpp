@@ -53,14 +53,32 @@ namespace Yoyo
                 if(borrow.second == BorrowResult::Const)
                 {
                     //if the value has been mutably borrowed before its error
-                    if(mut_borrow.contains(borrow.first)) { irgen->error(Error(expr.first, "Attempt to borrow mutably borrowed value")); return; }
+                    if(mut_borrow.contains(borrow.first)) { 
+                        auto err_borrow = mut_borrow[borrow.first];
+                        Error err(expr.first, "Attempt to borrow mutably borrowed value");
+                        err.markers.emplace_back(SourceSpan{ err_borrow->beg, err_borrow->end }, "Mutable borrow occurs here");
+                        irgen->error(err); 
+                        return; 
+                    }
                     const_borrows[borrow.first].push_back(expr.first);
                 }
                 else if(borrow.second == BorrowResult::Mut)
                 {
                     //if it's been mutably or immutably borrowed its error
-                    if(mut_borrow.contains(borrow.first)) { irgen->error(Error(expr.first, "Attempt to borrow mutably borrowed value")); return; }
-                    if(const_borrows.contains(borrow.first)) { irgen->error(Error(expr.first, "Attempt to mutably borrow already borrowed value")); return; }
+                    if(mut_borrow.contains(borrow.first)) { 
+                        auto err_borrow = mut_borrow[borrow.first];
+                        Error err(expr.first, "Attempt to borrow mutably borrowed value");
+                        err.markers.emplace_back(SourceSpan{ err_borrow->beg, err_borrow->end }, "Mutable borrow occurs here");
+                        irgen->error(err);
+                        return;
+                    }
+                    if(const_borrows.contains(borrow.first)) { 
+                        Error err(expr.first, "Attempt to mutably borrow already borrowed value");
+                        for (auto expr : const_borrows[borrow.first]) {
+                            err.markers.emplace_back(SourceSpan{ expr->beg, expr->end }, "Borrow occurs here");
+                        }
+                        irgen->error(err); return; 
+                    }
                     mut_borrow[borrow.first] = expr.first;
                 }
             }
@@ -71,7 +89,8 @@ namespace Yoyo
 
         for(auto& i : irgen->variables | std::views::reverse)
         {
-            if(i.contains(expr->text) && !std::get<1>(i.at(expr->text)).is_mutable)
+            if(i.contains(expr->text) && 
+                !(std::get<1>(i.at(expr->text)).is_mutable || std::get<1>(i.at(expr->text)).is_mutable_reference()))
                 irgen->error(Error(expr, "'" + expr->text + "' cannot be mutably borrowed"));
         }
         if(irgen->lifetimeExtensions.contains(expr->text))

@@ -397,6 +397,21 @@ namespace Yoyo
             irgen->builder->SetInsertPoint(opt_assign_cont);
             irgen->builder->CreateStore(has_value, irgen->builder->CreateStructGEP(opt_ty, into , 1));
         }
+        else if (left_type.is_str())
+        {
+            auto size = irgen->builder->CreateStructGEP(as_llvm, value, 1);
+            size = irgen->builder->CreateLoad(llvm::Type::getInt64Ty(irgen->context), size);
+            auto mem = irgen->builder->CreateStructGEP(as_llvm, value, 0);
+            mem = irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context, 0), mem);
+            auto dst_ptr_ptr = irgen->builder->CreateStructGEP(as_llvm, into, 0);
+            auto dst_size_ptr = irgen->builder->CreateStructGEP(as_llvm, into, 1);
+            auto dst_cap_ptr = irgen->builder->CreateStructGEP(as_llvm, into, 2);
+            auto ptr = irgen->Malloc("", size);
+            irgen->builder->CreateStore(size, dst_size_ptr);
+            irgen->builder->CreateStore(size, dst_cap_ptr);
+            irgen->builder->CreateStore(ptr, dst_ptr_ptr);
+            irgen->builder->CreateMemCpy(ptr, std::nullopt, mem, std::nullopt, size);
+        }
         else if(left_type.is_variant())
         {
             std::set subtypes(left_type.subtypes.begin(), left_type.subtypes.end());
@@ -1384,7 +1399,7 @@ namespace Yoyo
                         }); var != cls->methods.end())
                     {
                         auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                        auto found = irgen->module->findType(irgen->block_hash, left_t->name);
+                        auto found = left_t->module->findType(left_t->block_hash, left_t->name);
                         auto function_name  = std::get<0>(*found) + name;
                         auto callee = irgen->code->getFunction(function_name);
                         bool uses_sret = callee->hasStructRetAttr();
@@ -1516,7 +1531,7 @@ namespace Yoyo
         auto tp = &gc_tp.value();
         auto value = std::visit(*this, expr->target_expression->toVariant());
         if (tp->is_error_ty()) return nullptr;
-        auto llvm_ty = irgen->ToLLVMType(*tp, false);
+        auto llvm_ty = irgen->ToLLVMType((*tp).subtypes[0], false);
         size_t type_size = irgen->code->getDataLayout().getTypeAllocSize(llvm_ty);
         auto memory = irgen->GCMalloc(type_size);
         irgen->builder->CreateMemCpy(memory, std::nullopt, value, std::nullopt, type_size);

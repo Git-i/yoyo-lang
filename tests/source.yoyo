@@ -1,58 +1,54 @@
 app: module = APP
 
-Vector: struct impl IToStr, IAddSomething::<i32> = {
-    x: f32,
-    y: f32,
-    new: fn (x: f32, y: f32) -> Vector = return Vector{.x = x, .y = y};
-    impl IToStr {
-        to_str: fn (&this) -> str = {
-            return "Vector: ${this.x}, ${this.y}";
-        }
-    }
-    impl IAddSomething::<i32> {
-        add_obj: fn (&this, thing: &i32) -> str = {
-            return "Vector plus integer: ${this.x + *thing}, ${this.y + *thing}";
-        }
-    }
+//probably implement generic classes/structs soon
+gwrap: fn::<T> = {
+	Node: struct = {
+		data: T,
+		next: (^Node)?
+	}
+	LinkedList: struct = {
+		first: (^Node)?,
+		new: fn -> This = return This{ .first = null };
+		append: fn (&mut this, value: T) = {
+			if |val| (this.first) {
+				last: mut ^Node = val;
+				//implement options as truthy values and break
+				should_loop: mut = true;
+				while(should_loop) {
+					if |nxt| (last.next) last = nxt;
+					else should_loop = false;
+				}
+				last.next = gcnew Node{ .data = value, .next = null };
+			} else {
+				this.first = gcnew Node{ .data = value, .next = null };
+			}
+		}
+		//temporary crutch
+		print_all: fn (&this) = {
+			if |val| (this.first) {
+				app::func(&"${val.data}");
+				last: mut ^Node = val;
+				should_loop: mut = true;
+				while(should_loop) {
+					if |nxt| (last.next) {
+						last = nxt;
+						app::func(&"${last.data}");
+					} else should_loop = false;
+				}
+			}
+		}
+	}
 }
+main: fn = {
+	a: mut = gwrap::<str>::LinkedList::new();
+	b: mut = gwrap::<i32>::LinkedList::new();
+	a.append("Hello");
+	a.append("World");
+	a.append("Stuff");
 
-OtherType: struct impl IToStr, IAddSomething::<char> = {
-    value: f32,
-    impl IAddSomething::<char> {
-        add_obj: fn (&this, thing: &char) -> str = {
-            return "Other Object plus char: ' ${*thing} '";
-        }
-    }
-    impl IToStr {
-        to_str: fn (&this) -> str = {
-            return "Other object";
-        }
-    }
+	b.append(10);
+	b.append(20);
+	b.append(30);
+	b.print_all();
+	a.print_all();
 }
-
-
-IToStr: interface = {
-    to_str: fn (&this) -> str;
-}
-IAddSomething: interface::<T> = {
-    add_obj: fn (&this, thing: &T) -> str;
-}
-
-print_custom_type: fn (obj: [IToStr:^]:&) = {
-    app::func(&obj[0].to_str());
-    app::func(&obj[1].to_str());
-}
-
-return_itfs: fn -> [IToStr:^; 2] = return [
-        (gcnew Vector::new(10, 20)) as IToStr:^,
-        gcnew OtherType{ .value = 100.0 }
-    ];
-
-takes_foo: fn -> f64 = {
-    intfs := return_itfs();
-    num := 15;
-    print_custom_type(&intfs);
-    app::func(&OtherType{.value=0}.IAddSomething::<char>::add_obj(&'👍'));
-    app::func(&Vector::new(10, 20).IAddSomething::<i32>::add_obj(&num));
-    return 10.0;
-} 
