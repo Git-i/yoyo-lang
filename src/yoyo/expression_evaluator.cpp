@@ -1314,7 +1314,7 @@ namespace Yoyo
         std::string old_name = std::move(fn->name);
         fn->name = name;
         auto old_sig = fn->signature; //signature will be modified during saturation
-        auto ptr = StatementTreeCloner{}(static_cast<FunctionDeclaration*>(fn));
+        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn));
         (*irgen)(reinterpret_cast<FunctionDeclaration*>(ptr.get()));
         fn->signature = std::move(old_sig);
         fn->name = std::move(old_name);
@@ -1334,7 +1334,7 @@ namespace Yoyo
         irgen->module = mod;
         for(size_t i = 0; i < types.size(); i++)
             irgen->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
-        auto new_statement = StatementTreeCloner{}(static_cast<AliasDeclaration*>(decl));
+        auto new_statement = StatementTreeCloner::copy_stat_specific(static_cast<AliasDeclaration*>(decl));
         auto alias = reinterpret_cast<AliasDeclaration*>(new_statement.get());
         alias->name = name;
         (*irgen)(alias);
@@ -1346,7 +1346,7 @@ namespace Yoyo
         for (auto& type : types) type.saturate(md, irgen);
         std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
         if (auto [_, exists] = md->findInterface(block, name); exists) return;
-        auto new_interface = StatementTreeCloner{}(static_cast<InterfaceDeclaration*>(decl));
+        auto new_interface = StatementTreeCloner::copy_stat_specific(static_cast<InterfaceDeclaration*>(decl));
         auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.release());
         itf->name = name;
         //TODO interface visitors to automatically saturate signatures
@@ -1611,6 +1611,7 @@ namespace Yoyo
             auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i);
             auto& var = decl->vars[i];
             auto val_ty = std::visit(ExpressionTypeChecker{irgen, var.type}, lit->values[var.name]->toVariant());
+            if (!val_ty) { irgen->error(val_ty.error()); continue; }
             auto val = std::visit(ExpressionEvaluator{irgen, var.type}, lit->values[var.name]->toVariant());
 
             auto mem_ptr = irgen->builder->CreateGEP(as_llvm_type, value, {zero_const, idx_const});

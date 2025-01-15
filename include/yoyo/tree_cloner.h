@@ -28,8 +28,10 @@ namespace Yoyo
         std::unique_ptr<Expression> operator()(CharLiteral*);
         std::unique_ptr<Expression> operator()(GCNewExpression*);
 
-        std::unique_ptr<Expression> copy_expr(Expression*);
-        std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
+        static std::unique_ptr<Expression> copy_expr(Expression*);
+        static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
+    private:
+        ExpressionTreeCloner() = default;
     };
     struct StatementTreeCloner
     {
@@ -53,10 +55,19 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(InterfaceDeclaration*);
         std::unique_ptr<Statement> operator()(GenericInterfaceDeclaration*);
 
-        std::unique_ptr<Statement> copy_stat(Statement*);
-        std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&);
+        static std::unique_ptr<Statement> copy_stat(Statement*);
+        static std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&);
+        template<typename T>
+        static std::unique_ptr<Statement> copy_stat_specific(T* val)
+        {
+            auto cs = StatementTreeCloner{}(val);
+            cs->beg = val->beg; cs->end = val->end;
+            return cs;
+        }
 
-        std::unique_ptr<Expression> copy_expr(Expression*) const;
-        std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&) const;
+        static std::unique_ptr<Expression> copy_expr(Expression*);
+        static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
+    private:
+        StatementTreeCloner() = default;
     };
 }

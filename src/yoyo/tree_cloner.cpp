@@ -93,7 +93,7 @@ namespace Yoyo
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(LambdaExpression* lmbd)
     {
         return std::make_unique<LambdaExpression>(lmbd->captures, lmbd->sig,
-            std::visit(StatementTreeCloner{},lmbd->body->toVariant()));
+            StatementTreeCloner::copy_stat(lmbd->body));
     }
 
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(ScopeOperation* other)
@@ -132,12 +132,18 @@ namespace Yoyo
 
     std::unique_ptr<Expression> ExpressionTreeCloner::copy_expr(Expression* e)
     {
-        return std::visit(*this, e->toVariant());
+        auto ce = std::visit(ExpressionTreeCloner{}, e->toVariant());
+        ce->beg = e->beg;
+        ce->end = e->end;
+        return ce;
     }
 
     std::unique_ptr<Expression> ExpressionTreeCloner::copy_expr(std::unique_ptr<Expression>& e)
     {
-        return std::visit(*this, e->toVariant());
+        auto ce = std::visit(ExpressionTreeCloner{}, e->toVariant());
+        ce->beg = e->beg;
+        ce->end = e->end;
+        return ce;
     }
 
 
@@ -285,22 +291,28 @@ namespace Yoyo
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)
     {
         if (s == nullptr) return nullptr;
-        return std::visit(*this, s->toVariant());
+        auto ns = std::visit(StatementTreeCloner{}, s->toVariant());
+        ns->beg = s->beg;
+        ns->end = s->end;
+        return ns;
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(std::unique_ptr<Statement>& s)
     {
         if (s == nullptr) return nullptr;
-        return std::visit(*this, s->toVariant());
+        auto ns =  std::visit(StatementTreeCloner{}, s->toVariant());
+        ns->beg = s->beg;
+        ns->end = s->end;
+        return ns;
     }
 
-    std::unique_ptr<Expression> StatementTreeCloner::copy_expr(Expression* e) const
+    std::unique_ptr<Expression> StatementTreeCloner::copy_expr(Expression* e)
     {
-        return std::visit(ExpressionTreeCloner{}, e->toVariant());
+        return ExpressionTreeCloner::copy_expr(e);
     }
-    std::unique_ptr<Expression> StatementTreeCloner::copy_expr(std::unique_ptr<Expression>& e)const
+    std::unique_ptr<Expression> StatementTreeCloner::copy_expr(std::unique_ptr<Expression>& e)
     {
-        return std::visit(ExpressionTreeCloner{}, e->toVariant());
+        return ExpressionTreeCloner::copy_expr(e);
     }
 }
 
