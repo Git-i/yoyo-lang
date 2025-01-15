@@ -1351,7 +1351,7 @@ namespace Yoyo
         itf->name = name;
         //TODO interface visitors to automatically saturate signatures
         for (size_t i = 0; i < types.size(); i++)
-            irgen->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
+            md->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
         auto old_mod = irgen->module;
         auto old_hash = irgen->reset_hash();
 

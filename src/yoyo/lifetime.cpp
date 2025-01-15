@@ -6,6 +6,7 @@ namespace Yoyo
 
     bool LifetimeExceedsFunctionChecker::operator()(Expression* expr)
     {
+        return true; //TODO fix this
         auto borrows = std::visit(BorrowResult{irgen}, expr->toVariant());
         for(auto&[name, _] : borrows)
         {
@@ -18,6 +19,7 @@ namespace Yoyo
 
     bool LifetimeExceedsFunctionChecker::operator()(NameExpression* nm)
     {
+        return true; //TODO fix this
         //the lifetime can only exceed if it's a function parameter(or borrowed from a param), or a global
         //TODO: add globals
         if(irgen->lifetimeExtensions.contains(nm->text))

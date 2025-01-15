@@ -38,6 +38,19 @@ gwrap: fn::<T> = {
 			}
 		}
 	}
+	LinkedListIterator: struct:& impl core::Iterator::<&T> = {
+		curr: (^Node)?,
+		impl core::Iterator::<&T>
+		{
+			next: fn (&mut this) -> (&T)? = {
+				if |node| (this.curr) {
+					this.curr = node.next;
+					return &node.data;
+				}
+				else return null;
+			}
+		}
+	}
 }
 main: fn = {
 	a: mut = gwrap::<str>::LinkedList::new();

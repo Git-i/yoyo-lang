@@ -229,7 +229,7 @@ namespace Yoyo
         if(eng->modules.contains("__builtin")) return;
         eng->modules["__builtin"] = std::make_unique<Module>();
         auto module = eng->modules.at("__builtin").get();
-        module->module_hash = "";
+        module->module_hash = "__builtin";
         module->engine = eng;
         auto& operators = module->overloads;
         std::array types = {
@@ -321,8 +321,14 @@ namespace Yoyo
             else builder.CreateRet(builder.CreateURem(fn->getArg(0), fn->getArg(1)));
             operators.add_binary_detail_for(TokenType::Percent, t,t,t);
         }
-
-
+        auto iterator = std::make_unique<GenericInterfaceDeclaration>();
+        FunctionSignature sig;
+        sig.returnType = Type{ "__opt", { Type{"OutputTy"} } };
+        sig.parameters.emplace_back(FunctionParameter{ .type = Type {"__ref_mut", {Type{"This"}}}, .name = "this" });
+        iterator->clause = GenericClause{ {"OutputTy"} };
+        iterator->name = "Iterator";
+        iterator->methods.emplace_back(std::make_unique<FunctionDeclaration>("next", std::move(sig), nullptr));
+        module->generic_interfaces[module->module_hash].emplace_back(std::move(iterator));
     }
     void Module::dumpIR()
     {

@@ -193,6 +193,7 @@ namespace Yoyo
         md = std::make_unique<Module>();
         md->engine = this;
         md->module_hash = "__" + module_name + std::to_string(reinterpret_cast<std::uintptr_t>(md.get())) + "%";
+        md->modules["core"] = modules.at("__builtin").get();
         for(auto& stat : prog)
         {
             if (!std::visit(ForwardDeclaratorPass1{md.get(), stat}, stat->toVariant()))

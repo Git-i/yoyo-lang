@@ -397,6 +397,7 @@ namespace Yoyo
     {
         __debugbreak();
     }
+    bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface);
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
         std::string name(decl->identifier.text);
@@ -415,6 +416,7 @@ namespace Yoyo
         auto old_this = std::move(this_t);
         this_t = Type{ .name = name, .subtypes = {} };
         this_t.saturate(module, this);
+        checkClass(decl);
         for(auto& fn: decl->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
@@ -424,8 +426,45 @@ namespace Yoyo
             (*this)(fn_decl);
             block_hash = std::move(curr_hash);
         }
+        for (auto& impl : decl->impls)
+        {
+            if (!impl.impl_for.module) continue;
+            std::pair<std::string, InterfaceDeclaration*> pair;
+            if (!impl.impl_for.subtypes.empty())
+                pair = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name + IRGenerator::mangleGenericArgs(impl.impl_for.subtypes));
+            else pair = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name);
+            auto [hash, interface] = std::move(pair);
+            if (!interface) continue;
+            if (impl.methods.size() != interface->methods.size())
+            {
+                continue;
+            }
+            auto curr_hash = std::move(block_hash);
+            block_hash = class_hash + "__interface" + hash + interface->name + "__%";
+            for (auto& mth : impl.methods)
+            {
+                auto it = std::ranges::find_if(interface->methods, [&mth](auto& method) {
+                    return method->name == mth->name;
+                    });
+                if (it == interface->methods.end())
+                    error(Error(mth.get(), "Function does not exist as part of the interface"));
+                else
+                {
+                    saturateSignature(mth->signature, module);
+                    in_class = false;
+                    auto interface_method_hash = reset_hash();
+                    block_hash = hash + interface->name + "__";
+                    saturateSignature((*it)->signature, impl.impl_for.module);
+                    block_hash = std::move(interface_method_hash);
+                    in_class = true;
+                    if (!implementsInterfaceMethod(mth->signature, (*it)->signature))
+                        error(Error(mth.get(), "Provided function is not a valid implementation of the interface"));
+                }
+                (*this)(mth.get());
+            }
+            block_hash = std::move(curr_hash);
+        }
         this_t = std::move(old_this);
-        checkClass(decl);
         in_class = false;
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
