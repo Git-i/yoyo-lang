@@ -555,9 +555,30 @@ namespace Yoyo
         }
         popScope();
     }
-    void IRGenerator::operator()(ForStatement*)
+    void IRGenerator::operator()(ForStatement* stat)
     {
+        auto ty = std::visit(ExpressionTypeChecker{ this }, stat->iterable->toVariant()).value_or_error();
+        //check if it implements iterator interface
+        auto value = std::visit(ExpressionEvaluator{ this }, stat->iterable->toVariant());
+        if (auto cls = ty.module->findType(ty.block_hash, ty.name))
+        {
+            auto decl = std::get<2>(*cls).get();
+            auto hash = std::get<0>(*cls);
+            Yoyo::InterfaceImplementation* impl = nullptr;
+            for (auto& im : decl->impls)
+            {
+                if (im.impl_for.module == module->engine->modules.at("__builtin").get() && im.impl_for.name == "Iterator")
+                {
+                    if (impl) {
+                        error(Error(stat, "Type implements multiple iterator interfaces"));
+                        break;
+                    }
+                    impl = &im;
+                }
+            }
 
+        }
+        
     }
     void IRGenerator::operator()(WhileStatement* expr)
     {

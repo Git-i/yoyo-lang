@@ -860,7 +860,7 @@ namespace Yoyo
         std::vector<Token> vars;
         auto iden = Peek();
         if(!iden) return nullptr;
-        if(iden->type != TokenType::Identifier || iden->type != TokenType::Underscore) error("Expected identifier or '_'", Peek());
+        if(iden->type != TokenType::Identifier && iden->type != TokenType::Underscore) error("Expected identifier or '_'", Peek());
         Get();
         vars.emplace_back(*iden);
         while(discard(TokenType::Comma))

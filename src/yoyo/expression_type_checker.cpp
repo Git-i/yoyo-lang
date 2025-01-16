@@ -343,15 +343,14 @@ namespace Yoyo
                         decl->body->beg.line, 
                         decl->body->beg.column)) };
             }
-            FunctionSignature new_sig = decl->signature;
-            for(size_t i = 0; i < decl->clause.types.size(); ++i)
+            
+            ExpressionEvaluator{ irgen }.generateGenericFunction(irgen->module, hash, decl, expr->arguments);
+            if (auto [_, fn_decl] = irgen->module->findFunction(hash,
+                expr->text + IRGenerator::mangleGenericArgs(expr->arguments)); fn_decl)
             {
-                expr->arguments[i].saturate(irgen->module, irgen);
-                generic_replace(new_sig.returnType, decl->clause.types[i], expr->arguments[i]);
-                for(auto& param : new_sig.parameters)
-                    generic_replace(param.type, decl->clause.types[i], expr->arguments[i]);
+                return { FunctionType(fn_decl->sig, false) };
             }
-            return { FunctionType{std::move(new_sig), false} };
+            return { Error(expr, "Generic Initialization failed") };
         }
         return { Error(expr, "Use of undeclared identifier '" + expr->text + "'") };
     }

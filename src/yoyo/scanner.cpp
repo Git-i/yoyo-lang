@@ -38,7 +38,8 @@ namespace Yoyo {
         {"fn", TokenType::Fn},
         {"alias", TokenType::Alias},
         {"gcnew", TokenType::GCNew},
-        {"impl", TokenType::Impl}
+        {"impl", TokenType::Impl},
+        {"for", TokenType::For}
     })
     {
 

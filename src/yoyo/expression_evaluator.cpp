@@ -1309,15 +1309,16 @@ namespace Yoyo
         for(size_t i = 0; i < types.size(); i++)
             irgen->module->aliases[hash + name + "__"].emplace(fn->clause.types[i], types[i]);
 
-        auto old_hash = irgen->reset_hash();
-        irgen->block_hash = hash;
-        std::string old_name = std::move(fn->name);
-        fn->name = name;
-        auto old_sig = fn->signature; //signature will be modified during saturation
         auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn));
-        (*irgen)(reinterpret_cast<FunctionDeclaration*>(ptr.get()));
-        fn->signature = std::move(old_sig);
-        fn->name = std::move(old_name);
+        auto new_decl = reinterpret_cast<FunctionDeclaration*>(ptr.get());
+        new_decl->name = name;
+        auto old_hash = irgen->reset_hash();
+        irgen->block_hash = hash + name + "__";
+        irgen->saturateSignature(new_decl->signature, mod);
+        irgen->block_hash = hash;
+
+        (*irgen)(new_decl);
+        
         irgen->block_hash = std::move(old_hash);
         irgen->module = module;
     }

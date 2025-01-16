@@ -52,6 +52,8 @@ gwrap: fn::<T> = {
 		}
 	}
 }
+iter: fn::<T>(list: &gwrap::<T>::LinkedList) -> gwrap::<T>::LinkedListIterator
+	= return gwrap::<T>::LinkedListIterator { .curr = list.first };
 main: fn = {
 	a: mut = gwrap::<str>::LinkedList::new();
 	b: mut = gwrap::<i32>::LinkedList::new();
@@ -59,6 +61,8 @@ main: fn = {
 	a.append("World");
 	a.append("Stuff");
 
+	for(lol in a.iter::<str>()){
+	}
 	b.append(10);
 	b.append(20);
 	b.append(30);
