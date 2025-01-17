@@ -75,7 +75,20 @@ namespace Yoyo
         }
         void operator()(AliasDeclaration*) const {}
         void operator()(ClassDeclaration* stat) const {}
-        void operator()(ForStatement* stat){} //TODO
+        void operator()(ForStatement* stat){
+            node->statements.push_back(stat);
+            auto check = node->manager->newNode(depth, "for_check");
+            auto then = node->manager->newNode(depth, "for_then");
+            auto cont = node->manager->newNode(depth, "for_cont");
+            node->addChild(check);
+            check->addChild(then);
+            check->addChild(cont);
+            auto then_prep = CFGPreparator{ then,exit, depth };
+            std::visit(then_prep, stat->body->toVariant());
+            if (then_prep.node != exit) then_prep.node->addChild(check);
+            if (then_prep.node == exit) node = exit;
+            else node = cont;
+        }
         void operator()(ModuleImport* stat) const {}
         void operator()(EnumDeclaration* stat) const {}
         void operator()(OperatorOverload*) const{}
@@ -282,7 +295,9 @@ namespace Yoyo
         {
             return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
         }
-        std::unordered_map<std::string, Expression*> operator()(ForStatement* stat){ return {}; }
+        std::unordered_map<std::string, Expression*> operator()(ForStatement* stat){ 
+            return std::visit(UsedVariablesExpression{ is_first }, stat->iterable->toVariant());
+        }
         std::unordered_map<std::string, Expression*> operator()(ConditionalExtraction* stat)
         {
             return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
