@@ -62,6 +62,7 @@ main: fn = {
 	a.append("Stuff");
 
 	for(lol in a.iter::<str>()){
+		app::func(lol);
 	}
 	b.append(10);
 	b.append(20);

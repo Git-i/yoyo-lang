@@ -557,7 +557,9 @@ namespace Yoyo
     }
     void IRGenerator::operator()(ForStatement* stat)
     {
+        auto fn = builder->GetInsertBlock()->getParent();
         auto ty = std::visit(ExpressionTypeChecker{ this }, stat->iterable->toVariant()).value_or_error();
+        if (!ty.is_mutable && ty.is_lvalue) error(Error(stat->iterable.get(), "Iterator object must be mutable or a temporary"));
         //check if it implements iterator interface
         auto value = std::visit(ExpressionEvaluator{ this }, stat->iterable->toVariant());
         if (auto cls = ty.module->findType(ty.block_hash, ty.name))
@@ -576,7 +578,35 @@ namespace Yoyo
                     impl = &im;
                 }
             }
+            if (!impl) {
+                error(Error(stat->iterable.get(), "Expression does not evaluate to an iterable type"));
+                return;
+            }
+            std::string fn_name = hash + "__interface__builtinIterator" + mangleGenericArgs(impl->impl_for.subtypes) + "__%next";
+            auto next_fn = code->getFunction(fn_name);
+            auto memory_ty = ToLLVMType(impl->methods[0]->signature.returnType, false);
+            auto memory = Alloca("for_obj", memory_ty);
+            auto flg = prepareValidDropFlagFor(this, impl->impl_for.subtypes[0]);
+            pushScope();
+            auto for_bb = llvm::BasicBlock::Create(context, "for", fn, returnBlock);
+            auto then_bb = llvm::BasicBlock::Create(context, "forthen", fn, returnBlock);
+            auto cont_bb = llvm::BasicBlock::Create(context, "forcont", fn, returnBlock);
+            builder->CreateBr(for_bb);
+            builder->SetInsertPoint(for_bb);
+            builder->CreateCall(next_fn, {memory, value});
+            auto has_next = builder->CreateStructGEP(memory_ty, memory, 1);
+            has_next = builder->CreateLoad(llvm::Type::getInt1Ty(context), has_next);
+            builder->CreateCondBr(has_next, then_bb, cont_bb);
+            builder->SetInsertPoint(then_bb);
+            if (flg) builder->CreateStore(llvm::ConstantInt::getTrue(context), flg);
+            auto val = builder->CreateStructGEP(memory_ty, memory, 0);
+            variables.back()[std::string{ stat->names[0].text }] = {val , impl->impl_for.subtypes[0], flg};
 
+            current_Statement = &stat->body;
+            std::visit(*this, stat->body->toVariant());
+            popScope();
+            if (builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(for_bb);
+            builder->SetInsertPoint(cont_bb);
         }
         
     }
