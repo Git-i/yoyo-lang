@@ -230,6 +230,14 @@ namespace Yoyo
                 });
             return FunctionType{ (*method)->signature, true };
         }
+        if (rhs->name.starts_with("__generic_fn")) {
+            Type bound_ty;
+            if (rhs->sig.parameters[0].type.is_reference() && !lhs.is_reference())
+                bound_ty = Type{ rhs->sig.parameters[0].type.name, {lhs} };
+            else bound_ty = lhs;
+            rhs->subtypes.emplace_back(std::move(bound_ty));
+            rhs->is_bound = true; return *rhs;
+        }
         if (!rhs->is_function()) return std::nullopt;
         auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
         if(as_function.is_bound) return std::nullopt;
@@ -319,6 +327,14 @@ namespace Yoyo
         {
             irgen->saturateSignature(fn->sig, irgen->module);
             return { FunctionType{fn->sig, false} };
+        }
+        if (auto [name_prefix, fn] = irgen->module->findGenericFn(irgen->module->module_hash, name); fn)
+        {
+            auto ty = FunctionType(fn->signature, false);
+            ty.name = "__generic_fn" + name;
+            ty.module = irgen->module;
+            ty.block_hash = name_prefix;
+            return { std::move(ty) };
         }
         return { Error(expr, "Use of undeclared identifier '" + name + "'") };
     }
@@ -654,17 +670,76 @@ namespace Yoyo
 
     }
 
+    std::optional<std::unordered_map<std::string, Type>> 
+        genericMatch(const Type& generic, const Type& resolved, std::span<std::string> generics) 
+    {
+        if (auto it = std::ranges::find_if(generics, [&generic](const std::string& val)
+            {return val == generic.name;}); it != generics.end())
+        {
+            return {{{ *it, resolved }}};
+        }
+        std::unordered_map<std::string, Type> results;
+        auto it = UnsaturatedTypeIterator(generic);
+        while (!it.is_end())
+        {
+            auto tp = it.next();
+            __debugbreak();
+        }
+        if (it.is_end())
+        {
+            // Event::<Buffer::<T>>
+            auto tp = it.last();
+            if (tp.name != resolved.name) return std::nullopt;
+            if (tp.subtypes.size() != resolved.subtypes.size()) return std::nullopt;
+            for (size_t i = 0; i < tp.subtypes.size(); i++)
+            {
+                auto match = genericMatch(tp.subtypes[i], resolved.subtypes[i], generics);
+                if (!match) return std::nullopt;
+                for (auto& [name, tp] : *match) {
+                    if (!results.contains(name)) {
+                        results[name] = tp; continue;
+                    }
+                    if (!results.at(name).is_equal(tp)) return std::nullopt;
+                }
+            }
+        }
+    }
+
+    std::optional<std::vector<Type>> deduceTypeArgs(const FunctionType& generic_fn, std::span<Type> input)
+    {
+        if (generic_fn.sig.parameters.size() == 0) return std::nullopt;
+        std::unordered_map<std::string, Type> deduced;
+        constexpr std::string_view gfn = "__generic_fn";
+        std::string name(generic_fn.name.begin() + gfn.size(), generic_fn.name.end());
+        auto decl = generic_fn.module->findGenericFn(generic_fn.block_hash, name).second;
+        for (size_t i = 0; i < input.size(); i++)
+        {
+            genericMatch(generic_fn.sig.parameters[i].type, input[i], decl->clause.types);
+        }
+        __debugbreak();
+        return {};
+    }
+
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(CallOperation* op)
     {
         auto callee_ty = std::visit(*this, op->callee->toVariant()).value_or_error();
         if (callee_ty.is_error_ty()) return { std::move(callee_ty) };
-        if (!callee_ty.is_function() && !callee_ty.is_lambda()) return { Error(op->callee.get(), "Attempt to call non-function expression")};
+        if (!callee_ty.is_function() && !callee_ty.is_lambda() && !callee_ty.name.starts_with("__generic_fn"))
+            return { Error(op->callee.get(), "Attempt to call non-function expression")};
         auto& as_fn = reinterpret_cast<FunctionType&>(callee_ty);
         //If the function is bound (something.function()) we skip checking the first args type
         if (op->arguments.size() + callee_ty.is_bound != as_fn.sig.parameters.size()) {
             Error err(op, "Function argument count mismatch");
             err.markers.emplace_back(SourceSpan{ op->callee->beg, op->callee->end }, "This function was defined as: '" + as_fn.sig.pretty_name(irgen->block_hash) + "'");
             return { err };
+        }
+        if (callee_ty.name.starts_with("__generic_fn"))
+        {
+            std::vector<Type> inputs;
+            inputs.reserve(op->arguments.size() + callee_ty.is_bound);
+            if (callee_ty.is_bound) inputs.emplace_back(callee_ty.subtypes[0]);
+            for (auto& arg : op->arguments) inputs.emplace_back(std::visit(*this, arg->toVariant()).value_or_error());
+            deduceTypeArgs(callee_ty, inputs);
         }
         for(size_t i = 0; i < op->arguments.size(); ++i)
         {

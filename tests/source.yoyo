@@ -60,7 +60,7 @@ main: fn = {
 	a.append("World");
 	a.append("Stuff");
 	a.append("Others");
-	for(lol in a.iter::<str>()) {
+	for(lol in a.iter()) {
 		app::func(lol);
 	}
 }

@@ -1367,10 +1367,11 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(CallOperation* op)
     {
         ExpressionTypeChecker type_checker{irgen};
+        //type checker is allowed to modify generic function nodes to do argument deduction
+        auto return_t = type_checker(op); 
         auto t = std::visit(type_checker, op->callee->toVariant());
         if (t && t->is_error_ty()) debugbreak();
         if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(t.error()); return nullptr;}
-        auto return_t = type_checker(op);
         if(!return_t)
             {irgen->error(return_t.error()); return nullptr;}
         bool is_lambda = t->is_lambda();
