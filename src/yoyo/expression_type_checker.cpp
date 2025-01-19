@@ -395,7 +395,7 @@ namespace Yoyo
         }
         if(auto [name,fn] = md->findFunction(hash, type.name); fn)
         {
-            hash = name + type.name + "__%";
+            hash = name + type.name + "::";
             return true;
         }
         if (auto [hsh, interface] = md->findInterface(hash, type.name); interface)
@@ -423,7 +423,7 @@ namespace Yoyo
             auto mangled_name = fn->name + IRGenerator::mangleGenericArgs(type.subtypes);
             if(auto [_, exists] = md->findFunction(this_hash, mangled_name); !exists)
                 ExpressionEvaluator{irgen}.generateGenericFunction(md, this_hash, fn, type.subtypes);
-            hash = this_hash + mangled_name + "__%";
+            hash = this_hash + mangled_name + "::";
             return true;
         }
         if(auto alias = md->findAlias(hash, type.name); alias)

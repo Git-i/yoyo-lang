@@ -24,7 +24,7 @@ namespace Yoyo
     bool TopLevelVisitor::operator()(std::unique_ptr<ClassDeclaration> decl) const
     {
         std::string name = std::string{decl->identifier.text};
-        std::string mangled_name_prefix = "__class__" + name + "__%";
+        std::string mangled_name_prefix = name + "::";
 
         auto ty = irgen->module->findType(irgen->block_hash, name);
 
@@ -58,7 +58,7 @@ namespace Yoyo
                 continue;
             }
             auto class_hash = std::move(irgen->block_hash);
-            irgen->block_hash = class_hash + "__interface" + hash + interface->name + "__%";
+            irgen->block_hash = class_hash + hash + interface->name + "::";
             for (auto& mth : impl.methods)
             {
                 auto it = std::ranges::find_if(interface->methods, [&mth](auto& method) {

@@ -581,11 +581,11 @@ namespace Yoyo
         std::string final = block_hash + name;
         if(!subtypes.empty())
         {
-            final += "@@__sub_begin@@";
+            final += "::<";
             final += subtypes[0].full_name();
             for(auto& sub : std::ranges::subrange(subtypes.begin() + 1, subtypes.end()))
-                final +=  "@@" + sub.full_name();
-            final += "@@__sub_end@@";
+                final +=  "," + sub.full_name();
+            final += ">";
         }
         return final;
     }
@@ -607,10 +607,29 @@ namespace Yoyo
         }
         return 0;
     }
-
+    std::vector<std::string_view> unsaturated_type_split(std::string_view str)
+    {
+        std::string_view delim = "::";
+        if (str.size() <= 2) return { str };
+        std::vector<std::string_view> result;
+        size_t left = 0;
+        for (size_t it = 0; it < str.size() - delim.size(); ++it)
+        {
+            std::string_view curr(str.begin() + it, str.begin() + it + delim.size());
+            //we dont split in the special case of ::<
+            if (curr == delim && str[it + delim.size()] != '<')
+            {
+                result.emplace_back(str.begin() + left, str.begin() + it);
+                it += delim.size();
+                left = it;
+            }
+        }
+        result.emplace_back(str.begin() + left, str.ends_with(delim) ? str.end() - delim.size() : str.end());
+        return result;
+    }
     UnsaturatedTypeIterator::UnsaturatedTypeIterator(const Type& type) : type(type)
     {
-        split_cache = split(type.name, "::");
+        split_cache = unsaturated_type_split(type.name);
     }
 
     bool UnsaturatedTypeIterator::is_end() const
@@ -639,20 +658,20 @@ namespace Yoyo
                 return back;
             }
             if(pos == text.size()) return std::nullopt;
-            auto next_at_at = text.find_first_of("@@", pos);
+            auto next_at_at = text.find_first_of(":>,", pos);
             if(next_at_at == std::string_view::npos) next_at_at = text.size();
             std::string_view from_pos{text.begin() + pos, text.end()};
             if(next_at_at == pos)
             {
-                if(from_pos.starts_with("@@__sub_begin@@"))
+                if(from_pos.starts_with("::<"))
                 {
-                    pos += 15; return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 15}};
+                    pos += 3; return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 15}};
                 }
-                if(from_pos.starts_with("@@__sub_end@@"))
+                if(from_pos.starts_with(">"))
                 {
-                    pos += 13; return Token{SubClose, {from_pos.begin(), from_pos.begin() + 13}};
+                    pos += 1; return Token{SubClose, {from_pos.begin(), from_pos.begin() + 13}};
                 }
-                pos += 2; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
+                pos += 1; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
             }
             auto ret_val = std::string_view{from_pos.begin(), from_pos.begin() + next_at_at - pos};
             pos = next_at_at;

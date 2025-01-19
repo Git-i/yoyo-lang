@@ -1307,13 +1307,13 @@ namespace Yoyo
         irgen->module = mod;
 
         for(size_t i = 0; i < types.size(); i++)
-            irgen->module->aliases[hash + name + "__"].emplace(fn->clause.types[i], types[i]);
+            irgen->module->aliases[hash + name + "::"].emplace(fn->clause.types[i], types[i]);
 
         auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn));
         auto new_decl = reinterpret_cast<FunctionDeclaration*>(ptr.get());
         new_decl->name = name;
         auto old_hash = irgen->reset_hash();
-        irgen->block_hash = hash + name + "__";
+        irgen->block_hash = hash + name + "::";
         irgen->saturateSignature(new_decl->signature, mod);
         irgen->block_hash = hash;
 

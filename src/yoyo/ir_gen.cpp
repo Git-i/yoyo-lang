@@ -65,7 +65,7 @@ namespace Yoyo
             return llvm::StructType::get(context, args);
         }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
-        error(Error({}, {}, "Encountered unexpected type", ""));
+        error(Error({1, 1}, {1, 1}, "Encountered unexpected type", ""));
         return nullptr;
     }
     extern "C"
@@ -312,7 +312,7 @@ namespace Yoyo
         if(!return_t.is_void()) currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
             static_cast<llvm::Value*>(Alloca("return_address", return_as_llvm_type));
         auto old_hash = block_hash;
-        block_hash = name + "__%";
+        block_hash = name + "::";
         pushScope();
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(CFGNodeManager{}), decl);
         function_cfgs.back().annotate();
@@ -408,7 +408,7 @@ namespace Yoyo
         }
         auto ptr = current_Statement->release();
         assert(ptr == decl);
-        std::string class_hash = block_hash + "__class__" + name + "__%";
+        std::string class_hash = block_hash + name + "::";
         for(auto& var : decl->vars) var.type.saturate(module, this);
         module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl->vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
 
@@ -440,7 +440,7 @@ namespace Yoyo
                 continue;
             }
             auto curr_hash = std::move(block_hash);
-            block_hash = class_hash + "__interface" + hash + interface->name + "__%";
+            block_hash = class_hash + hash + interface->name + "::";
             for (auto& mth : impl.methods)
             {
                 auto it = std::ranges::find_if(interface->methods, [&mth](auto& method) {
@@ -453,7 +453,7 @@ namespace Yoyo
                     saturateSignature(mth->signature, module);
                     in_class = false;
                     auto interface_method_hash = reset_hash();
-                    block_hash = hash + interface->name + "__";
+                    block_hash = hash + interface->name + "::";
                     saturateSignature((*it)->signature, impl.impl_for.module);
                     block_hash = std::move(interface_method_hash);
                     in_class = true;
@@ -582,7 +582,7 @@ namespace Yoyo
                 error(Error(stat->iterable.get(), "Expression does not evaluate to an iterable type"));
                 return;
             }
-            std::string fn_name = hash + "__interface__builtinIterator" + mangleGenericArgs(impl->impl_for.subtypes) + "__%next";
+            std::string fn_name = hash + "__builtinIterator" + mangleGenericArgs(impl->impl_for.subtypes) + "::next";
             auto next_fn = code->getFunction(fn_name);
             auto memory_ty = ToLLVMType(impl->methods[0]->signature.returnType, false);
             auto memory = Alloca("for_obj", memory_ty);
@@ -790,7 +790,7 @@ namespace Yoyo
     void IRGenerator::operator()(AliasDeclaration* decl)
     {
         auto hash = block_hash;
-        block_hash += decl->name + "__%"; //in the case of generics
+        block_hash += decl->name + "::"; //in the case of generics
         decl->type.saturate(module, this);
         block_hash = std::move(hash);
         module->aliases[block_hash].emplace(decl->name, decl->type);
@@ -829,10 +829,10 @@ namespace Yoyo
     std::string IRGenerator::mangleGenericArgs(std::span<const Type> list)
     {
         if (list.empty()) return "";
-        std::string final = "@@__gscope_beg@@" + list[0].full_name();
+        std::string final = "::<" + list[0].full_name();
         for(auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
-            final += "@@" + tp.full_name();
-        final += "@@__gscope_end@@";
+            final += "," + tp.full_name();
+        final += ">";
         return final;
     }
 

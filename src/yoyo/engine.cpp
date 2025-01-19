@@ -177,7 +177,7 @@ namespace Yoyo
         if(modules.contains(name)) return nullptr;
         auto& md = modules[name];
         md = std::make_unique<AppModule>();
-        md->module_hash = "__" + name + "%";
+        md->module_hash = name + "::";
         md->engine = this;
         md->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>(name, ctx), llvm_context);
         return reinterpret_cast<AppModule*>(md.get());
@@ -192,7 +192,7 @@ namespace Yoyo
         auto& md = modules[module_name];
         md = std::make_unique<Module>();
         md->engine = this;
-        md->module_hash = "__" + module_name + std::to_string(reinterpret_cast<std::uintptr_t>(md.get())) + "%";
+        md->module_hash = module_name + "::";
         md->modules["core"] = modules.at("__builtin").get();
         for(auto& stat : prog)
         {
