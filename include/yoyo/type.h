@@ -126,7 +126,7 @@ namespace Yoyo
         explicit UnsaturatedTypeIterator(const Type& type);
         [[nodiscard]] bool is_end() const;
         [[nodiscard]] Type next();
-        Type last();
+        Type last(bool parse = false);
         size_t pos = 0;
         std::vector<std::string_view> split_cache;
     };

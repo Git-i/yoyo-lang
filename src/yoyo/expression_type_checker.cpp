@@ -671,7 +671,7 @@ namespace Yoyo
     }
 
     std::optional<std::unordered_map<std::string, Type>> 
-        genericMatch(const Type& generic, const Type& resolved, std::span<std::string> generics) 
+        genericMatch(const Type& generic, const Type& resolved, std::span<std::string> generics, IRGenerator* irgen) 
     {
         if (auto it = std::ranges::find_if(generics, [&generic](const std::string& val)
             {return val == generic.name;}); it != generics.end())
@@ -680,20 +680,57 @@ namespace Yoyo
         }
         std::unordered_map<std::string, Type> results;
         auto it = UnsaturatedTypeIterator(generic);
-        while (!it.is_end())
+        if (!it.is_end())
         {
-            auto tp = it.next();
-            __debugbreak();
+            auto first = std::string(generic.name.begin(), generic.name.begin() + generic.name.find_first_of(':'));
+            auto a = irgen->module->hashOf(irgen->block_hash, first);
+            if (!a) return std::nullopt;
+            auto gblock = Type{ *a };
+            auto res_block = Type{ resolved.block_hash };
+            UnsaturatedTypeIterator generic_it(gblock);
+            UnsaturatedTypeIterator resolved_it(res_block);
+            while (!generic_it.is_end())
+            {
+                auto gtp = generic_it.next();
+                auto rtp = resolved_it.next();
+                if (gtp != rtp) __debugbreak();
+            }
+            if (resolved_it.is_end()) __debugbreak();
+            else
+            {
+                Type rtp = resolved_it.next();
+                Type gtp = generic_it.last();
+                if (rtp != gtp) __debugbreak();
+            }
+            while (!it.is_end())
+            {
+                Type gtp = it.next();
+                if (resolved_it.is_end() && !it.is_end()) __debugbreak();
+                Type rtp = resolved_it.is_end() ? resolved_it.last(true) : resolved_it.next();
+                if (gtp.name != rtp.name) return std::nullopt;
+                if (gtp.subtypes.size() != rtp.subtypes.size()) return std::nullopt;
+                for (size_t i = 0; i < gtp.subtypes.size(); i++)
+                {
+                    rtp.subtypes[i].saturate(irgen->module, irgen);
+                    auto match = genericMatch(gtp.subtypes[i], rtp.subtypes[i], generics, irgen);
+                    if (!match) return std::nullopt;
+                    for (auto& [name, tp] : *match) {
+                        if (!results.contains(name)) {
+                            results[name] = tp; continue;
+                        }
+                        if (!results.at(name).is_equal(tp)) return std::nullopt;
+                    }
+                }
+            }
         }
         if (it.is_end())
         {
-            // Event::<Buffer::<T>>
             auto tp = it.last();
             if (tp.name != resolved.name) return std::nullopt;
             if (tp.subtypes.size() != resolved.subtypes.size()) return std::nullopt;
             for (size_t i = 0; i < tp.subtypes.size(); i++)
             {
-                auto match = genericMatch(tp.subtypes[i], resolved.subtypes[i], generics);
+                auto match = genericMatch(tp.subtypes[i], resolved.subtypes[i], generics, irgen);
                 if (!match) return std::nullopt;
                 for (auto& [name, tp] : *match) {
                     if (!results.contains(name)) {
@@ -703,25 +740,37 @@ namespace Yoyo
                 }
             }
         }
+        return results;
     }
 
-    std::optional<std::vector<Type>> deduceTypeArgs(const FunctionType& generic_fn, std::span<Type> input)
+    std::optional<std::vector<Type>> deduceTypeArgs(const FunctionType& generic_fn, std::span<Type> input, IRGenerator* irgen)
     {
         if (generic_fn.sig.parameters.size() == 0) return std::nullopt;
-        std::unordered_map<std::string, Type> deduced;
         constexpr std::string_view gfn = "__generic_fn";
         std::string name(generic_fn.name.begin() + gfn.size(), generic_fn.name.end());
         auto decl = generic_fn.module->findGenericFn(generic_fn.block_hash, name).second;
+        std::unordered_map<std::string, Type> results;
         for (size_t i = 0; i < input.size(); i++)
         {
-            genericMatch(generic_fn.sig.parameters[i].type, input[i], decl->clause.types);
+            auto match = genericMatch(generic_fn.sig.parameters[i].type, input[i], decl->clause.types, irgen);
+            if (!match) return std::nullopt;
+            for (auto& [name, tp] : *match) {
+                if (!results.contains(name)) {
+                    results[name] = tp; continue;
+                }
+                if (!results.at(name).is_equal(tp)) return std::nullopt;
+            }
         }
-        __debugbreak();
-        return {};
+        if (results.size() != decl->clause.types.size()) return std::nullopt;
+        std::vector<Type> ret;
+        for (auto& param : decl->clause.types)
+            ret.emplace_back(std::move(results.at(param)));
+        return ret;
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(CallOperation* op)
     {
+        if(!op->callee) return { Error(op, "Could not deduce generic args") };
         auto callee_ty = std::visit(*this, op->callee->toVariant()).value_or_error();
         if (callee_ty.is_error_ty()) return { std::move(callee_ty) };
         if (!callee_ty.is_function() && !callee_ty.is_lambda() && !callee_ty.name.starts_with("__generic_fn"))
@@ -739,7 +788,29 @@ namespace Yoyo
             inputs.reserve(op->arguments.size() + callee_ty.is_bound);
             if (callee_ty.is_bound) inputs.emplace_back(callee_ty.subtypes[0]);
             for (auto& arg : op->arguments) inputs.emplace_back(std::visit(*this, arg->toVariant()).value_or_error());
-            deduceTypeArgs(callee_ty, inputs);
+            auto args = deduceTypeArgs(callee_ty, inputs, irgen);
+            if (!args)
+            {
+                op->callee = nullptr; // we null the calle as a marker that we've done this before
+                return { Error(op, "Could not deduce generic args") };
+            }
+            //modify the node if possible to prevent doing this gymnastics over and over
+            if (auto as_bin = dynamic_cast<BinaryOperation*>(op->callee.get()))
+            {
+                if (auto as_name = dynamic_cast<NameExpression*>(as_bin->rhs.get()))
+                {
+                    auto beg = as_name->beg, end = as_name->end;
+                    as_bin->rhs = std::make_unique<GenericNameExpression>(as_name->text, *args);
+                    as_bin->rhs->beg = beg; as_bin->rhs->end = end;
+                }
+            }
+            else if (auto as_name = dynamic_cast<NameExpression*>(op->callee.get()))
+            {
+                auto beg = as_name->beg, end = as_name->end;
+                op->callee = std::make_unique<GenericNameExpression>(as_name->text, *args);
+                op->callee->beg = beg; op->callee->end = end;
+            }
+            return (*this)(op);
         }
         for(size_t i = 0; i < op->arguments.size(); ++i)
         {

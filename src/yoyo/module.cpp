@@ -103,10 +103,9 @@ namespace Yoyo
             });
             if(it != details_list.end()) return hash;
         }
-        if (auto [hash, intf] = findInterface(block, name); intf)
-        {
-            return hash;
-        }
+        if (auto [hash, intf] = findInterface(block, name); intf) return hash;
+        if (auto [hash, _] = findFunction(block, name); _) return hash;
+        if (auto [hash, _] = findGenericFn(block, name); _) return hash;
         return std::nullopt;
     }
     llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)

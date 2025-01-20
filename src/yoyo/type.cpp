@@ -759,8 +759,13 @@ namespace Yoyo
         pos++;
         return parseType(scn);
     }
-    Type UnsaturatedTypeIterator::last()
+    Type UnsaturatedTypeIterator::last(bool parse)
     {
+            if(parse)
+            {
+                MangleScanner scn(split_cache.back());
+                return parseType(scn);
+            }
             Type tp = type;
             tp.name = split_cache.back();
             pos++;
