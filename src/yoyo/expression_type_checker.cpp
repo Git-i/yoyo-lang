@@ -422,7 +422,7 @@ namespace Yoyo
         if (auto [hsh, interface] = md->findGenericInterface(hash, type.name); interface)
         {
             if (type.subtypes.size() != interface->clause.types.size()) return false;
-            for (auto& sub : type.subtypes) sub.saturate(md, irgen);
+            for (auto& sub : type.subtypes) sub.saturate(irgen->module, irgen);
             ExpressionEvaluator{ irgen }.generateGenericInterface(md, hsh, interface, type.subtypes);
             std::string name = interface->name + IRGenerator::mangleGenericArgs(type.subtypes);
             if (auto [_, exists] = md->findInterface(hsh, name); exists)

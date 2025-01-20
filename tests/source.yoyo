@@ -52,15 +52,34 @@ gwrap: fn::<T> = {
 		}
 	}
 }
+gwrap_other: fn::<T, O> = {
+	EnumerateIter: struct:& impl core::Iterator::<(u64, O)> = {
+		actual_iter: T,
+		idx: u64,
+		impl core::Iterator::<(u64, O)> {
+			next: fn (&mut this) -> (u64, O)? = {
+				if |nxt| (this.actual_iter.core::Iterator::<O>::next()) {
+					this.idx = this.idx + 1;
+					return (this.idx, nxt);
+				}
+				else return null;
+			}
+		}
+	}
+}
 iter: fn::<T>(list: &gwrap::<T>::LinkedList) -> gwrap::<T>::LinkedListIterator
 	= return gwrap::<T>::LinkedListIterator { .curr = list.first };
+
+enumerate: fn::<T> (iter: gwrap::<T>::LinkedListIterator) ->
+	gwrap_other::<gwrap::<T>::LinkedListIterator, &T>::EnumerateIter = return 
+		gwrap_other::<gwrap::<T>::LinkedListIterator, &T>::EnumerateIter{.actual_iter = iter, .idx = 0};
 main: fn = {
 	a: mut = gwrap::<str>::LinkedList::new();
 	a.append("Hello");
 	a.append("World");
 	a.append("Stuff");
 	a.append("Others");
-	for(lol in a.iter()) {
-		app::func(lol);
+	for(lol in a.iter().enumerate()) {
+		app::func(&"${lol.0}: ${*lol.1}");
 	}
 }

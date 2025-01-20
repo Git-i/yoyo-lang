@@ -636,7 +636,10 @@ namespace Yoyo
 
     void IRGenerator::operator()(ConditionalExtraction* stat)
     {
-        auto tp = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value_or_error();
+        if (dynamic_cast<CallOperation*>(stat->condition.get())) __debugbreak();
+        auto tp_e = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
+        auto expression = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
+        auto tp = tp_e.value_or_error();
         if(!tp.is_optional() && !tp.is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
         if (!stat->else_capture.empty()) { debugbreak(); return; }
         if (stat->is_ref && tp.is_value_conversion_result()) { error(Error({}, {}, "Expanded expression cannot be borrowed", "")); return; }
@@ -650,7 +653,6 @@ namespace Yoyo
         if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
 
         auto llvm_t = ToLLVMType(tp, false);
-        auto expression = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
 
         auto is_valid = builder->CreateLoad(llvm::Type::getInt1Ty(context), builder->CreateStructGEP(llvm_t, expression, 1));
 

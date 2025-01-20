@@ -1456,8 +1456,8 @@ namespace Yoyo
                 auto pos = right_t->name.find_first_of('$');
                 std::string name = right_t->name.substr("__interface_fn"sv.size(), pos - "__interface_fn"sv.size());
                 std::string fn_name = right_t->name.substr(pos + 1);
-                auto dets = irgen->module->findType(irgen->block_hash, left_t->deref().name);
-                fn_name = std::get<0>(*dets) + "__interface" + name + "__%" + fn_name;
+                auto dets = irgen->module->findType(left_t->deref().block_hash, left_t->deref().name);
+                fn_name = std::get<0>(*dets) + name + "::" + fn_name;
                 auto callee = irgen->code->getFunction(fn_name);
                 bool uses_sret = callee->hasStructRetAttr();
                 std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);

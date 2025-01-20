@@ -613,16 +613,23 @@ namespace Yoyo
         if (str.size() <= 2) return { str };
         std::vector<std::string_view> result;
         size_t left = 0;
+        uint32_t generic_depth = 0;
         for (size_t it = 0; it < str.size() - delim.size(); ++it)
         {
             std::string_view curr(str.begin() + it, str.begin() + it + delim.size());
             //we dont split in the special case of ::<
-            if (curr == delim && str[it + delim.size()] != '<')
-            {
-                result.emplace_back(str.begin() + left, str.begin() + it);
-                it += delim.size();
-                left = it;
-            }
+            if (curr == delim)
+                if (str[it + delim.size()] != '<')
+                {
+                    if (generic_depth == 0)
+                    {
+                        result.emplace_back(str.begin() + left, str.begin() + it);
+                        it += delim.size();
+                        left = it;
+                    }
+                }
+                else generic_depth++;
+            if (str[it] == '>') generic_depth--;
         }
         result.emplace_back(str.begin() + left, str.ends_with(delim) ? str.end() - delim.size() : str.end());
         return result;
@@ -640,7 +647,7 @@ namespace Yoyo
     {
         enum Type
         {
-            SubOpen, Name, SubClose, AtAt
+            SubOpen, Name, SubClose, AtAt, Scope
         };
         struct Token
         {
@@ -649,7 +656,7 @@ namespace Yoyo
         std::string_view text;
         size_t pos = 0;
         std::vector<Token> buffer;
-        std::optional<Token> next()
+        std::optional<Token> next(bool update_pos = true)
         {
             if(!buffer.empty())
             {
@@ -665,16 +672,20 @@ namespace Yoyo
             {
                 if(from_pos.starts_with("::<"))
                 {
-                    pos += 3; return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 15}};
+                    if(update_pos)pos += 3; return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 2}};
+                }
+                if(from_pos.starts_with("::"))
+                {
+                    if(update_pos)pos += 2; return Token{ Scope, {from_pos.begin(), from_pos.begin() + 2} };
                 }
                 if(from_pos.starts_with(">"))
                 {
-                    pos += 1; return Token{SubClose, {from_pos.begin(), from_pos.begin() + 13}};
+                    if(update_pos)pos += 1; return Token{SubClose, {from_pos.begin(), from_pos.begin() + 1}};
                 }
-                pos += 1; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
+                if(update_pos)pos += 1; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
             }
             auto ret_val = std::string_view{from_pos.begin(), from_pos.begin() + next_at_at - pos};
-            pos = next_at_at;
+            if(update_pos) pos = next_at_at;
             return Token{Name, ret_val};
         }
     };
@@ -734,22 +745,34 @@ namespace Yoyo
     // for this we assume 100% correctness because its only called in that case
     Type parseType(MangleScanner& scanner)
     {
+
+        //if (scanner.text.starts_with("gwrap_other")) __debugbreak();
         Type output;
         auto token = scanner.next().value();
         assert(token.type == MangleScanner::Name);
         output.name = token.text;
         output.module = nullptr;
-        auto next = scanner.next();
+        auto next = scanner.next(false);
         if(!next) return output;
         if(next->type == MangleScanner::SubOpen)
         {
+            scanner.next();
             output.subtypes.emplace_back(parseType(scanner));
-            while(scanner.next()->type == MangleScanner::AtAt)
+            while(scanner.next(false)->type == MangleScanner::AtAt)
             {
+                scanner.next();
                 output.subtypes.emplace_back(parseType(scanner));
             }
+            assert(scanner.next()->type == MangleScanner::SubClose);
         }
         else scanner.buffer.push_back(next.value());
+        while (scanner.next(false)->type == MangleScanner::Scope)
+        {
+            scanner.next();
+            auto tp = parseType(scanner);
+            tp.name = output.full_name() + "::" + tp.name;
+            output = std::move(tp);
+        }
         return output;
     }
     Type UnsaturatedTypeIterator::next()
