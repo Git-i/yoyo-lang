@@ -386,7 +386,7 @@ namespace Yoyo
                 if(hsh) block_hash = std::move(hsh).value();
             }
             else
-                module = src->engine->modules.at("__builtin").get();
+                module = src->engine->modules.at("core").get();
         }
         if(is_mutable_reference())
             subtypes[0].is_mutable = true;

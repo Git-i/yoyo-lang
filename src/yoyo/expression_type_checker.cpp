@@ -52,7 +52,7 @@ namespace Yoyo
             __debugbreak();
             return std::nullopt;
         }
-        return Type{.name="void", .module = a.module->engine->modules.at("__builtin").get()};
+        return Type{.name="void", .module = a.module->engine->modules.at("core").get()};
     }
     static std::optional<Type> checkMinus(const Type &a, const Type &b)
     {
@@ -82,9 +82,9 @@ namespace Yoyo
     {
         if(a.is_integral() || a.is_floating_point())
         {
-            if(a.is_equal(b)) return Type{.name="bool", .module = a.module->engine->modules.at("__builtin").get()};
+            if(a.is_equal(b)) return Type{.name="bool", .module = a.module->engine->modules.at("core").get()};
             auto res = canBinOpLiteral(a, b);
-            if(res) return Type{.name="bool", .module = a.module->engine->modules.at("__builtin").get()};
+            if(res) return Type{.name="bool", .module = a.module->engine->modules.at("core").get()};
             return std::nullopt;
         }
         return std::nullopt;
@@ -141,7 +141,7 @@ namespace Yoyo
             return { err };
         }
         return { Type{.name = "__arr_s" + std::to_string(lit->elements.size()), .subtypes = {*subtype},
-            .module = subtype->module->engine->modules.at("__builtin").get()} };
+            .module = subtype->module->engine->modules.at("core").get()} };
     }
 
     std::optional<FunctionType> checkDot(BinaryOperation* expr, const Type& lhs, IRGenerator* irgen)
@@ -518,7 +518,7 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(NullLiteral* null)
     {
-        return { Type{.name = "__null",.module = irgen->module->engine->modules.at("__builtin").get()} };
+        return { Type{.name = "__null",.module = irgen->module->engine->modules.at("core").get()} };
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(AsExpression* expr)
@@ -532,7 +532,7 @@ namespace Yoyo
                 if(sub.is_equal(expr->dest))
                     return { Type{
                     "__conv_result_ref", {std::move(sub)}, nullptr,
-                    irgen->module->engine->modules.at("__builtin").get(),from.is_mutable,from.is_lvalue
+                    irgen->module->engine->modules.at("core").get(),from.is_mutable,from.is_lvalue
                 } };
             }
             return { Error(expr, "The type tp must be one of the variant subtypes") };
@@ -566,14 +566,14 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(CharLiteral*)
     {
-        return { Type{.name = "char", .module = irgen->module->engine->modules.at("__builtin").get()} };
+        return { Type{.name = "char", .module = irgen->module->engine->modules.at("core").get()} };
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(TupleLiteral* tup)
     {
         //target type can modify the type of tuple literals
         bool consider_target = target && target->is_tuple() && target->subtypes.size() == tup->elements.size();
-        Type tp{.name="__tup", .module = irgen->module->engine->modules.at("__builtin").get()};
+        Type tp{.name="__tup", .module = irgen->module->engine->modules.at("core").get()};
         for(size_t i = 0; i < tup->elements.size(); ++i)
         {
             auto type_i = std::visit(ExpressionTypeChecker{irgen}, tup->elements[i]->toVariant()).value_or_error();
@@ -597,7 +597,7 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(BooleanLiteral*)
     {
-        return { Type{.name = "bool", .module = irgen->module->engine->modules.at("__builtin").get()} };
+        return { Type{.name = "bool", .module = irgen->module->engine->modules.at("core").get()} };
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(GroupingExpression* expr)
@@ -623,7 +623,7 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(IntegerLiteral*)
     {
-        return { Type{.name = "ilit", .module = irgen->module->engine->modules.at("__builtin").get()} };
+        return { Type{.name = "ilit", .module = irgen->module->engine->modules.at("core").get()} };
     }
 
 
@@ -656,20 +656,21 @@ namespace Yoyo
                 //ref to ref is invalid
                 //if(op_type.is_reference()) return std::nullopt;
             return { Type{.name = "__ref", .subtypes = {std::move(op_type)},
-                .module = irgen->module->engine->modules.at("__builtin").get()} };
+                .module = irgen->module->engine->modules.at("core").get()} };
             }
         case RefMut:
             {
                 //if(op_type.is_reference()) return std::nullopt;
                 if (!op_type.is_mutable) return { Error(op, "Cannot mutably reference an immutable expression") };
                 return { Type{.name = "__ref_mut", .subtypes = {std::move(op_type)},
-                    .module = irgen->module->engine->modules.at("__builtin").get()} };
+                    .module = irgen->module->engine->modules.at("core").get()} };
             }
         default: break;
         }
 
     }
 
+    //takes two types that are (supposed to be) equal but one is generic and returns a list of substitutions
     std::optional<std::unordered_map<std::string, Type>> 
         genericMatch(const Type& generic, const Type& resolved, std::span<std::string> generics, IRGenerator* irgen) 
     {
@@ -695,7 +696,10 @@ namespace Yoyo
                 auto rtp = resolved_it.next();
                 if (gtp != rtp) __debugbreak();
             }
-            if (resolved_it.is_end()) __debugbreak();
+            if (resolved_it.is_end())
+            {
+                if(!generic_it.is_end()) __debugbreak();
+            }
             else
             {
                 Type rtp = resolved_it.next();
@@ -742,7 +746,37 @@ namespace Yoyo
         }
         return results;
     }
-
+    struct ConstraintInferenceChecker
+    {
+        std::unordered_map<std::string, Type>& results;
+        std::string type;
+        std::span<std::string> generics;
+        IRGenerator* irgen;
+        bool operator()(const ImplConstraint& impl_con) {
+            //If the type hasn't been resolved yet we skip it, this does mean that we may require more passes
+            if (!results.contains(type)) return true;
+            auto cls = results.at(type).get_decl_if_class();
+            if (!cls) return true;
+            for (auto& intf : cls->impls)
+            {
+                auto match = genericMatch(impl_con.other, intf.impl_for, generics, irgen);
+                if (match)
+                {
+                    for (auto& [name, tp] : *match) {
+                        if (!results.contains(name)) {
+                            results[name] = tp; continue;
+                        }
+                        if (!results.at(name).is_equal(tp)) return false;
+                    }
+                }
+            }
+            return true;
+        }
+        bool operator()(const SatisfyConstraint&) {
+            Yoyo::debugbreak();
+            return true;
+        }
+    };
     std::optional<std::vector<Type>> deduceTypeArgs(const FunctionType& generic_fn, std::span<Type> input, IRGenerator* irgen)
     {
         if (generic_fn.sig.parameters.size() == 0) return std::nullopt;
@@ -750,6 +784,7 @@ namespace Yoyo
         std::string name(generic_fn.name.begin() + gfn.size(), generic_fn.name.end());
         auto decl = generic_fn.module->findGenericFn(generic_fn.block_hash, name).second;
         std::unordered_map<std::string, Type> results;
+        //we try to infer substitutions from parameter types first
         for (size_t i = 0; i < input.size(); i++)
         {
             auto match = genericMatch(generic_fn.sig.parameters[i].type, input[i], decl->clause.types, irgen);
@@ -761,7 +796,23 @@ namespace Yoyo
                 if (!results.at(name).is_equal(tp)) return std::nullopt;
             }
         }
+        //after the above not all types may have substitutions, so we try to infer other substitution from constrinats
+        //we return if all types have already been inferred
+        if (results.size() == decl->clause.types.size())
+        {
+            std::vector<Type> ret;
+            for (auto& param : decl->clause.types)
+                ret.emplace_back(std::move(results.at(param)));
+            return ret;
+        }
+        for (auto [type, constraints] : decl->clause.constraints) {
+            for (auto& con : constraints) {
+                auto success = std::visit(ConstraintInferenceChecker{ results, type, decl->clause.types, irgen }, con);
+                if (!success) return std::nullopt;
+            }
+        }
         if (results.size() != decl->clause.types.size()) return std::nullopt;
+
         std::vector<Type> ret;
         for (auto& param : decl->clause.types)
             ret.emplace_back(std::move(results.at(param)));
@@ -832,7 +883,7 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(RealLiteral*)
     {
-        return { Type{.name = "flit", .module = irgen->module->engine->modules.at("__builtin").get()} };
+        return { Type{.name = "flit", .module = irgen->module->engine->modules.at("core").get()} };
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(StringLiteral* lit)
@@ -848,7 +899,7 @@ namespace Yoyo
             }
         }
         return { Type{.name = "str",
-            .module = irgen->module->engine->modules.at("__builtin").get()} };
+            .module = irgen->module->engine->modules.at("core").get()} };
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(GCNewExpression* expr)

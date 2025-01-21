@@ -14,7 +14,7 @@ gwrap: fn::<T> = {
 				last: mut ^Node = val;
 				//implement options as truthy values and break
 				should_loop: mut = true;
-				while(should_loop) {
+				while (should_loop) {
 					if |nxt| (last.next) last = nxt;
 					else should_loop = false;
 				}
@@ -29,7 +29,7 @@ gwrap: fn::<T> = {
 				app::func(&"${val.data}");
 				last: mut ^Node = val;
 				should_loop: mut = true;
-				while(should_loop) {
+				while (should_loop) {
 					if |nxt| (last.next) {
 						last = nxt;
 						app::func(&"${last.data}");
@@ -52,7 +52,7 @@ gwrap: fn::<T> = {
 		}
 	}
 }
-gwrap_other: fn::<T, O> = {
+gwrap_other: fn::<T: impl core::Iterator::<O>, O> = {
 	EnumerateIter: struct:& impl core::Iterator::<(u64, O)> = {
 		actual_iter: T,
 		idx: u64,
@@ -67,19 +67,39 @@ gwrap_other: fn::<T, O> = {
 		}
 	}
 }
-iter: fn::<T>(list: &gwrap::<T>::LinkedList) -> gwrap::<T>::LinkedListIterator
+gwrap_third: fn::<A: impl core::Iterator::<O>, B: impl core::Iterator::<O>, O> = {
+	ChainIter: struct:&	impl core::Iterator::<O> = 
+{
+	first_iter: A,
+	second_iter: B,
+	impl core::Iterator::<O> {
+		next: fn (&mut this) -> O? = {
+			if |nxt| (this.first_iter.core::Iterator::<O>::next()) return nxt;
+			else return this.second_iter.core::Iterator::<O>::next();
+		}
+	}		
+}
+}
+iter: fn::<T> (list: &gwrap::<T>::LinkedList) -> gwrap::<T>::LinkedListIterator
 	= return gwrap::<T>::LinkedListIterator { .curr = list.first };
 
-enumerate: fn::<T> (iter: gwrap::<T>::LinkedListIterator) ->
-	gwrap_other::<gwrap::<T>::LinkedListIterator, &T>::EnumerateIter = return 
-		gwrap_other::<gwrap::<T>::LinkedListIterator, &T>::EnumerateIter{.actual_iter = iter, .idx = 0};
+enumerate: fn::<T: impl core::Iterator::<O>, O> (iter: T) ->
+	gwrap_other::<T, O>::EnumerateIter = 
+	return gwrap_other::<T, O>::EnumerateIter{.actual_iter = iter, .idx = 0};
+
+chain: fn::<A: impl core::Iterator::<O>, B: impl core::Iterator::<O>, O> 
+	(first: A, snd: B) -> gwrap_third::<A, B, O>::ChainIter =
+	return gwrap_third::<A, B, O>::ChainIter{.first_iter = first, .second_iter = snd};
 main: fn = {
 	a: mut = gwrap::<str>::LinkedList::new();
 	a.append("Hello");
 	a.append("World");
 	a.append("Stuff");
 	a.append("Others");
-	for(lol in a.iter().enumerate()) {
+	b: mut = gwrap::<str>::LinkedList::new();
+	b.append("Second List");
+	b.append("Second List Again");
+	for (lol in a.iter().chain(b.iter()).enumerate()) {
 		app::func(&"${lol.0}: ${*lol.1}");
 	}
 }

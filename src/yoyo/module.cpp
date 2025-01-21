@@ -106,6 +106,7 @@ namespace Yoyo
         if (auto [hash, intf] = findInterface(block, name); intf) return hash;
         if (auto [hash, _] = findFunction(block, name); _) return hash;
         if (auto [hash, _] = findGenericFn(block, name); _) return hash;
+        if (modules.contains(name)) return modules.at(name)->module_hash;
         return std::nullopt;
     }
     llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)
@@ -225,10 +226,10 @@ namespace Yoyo
 
     void makeBuiltinModule(Engine* eng)
     {
-        if(eng->modules.contains("__builtin")) return;
-        eng->modules["__builtin"] = std::make_unique<Module>();
-        auto module = eng->modules.at("__builtin").get();
-        module->module_hash = "__builtin";
+        if(eng->modules.contains("core")) return;
+        eng->modules["core"] = std::make_unique<Module>();
+        auto module = eng->modules.at("core").get();
+        module->module_hash = "core";
         module->engine = eng;
         auto& operators = module->overloads;
         std::array types = {

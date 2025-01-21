@@ -569,7 +569,7 @@ namespace Yoyo
             Yoyo::InterfaceImplementation* impl = nullptr;
             for (auto& im : decl->impls)
             {
-                if (im.impl_for.module == module->engine->modules.at("__builtin").get() && im.impl_for.name == "Iterator")
+                if (im.impl_for.module == module->engine->modules.at("core").get() && im.impl_for.name == "Iterator")
                 {
                     if (impl) {
                         error(Error(stat, "Type implements multiple iterator interfaces"));
@@ -582,7 +582,7 @@ namespace Yoyo
                 error(Error(stat->iterable.get(), "Expression does not evaluate to an iterable type"));
                 return;
             }
-            std::string fn_name = hash + "__builtinIterator" + mangleGenericArgs(impl->impl_for.subtypes) + "::next";
+            std::string fn_name = hash + "coreIterator" + mangleGenericArgs(impl->impl_for.subtypes) + "::next";
             auto next_fn = code->getFunction(fn_name);
             auto memory_ty = ToLLVMType(impl->methods[0]->signature.returnType, false);
             auto memory = Alloca("for_obj", memory_ty);
@@ -636,7 +636,6 @@ namespace Yoyo
 
     void IRGenerator::operator()(ConditionalExtraction* stat)
     {
-        if (dynamic_cast<CallOperation*>(stat->condition.get())) __debugbreak();
         auto tp_e = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
         auto expression = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
         auto tp = tp_e.value_or_error();

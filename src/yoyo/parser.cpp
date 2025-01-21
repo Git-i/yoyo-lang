@@ -419,24 +419,46 @@ namespace Yoyo
         }
         return sig;
     }
+    std::optional<std::vector<Constraint>> parseGenericConstraints(Parser& p)
+    {
+        auto tk = p.Get();
+        if (!tk) return std::nullopt;
+        if (tk->type == TokenType::Impl)
+        {
+            return { { Constraint{ ImplConstraint{ p.parseType(0).value_or(Type{}) }}}};
+        }
+        p.error("Unsupported", tk);
+        return std::nullopt;
+    }
     // ::<a, b, c>
     std::optional<GenericClause> Parser::parseGenericClause()
     {
         std::vector<std::string> names;
+        std::unordered_map<std::string, std::vector<Constraint>> constraints;
         if(!discard(TokenType::TemplateOpen)) error("Expected '::<'", Peek());
         auto iden = Get();
         if(!iden) return std::nullopt;
         if(iden->type != TokenType::Identifier) error("Expected identifier", Peek());
-        else names.emplace_back(iden->text);
+        else
+        {
+            names.emplace_back(iden->text);
+            if (discard(TokenType::Colon)) constraints[names.back()] = 
+                parseGenericConstraints(*this).value_or(std::vector<Constraint>{});
+        }
         while(!discard(TokenType::Greater))
         {
             if(!discard(TokenType::Comma)) error("Expected ','", Peek());
             iden = Get();
             if(!iden) return std::nullopt;
             if(iden->type != TokenType::Identifier) error("Expected identifier", Peek());
-            else names.emplace_back(iden->text);
+            else
+            {
+                names.emplace_back(iden->text);
+                if (discard(TokenType::Colon)) constraints[names.back()] =
+                    parseGenericConstraints(*this).value_or(std::vector<Constraint>{});
+            }
         }
-        return GenericClause(std::move(names));
+        return GenericClause(std::move(names), std::move(constraints));
     }
 
     std::optional<Token> Parser::Peek()
