@@ -579,10 +579,10 @@ namespace Yoyo
         if (!ty.is_mutable && ty.is_lvalue) error(Error(stat->iterable.get(), "Iterator object must be mutable or a temporary"));
         //check if it implements iterator interface
         auto value = std::visit(ExpressionEvaluator{ this }, stat->iterable->toVariant());
-        if (auto cls = ty.module->findType(ty.block_hash, ty.name))
+        if (auto cls = ty.get_decl_if_class(this))
         {
-            auto decl = std::get<2>(*cls).get();
-            auto hash = std::get<0>(*cls);
+            auto decl = cls;
+            auto hash = std::get<0>(*ty.module->findType(ty.block_hash, cls->name));
             Yoyo::InterfaceImplementation* impl = nullptr;
             for (auto& im : decl->impls)
             {

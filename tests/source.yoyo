@@ -37,18 +37,17 @@ LinkedListIterator: struct:&::<T> impl core::Iterator::<&T> = {
 		}
 	}
 }
-gwrap_other: fn::<T: impl core::Iterator::<O>, O> = {
-	EnumerateIter: struct:& impl core::Iterator::<(u64, O)> = {
-		actual_iter: T,
-		idx: u64,
-		impl core::Iterator::<(u64, O)> {
-			next: fn (&mut this) -> (u64, O)? = {
-				if |nxt| (this.actual_iter.core::Iterator::<O>::next()) {
-					this.idx = this.idx + 1;
-					return (this.idx, nxt);
-				}
-				else return null;
+
+EnumerateIter: struct:&::<T, O> impl core::Iterator::<(u64, O)> = {
+	actual_iter: T,
+	idx: u64,
+	impl core::Iterator::<(u64, O)> {
+		next: fn (&mut this) -> (u64, O)? = {
+			if |nxt| (this.actual_iter.core::Iterator::<O>::next()) {
+				this.idx = this.idx + 1;
+				return (this.idx, nxt);
 			}
+			else return null;
 		}
 	}
 }
@@ -68,8 +67,7 @@ iter: fn::<T> (list: &LinkedList::<T>) -> LinkedListIterator::<T>
 	= return LinkedListIterator::<T> { .curr = list.first };
 
 enumerate: fn::<T: impl core::Iterator::<O>, O> (iter: T) ->
-	gwrap_other::<T, O>::EnumerateIter = 
-	return gwrap_other::<T, O>::EnumerateIter{.actual_iter = iter, .idx = 0};
+	EnumerateIter::<T, O> = return EnumerateIter::<T, O>{.actual_iter = iter, .idx = 0};
 
 chain: fn::<A: impl core::Iterator::<O>, B: impl core::Iterator::<O>, O> 
 	(first: A, snd: B) -> ChainIter::<A, B, O> = return ChainIter::<A, B, O>{.first_iter = first, .second_iter = snd};
