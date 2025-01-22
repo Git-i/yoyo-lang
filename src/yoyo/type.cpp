@@ -9,6 +9,19 @@
 #include "fn_type.h"
 namespace Yoyo
 {
+    std::string Type::full_name_no_block() const
+    {
+        std::string final = name;
+        if (!subtypes.empty())
+        {
+            final += "::<";
+            final += subtypes[0].full_name();
+            for (auto& sub : std::ranges::subrange(subtypes.begin() + 1, subtypes.end()))
+                final += "," + sub.full_name();
+            final += ">";
+        }
+        return final;
+    }
     //TODO: move to util header !??
     std::vector<std::string_view> split(std::string_view str, std::string_view delim)
     {
@@ -30,11 +43,11 @@ namespace Yoyo
         return result;
     }
 
-    size_t Type::conversion_friction(const Type& other) const
+    size_t Type::conversion_friction(const Type& other, IRGenerator* irgen) const
     {
         constexpr size_t max = std::numeric_limits<size_t>::max();
         if(is_equal(other)) return 0;
-        if(!is_assignable_from(other)) return max;
+        if(!is_assignable_from(other, irgen)) return max;
         if(is_unsigned_integral())
         {
             if(other.name == "ilit") return 0;
@@ -60,16 +73,16 @@ namespace Yoyo
         if(is_optional())
         {
             if(other.name == "__null") return 0;
-            return 1 + subtypes[0].conversion_friction(other);
+            return 1 + subtypes[0].conversion_friction(other, irgen);
         }
         //for variants, the rhs must be assignable to only one of the subtypes
         if(is_variant())
         {
             for(auto& subtype : subtypes)
             {
-                if(subtype.is_assignable_from(other))
+                if(subtype.is_assignable_from(other, irgen))
                 {
-                    return 1 + subtype.conversion_friction(other);
+                    return 1 + subtype.conversion_friction(other, irgen);
                 }
             }
         }
@@ -79,7 +92,7 @@ namespace Yoyo
     {
         return name.starts_with("__interface_fn");
     }
-    bool Type::is_assignable_from(const Type& other) const
+    bool Type::is_assignable_from(const Type& other, IRGenerator* irgen) const
     {
         if(is_equal(other)) return true;
         if (is_error_ty() || other.is_error_ty()) return true;
@@ -120,7 +133,7 @@ namespace Yoyo
         }
         if(is_optional())
         {
-            return other.name == "__null" || subtypes[0].is_assignable_from(other);
+            return other.name == "__null" || subtypes[0].is_assignable_from(other, irgen);
         }
         if (is_gc_reference()) return false;
         if (is_mutable_reference()) other.is_gc_reference() && other.is_mutable && deref().is_equal(other.deref());
@@ -131,7 +144,7 @@ namespace Yoyo
             bool is_valid = false;
             for(auto& subtype : subtypes)
             {
-                if(subtype.is_assignable_from(other))
+                if(subtype.is_assignable_from(other, irgen))
                 {
                     if(is_valid) return false;
                     is_valid = true;
@@ -166,7 +179,7 @@ namespace Yoyo
             auto& viewed = subtypes[0];
             if (!other.module) return false;
             if (!other.is_reference()) return false;
-            if (auto cls = other.deref().get_decl_if_class())
+            if (auto cls = other.deref().get_decl_if_class(irgen))
             {
                 auto it = std::ranges::find_if(cls->impls, [&viewed](auto& impl) {
                     return impl.impl_for.is_equal(viewed);
@@ -187,10 +200,10 @@ namespace Yoyo
     {
         return name == "__error_type";
     }
-    bool Type::can_accept_as_arg(const Type& other) const
+    bool Type::can_accept_as_arg(const Type& other, IRGenerator* irgen) const
     {
         if(is_equal(other)) return true;
-        if (is_assignable_from(other)) return true;
+        if (is_assignable_from(other, irgen)) return true;
         if(is_mutable_reference())
         {
             return deref().is_equal(other) && other.is_mutable;
@@ -224,30 +237,30 @@ namespace Yoyo
         return name == other.name && subtypes == other.subtypes && module == other.module && block_hash == other.block_hash;
     }
 
-    bool Type::is_non_owning() const
+    bool Type::is_non_owning(IRGenerator* irgen) const
     {
         if((is_reference() && !is_gc_reference()) || is_slice()) return true;
         if (is_view() && !is_gc_view()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
-                if(subtype.is_non_owning()) return true;
+                if(subtype.is_non_owning(irgen)) return true;
         }
         if(name == "__conv_result_ref") return true;
-        if(auto decl = get_decl_if_class())
+        if(auto decl = get_decl_if_class(irgen))
             return decl->ownership == Ownership::NonOwning || decl->ownership == Ownership::NonOwningMut;
         return false;
     }
 
-    bool Type::is_non_owning_mut() const
+    bool Type::is_non_owning_mut(IRGenerator* irgen) const
     {
         if(is_mutable_reference() || is_mut_slice()) return true;
         if(is_optional() || is_variant() || is_tuple())
         {
             for(auto& subtype : subtypes)
-                if(subtype.is_non_owning_mut()) return true;
+                if(subtype.is_non_owning_mut(irgen)) return true;
         }
-        if(auto decl = get_decl_if_class())
+        if(auto decl = get_decl_if_class(irgen))
             return decl->ownership == Ownership::NonOwningMut;
         return false;
     }
@@ -268,7 +281,7 @@ namespace Yoyo
     {
         return name == "__slice_mut";
     }
-    void evaluateDestructability(ClassDeclaration* decl)
+    void evaluateDestructability(ClassDeclaration* decl, IRGenerator* irgen)
     {
         if(!decl->destructor_name.empty())
         {
@@ -276,23 +289,23 @@ namespace Yoyo
         }
         for(auto& var : decl->vars)
         {
-            if(!var.type.is_trivially_destructible())
+            if(!var.type.is_trivially_destructible(irgen))
             {
                 decl->is_trivially_destructible = false; return;
             }
         }
         decl->is_trivially_destructible = true;
     }
-    bool Type::is_trivially_destructible() const
+    bool Type::is_trivially_destructible(IRGenerator* irgen) const
     {
-        if(is_non_owning()) return false;
+        if(is_non_owning(irgen)) return false;
         if (is_error_ty()) return true;
         if(is_builtin() || is_opaque_pointer()) return true;
         if(is_tuple() || is_optional() || is_variant())
         {
-            bool is_not_trivially_destructible = std::ranges::any_of(subtypes, [](auto& subtype)
+            bool is_not_trivially_destructible = std::ranges::any_of(subtypes, [irgen](auto& subtype)
             {
-                return !subtype.is_trivially_destructible();
+                return !subtype.is_trivially_destructible(irgen);
             });
             return !is_not_trivially_destructible;
         }
@@ -301,7 +314,7 @@ namespace Yoyo
         {
             auto decl = std::get<2>(*dets).get();
             if(decl->is_trivially_destructible) return *decl->is_trivially_destructible;
-            evaluateDestructability(decl);
+            evaluateDestructability(decl, irgen);
             return *decl->is_trivially_destructible;
         }
         return true;
@@ -365,7 +378,10 @@ namespace Yoyo
         auto it = UnsaturatedTypeIterator(*this);
         if(it.is_end())
         {
-            name = it.last().name;
+            //if we have no subtyes chances are that they're in the last as a string
+            auto last = it.last(subtypes.empty());
+            if (subtypes.empty()) subtypes = last.subtypes;
+            name = last.name;
             if(!(is_conversion_result() || 
                 is_array() || 
                 is_char() || 
@@ -392,7 +408,7 @@ namespace Yoyo
             subtypes[0].is_mutable = true;
         if(is_reference())
             subtypes[0].is_lvalue = true;
-        if(module_path.size() > 1)
+        if(!it.is_end())
         {
             Module* md = src;
             std::string hash = irgen ? irgen->block_hash : src->module_hash;
@@ -414,7 +430,8 @@ namespace Yoyo
             *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
         }
 
-        if(irgen && irgen->in_class && name == "This") *this = irgen->this_t;
+        if(irgen && irgen->in_class && name == "This") 
+            *this = irgen->this_t;
         for(auto& sub: subtypes) sub.saturate(src, irgen);
     }
 
@@ -491,12 +508,19 @@ namespace Yoyo
         return {.name = "__var", .subtypes = {std::move(a), std::move(b)}};
     }
 
-    ClassDeclaration* Type::get_decl_if_class() const
+    ClassDeclaration* Type::get_decl_if_class(IRGenerator* irgen) const
     {
         if(module)
         {
-            if(auto decl = module->findType(block_hash, name))
+            if(auto decl = module->findType(block_hash, full_name_no_block()))
                 return std::get<2>(*decl).get();
+            if (auto [hsh, decl] = module->findGenericClass(block_hash, name); decl)
+            {
+                if (subtypes.size() != decl->clause.types.size()) { debugbreak(); return nullptr; }
+                ExpressionEvaluator{ irgen }.generateGenericClass(module, hsh, decl, subtypes);
+                if (auto decl = module->findType(block_hash, full_name_no_block()))
+                    return std::get<2>(*decl).get();
+            }
             return nullptr;
         }
         return nullptr;
@@ -596,7 +620,7 @@ namespace Yoyo
         if(auto float_w = float_width()) return *float_w;
         if(is_void()) return 0;
         if(is_boolean()) return 1;
-        if(auto decl = get_decl_if_class())
+        if(auto decl = get_decl_if_class(irgen))
         {
             size_t sz = 0;
             for(auto& var : decl->vars)

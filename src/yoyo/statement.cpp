@@ -59,6 +59,10 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant GenericClassDeclaration::toVariant()
+    {
+        return this;
+    }
     StatementVariant ForStatement::toVariant()
     {
         return this;

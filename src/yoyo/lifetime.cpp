@@ -137,7 +137,7 @@ namespace Yoyo
             }
         };
         validate_borrows(borrows, irgen);
-        if(dst_ty->is_non_owning()) return borrows[0].second;
+        if(dst_ty->is_non_owning(irgen)) return borrows[0].second;
         return {};
     }
 
@@ -213,9 +213,9 @@ namespace Yoyo
         {
             auto as_bexp = reinterpret_cast<BinaryOperation*>(expr->callee.get());
             auto& type = callee_ty->sig.parameters[0].type;
-            auto is_mut_borrow = type.is_non_owning_mut();
+            auto is_mut_borrow = type.is_non_owning_mut(irgen);
 
-            if(type.is_non_owning())
+            if(type.is_non_owning(irgen))
                 borrows.emplace_back(as_bexp->lhs.get(),
                     is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, as_bexp->lhs->toVariant())
                     : std::visit(*this, as_bexp->lhs->toVariant()));
@@ -224,16 +224,16 @@ namespace Yoyo
         {
             auto& arg = expr->arguments[i];
             auto& type = callee_ty->sig.parameters[i + is_bound].type;
-            auto is_mut_borrow = type.is_non_owning_mut();
+            auto is_mut_borrow = type.is_non_owning_mut(irgen);
 
-            if(type.is_non_owning())
+            if(type.is_non_owning(irgen))
                 borrows.emplace_back(arg.get(),
                     is_mut_borrow ? std::visit(LValueBorrowResult{irgen}, arg->toVariant())
                     : std::visit(*this, arg->toVariant()));
         }
         validate_borrows(borrows, irgen);
         borrow_result_t out;
-        if(callee_ty->sig.returnType.is_non_owning_mut())
+        if(callee_ty->sig.returnType.is_non_owning_mut(irgen))
         {
             for(auto& borrow : borrows)
             {
@@ -243,7 +243,7 @@ namespace Yoyo
             }
         }
         //immutable non owning borrows all args, but does so immutably
-        else if(callee_ty->sig.returnType.is_non_owning())
+        else if(callee_ty->sig.returnType.is_non_owning(irgen))
         {
             for(auto& borrow : borrows)
             {
@@ -265,7 +265,7 @@ namespace Yoyo
             }
         };
         validate_borrows(borrows, irgen);
-        if(dst_ty->is_non_owning()) return borrows[0].second;
+        if(dst_ty->is_non_owning(irgen)) return borrows[0].second;
         return {};
     }
 

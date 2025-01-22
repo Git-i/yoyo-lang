@@ -171,7 +171,7 @@ namespace Yoyo
             new_impls.emplace_back(impl.impl_for, impl.location, std::move(mth));
         }
         return std::make_unique<ClassDeclaration>(
-            decl->identifier,
+            Token{.text = decl->name },
             decl->vars,
             std::move(new_methods),
             decl->ownership,
@@ -287,6 +287,33 @@ namespace Yoyo
         }
         final->clause = stat->clause;
         return final;
+    }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericClassDeclaration* decl)
+    {
+        std::vector<ClassMethod> new_methods;
+        for (auto& method : decl->methods)
+        {
+            new_methods.emplace_back(method.name, copy_stat(method.function_decl), method.access);
+        }
+        std::vector<InterfaceImplementation> new_impls;
+        for (auto& impl : decl->impls)
+        {
+            decltype(InterfaceImplementation::methods) mth;
+            for (auto& method : impl.methods)
+            {
+                auto ptr = copy_stat(method.get());
+                mth.emplace_back(reinterpret_cast<FunctionDeclaration*>(ptr.release()));
+            }
+            new_impls.emplace_back(impl.impl_for, impl.location, std::move(mth));
+        }
+        return std::make_unique<GenericClassDeclaration>(
+            Token{ .text = decl->name },
+            decl->vars,
+            std::move(new_methods),
+            decl->ownership,
+            decl->interfaces,
+            std::move(new_impls),
+            decl->clause);
     }
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)
     {

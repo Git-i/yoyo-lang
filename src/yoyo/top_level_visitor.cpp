@@ -23,7 +23,7 @@ namespace Yoyo
     }
     bool TopLevelVisitor::operator()(std::unique_ptr<ClassDeclaration> decl) const
     {
-        std::string name = std::string{decl->identifier.text};
+        std::string name = decl->name;
         std::string mangled_name_prefix = name + "::";
 
         auto ty = irgen->module->findType(irgen->block_hash, name);

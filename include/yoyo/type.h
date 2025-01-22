@@ -28,16 +28,16 @@ namespace Yoyo
         {
             return is_equal(other);
         }
-        [[nodiscard]] size_t conversion_friction(const Type& other) const;
+        [[nodiscard]] size_t conversion_friction(const Type& other, IRGenerator*) const;
         [[nodiscard]] Type strip_lvalue() const {return {.name = name, .signature = signature, .is_mutable = false, .is_lvalue = false};}
-        [[nodiscard]] bool is_assignable_from(const Type& other) const;
-        [[nodiscard]] bool can_accept_as_arg(const Type& other) const;
+        [[nodiscard]] bool is_assignable_from(const Type& other, IRGenerator* irgen) const;
+        [[nodiscard]] bool can_accept_as_arg(const Type& other, IRGenerator*) const;
         [[nodiscard]] bool is_equal(const Type& other) const;
-        [[nodiscard]] bool is_non_owning() const;
-        [[nodiscard]] bool is_non_owning_mut() const;
+        [[nodiscard]] bool is_non_owning(IRGenerator* irgen) const;
+        [[nodiscard]] bool is_non_owning_mut(IRGenerator* irgen) const;
         [[nodiscard]] bool is_reference() const;
         [[nodiscard]] bool is_gc_reference() const;
-        [[nodiscard]] bool is_trivially_destructible() const;
+        [[nodiscard]] bool is_trivially_destructible(IRGenerator* irgen) const;
         [[nodiscard]] bool can_be_stored() const;
         [[nodiscard]] bool is_conversion_result() const;
         [[nodiscard]] bool is_value_conversion_result() const;
@@ -80,7 +80,7 @@ namespace Yoyo
         /// if @c b is a variant is does the same
         /// if not it makes @c a a variant with subtypes @c a and @c b
         static Type variant_merge(Type a, Type b);
-        ClassDeclaration* get_decl_if_class() const;
+        ClassDeclaration* get_decl_if_class(IRGenerator* irgen) const;
         [[nodiscard]] bool is_builtin() const;
         [[nodiscard]] bool is_signed_integral() const;
 
@@ -107,6 +107,7 @@ namespace Yoyo
         [[nodiscard]] bool is_opaque_pointer() const {return name == "__ptr";}
         [[nodiscard]] bool is_lambda() const {return name.starts_with("__lambda");}
         [[nodiscard]] std::string full_name() const;
+        [[nodiscard]] std::string full_name_no_block() const;
         [[nodiscard]] std::string pretty_name(const std::string& block) const;
 
         [[nodiscard]] size_t bitsize(IRGenerator* irgen) const;

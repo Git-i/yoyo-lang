@@ -87,9 +87,19 @@ namespace Yoyo
         {
             if(!block.starts_with(hash)) continue;
             for(auto& details : details_list)
-                if(std::get<2>(details)->identifier.text == name) return &details;
+                if(std::get<2>(details)->name == name) return &details;
         }
         return nullptr;
+    }
+    std::pair<std::string, GenericClassDeclaration*> Module::findGenericClass(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, details_list] : generic_classes)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& details : details_list)
+                if (details->name == name) return { hash, details.get() };
+        }
+        return { "", nullptr };
     }
 
     std::optional<std::string> Module::hashOf(const std::string& block, const std::string& name)
@@ -99,13 +109,14 @@ namespace Yoyo
             if(!block.starts_with(hash)) continue;
             auto it = std::ranges::find_if(details_list, [&name](auto& det)
             {
-                return std::get<2>(det)->identifier.text == name;
+                return std::get<2>(det)->name == name;
             });
             if(it != details_list.end()) return hash;
         }
         if (auto [hash, intf] = findInterface(block, name); intf) return hash;
         if (auto [hash, _] = findFunction(block, name); _) return hash;
         if (auto [hash, _] = findGenericFn(block, name); _) return hash;
+        if (auto [hash, _] = findGenericClass(block, name); _) return hash;
         if (modules.contains(name)) return modules.at(name)->module_hash;
         return std::nullopt;
     }

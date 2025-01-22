@@ -6,7 +6,7 @@
 
 namespace Yoyo
 {
-    OverloadDetailsBinary* resolveBin(const Type& lhs, const Type& rhs, TokenType t)
+    OverloadDetailsBinary* resolveBin(const Type& lhs, const Type& rhs, TokenType t, IRGenerator* irgen)
     {
         constexpr size_t max_freq = std::numeric_limits<size_t>::max();
         std::vector<std::pair<size_t, OverloadDetailsBinary*>> overloads;
@@ -16,10 +16,10 @@ namespace Yoyo
             for(auto& pl_def : module->overloads.binary_details_for(t))
             {
                 size_t fric = 0;
-                if(auto l_fric = pl_def.left.conversion_friction(lhs); l_fric != max_freq)
+                if(auto l_fric = pl_def.left.conversion_friction(lhs, irgen); l_fric != max_freq)
                     fric += l_fric;
                 else continue;
-                if(auto r_firc = pl_def.right.conversion_friction(rhs); r_firc != max_freq)
+                if(auto r_firc = pl_def.right.conversion_friction(rhs, irgen); r_firc != max_freq)
                     fric += r_firc;
                 else continue;
                 overloads.emplace_back(fric, &pl_def);
@@ -37,28 +37,28 @@ namespace Yoyo
         }
         return result->second;
     }
-    OverloadDetailsBinary* resolveAdd(const Type& lhs, const Type& rhs)
+    OverloadDetailsBinary* resolveAdd(const Type& lhs, const Type& rhs, IRGenerator* irgen)
     {
-        return resolveBin(lhs, rhs, TokenType::Plus);
+        return resolveBin(lhs, rhs, TokenType::Plus, irgen);
     }
 
-    OverloadDetailsBinary* resolveSub(const Type& lhs, const Type& rhs)
+    OverloadDetailsBinary* resolveSub(const Type& lhs, const Type& rhs, IRGenerator* irgen)
     {
-        return resolveBin(lhs, rhs, TokenType::Minus);
+        return resolveBin(lhs, rhs, TokenType::Minus, irgen);
     }
 
-    OverloadDetailsBinary* resolveMul(const Type& lhs, const Type& rhs)
+    OverloadDetailsBinary* resolveMul(const Type& lhs, const Type& rhs, IRGenerator* irgen)
     {
-        return resolveBin(lhs, rhs, TokenType::Star);
+        return resolveBin(lhs, rhs, TokenType::Star, irgen);
     }
 
-    OverloadDetailsBinary* resolveDiv(const Type& lhs, const Type& rhs)
+    OverloadDetailsBinary* resolveDiv(const Type& lhs, const Type& rhs, IRGenerator* irgen)
     {
-        return resolveBin(lhs, rhs, TokenType::Slash);
+        return resolveBin(lhs, rhs, TokenType::Slash, irgen);
     }
 
-    OverloadDetailsBinary* resolveRem(const Type& lhs, const Type& rhs)
+    OverloadDetailsBinary* resolveRem(const Type& lhs, const Type& rhs, IRGenerator* irgen)
     {
-        return resolveBin(lhs, rhs, TokenType::Percent);
+        return resolveBin(lhs, rhs, TokenType::Percent, irgen);
     }
 }

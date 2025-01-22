@@ -29,9 +29,7 @@ namespace Yoyo
         }
         bool operator()(ClassDeclaration* decl) const
         {
-            std::string name = std::string{decl->identifier.text};
-            std::string mangled_name_prefix = md->module_hash + "__class__" + name + "__%";
-            if(md->classes.contains(name)) return false;
+            std::string mangled_name_prefix = md->module_hash + decl->name + "::";
 
             for(auto& fn : decl->methods)
             {
@@ -44,6 +42,12 @@ namespace Yoyo
                 std::unique_ptr<ClassDeclaration>{decl}
             );
 
+            return true;
+        }
+        bool operator()(GenericClassDeclaration* decl) const
+        {
+            std::ignore = stmt.release();
+            md->generic_classes[md->module_hash].emplace_back(decl);
             return true;
         }
         bool operator()(ModuleImport* imp)
@@ -95,8 +99,7 @@ namespace Yoyo
 
     bool ForwardDeclaratorPass2::operator()(ClassDeclaration* decl)
     {
-        std::string name = std::string{decl->identifier.text};
-        auto t = md->findType(md->module_hash, name);
+        auto t = md->findType(md->module_hash, decl->name);
         if(t && std::get<1>(*t)) return true;
         std::vector<std::string> var_names(decl->vars.size());
         std::vector<std::string> fn_names(decl->methods.size());
@@ -131,7 +134,7 @@ namespace Yoyo
             }
         }
         //----------------------------------------------------------
-        encountered_names.push_back(Type{.name = name, .module = md});
+        encountered_names.push_back(Type{.name = decl->name, .module = md});
         std::vector<llvm::Type*> args(decl->vars.size());
         std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
                        [this](ClassVariable& p)
@@ -140,7 +143,7 @@ namespace Yoyo
                            return md->ToLLVMType(p.type, md->module_hash, encountered_names);
                        });
         if(std::ranges::any_of(args, [](llvm::Type* t) {return t == nullptr;})) return false;
-        std::get<1>(*t) = llvm::StructType::create(*getLLVMContext(md), args, name);
+        std::get<1>(*t) = llvm::StructType::create(*getLLVMContext(md), args, decl->name);
         return true;
     }
 

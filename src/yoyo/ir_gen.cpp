@@ -64,6 +64,22 @@ namespace Yoyo
             args[1] = llvm::Type::getInt32Ty(context); // 2^32 is a reasonable amount of variant subtypes
             return llvm::StructType::get(context, args);
         }
+        //this may be a generic instantiation that doesn't exist yet
+        if (type.module)
+        {
+            if (auto [_, exists] = type.module->findGenericClass(type.block_hash, type.name); exists)
+            {
+                ExpressionEvaluator{ this }.generateGenericClass(
+                    type.module,
+                    type.block_hash,
+                    exists,
+                    type.subtypes); //this should generally be safe(hopefully)
+                std::string name = type.name + mangleGenericArgs(type.subtypes);
+                if (auto det = type.module->findType(type.block_hash, name))
+                    return std::get<1>(*det);
+            }
+                
+        }
         if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
         error(Error({1, 1}, {1, 1}, "Encountered unexpected type", ""));
         return nullptr;
@@ -268,7 +284,7 @@ namespace Yoyo
     }
     llvm::Value* prepareValidDropFlagFor(IRGenerator* irgen, const Type& tp)
     {
-        if(tp.is_trivially_destructible()) return nullptr;
+        if(tp.is_trivially_destructible(irgen)) return nullptr;
         auto flag = irgen->Alloca("drop_flag", llvm::Type::getInt1Ty(irgen->context));
         irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), flag);
         return flag;
@@ -400,7 +416,7 @@ namespace Yoyo
     bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface);
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
-        std::string name(decl->identifier.text);
+        std::string name = decl->name;
         if(isShadowing(name))
         {
             error(Error(decl, "The name '" + name + "' is already defined"));
@@ -409,8 +425,11 @@ namespace Yoyo
         auto ptr = current_Statement->release();
         assert(ptr == decl);
         std::string class_hash = block_hash + name + "::";
+        auto curr_hash = reset_hash();
+        block_hash = class_hash;
+        module->classes[curr_hash].emplace_back(class_hash, nullptr, std::unique_ptr<ClassDeclaration>{decl});
         for(auto& var : decl->vars) var.type.saturate(module, this);
-        module->classes[block_hash].emplace_back(class_hash, hanldeClassDeclaration(decl->vars, decl->ownership, ""), std::unique_ptr<ClassDeclaration>{decl});
+        std::get<1>(module->classes.at(curr_hash).back()) = hanldeClassDeclaration(decl->vars, decl->ownership, "");
 
         in_class = true;
         auto old_this = std::move(this_t);
@@ -420,12 +439,10 @@ namespace Yoyo
         for(auto& fn: decl->methods)
         {
             auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
-            auto curr_hash = reset_hash();
-            block_hash = class_hash;
             current_Statement = &fn.function_decl;
             (*this)(fn_decl);
-            block_hash = std::move(curr_hash);
         }
+        block_hash = std::move(curr_hash);
         for (auto& impl : decl->impls)
         {
             if (!impl.impl_for.module) continue;
@@ -496,6 +513,7 @@ namespace Yoyo
     {
         //TODO implicit conversion and validation
         std::string name(decl->identifier.text);
+        if (name == "a") debugbreak();
         if(isShadowing(name))
         {
             error(Error(decl, "The name '" + name + "' already exists")); return;
@@ -503,14 +521,14 @@ namespace Yoyo
         if(decl->type) decl->type->saturate(module, this);
         FunctionType type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant()).value_or_error();
         if(!type.can_be_stored()) { error(Error(decl, "The type tp cannot be stored")); return; }
-        if(type.is_non_owning()) { error(Error(decl, "Variable types must not be non-owning")); return; }
+        if(type.is_non_owning(this)) { error(Error(decl, "Variable types must not be non-owning")); return; }
         type.is_mutable = decl->is_mut;
         type.is_lvalue = true;
         decl->type = type;
         //TODO probably consider copying lambda contexts??
         llvm::Value* alloc = nullptr;
         llvm::Value* drop_flag = nullptr;
-        if(!type.is_trivially_destructible())
+        if(!type.is_trivially_destructible(this))
         {
             std::string name = "drop_flag_for_" + std::string{decl->identifier.text};
             drop_flag = Alloca(name, llvm::Type::getInt1Ty(context));
@@ -740,10 +758,10 @@ namespace Yoyo
     void IRGenerator::operator()(WithStatement* stat)
     {
         auto ty = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant()).value_or_error();
-        if (!ty.is_non_owning()) { error(Error(stat->expression.get(), "'with' statement can only capture non-owning types")); return; }
+        if (!ty.is_non_owning(this)) { error(Error(stat->expression.get(), "'with' statement can only capture non-owning types")); return; }
         if (isShadowing(stat->name)) { error(Error({}, {}, "Name is already in use")); return; }
 
-        ty.is_mutable = ty.is_non_owning_mut();
+        ty.is_mutable = ty.is_non_owning_mut(this);
 
         std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
         borrow_res[0].first = stat->expression.get();
@@ -787,7 +805,10 @@ namespace Yoyo
     {
         debugbreak();
     }
-
+    void IRGenerator::operator()(GenericClassDeclaration*)
+    {
+        debugbreak();
+    }
     void IRGenerator::operator()(AliasDeclaration* decl)
     {
         auto hash = block_hash;
@@ -842,10 +863,10 @@ namespace Yoyo
         if(stat->expression)
         {
             auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant()).value_or_error();
-            if(!return_t.is_assignable_from(t)) { error(Error(stat, "Type is not convertible to return type")); return; }
+            if(!return_t.is_assignable_from(t, this)) { error(Error(stat, "Type is not convertible to return type")); return; }
             // `doAssign` for reference types works like c++ (dereference and assign) rather than rebind the ref, because
             // references cannot be rebound, except in return statements, which is why we handle them specially
-            if (return_t.is_non_owning())
+            if (return_t.is_non_owning(this))
                 if (!std::visit(LifetimeExceedsFunctionChecker{ this }, stat->expression->toVariant())) debugbreak();
             auto value = std::visit(ExpressionEvaluator{this, return_t}, stat->expression->toVariant());
             ExpressionEvaluator{ this }.implicitConvert(stat->expression.get(), value, t, return_t, currentReturnAddress);
@@ -977,8 +998,8 @@ namespace Yoyo
         std::vector<llvm::Type*> args(vars.size());
         std::ranges::transform(vars, args.begin(), [this, own](const ClassVariable& p)
         {
-                if (own == Ownership::Owning && p.type.is_non_owning()) error(Error({}, {}, "Non owning type in owning class"));
-                if (own == Ownership::NonOwning && p.type.is_non_owning_mut()) error(Error({}, {}, "Mutably non owning type in non owning class"));
+                if (own == Ownership::Owning && p.type.is_non_owning(this)) error(Error({}, {}, "Non owning type in owning class"));
+                if (own == Ownership::NonOwning && p.type.is_non_owning_mut(this)) error(Error({}, {}, "Mutably non owning type in non owning class"));
             return ToLLVMType(p.type, false);
         });
         if(name.empty())

@@ -26,6 +26,7 @@ namespace Yoyo
         std::unordered_map<std::string, std::vector<std::unique_ptr<InterfaceDeclaration>>> interfaces;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericAliasDeclaration>>> generic_aliases;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericInterfaceDeclaration>>> generic_interfaces;
+        std::unordered_map<std::string, std::vector<std::unique_ptr<GenericClassDeclaration>>> generic_classes;
         std::unordered_map<std::string, std::unique_ptr<EnumDeclaration>> enums;
         std::unordered_map<std::string, Module*> modules;
         ModuleOverloadDetails overloads;
@@ -36,6 +37,7 @@ namespace Yoyo
         Type* findAlias(const std::string& block, const std::string& name);
         std::pair<std::string, GenericAliasDeclaration*> findGenericAlias(const std::string& block, const std::string& name);
         ClassDetails* findType(const std::string& block, const std::string& name);
+        std::pair<std::string, GenericClassDeclaration*> findGenericClass(const std::string& block, const std::string& name);
         std::pair<std::string, InterfaceDeclaration*> findInterface(const std::string& block, const std::string& name);
         std::pair<std::string, GenericInterfaceDeclaration*> findGenericInterface(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);

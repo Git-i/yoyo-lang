@@ -617,6 +617,7 @@ namespace Yoyo
         std::vector<ClassVariable> vars;
         std::vector<Type> intfs;
         std::vector<InterfaceImplementation> impls;
+        std::optional<GenericClause> clause;
         Get(); //skip the "class" or "struct" keyword
         Ownership own_method = Ownership::Owning;
         if(discard(TokenType::Colon))
@@ -624,6 +625,10 @@ namespace Yoyo
             if(!discard(TokenType::Ampersand)) error("Expected '&'", Peek());
             if(discard(TokenType::Mut)) own_method = Ownership::NonOwningMut;
             else own_method = Ownership::NonOwning;
+        }
+        if (Peek() && Peek()->type == TokenType::TemplateOpen)
+        {
+            clause = parseGenericClause();
         }
         if (discard(TokenType::Impl))
         {
@@ -714,18 +719,26 @@ namespace Yoyo
                 }
             }
         }
-        return Statement::attachSLAndParent(
-            std::make_unique<ClassDeclaration>(
-                identifier,
-                std::move(vars),
-                std::move(methods),
-                own_method,
-                std::move(intfs),
-                std::move(impls)), identifier.loc,
+        std::unique_ptr<Statement> stat;
+        if (!clause) stat = std::make_unique<ClassDeclaration>(
+            identifier,
+            std::move(vars),
+            std::move(methods),
+            own_method,
+            std::move(intfs),
+            std::move(impls));
+        else stat = std::make_unique<GenericClassDeclaration>(
+            identifier,
+            std::move(vars),
+            std::move(methods),
+            own_method,
+            std::move(intfs),
+            std::move(impls),
+            std::move(clause).value());
+        return Statement::attachSLAndParent(std::move(stat), identifier.loc,
             discardLocation, parent
         );
     }
-
     std::unique_ptr<Statement> Parser::parseAliasDeclaration(Token identifier)
     {
         Get(); // skip the `alias`

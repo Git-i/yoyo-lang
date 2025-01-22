@@ -150,7 +150,7 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::implicitConvert(Expression* xp, llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
         if(dst.is_equal(src)) { return clone(xp, val, src, out); }
-        if(!dst.is_assignable_from(src)) { irgen->error(Error(xp, "Expression of type tp cannot be converted to type tp")); return nullptr; }
+        if(!dst.is_assignable_from(src, irgen)) { irgen->error(Error(xp, "Expression of type tp cannot be converted to type tp")); return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);
         if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
         if (src.is_error_ty() || dst.is_error_ty()) return out;
@@ -279,7 +279,7 @@ namespace Yoyo
 
             for(auto& sub : subtypes)
             {
-                if(!sub.is_assignable_from(src)) { i++; continue; }
+                if(!sub.is_assignable_from(src, irgen)) { i++; continue; }
                 implicitConvert(xp, val, src, sub, irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
                 irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
                     type_idx_ptr);
@@ -318,7 +318,7 @@ namespace Yoyo
             auto& viewed = dst.subtypes[0];
             auto [name, intf] = viewed.module->findInterface(viewed.block_hash, viewed.name);
             std::string full_name = name + intf->name;
-            if (auto cls = src.deref().get_decl_if_class())
+            if (auto cls = src.deref().get_decl_if_class(irgen))
             {
                 auto details = src.deref().module->findType(src.deref().block_hash, src.deref().name);
                 auto this_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 0);
@@ -509,7 +509,7 @@ namespace Yoyo
     }
     void ExpressionEvaluator::destroy(llvm::Value* value, const Type& type) const
     {
-        if(type.is_trivially_destructible()) return;
+        if(type.is_trivially_destructible(irgen)) return;
 
         auto as_llvm = irgen->ToLLVMType(type, false);
         auto parent = irgen->builder->GetInsertBlock()->getParent();
@@ -582,12 +582,13 @@ namespace Yoyo
             }
         }
 
-        if(type.is_non_owning())
+        if(type.is_non_owning(irgen))
             destroyNonOwningParents(*this, value, type);
     }
 
     llvm::Value* ExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
     {
+        auto left_val = std::visit(*this, lhs->toVariant());;
         if(left_type.deref().is_tuple())
         {
             if(auto idx = dynamic_cast<IntegerLiteral*>(rhs))
@@ -596,14 +597,14 @@ namespace Yoyo
                 auto out_type = left_type.deref().subtypes[idx_int];
 
                 auto llvm_t = irgen->ToLLVMType(left_type.deref(), false);
-                auto left_ptr = std::visit(*this, lhs->toVariant());
+                auto left_ptr = left_val;
                 auto ptr = irgen->builder->CreateStructGEP(llvm_t, left_ptr, idx_int);
                 if(load_primitive && !out_type.should_sret())
                     return irgen->builder->CreateLoad(irgen->ToLLVMType(out_type, false), ptr);
                 //no partial move allowed, so rvalue binary operations clone the field and destroy the object
                 if (!left_type.is_lvalue)
                 {
-                    if(!left_type.is_trivially_destructible())
+                    if(!left_type.is_trivially_destructible(irgen))
                     {
                         auto ret = clone(lhs, ptr, left_type.subtypes[idx_int]);
                         destroy(left_ptr, left_type);
@@ -613,7 +614,7 @@ namespace Yoyo
                 return ptr;
             }
         }
-        if(auto cls = left_type.deref().get_decl_if_class())
+        if(auto cls = left_type.deref().get_decl_if_class(irgen))
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(rhs))
             {
@@ -627,14 +628,14 @@ namespace Yoyo
                     auto out_t = irgen->ToLLVMType(var->type, false);
                     llvm::Value* ptr;
 
-                    auto lalloc = std::visit(*this, lhs->toVariant());
+                    auto lalloc = left_val;
                     ptr = irgen->builder->CreateStructGEP(llvm_t, lalloc, std::distance(cls->vars.begin(), var));
 
 
                     if(load_primitive && !var->type.should_sret()) return irgen->builder->CreateLoad(out_t, ptr, var->name);
                     if (!left_type.is_lvalue)
                     {
-                        if(!left_type.is_trivially_destructible())
+                        if(!left_type.is_trivially_destructible(irgen))
                         {
                             auto ret = clone(lhs, ptr, var->type);
                             destroy(lalloc, left_type);
@@ -720,7 +721,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        auto target = resolveAdd(left_type, right_type);
+        auto target = resolveAdd(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Plus, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
@@ -729,7 +730,7 @@ namespace Yoyo
         args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning())
+        if(target->result.is_non_owning(irgen))
             stealUsages(args, final);
         else
             clearUsages(args, *this);
@@ -743,7 +744,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        auto target = resolveSub(left_type, right_type);
+        auto target = resolveSub(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Minus, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
@@ -752,7 +753,7 @@ namespace Yoyo
         args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning())
+        if(target->result.is_non_owning(irgen))
             stealUsages(args, final);
         else
             clearUsages(args, *this);
@@ -766,7 +767,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        auto target = resolveMul(left_type, right_type);
+        auto target = resolveMul(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Star, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
@@ -775,7 +776,7 @@ namespace Yoyo
         args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning())
+        if(target->result.is_non_owning(irgen))
             stealUsages(args, final);
         else
             clearUsages(args, *this);
@@ -789,7 +790,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        auto target = resolveDiv(left_type, right_type);
+        auto target = resolveDiv(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Slash, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
@@ -798,7 +799,7 @@ namespace Yoyo
         args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning())
+        if(target->result.is_non_owning(irgen))
             stealUsages(args, final);
         else
             clearUsages(args, *this);
@@ -812,7 +813,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        auto target = resolveRem(left_type, right_type);
+        auto target = resolveRem(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Percent, irgen, target);
         std::vector<llvm::Value*> args;
         if(target->result.should_sret())
@@ -821,7 +822,7 @@ namespace Yoyo
         args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
         auto ret = irgen->builder->CreateCall(fn, args);
         auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning())
+        if(target->result.is_non_owning(irgen))
             stealUsages(args, final);
         else
             clearUsages(args, *this);
@@ -1121,7 +1122,7 @@ namespace Yoyo
                     return val;
                 }
                 //taking the address of the lvalue causes the lifetime to be extended till the ref dies
-                if(!target->deref().is_trivially_destructible() && !target->deref().is_lvalue)
+                if(!target->deref().is_trivially_destructible(irgen) && !target->deref().is_lvalue)
                 {
                     auto lf = new ExtendedLifetimes;
                     lf->objects.emplace_back(std::move(target->subtypes[0]), operand);
@@ -1322,6 +1323,32 @@ namespace Yoyo
         irgen->block_hash = std::move(old_hash);
         irgen->module = module;
     }
+    void ExpressionEvaluator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types)
+    {
+        for (auto& type : types) type.saturate(mod, irgen);
+        generateGenericClass(mod, hash, decl, std::span<const Type>{types});
+    }
+    void ExpressionEvaluator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types)
+    {
+        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
+        if (auto exists = mod->findType(hash, name); exists) return;
+        auto module = irgen->module;
+        irgen->module = mod;
+
+        for (size_t i = 0; i < types.size(); i++)
+            irgen->module->aliases[hash + name + "::"].emplace(decl->clause.types[i], types[i]);
+
+        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<ClassDeclaration*>(decl));
+        auto new_decl = reinterpret_cast<ClassDeclaration*>(ptr.get());
+        new_decl->name = name;
+        auto old_hash = irgen->reset_hash();
+
+        irgen->current_Statement = &ptr;
+        (*irgen)(new_decl);
+
+        irgen->block_hash = std::move(old_hash);
+        irgen->module = module;
+    }
 
     void ExpressionEvaluator::generateGenericAlias(Module* mod, const std::string& block, GenericAliasDeclaration* decl,
         std::span<Type> types)
@@ -1371,7 +1398,11 @@ namespace Yoyo
         auto return_t = type_checker(op);
         if (!return_t) { irgen->error(return_t.error()); return nullptr; }
         auto t = std::visit(type_checker, op->callee->toVariant());
-        if (t && t->is_error_ty()) debugbreak();
+        if (t && t->is_error_ty())
+        {
+            std::visit(*this, op->callee->toVariant());
+            debugbreak();
+        }
         if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(t.error()); return nullptr;}
         if(!return_t)
             {irgen->error(return_t.error()); return nullptr;}
@@ -1389,7 +1420,7 @@ namespace Yoyo
             //expr is guaranteed to be valid if the function is bound
             //callee is a binary dot expr
             auto left_t = std::visit(ExpressionTypeChecker{irgen}, expr->lhs->toVariant());
-            auto cls = left_t->deref().get_decl_if_class();
+            auto cls = left_t->deref().get_decl_if_class(irgen);
             if(cls)
             {
                 //handle member functions
@@ -1402,7 +1433,7 @@ namespace Yoyo
                         }); var != cls->methods.end())
                     {
                         auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                        auto found = left_t->module->findType(left_t->block_hash, left_t->name);
+                        auto found = left_t->module->findType(left_t->block_hash, cls->name);
                         auto function_name  = std::get<0>(*found) + name;
                         auto callee = irgen->code->getFunction(function_name);
                         bool uses_sret = callee->hasStructRetAttr();
@@ -1410,7 +1441,7 @@ namespace Yoyo
                         llvm::Value* return_value = fillArgs(uses_sret, decl->signature, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
                         auto call_val = irgen->builder->CreateCall(callee, args);
                         if(!uses_sret) return_value = call_val;
-                        if(return_t->is_non_owning())
+                        if(return_t->is_non_owning(irgen))
                             stealUsages(args, return_value);
                         else
                             clearUsages(args, *this);
@@ -1443,7 +1474,7 @@ namespace Yoyo
                     llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, param, op->arguments);
                     auto call_val = irgen->builder->CreateCall(fty, callee, args);
                     if (!uses_sret) return_value = call_val;
-                    if (return_t->is_non_owning())
+                    if (return_t->is_non_owning(irgen))
                         stealUsages(args, return_value);
                     else
                         clearUsages(args, *this);
@@ -1457,7 +1488,7 @@ namespace Yoyo
                 auto pos = right_t->name.find_first_of('$');
                 std::string name = right_t->name.substr("__interface_fn"sv.size(), pos - "__interface_fn"sv.size());
                 std::string fn_name = right_t->name.substr(pos + 1);
-                auto dets = irgen->module->findType(left_t->deref().block_hash, left_t->deref().name);
+                auto dets = irgen->module->findType(left_t->deref().block_hash, left_t->deref().full_name_no_block());
                 fn_name = std::get<0>(*dets) + name + "::" + fn_name;
                 auto callee = irgen->code->getFunction(fn_name);
                 bool uses_sret = callee->hasStructRetAttr();
@@ -1466,7 +1497,7 @@ namespace Yoyo
                 llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
                 auto call_val = irgen->builder->CreateCall(callee, args);
                 if (!uses_sret) return_value = call_val;
-                if (return_t->is_non_owning())
+                if (return_t->is_non_owning(irgen))
                     stealUsages(args, return_value);
                 else
                     clearUsages(args, *this);
@@ -1483,7 +1514,7 @@ namespace Yoyo
             if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
             auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
             if(!uses_sret) return_value = call_val;
-            if(return_t->is_non_owning())
+            if(return_t->is_non_owning(irgen))
                 stealUsages(args, return_value);
             else
                 clearUsages(args, *this);
@@ -1501,7 +1532,7 @@ namespace Yoyo
         if(is_lambda) args.push_back(callee_val);
         auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
         if(!uses_sret) return_value = call_val;
-        if(return_t->is_non_owning())
+        if(return_t->is_non_owning(irgen))
             stealUsages(args, return_value);
         else
             clearUsages(args, *this);
@@ -1605,7 +1636,7 @@ namespace Yoyo
         auto t = ExpressionTypeChecker{irgen}(lit);
         if(!t) {irgen->error(t.error());return nullptr;}
         auto as_llvm_type = irgen->ToLLVMType(*t, false);
-        auto decl = t->get_decl_if_class();
+        auto decl = t->get_decl_if_class(irgen);
         auto value = irgen->Alloca("obj_lit",as_llvm_type);
 
         auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
@@ -1652,7 +1683,7 @@ namespace Yoyo
 
             auto is_valid = irgen->builder->CreateICmpEQ(this_idx, correct_idx);
             irgen->builder->CreateStore(is_valid, is_valid_ptr);
-            if(!ty->deref().is_trivially_destructible() && !ty->deref().is_lvalue)
+            if(!ty->deref().is_trivially_destructible(irgen) && !ty->deref().is_lvalue)
             {
                 auto lf = new ExtendedLifetimes;
                 lf->objects.emplace_back(std::move(ty).value(), internal);
@@ -1667,7 +1698,7 @@ namespace Yoyo
             auto& viewed = expr->dest.subtypes[0];
             auto [name, intf] = viewed.module->findInterface(viewed.block_hash, viewed.name);
             std::string full_name = name + intf->name;
-            if (auto cls = ty->deref().get_decl_if_class())
+            if (auto cls = ty->deref().get_decl_if_class(irgen))
             {
                 auto details = ty->deref().module->findType(ty->deref().block_hash, ty->deref().name);
                 auto result = irgen->Alloca("interface_cast", as_llvm);

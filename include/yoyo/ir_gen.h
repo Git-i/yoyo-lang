@@ -115,6 +115,7 @@ namespace Yoyo
         void operator()(GenericFunctionDeclaration*);
         void operator()(AliasDeclaration*);
         void operator()(GenericAliasDeclaration*);
+        void operator()(GenericClassDeclaration*);
         void operator()(InterfaceDeclaration*);
 
         void error(const Error& err);
@@ -230,6 +231,8 @@ namespace Yoyo
         void generateGenericFunction(Module*, const std::string&,GenericFunctionDeclaration*, std::span<Type>);
         void generateGenericAlias(Module*, const std::string&,GenericAliasDeclaration*, std::span<Type>);
         void generateGenericInterface(Module*, const std::string&, GenericInterfaceDeclaration*, std::span<Type>);
+        void generateGenericClass(Module*, const std::string&, GenericClassDeclaration*, std::span<Type>);
+        void generateGenericClass(Module*, const std::string&, GenericClassDeclaration*, std::span<const Type>);
         //the malloc and the size
         std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator

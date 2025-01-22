@@ -31,6 +31,7 @@ namespace Yoyo
     class GenericAliasDeclaration;
     class InterfaceDeclaration;
     class GenericInterfaceDeclaration;
+    class GenericClassDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -50,7 +51,8 @@ namespace Yoyo
         GenericAliasDeclaration*,
         AliasDeclaration*,
         InterfaceDeclaration*,
-        GenericInterfaceDeclaration*> StatementVariant;
+        GenericInterfaceDeclaration*,
+        GenericClassDeclaration*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     struct Attribute {
         std::string name;
@@ -183,7 +185,7 @@ namespace Yoyo
     class ClassDeclaration : public Statement
     {
     public:
-        Token identifier;
+        std::string name;
         std::vector<ClassVariable> vars;
         std::vector<ClassMethod> methods;
         //consider an unordered map, although types should generally implement too many interfaces
@@ -200,8 +202,25 @@ namespace Yoyo
             Ownership sh,
             std::vector<Type> intfs,
             std::vector<InterfaceImplementation> impls)
-            : identifier(ident), vars(std::move(vars)), methods(std::move(methods)), ownership(sh), 
+            : name(ident.text), vars(std::move(vars)), methods(std::move(methods)), ownership(sh), 
             interfaces(std::move(intfs)), impls(std::move(impls)){}
+        StatementVariant toVariant() override;
+    };
+    class GenericClassDeclaration : public ClassDeclaration
+    {
+    public:
+        GenericClause clause;
+        GenericClassDeclaration(
+            Token ident,
+            std::vector<ClassVariable> vars,
+            std::vector<ClassMethod> methods,
+            Ownership sh,
+            std::vector<Type> intfs,
+            std::vector<InterfaceImplementation> impls,
+            GenericClause cl) :
+            ClassDeclaration(ident, 
+                std::move(vars), 
+                std::move(methods), sh, std::move(intfs), std::move(impls)), clause(std::move(cl)) {}
         StatementVariant toVariant() override;
     };
     class ForStatement : public Statement

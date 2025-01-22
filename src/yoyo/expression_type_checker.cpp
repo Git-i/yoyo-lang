@@ -6,16 +6,16 @@
 #include "fn_type.h"
 namespace Yoyo
 {
-    ExpressionTypeChecker::Result peerResolve(std::ranges::forward_range auto types)
+    ExpressionTypeChecker::Result peerResolve(std::ranges::forward_range auto types, IRGenerator* irgen)
     {
         FunctionType result = (*types.begin()).first.value_or_error();
         for(const auto& type :
             std::ranges::subrange(types.begin() + 1, types.end()))
         {
             auto tp = type.first.value_or_error();
-            if (!result.is_assignable_from(tp))
+            if (!result.is_assignable_from(tp, irgen))
             {
-                if (tp.is_assignable_from(result)) result = tp;
+                if (tp.is_assignable_from(result, irgen)) result = tp;
                 else return { Error(type.second, "") };
             }
         }
@@ -37,45 +37,45 @@ namespace Yoyo
             return canBinOpLiteral(b, a);
         return std::nullopt;
     }
-    static std::optional<Type> checkAddition(const Type &a, const Type &b)
+    static std::optional<Type> checkAddition(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveAdd(a, b);
+        auto ty = resolveAdd(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
-    static std::optional<Type> checkAssign(const Type &a, const Type &b)
+    static std::optional<Type> checkAssign(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if (!a.is_mutable)
             return std::nullopt;
-        if(!a.is_assignable_from(b))
+        if(!a.is_assignable_from(b, irgen))
         {
             __debugbreak();
             return std::nullopt;
         }
         return Type{.name="void", .module = a.module->engine->modules.at("core").get()};
     }
-    static std::optional<Type> checkMinus(const Type &a, const Type &b)
+    static std::optional<Type> checkMinus(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveSub(a, b);
+        auto ty = resolveSub(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
-    static std::optional<Type> checkStar(const Type &a, const Type &b)
+    static std::optional<Type> checkStar(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveMul(a, b);
+        auto ty = resolveMul(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
-    static std::optional<Type> checkDivide(const Type &a, const Type &b)
+    static std::optional<Type> checkDivide(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveDiv(a, b);
+        auto ty = resolveDiv(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
-    static std::optional<Type> checkPercent(const Type &a, const Type &b)
+    static std::optional<Type> checkPercent(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveRem(a, b);
+        auto ty = resolveRem(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkCmp(const Type& a, const Type& b)
@@ -133,7 +133,7 @@ namespace Yoyo
         auto subtype = peerResolve(lit->elements | std::views::transform([this](std::unique_ptr<Expression>& elem)
         {
             return std::make_pair(std::visit(*this, elem->toVariant()), elem.get());
-        }));
+        }), irgen);
         if (!subtype)
         {
             auto err = Error(lit, "Cannot determine array type");
@@ -166,7 +166,7 @@ namespace Yoyo
             }
             return std::nullopt;
         }
-        auto cls = lhs.deref().get_decl_if_class();
+        auto cls = lhs.deref().get_decl_if_class(irgen);
         if(cls)
         {
             if(auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()))
@@ -241,7 +241,7 @@ namespace Yoyo
         if (!rhs->is_function()) return std::nullopt;
         auto& as_function = reinterpret_cast<FunctionType&>(*rhs);
         if(as_function.is_bound) return std::nullopt;
-        if(!as_function.sig.parameters[0].type.can_accept_as_arg(lhs))
+        if(!as_function.sig.parameters[0].type.can_accept_as_arg(lhs, irgen))
             return std::nullopt;
         as_function.is_bound = true;
         return as_function;
@@ -260,11 +260,11 @@ namespace Yoyo
         switch(expr->op.type)
         {
             using enum TokenType;
-        case Plus: result = checkAddition(lhs, rhs); break;
-        case Star: result = checkStar(lhs, rhs); break;
-        case Minus: result = checkMinus(lhs, rhs); break;
-        case Slash: result = checkDivide(lhs, rhs); break;
-        case Percent: result = checkPercent(lhs, rhs); break;
+        case Plus: result = checkAddition(lhs, rhs, irgen); break;
+        case Star: result = checkStar(lhs, rhs, irgen); break;
+        case Minus: result = checkMinus(lhs, rhs, irgen); break;
+        case Slash: result = checkDivide(lhs, rhs, irgen); break;
+        case Percent: result = checkPercent(lhs, rhs, irgen); break;
         case DoubleEqual: [[fallthrough]];
         case GreaterEqual: [[fallthrough]];
         case LessEqual: [[fallthrough]];
@@ -275,7 +275,7 @@ namespace Yoyo
         case Caret: result = checkBitXor(lhs, rhs); break;
         case Ampersand: result = checkBitAnd(lhs, rhs); break;
         case Dot: result = checkDot(expr, lhs, irgen); break;
-        case Equal: result = checkAssign(lhs, rhs); break;
+        case Equal: result = checkAssign(lhs, rhs, irgen); break;
         default: ;//TODO
         }
         if (result) return { std::move(result).value() };
@@ -389,7 +389,6 @@ namespace Yoyo
             return { tp };
         return { Error(op, "Operator [] is not defined for type tp") };
     }
-
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LambdaExpression* lmd)
     {
         auto fn_t = FunctionType(lmd->sig, false);
@@ -398,6 +397,12 @@ namespace Yoyo
     }
     bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen)
     {
+        if (md->engine->modules.contains(type.name))
+        {
+            md = md->engine->modules.at(type.name).get();
+            hash = md->module_hash;
+            return true;
+        }
         if(md->modules.contains(type.name))
         {
             md = md->modules.at(type.name);
@@ -408,6 +413,18 @@ namespace Yoyo
         {
             hash = std::get<0>(*dets);
             return true;
+        }
+        if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
+        {
+            if (type.subtypes.size() != decl->clause.types.size()) return false;
+            for (auto& sub : type.subtypes) sub.saturate(md, irgen);
+            auto mangled_name = decl->name + IRGenerator::mangleGenericArgs(type.subtypes);
+            ExpressionEvaluator{ irgen }.generateGenericClass(md, hsh, decl, std::span{ type.subtypes });
+            if (auto dets = md->findType(hash, mangled_name))
+            {
+                hash = std::get<0>(*dets); return true;
+            }
+            return false;
         }
         if(auto [name,fn] = md->findFunction(hash, type.name); fn)
         {
@@ -492,7 +509,7 @@ namespace Yoyo
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(ObjectLiteral* obj)
     {
         obj->t.saturate(irgen->module, irgen);
-        auto decl = obj->t.get_decl_if_class();
+        auto decl = obj->t.get_decl_if_class(irgen);
         if (!decl) return { Error(obj, "The type tp does not exist or is not a class/struct") };
         if (obj->values.size() != decl->vars.size())
         {
@@ -510,7 +527,7 @@ namespace Yoyo
             auto expr_t = std::visit(ExpressionTypeChecker{irgen, var.type}, expr->toVariant()).value_or_error();
             auto as_mut = var.type;
             as_mut.is_mutable = true; as_mut.is_lvalue = true;
-            if(!as_mut.is_assignable_from(expr_t)) 
+            if(!as_mut.is_assignable_from(expr_t, irgen)) 
                 return { Error(expr.get(), "Cannot assign tp1 to tp2")};
         }
         return { obj->t };
@@ -542,7 +559,7 @@ namespace Yoyo
             //interface casts for dynamic dispatch
             auto& viewed = expr->dest.subtypes[0];
             if (!from.is_reference()) return { Error(expr, "Interface cast must be from a reference type") };
-            if (auto cls = from.deref().get_decl_if_class())
+            if (auto cls = from.deref().get_decl_if_class(irgen))
             {
                 auto it = std::ranges::find_if(cls->impls, [&viewed](auto& impl) {
                     return impl.impl_for.is_equal(viewed);
@@ -578,7 +595,7 @@ namespace Yoyo
         {
             auto type_i = std::visit(ExpressionTypeChecker{irgen}, tup->elements[i]->toVariant()).value_or_error();
             //if we can implicit convert to the target type we use that
-            if(consider_target && target->subtypes[i].is_assignable_from(type_i))
+            if(consider_target && target->subtypes[i].is_assignable_from(type_i, irgen))
             {
                 tp.subtypes.push_back(target->subtypes[i]);
                 continue;
@@ -755,7 +772,7 @@ namespace Yoyo
         bool operator()(const ImplConstraint& impl_con) {
             //If the type hasn't been resolved yet we skip it, this does mean that we may require more passes
             if (!results.contains(type)) return true;
-            auto cls = results.at(type).get_decl_if_class();
+            auto cls = results.at(type).get_decl_if_class(irgen);
             if (!cls) return true;
             for (auto& intf : cls->impls)
             {
@@ -866,7 +883,7 @@ namespace Yoyo
         for(size_t i = 0; i < op->arguments.size(); ++i)
         {
             auto tp = std::visit(*this, op->arguments[i]->toVariant()).value_or_error();
-            if (!as_fn.sig.parameters[i + callee_ty.is_bound].type.can_accept_as_arg(tp))
+            if (!as_fn.sig.parameters[i + callee_ty.is_bound].type.can_accept_as_arg(tp, irgen))
             {
                 auto& type = as_fn.sig.parameters[i + callee_ty.is_bound].type;
                 Error err(op->arguments[i].get(), "Cannot convert argument to expected parameter type");
@@ -908,7 +925,7 @@ namespace Yoyo
         using namespace std::views;
         auto internal_ty = std::visit(*this, expr->target_expression->toVariant()).value_or_error();
         if (internal_ty.is_error_ty()) return { internal_ty };
-        if (internal_ty.is_non_owning())
+        if (internal_ty.is_non_owning(irgen))
         {
             Error err(expr, "Cannot store non-owning type with the garbage collector");
             err.markers.emplace_back(SourceSpan{ expr->target_expression->beg, expr->target_expression->end },
