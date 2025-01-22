@@ -513,7 +513,6 @@ namespace Yoyo
     {
         //TODO implicit conversion and validation
         std::string name(decl->identifier.text);
-        if (name == "a") debugbreak();
         if(isShadowing(name))
         {
             error(Error(decl, "The name '" + name + "' already exists")); return;
