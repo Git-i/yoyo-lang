@@ -451,7 +451,7 @@ namespace Yoyo
         }
         if (auto [hsh, enm] = md->findEnum(hash, type.name); enm)
         {
-            hash = hsh + "%%" + type.name + "%%enum"; //enums are also terminal and don't have subtypes
+            hash = hsh + type.name;
         }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
         {
@@ -478,7 +478,7 @@ namespace Yoyo
         using namespace std::string_view_literals;
         Module* md = irgen->module;
         std::string hash = irgen->block_hash;
-        Module::ClassDetails* det = nullptr;
+        std::string second_to_last = "";
         auto iterator = UnsaturatedTypeIterator(scp->type);
         while (!iterator.is_end())
         {
@@ -486,6 +486,7 @@ namespace Yoyo
             if (!advanceScope(type, md, hash, irgen)) {
                 return { Error(scp, "The name '" + type.name + "' does not exist in \"" + hash + "\"") };
             }
+            second_to_last.swap(type.name);
         }
         auto last = iterator.last();
         if (hash.ends_with("%%interface"))
@@ -499,12 +500,10 @@ namespace Yoyo
             if (it == interface->methods.end()) return { Error(scp, "No method name '" + last.name + "' in the specified interface") };
             return { Type{"__interface_fn" + actual_hash + interface->name + "$" + last.name } };
         }
-        if (hash.ends_with("%%enum"))
+        //is_enum
+        if (auto [actual_hash, enm] = md->findEnum(hash, second_to_last); enm)
         {
             if (!last.subtypes.empty()) return { Error(scp, "Enum child cannot have subtypes") };
-            auto pos = hash.find_last_of('%', hash.size() - "%%enum"sv.size() - 1);
-            auto name = hash.substr(pos + 1, hash.size() - "%%enum"sv.size() - pos - 1);
-            auto [actual_hash, enm] = md->findEnum(hash, name);
             if (enm->values.contains(last.name)) return { Type{.name = last.name, .module = md, .block_hash = actual_hash } };
             return { Error(scp, "Enum doesn't contain specified value") };
         }
@@ -643,7 +642,7 @@ namespace Yoyo
             for(const auto& t : t.subtypes) if(!hasToStr(t)) return false;
             return true;
         }
-        if(t.is_enum()) return true;
+        if(t.get_decl_if_enum()) return true;
         if(t.is_optional()) return hasToStr(t.subtypes[0]);
         if(t.is_char()) return true;
         if (t.is_str()) return true;

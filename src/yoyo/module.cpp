@@ -195,7 +195,7 @@ namespace Yoyo
             args[1] = llvm::Type::getInt32Ty(context); // 2^32 is a reasonable amount of variant subtypes
             return llvm::StructType::get(context, args);
         }
-        if(type.is_enum())
+        if(type.get_decl_if_enum())
         {
             return llvm::Type::getInt32Ty(context);
         }
@@ -253,6 +253,15 @@ namespace Yoyo
         auto module = eng->modules.at("core").get();
         module->module_hash = "core";
         module->engine = eng;
+        auto cmp_eq = std::make_unique<EnumDeclaration>( "CmpEq", decltype(EnumDeclaration::values){
+            {"Eq", 1}, {"Ne", 0}
+        });
+        auto cmp_ord = std::make_unique<EnumDeclaration>( "CmpOrd", decltype(EnumDeclaration::values){ 
+            {"Eq", 1}, {"Less", 2}, {"Greater", 3}
+        });
+        module->enums[module->module_hash].emplace_back(std::move(cmp_eq));
+        module->enums[module->module_hash].emplace_back(std::move(cmp_ord));
+
         auto& operators = module->overloads;
         std::array types = {
             Type{"f64", {}, nullptr, module},

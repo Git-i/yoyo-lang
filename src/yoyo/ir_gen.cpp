@@ -130,7 +130,7 @@ namespace Yoyo
         std::ranges::transform(sig.parameters, args.begin() + use_sret, [this](const FunctionParameter& p)
         {
             auto t = ToLLVMType(p.type, false);
-            if(!p.type.is_primitive() && !p.type.is_enum())
+            if(!p.type.should_sret())
                 t = t->getPointerTo();
             return t;
         });

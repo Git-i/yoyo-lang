@@ -564,14 +564,15 @@ namespace Yoyo
         return name == "bool";
     }
 
-    bool Type::is_enum() const
+    EnumDeclaration* Type::get_decl_if_enum() const
     {
-        if(!module) return false;
-        return module->enums.contains(name);
+        if(!module) return nullptr;
+        auto [hsh, enm] = module->findEnum(block_hash, name);
+        return enm;
     }
     bool Type::should_sret() const
     {
-        return !is_primitive() && !is_enum() && !is_reference() && !is_char();
+        return !is_primitive() && (get_decl_if_enum() == nullptr) && !is_reference() && !is_char();
     }
 
     bool Type::is_integral() const

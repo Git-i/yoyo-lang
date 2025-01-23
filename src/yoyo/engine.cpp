@@ -59,7 +59,7 @@ namespace Yoyo
         bool operator()(EnumDeclaration* decl)
         {
             std::ignore = stmt.release();
-            md->enums[std::string{decl->identifier.text}] = std::unique_ptr<EnumDeclaration>(decl);
+            md->enums[md->module_hash].emplace_back(decl);
             return true;
         }
         bool operator()(OperatorOverload*) {return true;}

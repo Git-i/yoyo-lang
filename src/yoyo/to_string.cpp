@@ -172,9 +172,8 @@ namespace Yoyo
             irgen->builder->CreateMemCpy(addr, std::nullopt, copy, std::nullopt, size);
             return {addr, size};
         }
-        if(tp.is_enum())
+        if(auto decl = tp.get_decl_if_enum())
         {
-            auto decl = tp.module->enums[tp.name].get();
             auto size = irgen->Alloca("enum_to_str_size", llvm::Type::getInt64Ty(irgen->context));
             auto fn = enum_to_string_fn(irgen);
             auto llvm_decl = irgen->builder->CreateIntToPtr(

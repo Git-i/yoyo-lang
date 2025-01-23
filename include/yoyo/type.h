@@ -13,6 +13,7 @@ namespace Yoyo
     struct FunctionSignature;
     class ClassDeclaration;
     class IRGenerator;
+    class EnumDeclaration;
     struct Type
     {
         std::string name;
@@ -88,7 +89,7 @@ namespace Yoyo
 
         [[nodiscard]] bool is_boolean() const;
 
-        [[nodiscard]] bool is_enum() const;
+        [[nodiscard]] EnumDeclaration* get_decl_if_enum() const;
 
         [[nodiscard]] bool should_sret() const;
 
