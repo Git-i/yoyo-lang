@@ -58,6 +58,16 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
+    std::pair<std::string, EnumDeclaration*> Module::findEnum(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, enum_list] : enums)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& enm: enum_list)
+                if (enm->identifier == name) return { hash, enm.get()};
+        }
+        return { "", nullptr };
+    }
     std::pair<std::string, GenericInterfaceDeclaration*> Module::findGenericInterface(const std::string& block, const std::string& name)
     {
         for (auto& [hash, interface_list] : generic_interfaces)
@@ -117,6 +127,7 @@ namespace Yoyo
         if (auto [hash, _] = findFunction(block, name); _) return hash;
         if (auto [hash, _] = findGenericFn(block, name); _) return hash;
         if (auto [hash, _] = findGenericClass(block, name); _) return hash;
+        if (auto [hash, _] = findEnum(block, name); _) return hash;
         if (modules.contains(name)) return modules.at(name)->module_hash;
         return std::nullopt;
     }

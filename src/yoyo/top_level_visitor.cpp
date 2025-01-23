@@ -89,6 +89,18 @@ namespace Yoyo
         OverloadDetailsBinary bin {.left = decl->signature.parameters[0].type,
             .right = decl->signature.parameters[1].type,
             .result = decl->signature.returnType};
+        //spaceship operator need special return type
+        if (decl->tok == TokenType::Spaceship) {
+            std::string err = "Comparison operator overload must return either core::CmpEq, core::CmpOrd or core::CmpOrd?";
+            const auto& nm = decl->signature.returnType.name;
+            auto md = decl->signature.returnType.module;
+            if (md != md->engine->modules.at("core").get()) 
+                irgen->error(Error(decl, err));
+            else if (nm != "CmpEq" && nm != "CmpOrd" && nm != "__opt")
+                irgen->error(Error(decl, err));
+            if (nm == "__opt" && decl->signature.returnType.subtypes[0].name != "CmpOrd")
+                irgen->error(Error(decl, err));
+        }
         std::string old_hash = irgen->reset_hash();
         std::string name = bin.mangled_name(decl->tok);
         FunctionDeclaration fn_decl(name, std::move(decl->signature), std::move(decl->body));
@@ -105,7 +117,7 @@ namespace Yoyo
         irgen->saturateSignature(decl->signature, irgen->module);
         if(!std::ranges::any_of(decl->signature.parameters, [this](FunctionParameter& param)
         {
-            return param.type.module == irgen->module;
+            return param.type.deref().module == irgen->module;
         })) {irgen->error(Error(decl.get(), "This module does not own any type being overloaded")); return false; }
         //check if overload already exists
         if(Token{decl->tok}.can_be_overloaded_binary_only())

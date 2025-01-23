@@ -26,6 +26,7 @@ namespace Yoyo
             case TokenType::Minus: middle = "minus__"; break;
             case TokenType::Star: middle = "mul__"; break;
             case TokenType::Slash: middle = "div__"; break;
+            case TokenType::Spaceship: middle = "cmp__"; break;
             default: debugbreak();
             }
             return "__operator__" + middle + left.full_name() + "__" + right.full_name();
@@ -46,6 +47,7 @@ namespace Yoyo
         //mul;
         //div;
         //mod;
+        //cmp;
         //bit_and;
         //bit_or;
         //bit_xor;
@@ -67,6 +69,7 @@ namespace Yoyo
             case TokenType::Star: off = 2; break;
             case TokenType::Slash: off = 3; break;
             case TokenType::Percent: off = 4; break;
+            case TokenType::Spaceship: off = 5; break;
             }
             bin_overloads.insert(bin_overloads.begin() + off, std::move(bin));
             for (auto& elem : std::ranges::subrange(offsets.begin() + off, offsets.end())) elem++;
@@ -81,6 +84,7 @@ namespace Yoyo
             case TokenType::Star: off = 2; break;
             case TokenType::Slash: off = 3; break;
             case TokenType::Percent: off = 4; break;
+            case TokenType::Spaceship: off = 5; break;
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
             bin_overloads.emplace(bin_overloads.begin() + actual_off, std::move(l), std::move(r), std::move(res));
@@ -95,6 +99,7 @@ namespace Yoyo
             case TokenType::Star: return std::span{ bin_overloads.begin() + offsets[1], bin_overloads.begin() + offsets[2] };
             case TokenType::Slash: return std::span{ bin_overloads.begin() + offsets[2], bin_overloads.begin() + offsets[3] };
             case TokenType::Percent: return std::span{ bin_overloads.begin() + offsets[3], bin_overloads.begin() + offsets[4] };
+            case TokenType::Spaceship: return std::span{ bin_overloads.begin() + offsets[4], bin_overloads.begin() + offsets[5] };
             default: return {};
             }
         }

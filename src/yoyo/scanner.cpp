@@ -97,7 +97,11 @@ namespace Yoyo {
                 }
             case '<':
                 {
-                    if (NextIs('=')) return Token{TokenType::LessEqual, loc};
+                    if (NextIs('='))
+                    {
+                        if (NextIs('>')) return Token{ TokenType::Spaceship, loc };
+                        return Token{ TokenType::LessEqual, loc };
+                    }
                     if (NextIs('<')) return Token{TokenType::DoubleLess, loc};
                     return Token{TokenType::Less, loc};
                 }

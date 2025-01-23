@@ -23,6 +23,7 @@ namespace Yoyo {
         SemiColon, In, InOut, This, Operator, Return, Called, Tilde, Pub, Static, Mod, With,
         Question, Null, As, Fn, Alias,
         AttrOpen, /// #(
+        Spaceship, // <=>
         Underscore, Mut, RefMut, GCNew, Impl,
     };
     struct Token
@@ -39,23 +40,25 @@ namespace Yoyo {
         [[nodiscard]] bool can_be_overloaded() const
         {
             return type == TokenType::Plus
-            || type == TokenType::Minus
-            || type == TokenType::Slash
-            || type == TokenType::Star
-            || type == TokenType::Percent
-            || type == TokenType::Ampersand
-            || type == TokenType::Pipe
-            || type == TokenType::Caret;
+                || type == TokenType::Minus
+                || type == TokenType::Slash
+                || type == TokenType::Star
+                || type == TokenType::Percent
+                || type == TokenType::Ampersand
+                || type == TokenType::Pipe
+                || type == TokenType::Caret
+                || type == TokenType::Spaceship;
         }
         [[nodiscard]] bool can_be_overloaded_binary_only() const
         {
             return type == TokenType::Plus
-            || type == TokenType::Slash
-            || type == TokenType::Star
-            || type == TokenType::Percent
-            || type == TokenType::Ampersand
-            || type == TokenType::Pipe
-            || type == TokenType::Caret;
+                || type == TokenType::Slash
+                || type == TokenType::Star
+                || type == TokenType::Percent
+                || type == TokenType::Ampersand
+                || type == TokenType::Pipe
+                || type == TokenType::Caret
+                || type == TokenType::Spaceship;
         }
     };
 }

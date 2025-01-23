@@ -237,10 +237,10 @@ namespace Yoyo
     class EnumDeclaration : public Statement
     {
     public:
-        Token identifier;
+        std::string identifier;
         std::unordered_map<std::string, int32_t> values;
-        EnumDeclaration(Token iden, std::unordered_map<std::string, int32_t> vals)
-            : identifier(iden), values(std::move(vals)) {}
+        EnumDeclaration(std::string iden, std::unordered_map<std::string, int32_t> vals)
+            : identifier(std::move(iden)), values(std::move(vals)) {}
         StatementVariant toVariant() override;
     };
     // if |value| (optional) { }

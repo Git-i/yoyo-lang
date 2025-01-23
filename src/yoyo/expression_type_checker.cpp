@@ -449,6 +449,10 @@ namespace Yoyo
             }
             return false;
         }
+        if (auto [hsh, enm] = md->findEnum(hash, type.name); enm)
+        {
+            hash = hsh + "%%" + type.name + "%%enum"; //enums are also terminal and don't have subtypes
+        }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
         {
             if(type.subtypes.size() != fn->clause.types.size()) return false;
@@ -476,7 +480,7 @@ namespace Yoyo
         std::string hash = irgen->block_hash;
         Module::ClassDetails* det = nullptr;
         auto iterator = UnsaturatedTypeIterator(scp->type);
-        while(!iterator.is_end())
+        while (!iterator.is_end())
         {
             auto type = iterator.next();
             if (!advanceScope(type, md, hash, irgen)) {
@@ -493,19 +497,27 @@ namespace Yoyo
                 return mth->name == last.name;
                 });
             if (it == interface->methods.end()) return { Error(scp, "No method name '" + last.name + "' in the specified interface") };
-            return { Type{"__interface_fn" + actual_hash + interface->name + "$" + last.name }};
+            return { Type{"__interface_fn" + actual_hash + interface->name + "$" + last.name } };
         }
-        if(auto [name, fn] = md->findFunction(hash, last.name); fn)
+        if (hash.ends_with("%%enum"))
+        {
+            if (!last.subtypes.empty()) return { Error(scp, "Enum child cannot have subtypes") };
+            auto pos = hash.find_last_of('%', hash.size() - "%%enum"sv.size() - 1);
+            auto name = hash.substr(pos + 1, hash.size() - "%%enum"sv.size() - pos - 1);
+            auto [actual_hash, enm] = md->findEnum(hash, name);
+            if (enm->values.contains(last.name)) return { Type{.name = last.name, .module = md, .block_hash = actual_hash } };
+            return { Error(scp, "Enum doesn't contain specified value") };
+        }
+        if (auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
             irgen->saturateSignature(fn->sig, md);
-            auto t = FunctionType{fn->sig, false};
+            auto t = FunctionType{ fn->sig, false };
             t.block_hash = hash;
             t.module = md;
             return { t };
         }
         return { Error(scp, "The name '" + last.name + "' does not exist in \"" + hash + "\"") };
     }
-
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(ObjectLiteral* obj)
     {
         obj->t.saturate(irgen->module, irgen);

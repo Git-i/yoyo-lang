@@ -48,6 +48,7 @@ namespace Yoyo
         infixParselets[TokenType::GreaterEqual] = relational_parselet;
         infixParselets[TokenType::LessEqual] = relational_parselet;
         infixParselets[TokenType::Less] = relational_parselet;
+        infixParselets[TokenType::Spaceship] = relational_parselet;
         infixParselets[TokenType::Dot] = access_parselet;
 
         infixParselets[TokenType::Pipe] = std::make_shared<BinaryOperationParselet>(Precedences::BitOr);
@@ -608,7 +609,7 @@ namespace Yoyo
             }
         }
         return Statement::attachSLAndParent(
-            std::make_unique<EnumDeclaration>(identifier, std::move(values)), identifier.loc, discardLocation, parent);
+            std::make_unique<EnumDeclaration>(std::string{identifier.text}, std::move(values)), identifier.loc, discardLocation, parent);
     }
     //struct and classes are virtually the same, except structs don't have access specs
     std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct)
