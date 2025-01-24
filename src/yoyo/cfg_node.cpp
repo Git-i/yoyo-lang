@@ -104,15 +104,15 @@ namespace Yoyo
             node->addChild(then);
             auto then_prep = CFGPreparator{then,exit, depth + 1};
             std::visit(then_prep, stat->body->toVariant());
-            then_prep.node->addChild(cont);
+            if (then_prep.node != exit) then_prep.node->addChild(cont);
             if(else_node)
             {
                 node->addChild(else_node);
                 auto else_prep = CFGPreparator{else_node, exit,depth + 1};
                 std::visit(else_prep, stat->else_body->toVariant());
-                else_prep.node->addChild(cont);
+                if (else_prep.node != exit) else_prep.node->addChild(cont);
             }
-            node = cont;
+            node = cont->parents.empty() ? exit : cont;
         }
         void operator()(WithStatement* stat)
         {
