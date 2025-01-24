@@ -33,4 +33,7 @@ main: fn = {
     a.denom = 24;
     "${a.rat_str()} compared to ${b.rat_str()}".app::func();
     bigger_rational(a, b);
+    f321: f32 = 10;
+    f322: f32 = 20;
+    "${f321 <=> f322}".app::func();
 }

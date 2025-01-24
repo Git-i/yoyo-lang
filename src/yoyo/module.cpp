@@ -361,6 +361,41 @@ namespace Yoyo
             builder.CreateRet(llvm::ConstantInt::get(i32, less));
             operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
         }
+        for (auto& t : types | std::views::filter([](auto& t) { return t.is_floating_point(); }))
+        {
+            //float comparison is partially ordered because of NaN
+            Type result{ .name = "CmpPartOrd", .module = module, .block_hash = module->module_hash };
+            std::string mangled_name = "__operator__cmp__" + t.name + "__" + t.name;
+            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto i32 = llvm::Type::getInt32Ty(ctx);
+            auto fn_ty = llvm::FunctionType::get(i32, { as_llvm, as_llvm }, false);
+            auto cmp_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name, module->code.getModuleUnlocked());
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", cmp_fn));
+            auto arg0 = cmp_fn->getArg(0), arg1 = cmp_fn->getArg(1);
+            auto is_eq = builder.CreateFCmpOEQ(arg0, arg1);
+            auto equal_bb = llvm::BasicBlock::Create(ctx, "equal_bb", cmp_fn);
+            auto equal_cont = llvm::BasicBlock::Create(ctx, "equal_cont", cmp_fn);
+            builder.CreateCondBr(is_eq, equal_bb, equal_cont);
+            builder.SetInsertPoint(equal_bb);
+            builder.CreateRet(llvm::ConstantInt::get(i32, eq));
+            builder.SetInsertPoint(equal_cont);
+            llvm::Value* is_gt = builder.CreateFCmpOGT(arg0, arg1);
+            auto gt_bb = llvm::BasicBlock::Create(ctx, "gt_bb", cmp_fn);
+            auto gt_cont = llvm::BasicBlock::Create(ctx, "gt_cont", cmp_fn);
+            builder.CreateCondBr(is_gt, gt_bb, gt_cont);
+            builder.SetInsertPoint(gt_bb);
+            builder.CreateRet(llvm::ConstantInt::get(i32, greater));
+            builder.SetInsertPoint(gt_cont);
+            llvm::Value* is_uno = builder.CreateFCmpUNO(arg0, arg1);
+            auto uno_bb = llvm::BasicBlock::Create(ctx, "uno_bb", cmp_fn);
+            auto uno_cont = llvm::BasicBlock::Create(ctx, "uno_cont", cmp_fn);
+            builder.CreateCondBr(is_uno, uno_bb, uno_cont);
+            builder.SetInsertPoint(uno_bb);
+            builder.CreateRet(llvm::ConstantInt::get(i32, unord));
+            builder.SetInsertPoint(uno_cont);
+            builder.CreateRet(llvm::ConstantInt::get(i32, less));
+            operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
+        }
         for(auto& t : std::ranges::subrange(types.begin(), types.begin() + 6))
         {
             auto as_llvm = module->ToLLVMType(t, "", {});

@@ -180,10 +180,9 @@ namespace Yoyo
                 llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), reinterpret_cast<std::uintptr_t>(decl)),
                 llvm::PointerType::get(irgen->context, 0)
             );
-            return {
-                irgen->builder->CreateCall(fn, {val, llvm_decl, size}),
-                irgen->builder->CreateLoad(llvm::Type::getInt64Ty(irgen->context), size)
-            };
+            auto addr = irgen->builder->CreateCall(fn, { val, llvm_decl, size });
+            auto sz = irgen->builder->CreateLoad(llvm::Type::getInt64Ty(irgen->context), size);
+            return { addr, sz };
         }
         if(tp.is_optional())
         {

@@ -91,14 +91,12 @@ namespace Yoyo
             .result = decl->signature.returnType};
         //spaceship operator need special return type
         if (decl->tok == TokenType::Spaceship) {
-            std::string err = "Comparison operator overload must return either core::CmpEq, core::CmpOrd or core::CmpOrd?";
+            std::string err = "Comparison operator overload must return either core::CmpEq, core::CmpOrd or core::CmpPartOrd";
             const auto& nm = decl->signature.returnType.name;
             auto md = decl->signature.returnType.module;
             if (md != md->engine->modules.at("core").get()) 
                 irgen->error(Error(decl, err));
-            else if (nm != "CmpEq" && nm != "CmpOrd" && nm != "__opt")
-                irgen->error(Error(decl, err));
-            if (nm == "__opt" && decl->signature.returnType.subtypes[0].name != "CmpOrd")
+            else if (nm != "CmpEq" && nm != "CmpOrd" && nm != "CmpPartOrd")
                 irgen->error(Error(decl, err));
         }
         std::string old_hash = irgen->reset_hash();
