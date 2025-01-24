@@ -1158,7 +1158,50 @@ namespace Yoyo
         return std::visit(*this, op->expr->toVariant());
     }
 
-    llvm::Value* ExpressionEvaluator::operator()(LogicalOperation*) { return nullptr; }
+    llvm::Value* ExpressionEvaluator::operator()(LogicalOperation* op) { 
+        auto fn = irgen->builder->GetInsertBlock()->getParent();
+        auto orig_block = irgen->builder->GetInsertBlock();
+        auto type_checker = ExpressionTypeChecker{ irgen };
+        auto ovrl_type = type_checker(op);
+        if (!ovrl_type) { irgen->error(ovrl_type.error()); return nullptr; }
+        auto l_as_var = op->lhs->toVariant();
+        auto r_as_var = op->rhs->toVariant();
+        auto left_t = std::visit(type_checker, l_as_var);
+        auto right_t = std::visit(type_checker, r_as_var);
+        
+        if (!left_t) { irgen->error(left_t.error()); return nullptr; }
+        if (!right_t) { irgen->error(right_t.error()); return nullptr; }
+
+        if (ovrl_type->is_error_ty()) return nullptr;
+
+        auto left = std::visit(*this, l_as_var);
+        if (!left) return left;
+        auto left_ext = llvm::BasicBlock::Create(irgen->context, "lft_ext", fn, irgen->returnBlock);
+        auto cont = llvm::BasicBlock::Create(irgen->context, "logi_cont", fn, irgen->returnBlock);
+        if (op->op.type == TokenType::DoubleAmpersand) {
+            irgen->builder->CreateCondBr(left, left_ext, cont);
+            irgen->builder->SetInsertPoint(left_ext);
+            auto right = std::visit(*this, r_as_var);
+            irgen->builder->CreateBr(cont);
+            irgen->builder->SetInsertPoint(cont);
+            auto result = irgen->builder->CreatePHI(llvm::Type::getInt1Ty(irgen->context), 2, "logi_result");
+            result->addIncoming(llvm::ConstantInt::getFalse(irgen->context), orig_block);
+            result->addIncoming(right, left_ext);
+            return result;
+        }
+        if (op->op.type == TokenType::DoublePipe) {
+            irgen->builder->CreateCondBr(left, cont, left_ext);
+            irgen->builder->SetInsertPoint(left_ext);
+            auto right = std::visit(*this, r_as_var);
+            irgen->builder->CreateBr(cont);
+            irgen->builder->SetInsertPoint(cont);
+            auto result = irgen->builder->CreatePHI(llvm::Type::getInt1Ty(irgen->context), 2, "logi_result");
+            result->addIncoming(llvm::ConstantInt::getTrue(irgen->context), orig_block);
+            result->addIncoming(right, left_ext);
+            return result;
+        }
+        return nullptr;
+    }
     llvm::Value* ExpressionEvaluator::operator()(PostfixOperation*) { return nullptr; }
     llvm::Value* ExpressionEvaluator::fillArgs(bool uses_sret,
         const FunctionSignature& sig,

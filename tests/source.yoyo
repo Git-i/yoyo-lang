@@ -1,46 +1,25 @@
 app: module = APP
-Rational: struct = {
-    num: i32, denom: i32
+always_true: fn -> bool = {
+    "True function called".app::func();
+    return true;
 }
-Vec2: struct = {
-    x: f32, y: f32
-}
-operator: <=>(a: &Rational, b: &Rational) -> core::CmpOrd = {
-    new_a := a.num * b.denom;
-    new_b := b.num * a.denom;
-    return new_a <=> new_b;
-}
-operator: <=>(a: Vec2, b: Vec2) -> core::CmpEq = {
-    if (a.x == b.x) {
-        if (a.y == b.y) return core::CmpEq::Eq;
-        return core::CmpEq::Ne;
-    } 
-    return core::CmpEq::Ne;
-}
-operator: <=>(a: Rational, b: Rational) -> core::CmpOrd = return &a <=> &b;
-rat_str: fn (rat: &Rational) -> str = return "${rat.num}/${rat.denom}";
-bigger_rational: fn (a: Rational, b: Rational) = {
-    if (a > b)
-        a.rat_str().app::func();
-    else if (a == b)
-        "Equal".app::func();
-    else
-        b.rat_str().app::func();
-}
-other_fn: fn -> i32 = {
-    opt: i32? = 10;
-    if |val| (opt) {
-        return val;
-    }
-    return 0;
+always_false: fn -> bool = {
+    "False function called".app::func();
+    return false;
 }
 main: fn = {
-    a: mut = Rational{.num = 12, .denom = 19};
-    b := Rational{.num = 1, .denom = 2};
-    "${a.rat_str()} compared to ${b.rat_str()}".app::func();
-    bigger_rational(a, b);
-    a.denom = 24;
-    "${a.rat_str()} compared to ${b.rat_str()}".app::func();
-    bigger_rational(a, b);
-    
+    val: mut = false;
+    val = always_true() && always_true();
+    "${val}----------------".app::func();
+    val = always_false() && always_true();
+    "${val}----------------".app::func();
+    val = always_true() && always_false();
+    "${val}----------------".app::func();
+    "--------OR---------------".app::func();
+    val = always_true() || always_true();
+    "${val}----------------".app::func();
+    val = always_false() || always_true();
+    "${val}----------------".app::func();
+    val = always_true() || always_false();
+    "${val}----------------".app::func();
 }

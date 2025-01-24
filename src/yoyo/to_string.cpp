@@ -278,6 +278,30 @@ namespace Yoyo
             irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, ')'), current_ptr);
             return {memory, total_size};
         }
+        if (tp.is_boolean())
+        {
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            auto block = irgen->builder->GetInsertBlock();
+            auto is_true = llvm::BasicBlock::Create(irgen->context, "bool_to_str_true", fn, irgen->returnBlock);
+            auto cont = llvm::BasicBlock::Create(irgen->context, "bool_to_str_cont", fn, irgen->returnBlock);
+            static auto true_const = irgen->builder->CreateGlobalString("true");
+            static auto false_const = irgen->builder->CreateGlobalString("false");
+            irgen->builder->CreateCondBr(val, is_true, cont);
+            irgen->builder->SetInsertPoint(is_true);
+            irgen->builder->CreateBr(cont);
+
+            irgen->builder->SetInsertPoint(cont);
+            auto i64 = llvm::Type::getInt64Ty(irgen->context);
+            auto constant = irgen->builder->CreatePHI(llvm::PointerType::get(irgen->context, 0), 2);
+            auto size = irgen->builder->CreatePHI(i64, 2);
+            constant->addIncoming(true_const, is_true);
+            constant->addIncoming(false_const, block);
+            size->addIncoming(llvm::ConstantInt::get(i64, 4), is_true);
+            size->addIncoming(llvm::ConstantInt::get(i64, 5), block);
+            auto memory = irgen->Malloc("bool_to_str", size);
+            irgen->builder->CreateMemCpy(memory, std::nullopt, constant, std::nullopt, size);
+            return { memory, size };
+        }
         debugbreak();
     }
 }

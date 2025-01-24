@@ -303,10 +303,18 @@ namespace Yoyo
         }
     }
 
-    ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LogicalOperation*)
+    ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LogicalOperation* expr)
     {
-        //TODO
-        return {};
+        auto lhs = std::visit(*this, expr->lhs->toVariant()).value_or_error();
+        auto rhs = std::visit(*this, expr->rhs->toVariant()).value_or_error();
+        if (lhs.is_error_ty()) return { std::move(lhs) };
+        if (rhs.is_error_ty()) return { std::move(rhs) };
+
+        if (lhs.is_boolean() && rhs.is_boolean()) return { std::move(lhs) };
+        Error err(expr, "Logical operators '&&' and '||' are only available with booleans");
+        err.markers.emplace_back(SourceSpan{ expr->lhs->beg, expr->lhs->end }, "Expression is of type: " + lhs.full_name());
+        err.markers.emplace_back(SourceSpan{ expr->rhs->beg, expr->rhs->end }, "Expression is of type: " + rhs.full_name());
+        return { std::move(err) };
     }
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(NameExpression* expr)
