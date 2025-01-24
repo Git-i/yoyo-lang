@@ -454,6 +454,7 @@ namespace Yoyo
         if (auto [hsh, enm] = md->findEnum(hash, type.name); enm)
         {
             hash = hsh + type.name;
+            return true;
         }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
         {
@@ -506,7 +507,7 @@ namespace Yoyo
         if (auto [actual_hash, enm] = md->findEnum(hash, second_to_last); enm)
         {
             if (!last.subtypes.empty()) return { Error(scp, "Enum child cannot have subtypes") };
-            if (enm->values.contains(last.name)) return { Type{.name = last.name, .module = md, .block_hash = actual_hash } };
+            if (enm->values.contains(last.name)) return { Type{.name = second_to_last, .module = md, .block_hash = actual_hash } };
             return { Error(scp, "Enum doesn't contain specified value") };
         }
         if (auto [name, fn] = md->findFunction(hash, last.name); fn)

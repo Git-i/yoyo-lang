@@ -1597,12 +1597,18 @@ namespace Yoyo
     llvm::Value* ExpressionEvaluator::operator()(ScopeOperation* op)
     {
         auto ty = ExpressionTypeChecker{irgen}(op);
+        if (!ty) { irgen->error(ty.error()); return nullptr; }
         if(ty->is_function())
         {
             std::string mangled_name = ty->block_hash + UnsaturatedTypeIterator(op->type).last().name;
             auto fn = irgen->code->getFunction(mangled_name);
             if(!fn) fn = declareFunction(mangled_name, irgen, ty->sig);
             return fn;
+        }
+        if (auto enm = ty->get_decl_if_enum())
+        {
+            auto name = UnsaturatedTypeIterator(op->type).last().name;
+            return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), enm->values[name]);
         }
         return nullptr;
     }

@@ -10,9 +10,19 @@ namespace Yoyo
     {
         constexpr size_t max_freq = std::numeric_limits<size_t>::max();
         std::vector<std::pair<size_t, OverloadDetailsBinary*>> overloads;
-        auto module = lhs.module;
-        while(module)
+        std::array<Module*, 4> modules{ lhs.module, lhs.deref().module, rhs.module, rhs.module };
+        std::array<Module*, 4> encountered{};
+        size_t enc_idx = 0;
+        auto md = modules | std::views::transform([&encountered, &enc_idx](auto& module) {
+            auto it = std::ranges::find(encountered, module);
+            if (it == encountered.end()) {
+                encountered[enc_idx++] = module; return module;
+            }
+            return static_cast<Module*>(nullptr);
+            });
+        for(auto module : md)
         {
+            if (module == nullptr) continue;
             for(auto& pl_def : module->overloads.binary_details_for(t))
             {
                 size_t fric = 0;
@@ -24,8 +34,6 @@ namespace Yoyo
                 else continue;
                 overloads.emplace_back(fric, &pl_def);
             }
-            if (module == lhs.module) module = rhs.module;
-            if (module == rhs.module) module = nullptr;
         }
         if(overloads.empty()) return nullptr;
         std::pair<size_t, OverloadDetailsBinary*>* result = &overloads.front();
