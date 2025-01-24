@@ -830,74 +830,49 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::doCmp(
         ComparisonPredicate p,
-        Expression* lhse,
-        Expression* rhse,
+        Expression* lhs,
+        Expression* rhs,
         const Type& left_type,
         const Type& right_type,
         const Type& result_type)
     {
-        auto lhs = std::visit(*this, lhse->toVariant());
-        auto rhs = std::visit(*this, rhse->toVariant());
-        llvm::CmpInst::Predicate pred{};
-        auto get_int_cmp_pred = [](const bool is_signed, ComparisonPredicate p)
+        constexpr int32_t eq = 1;
+        constexpr int32_t ne = 0;
+        constexpr int32_t less = 2;
+        constexpr int32_t greater = 3;
+        constexpr int32_t unord = 4;
+        auto i32 = llvm::Type::getInt32Ty(irgen->context);
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
+        auto target = resolveCmp(left_type, right_type, irgen);
+        auto fn = getOperatorFunction(TokenType::Spaceship, irgen, target);
+        std::array<llvm::Value*, 2> args;
+        args[0] = implicitConvert(lhs, lhs_e, left_type, target->left);
+        args[1] = implicitConvert(rhs, rhs_e, right_type, target->right);
+        auto ret = irgen->builder->CreateCall(fn, args);
+        if (p == SPACE) return ret;
+        if (p == EQ) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq));
+        if (p == GT) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, greater));
+        if (p == LT) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, less));
+        if (p == NE)
         {
-            if(is_signed)
-                switch(p)
-                {
-            case EQ: return llvm::CmpInst::ICMP_EQ;
-            case GT: return llvm::CmpInst::ICMP_SGT;
-            case LT: return llvm::CmpInst::ICMP_SLT;
-            case EQ_GT: return llvm::CmpInst::ICMP_SGE;
-            case EQ_LT: return llvm::CmpInst::ICMP_SLE;
-            case NE: return llvm::CmpInst::ICMP_NE;
-                }
-            else
-                switch(p)
-                {
-            case EQ: return llvm::CmpInst::ICMP_EQ;
-            case GT: return llvm::CmpInst::ICMP_UGT;
-            case LT: return llvm::CmpInst::ICMP_ULT;
-            case EQ_GT: return llvm::CmpInst::ICMP_UGE;
-            case EQ_LT: return llvm::CmpInst::ICMP_ULE;
-            case NE: return llvm::CmpInst::ICMP_NE;
-                }
-            return llvm::CmpInst::BAD_ICMP_PREDICATE;
-        };
-        if(left_type.is_signed_integral() && right_type.is_integral())
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
-            pred = get_int_cmp_pred(true, p);
-            return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
+            if (target->result.name == "CmpPartOrd") return irgen->builder->CreateOr(
+                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, unord)),
+                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, ne)));
+            else return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, ne));
         }
-        if(left_type.is_unsigned_integral() && right_type.is_integral())
+        if (p == EQ_GT)
         {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
-            pred = get_int_cmp_pred(false, p);
-            return irgen->builder->CreateICmp(pred, lhs, rhs, "cmptmp");
+            return irgen->builder->CreateOr(
+                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, greater)),
+                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq)));
         }
-        if(left_type.is_integral() && right_type.is_integral())
+        if (p == EQ_LT)
         {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
-            auto lhs_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
-            auto rhs_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
-            pred = get_int_cmp_pred(lhs_int->isNegative() || rhs_int->isNegative(), p);
-            return irgen->builder->CreateICmp(pred, lhs, rhs, "divtmp");
+            return irgen->builder->CreateOr(
+                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, less)),
+                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq)));
         }
-        if(left_type.is_floating_point() && (left_type.is_integral() || left_type.is_floating_point()))
-        {
-            convertLiterals(&lhs, &rhs, left_type, right_type, irgen, this);
-            switch(p)
-            {
-            case EQ: pred = llvm::CmpInst::FCMP_OEQ; break;
-            case GT: pred = llvm::CmpInst::FCMP_OGT; break;
-            case LT: pred = llvm::CmpInst::FCMP_OLT; break;
-            case EQ_GT: pred = llvm::CmpInst::FCMP_OGE; break;
-            case EQ_LT: pred = llvm::CmpInst::FCMP_OLE; break;
-            case NE: pred = llvm::CmpInst::FCMP_ONE; break;
-            }
-            return irgen->builder->CreateFCmp(pred, lhs, rhs, "cmptmp");
-        }
-        return nullptr;
     }
 
 
@@ -1169,6 +1144,7 @@ namespace Yoyo
         case LessEqual: return doCmp(EQ_LT, lhs, rhs, *left_t, *right_t, *res);
         case BangEqual: return doCmp(NE, lhs, rhs, *left_t, *right_t, *res);
         case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t, *res);
+        case Spaceship: return doCmp(SPACE, lhs, rhs, *left_t, *right_t, *res);
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
 
         case Equal:

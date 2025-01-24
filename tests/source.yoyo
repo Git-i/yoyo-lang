@@ -7,15 +7,15 @@ Vec2: struct = {
 }
 operator: <=>(a: Rational, b: Rational) -> core::CmpOrd = {
     new_a := a.num * b.denom;
-    new_b := b.num * b.denom;
+    new_b := b.num * a.denom;
     return new_a <=> new_b;
 }
-operator: <=>(a: Vec2, b: Vec2) -> core::CmpEq = {
+/* operator: <=>(a: Vec2, b: Vec2) -> core::CmpEq = {
     if (a.x == b.x) {
         if (a.y == b.y) return core::CmpEq::Eq;
         return core::CmpEq::Ne;
     } else return core::CmpEq::Ne;
-}
+} */
 rat_str: fn (rat: &Rational) -> str = return "${rat.num}/${rat.denom}";
 bigger_rational: fn (a: Rational, b: Rational) = {
     if (a > b)
@@ -28,7 +28,9 @@ bigger_rational: fn (a: Rational, b: Rational) = {
 main: fn = {
     a: mut = Rational{.num = 12, .denom = 19};
     b := Rational{.num = 1, .denom = 2};
+    "${a.rat_str()} compared to ${b.rat_str()}".app::func();
     bigger_rational(a, b);
     a.denom = 24;
+    "${a.rat_str()} compared to ${b.rat_str()}".app::func();
     bigger_rational(a, b);
 }

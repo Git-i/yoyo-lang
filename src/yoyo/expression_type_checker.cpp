@@ -78,16 +78,17 @@ namespace Yoyo
         auto ty = resolveRem(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
-    static std::optional<Type> checkCmp(const Type& a, const Type& b)
+    static std::optional<Type> checkCmp(const Type& a, const Type& b, IRGenerator* irgen, TokenType tk)
     {
-        if(a.is_integral() || a.is_floating_point())
-        {
-            if(a.is_equal(b)) return Type{.name="bool", .module = a.module->engine->modules.at("core").get()};
-            auto res = canBinOpLiteral(a, b);
-            if(res) return Type{.name="bool", .module = a.module->engine->modules.at("core").get()};
-            return std::nullopt;
-        }
-        return std::nullopt;
+        if (a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveCmp(a, b, irgen);
+        if (!ty) return std::nullopt;
+        auto bool_ty = Type{ .name = "bool", .module = irgen->module->engine->modules.at("core").get() };
+        if (tk == TokenType::Equal || tk == TokenType::BangEqual) return bool_ty; //all cmps support equality checks
+        if (tk == TokenType::Spaceship) return ty->result;
+        if (ty->result.name == "CmpOrd" || ty->result.name == "CmpPartOrd") return bool_ty;
+        return std::nullopt; //grater and less require ord or part ord
+
     }
     static std::optional<Type> checkBitOr(const Type &a, const Type &b)
     {
@@ -270,7 +271,8 @@ namespace Yoyo
         case LessEqual: [[fallthrough]];
         case Less: [[fallthrough]];
         case Greater: [[fallthrough]];
-        case BangEqual: result = checkCmp(lhs, rhs); break;
+        case Spaceship: [[fallthrough]];
+        case BangEqual: result = checkCmp(lhs, rhs, irgen, expr->op.type); break;
         case Pipe: result = checkBitOr(lhs, rhs); break;
         case Caret: result = checkBitXor(lhs, rhs); break;
         case Ampersand: result = checkBitAnd(lhs, rhs); break;

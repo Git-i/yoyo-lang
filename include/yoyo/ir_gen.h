@@ -210,7 +210,7 @@ namespace Yoyo
         Type lastDeducedType;
         enum ComparisonPredicate
         {
-            EQ, GT, LT, EQ_GT, EQ_LT, NE
+            EQ, GT, LT, EQ_GT, EQ_LT, NE, SPACE
         };
         explicit ExpressionEvaluator(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}

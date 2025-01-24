@@ -4,6 +4,7 @@
 #include <fn_type.h>
 #include <statement.h>
 #include <llvm/IR/IRBuilder.h>
+#include <ranges>
 
 #include "engine.h"
 namespace Yoyo
@@ -253,14 +254,23 @@ namespace Yoyo
         auto module = eng->modules.at("core").get();
         module->module_hash = "core";
         module->engine = eng;
+        constexpr int32_t eq = 1;
+        constexpr int32_t ne = 0;
+        constexpr int32_t less = 2;
+        constexpr int32_t greater = 3;
+        constexpr int32_t unord = 4;
         auto cmp_eq = std::make_unique<EnumDeclaration>( "CmpEq", decltype(EnumDeclaration::values){
-            {"Eq", 1}, {"Ne", 0}
+            {"Eq", eq}, {"Ne", ne}
         });
         auto cmp_ord = std::make_unique<EnumDeclaration>( "CmpOrd", decltype(EnumDeclaration::values){ 
-            {"Eq", 1}, {"Less", 2}, {"Greater", 3}
+            {"Eq", eq}, {"Less", less}, {"Greater", greater}
+        });
+        auto cmp_pord = std::make_unique<EnumDeclaration>("CmpPartOrd", decltype(EnumDeclaration::values){
+            {"Eq", eq}, { "Less", less }, { "Greater", greater }, { "Unord", unord }
         });
         module->enums[module->module_hash].emplace_back(std::move(cmp_eq));
         module->enums[module->module_hash].emplace_back(std::move(cmp_ord));
+        module->enums[module->module_hash].emplace_back(std::move(cmp_pord));
 
         auto& operators = module->overloads;
         std::array types = {
@@ -321,6 +331,35 @@ namespace Yoyo
             else if(t.is_unsigned_integral()) builder.CreateRet(builder.CreateUDiv(div_fn->getArg(0), div_fn->getArg(1)));
             else builder.CreateRet(builder.CreateFDiv(div_fn->getArg(0), div_fn->getArg(1)));
             operators.add_binary_detail_for(TokenType::Slash, t,t,t);
+        }
+        //comparison operators
+        for (auto& t : types | std::views::filter([](auto& t) { return t.is_integral(); }))
+        {
+            //integer comparison is totally ordered
+            Type result{ .name = "CmpOrd", .module = module, .block_hash = module->module_hash };
+            std::string mangled_name = "__operator__cmp__" + t.name + "__" + t.name;
+            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto i32 = llvm::Type::getInt32Ty(ctx);
+            auto fn_ty = llvm::FunctionType::get(i32, {as_llvm, as_llvm}, false);
+            auto cmp_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name, module->code.getModuleUnlocked());
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", cmp_fn));
+            auto arg0 = cmp_fn->getArg(0), arg1 = cmp_fn->getArg(1);
+            auto is_eq = builder.CreateICmpEQ(arg0, arg1);
+            auto equal_bb = llvm::BasicBlock::Create(ctx, "equal_bb", cmp_fn);
+            auto equal_cont = llvm::BasicBlock::Create(ctx, "equal_cont", cmp_fn);
+            builder.CreateCondBr(is_eq, equal_bb, equal_cont);
+            builder.SetInsertPoint(equal_bb);
+            builder.CreateRet(llvm::ConstantInt::get(i32, eq));
+            builder.SetInsertPoint(equal_cont);
+            llvm::Value* is_gt = t.is_signed_integral() ? builder.CreateICmpSGT(arg0, arg1) : builder.CreateICmpUGT(arg0, arg1);
+            auto gt_bb = llvm::BasicBlock::Create(ctx, "gt_bb", cmp_fn);
+            auto gt_cont = llvm::BasicBlock::Create(ctx, "gt_cont", cmp_fn);
+            builder.CreateCondBr(is_gt, gt_bb, gt_cont);
+            builder.SetInsertPoint(gt_bb);
+            builder.CreateRet(llvm::ConstantInt::get(i32, greater));
+            builder.SetInsertPoint(gt_cont);
+            builder.CreateRet(llvm::ConstantInt::get(i32, less));
+            operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
         }
         for(auto& t : std::ranges::subrange(types.begin(), types.begin() + 6))
         {

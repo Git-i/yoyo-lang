@@ -71,7 +71,8 @@ namespace Yoyo
             case TokenType::Percent: off = 4; break;
             case TokenType::Spaceship: off = 5; break;
             }
-            bin_overloads.insert(bin_overloads.begin() + off, std::move(bin));
+            size_t actual_off = off == 0 ? 0 : offsets[off];
+            bin_overloads.insert(bin_overloads.begin() + actual_off, std::move(bin));
             for (auto& elem : std::ranges::subrange(offsets.begin() + off, offsets.end())) elem++;
         }
         void add_binary_detail_for(TokenType t, Type l, Type r, Type res)

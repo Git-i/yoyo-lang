@@ -61,4 +61,8 @@ namespace Yoyo
     {
         return resolveBin(lhs, rhs, TokenType::Percent, irgen);
     }
+    OverloadDetailsBinary* resolveCmp(const Type& lhs, const Type& rhs, IRGenerator* irgen)
+    {
+        return resolveBin(lhs, rhs, TokenType::Spaceship, irgen);
+    }
 }

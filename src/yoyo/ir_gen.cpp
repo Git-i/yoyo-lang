@@ -130,7 +130,7 @@ namespace Yoyo
         std::ranges::transform(sig.parameters, args.begin() + use_sret, [this](const FunctionParameter& p)
         {
             auto t = ToLLVMType(p.type, false);
-            if(!p.type.should_sret())
+            if(p.type.should_sret())
                 t = t->getPointerTo();
             return t;
         });
@@ -878,8 +878,8 @@ namespace Yoyo
     void IRGenerator::operator()(IfStatement* stat)
     {
         auto fn = builder->GetInsertBlock()->getParent();
-        auto expr_type = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value();
-        if(!expr_type.is_boolean())
+        auto expr_type = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value_or_error();
+        if(!expr_type.is_boolean() && !expr_type.is_error_ty())
         {
             error(Error(stat->condition.get(), "'if' condition must evaluate to a boolean")); return;
         }
