@@ -16,5 +16,7 @@ namespace Yoyo
     OverloadDetailsBinary* resolveDiv(const Type&, const Type&, IRGenerator*);
     OverloadDetailsBinary* resolveRem(const Type&, const Type&, IRGenerator*);
     OverloadDetailsBinary* resolveCmp(const Type&, const Type&, IRGenerator*);
+    OverloadDetailsBinary* resolveShl(const Type&, const Type&, IRGenerator*);
+    OverloadDetailsBinary* resolveShr(const Type&, const Type&, IRGenerator*);
 
 }

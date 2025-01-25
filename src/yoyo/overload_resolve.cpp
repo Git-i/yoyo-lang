@@ -73,4 +73,12 @@ namespace Yoyo
     {
         return resolveBin(lhs, rhs, TokenType::Spaceship, irgen);
     }
+    OverloadDetailsBinary* resolveShl(const Type& lhs, const Type& rhs, IRGenerator* irgen)
+    {
+        return resolveBin(lhs, rhs, TokenType::DoubleLess, irgen);
+    }
+    OverloadDetailsBinary* resolveShr(const Type& lhs, const Type& rhs, IRGenerator* irgen)
+    {
+        return resolveBin(lhs, rhs, TokenType::DoubleGreater, irgen);
+    }
 }

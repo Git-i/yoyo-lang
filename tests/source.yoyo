@@ -9,9 +9,16 @@ Ostream: struct = {
         func.invoke(this);
     }
 }
-
-
+operator: <<(o: &mut Ostream, rhs: str) -> &mut Ostream
+    = return o.add(rhs);
+operator: <<(o: &mut Ostream, rhs: i32) -> &mut Ostream
+    = return o.add("${rhs}");
+operator: <<(o: &mut Ostream, rhs: called (c: &mut Ostream)) = o.call(rhs);
+endline: fn (v: &mut Ostream) = app::func(&v.buffer);
 main: fn = {
     cout: mut = Ostream{.buffer = ""};
-    cout.add("Hello").add("World").call(||(v: &mut Ostream) app::func(&v.buffer););
+    endl := ||(v: &mut Ostream) v.endline();;
+    a: i32 = 10;
+    &mut 
+    cout << "Actually " << "Cursed " << a + 20 << endl;
 }

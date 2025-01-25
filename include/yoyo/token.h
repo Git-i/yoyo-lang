@@ -47,7 +47,9 @@ namespace Yoyo {
                 || type == TokenType::Ampersand
                 || type == TokenType::Pipe
                 || type == TokenType::Caret
-                || type == TokenType::Spaceship;
+                || type == TokenType::Spaceship
+                || type == TokenType::DoubleGreater
+                || type == TokenType::DoubleLess;
         }
         [[nodiscard]] bool can_be_overloaded_binary_only() const
         {
@@ -58,7 +60,9 @@ namespace Yoyo {
                 || type == TokenType::Ampersand
                 || type == TokenType::Pipe
                 || type == TokenType::Caret
-                || type == TokenType::Spaceship;
+                || type == TokenType::Spaceship
+                || type == TokenType::DoubleGreater
+                || type == TokenType::DoubleLess;
         }
     };
 }

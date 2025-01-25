@@ -222,6 +222,8 @@ namespace Yoyo
         void destroy(llvm::Value* value, const Type& type) const;
         llvm::Value* doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
         llvm::Value* doAddition(Expression*,Expression*,const Type&,const Type&);
+        llvm::Value* doShl(Expression*,Expression*,const Type&,const Type&);
+        llvm::Value* doShr(Expression*,Expression*,const Type&,const Type&);
         llvm::Value* doMinus(Expression*, Expression*, const Type&, const Type&);
         llvm::Value* doMult(Expression*, Expression*, const Type&, const Type&);
         llvm::Value* doDiv(Expression*, Expression*, const Type&, const Type&);

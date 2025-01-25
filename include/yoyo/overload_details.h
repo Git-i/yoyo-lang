@@ -28,6 +28,8 @@ namespace Yoyo
             case TokenType::Slash: middle = "div__"; break;
             case TokenType::Spaceship: middle = "cmp__"; break;
             case TokenType::Percent: middle = "mod__"; break;
+            case TokenType::DoubleGreater: middle = "shr__"; break;
+            case TokenType::DoubleLess: middle = "shl__"; break;
             default: debugbreak();
             }
             return "__operator__" + middle + left.full_name() + "__" + right.full_name();
@@ -49,11 +51,11 @@ namespace Yoyo
         //div;
         //mod;
         //cmp;
+        //shl;
+        //shr;
         //bit_and;
         //bit_or;
         //bit_xor;
-        //shl;
-        //shr;
         //idx;
         //idx_mut;
         //spaceship;
@@ -71,6 +73,8 @@ namespace Yoyo
             case TokenType::Slash: off = 3; break;
             case TokenType::Percent: off = 4; break;
             case TokenType::Spaceship: off = 5; break;
+            case TokenType::DoubleLess: off = 6; break; //shl <<
+            case TokenType::DoubleGreater: off = 7; break; //shr >>
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
             bin_overloads.insert(bin_overloads.begin() + actual_off, std::move(bin));
@@ -87,6 +91,8 @@ namespace Yoyo
             case TokenType::Slash: off = 3; break;
             case TokenType::Percent: off = 4; break;
             case TokenType::Spaceship: off = 5; break;
+            case TokenType::DoubleLess: off = 6; break; 
+            case TokenType::DoubleGreater: off = 7; break;
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
             bin_overloads.emplace(bin_overloads.begin() + actual_off, std::move(l), std::move(r), std::move(res));
@@ -102,6 +108,8 @@ namespace Yoyo
             case TokenType::Slash: return std::span{ bin_overloads.begin() + offsets[2], bin_overloads.begin() + offsets[3] };
             case TokenType::Percent: return std::span{ bin_overloads.begin() + offsets[3], bin_overloads.begin() + offsets[4] };
             case TokenType::Spaceship: return std::span{ bin_overloads.begin() + offsets[4], bin_overloads.begin() + offsets[5] };
+            case TokenType::DoubleLess: return std::span{ bin_overloads.begin() + offsets[5], bin_overloads.begin() + offsets[6]};
+            case TokenType::DoubleGreater: return std::span{ bin_overloads.begin() + offsets[6], bin_overloads.begin() + offsets[7] };
             default: return {};
             }
         }

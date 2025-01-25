@@ -78,6 +78,18 @@ namespace Yoyo
         auto ty = resolveRem(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
+    static std::optional<Type> checkShr(const Type& a, const Type& b, IRGenerator* irgen)
+    {
+        if (a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveShr(a, b, irgen);
+        if (ty) return ty->result; return std::nullopt;
+    }
+    static std::optional<Type> checkShl(const Type& a, const Type& b, IRGenerator* irgen)
+    {
+        if (a.name == "ilit" && b.name == "ilit") return a;
+        auto ty = resolveShl(a, b, irgen);
+        if (ty) return ty->result; return std::nullopt;
+    }
     static std::optional<Type> checkCmp(const Type& a, const Type& b, IRGenerator* irgen, TokenType tk)
     {
         if (a.name == "ilit" && b.name == "ilit") return a;
@@ -266,6 +278,8 @@ namespace Yoyo
         case Minus: result = checkMinus(lhs, rhs, irgen); break;
         case Slash: result = checkDivide(lhs, rhs, irgen); break;
         case Percent: result = checkPercent(lhs, rhs, irgen); break;
+        case DoubleGreater: result  = checkShr(lhs, rhs, irgen); break;
+        case DoubleLess: result  = checkShl(lhs, rhs, irgen); break;
         case DoubleEqual: [[fallthrough]];
         case GreaterEqual: [[fallthrough]];
         case LessEqual: [[fallthrough]];

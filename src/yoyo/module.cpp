@@ -423,12 +423,26 @@ namespace Yoyo
             {
                 return "__operator__" + op_name + "__" + t.name + "__" + t.name;
             };
-            auto fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("mod"),
+            auto mod_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("mod"),
                 module->code.getModuleUnlocked());
-            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", fn));
-            if(t.is_signed_integral()) builder.CreateRet(builder.CreateSRem(fn->getArg(0), fn->getArg(1)));
-            else builder.CreateRet(builder.CreateURem(fn->getArg(0), fn->getArg(1)));
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", mod_fn));
+            if(t.is_signed_integral()) builder.CreateRet(builder.CreateSRem(mod_fn->getArg(0), mod_fn->getArg(1)));
+            else builder.CreateRet(builder.CreateURem(mod_fn->getArg(0), mod_fn->getArg(1)));
             operators.add_binary_detail_for(TokenType::Percent, t,t,t);
+            
+            auto sh_fn_ty = llvm::FunctionType::get(as_llvm, { as_llvm, as_llvm }, false);
+            auto rsh_fn = llvm::Function::Create(sh_fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("shr"),
+                module->code.getModuleUnlocked());
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", rsh_fn));
+            builder.CreateRet(builder.CreateLShr(rsh_fn->getArg(0), rsh_fn->getArg(1)));
+            operators.add_binary_detail_for(TokenType::DoubleGreater, t, t, t);
+
+            auto lsh_fn = llvm::Function::Create(sh_fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name_for("shl"),
+                module->code.getModuleUnlocked());
+            builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", lsh_fn));
+            builder.CreateRet(builder.CreateShl(lsh_fn->getArg(0), lsh_fn->getArg(1)));
+            operators.add_binary_detail_for(TokenType::DoubleLess, t, t, t);
+            
         }
         auto iterator = std::make_unique<GenericInterfaceDeclaration>();
         FunctionSignature sig;

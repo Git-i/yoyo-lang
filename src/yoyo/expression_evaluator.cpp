@@ -847,6 +847,44 @@ namespace Yoyo
             clearUsages(args, *this);
         return final;
     }
+    llvm::Value* ExpressionEvaluator::doShl(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
+    {
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
+        auto target = resolveShl(left_type, right_type, irgen);
+        auto fn = getOperatorFunction(TokenType::DoubleLess, irgen, target);
+        std::vector<llvm::Value*> args;
+        if (target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        auto final = target->result.should_sret() ? args[0] : ret;
+        if (target->result.is_non_owning(irgen))
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
+    }
+    llvm::Value* ExpressionEvaluator::doShr(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
+    {
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        auto rhs_e = std::visit(*this, rhs->toVariant());
+        auto target = resolveShr(left_type, right_type, irgen);
+        auto fn = getOperatorFunction(TokenType::DoubleGreater, irgen, target);
+        std::vector<llvm::Value*> args;
+        if (target->result.should_sret())
+            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
+        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
+        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
+        auto ret = irgen->builder->CreateCall(fn, args);
+        auto final = target->result.should_sret() ? args[0] : ret;
+        if (target->result.is_non_owning(irgen))
+            stealUsages(args, final);
+        else
+            clearUsages(args, *this);
+        return final;
+    }
     llvm::Value* ExpressionEvaluator::doCmp(
         ComparisonPredicate p,
         Expression* lhs,
@@ -1157,6 +1195,8 @@ namespace Yoyo
         case Star: return doMult(lhs, rhs, *left_t, *right_t);
         case Slash: return doDiv(lhs, rhs, *left_t, *right_t);
         case Percent: return doRem(lhs, rhs, *left_t, *right_t);
+        case DoubleGreater: return doShr(lhs, rhs, *left_t, *right_t);
+        case DoubleLess: return doShl(lhs, rhs, *left_t, *right_t);
         case Greater: return doCmp(GT, lhs, rhs, *left_t, *right_t, *res);
         case Less: return doCmp(LT, lhs, rhs, *left_t, *right_t, *res);
         case GreaterEqual: return doCmp(EQ_GT, lhs, rhs, *left_t, *right_t, *res);

@@ -37,6 +37,7 @@ namespace Yoyo
         auto equality_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Equality);
         auto relational_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Relational);
         auto access_parselet = std::make_shared<BinaryOperationParselet>(Precedences::MemberAccess);
+        auto bsh_parselet = std::make_shared<BinaryOperationParselet>(Precedences::BitShift);
         infixParselets[TokenType::Plus] = sum_parselet;
         infixParselets[TokenType::Minus] = sum_parselet;
         infixParselets[TokenType::Star] = product_parselet;
@@ -50,6 +51,8 @@ namespace Yoyo
         infixParselets[TokenType::Less] = relational_parselet;
         infixParselets[TokenType::Spaceship] = relational_parselet;
         infixParselets[TokenType::Dot] = access_parselet;
+        infixParselets[TokenType::DoubleLess] = bsh_parselet;
+        infixParselets[TokenType::DoubleGreater] = bsh_parselet;
 
         infixParselets[TokenType::Pipe] = std::make_shared<BinaryOperationParselet>(Precedences::BitOr);
         infixParselets[TokenType::Ampersand] = std::make_shared<BinaryOperationParselet>(Precedences::BitAnd);
