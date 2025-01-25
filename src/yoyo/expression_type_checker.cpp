@@ -401,8 +401,9 @@ namespace Yoyo
     }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LambdaExpression* lmd)
     {
-        auto fn_t = FunctionType(lmd->sig, false);
+        auto fn_t = Type{};
         fn_t.name = "__lambda" + lmd->hash;
+        fn_t.module = irgen->module;
         return { fn_t };
     }
     bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen)

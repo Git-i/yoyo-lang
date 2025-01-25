@@ -82,8 +82,6 @@ namespace Yoyo
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
         //we keep the alloca of the variable, its type and its drop flag
         std::vector<std::unordered_map<std::string, std::tuple<llvm::Value*, Type, llvm::Value*>>> variables;
-        std::unordered_map<std::string, std::pair<std::vector<std::string>*, llvm::StructType*>> lambdas;
-        std::unordered_map<std::string, FunctionSignature> lambdaSigs;
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
         std::vector<CFGNodeManager> function_cfgs;
         std::string block_hash;

@@ -177,18 +177,23 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> LambdaParselet::parse(Parser& parser, Token tok)
     {
-        std::vector<std::string> captures;
+        std::vector<LambdaExpression::Capture> captures;
         if(tok.type == TokenType::Pipe)
         {
             do
             {
+                Ownership own = Ownership::Owning;
+                if (parser.discard(TokenType::Ampersand)) {
+                    own = Ownership::NonOwning;
+                    if (parser.discard(TokenType::Mut)) own = Ownership::NonOwningMut;
+                }
                 auto tk = parser.Peek();
                 if(!tk) return nullptr;
                 if(tk->type == TokenType::Identifier)
                 {
                     parser.Get();
                     std::string name(tk->text);
-                    captures.emplace_back(name);
+                    captures.emplace_back(own, std::move(name));
                 }
             } while(parser.discard(TokenType::Comma));
             if(!parser.discard(TokenType::Pipe)) parser.error("Expected '|'", parser.Peek());
@@ -197,15 +202,14 @@ namespace Yoyo
         if(!tk) return nullptr;
         FunctionSignature sig = *parser.parseFunctionSignature();
 
-
-
         auto stat = parser.parseStatement();
+        auto end = stat->end;
         auto expr = std::make_unique<LambdaExpression>(std::move(captures), std::move(sig), std::move(stat));
 
         expr->body->parent = expr.get();
         //lambda hash depends on the pointer from `make_unique`
         expr->hash = std::to_string(reinterpret_cast<std::uintptr_t>(expr.get()));
-        return Expression::attachSLAndParent(std::move(expr), tok.loc, stat->end, parser.parent);
+        return Expression::attachSLAndParent(std::move(expr), tok.loc, end, parser.parent);
     }
 
     std::unique_ptr<Expression> NullLiteralParselet::parse(Parser& parser, Token tk)

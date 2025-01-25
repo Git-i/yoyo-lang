@@ -22,10 +22,14 @@ print_animal_sound: fn (animal: Animal:&) = {
     animal.speak().app::func();
 }
 
+call_fn: fn (a: called) = a.invoke();
+
 main: fn = {
     dog := Dog{};
     cat := Cat{};
-    anm := Animal{};
-    print_animal_sound(&dog);
-    print_animal_sound(&cat);
+    func := |&dog, &cat|{
+        print_animal_sound(dog);
+        print_animal_sound(cat);
+    }
+    call_fn(func);
 }

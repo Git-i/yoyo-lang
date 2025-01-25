@@ -121,14 +121,16 @@ namespace Yoyo
         }
         if(name == "__called_fn" && (other.is_function() || other.is_lambda()))
         {
-            const auto& as_fn = reinterpret_cast<const FunctionType&>(other);
-            if(signature->parameters.size() != as_fn.sig.parameters.size()) return false;
+            const FunctionSignature* as_fn;
+            if(other.is_function()); as_fn = &reinterpret_cast<const FunctionType&>(other).sig;
+            if (other.is_lambda()) as_fn = &other.module->lambdas[other.name].second->sig;
+            if(signature->parameters.size() != as_fn->parameters.size()) return false;
             for(size_t i = 0; i < signature->parameters.size(); ++i)
             {
-                if(signature->parameters[i].type != as_fn.sig.parameters[i].type) return false;
+                if(signature->parameters[i].type != as_fn->parameters[i].type) return false;
             }
-            if(signature->return_is_ref != as_fn.sig.return_is_ref) return false;
-            if(signature->returnType != as_fn.sig.returnType) return false;
+            if(signature->return_is_ref != as_fn->return_is_ref) return false;
+            if(signature->returnType != as_fn->returnType) return false;
             return true;
         }
         if(is_optional())
@@ -301,6 +303,7 @@ namespace Yoyo
         if(is_non_owning(irgen)) return false;
         if (is_error_ty()) return true;
         if(is_builtin() || is_opaque_pointer()) return true;
+        if (is_void()) return true;
         if(is_tuple() || is_optional() || is_variant())
         {
             bool is_not_trivially_destructible = std::ranges::any_of(subtypes, [irgen](auto& subtype)

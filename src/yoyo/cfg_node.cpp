@@ -337,6 +337,7 @@ namespace Yoyo
         auto entry = mgr.newNode(0, "entry");
         auto exit = mgr.newNode(0, "return");
         std::visit(CFGPreparator{entry, exit, 0}, decl->body->toVariant());
+        if (entry->children.empty()) entry->addChild(exit);
         //for(auto& child : exit->children)
         //    child->parents.erase(std::ranges::find(child->parents, exit));
         //exit->children.clear();

@@ -164,6 +164,10 @@ namespace Yoyo
             }
             return llvm::StructType::get(context, args);
         }
+        if (type.is_lambda())
+        {
+            return type.module->lambdas.at(type.name).first;
+        }
         if(type.is_optional())
         {
             std::array<llvm::Type*, 2> args{};

@@ -323,21 +323,8 @@ namespace Yoyo
         FunctionSignature sig;
         auto parseParam = [this](std::string name) -> std::optional<FunctionParameter>
         {
-            /*
-             * fn_name: (_: in int, : inout float)
-             *              ^         ^        <- This function starts here
-             */
             auto tk = Peek();
             if(!tk) return std::nullopt;
-            //param is a function
-            else if(tk->type == TokenType::Called)
-            {
-                Get();
-                auto sig = parseFunctionSignature();
-                auto signature = std::make_shared<FunctionSignature>(*sig);
-                Type t{.name = "__called_fn", .subtypes = {}, .signature = signature, .is_mutable = false};
-                return FunctionParameter{.type = t, .name = std::move(name)};
-            }
             auto type = parseType(0);
             return FunctionParameter{std::move(type).value_or(Type{}),  std::move(name)};
         };
@@ -1105,6 +1092,13 @@ namespace Yoyo
         if (!p.discard(TokenType::Caret)) p.error("Expected '^' or '&'", p.Peek());
         return Type{ "__view_gc", {std::move(left)} };
     }
+    std::optional<Type> parseCalledFnType(Token tk, Parser& p)
+    {
+        auto sig = p.parseFunctionSignature();
+        if (!sig) return Type{ "__called_fn" };
+        if (sig->returnType.name == "__inferred") sig->returnType.name = "void";
+        return Type{ .name = "__called_fn", .signature = std::make_shared<FunctionSignature>(std::move(sig).value()) };
+    }
     std::optional<Type> Parser::parseType(uint32_t precedence)
     {
         auto tk = Peek();
@@ -1117,6 +1111,7 @@ namespace Yoyo
         case TokenType::Ampersand: Get(); t = parseRefType(*tk, *this); break;
         case TokenType::LParen: Get(); t = parseGroupType(*this); break;
         case TokenType::Caret: Get(); t = parseGCRefType(*tk, *this); break;
+        case TokenType::Called: Get(); t = parseCalledFnType(*tk, *this); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())

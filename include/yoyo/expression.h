@@ -63,6 +63,7 @@ namespace Yoyo
         GenericNameExpression*,
         GCNewExpression*,
         AsExpression*>;
+    enum class Ownership { Owning = 0, NonOwning, NonOwningMut };
     class YOYO_API Expression : public ASTNode {
     public:
         ~Expression() override = default;
@@ -188,11 +189,14 @@ namespace Yoyo
     };
     class YOYO_API LambdaExpression : public Expression {
     public:
-        std::vector<std::string> captures;
+        struct Capture {
+            Ownership cp_type; std::string name;
+        };
+        std::vector<Capture> captures;
         FunctionSignature sig;
         std::unique_ptr<Statement> body;
         std::string hash;
-        LambdaExpression(std::vector<std::string> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
+        LambdaExpression(std::vector<Capture> captures, FunctionSignature sig, std::unique_ptr<Statement> body);
         ExpressionVariant toVariant() override;
     };
     class YOYO_API ObjectLiteral : public Expression

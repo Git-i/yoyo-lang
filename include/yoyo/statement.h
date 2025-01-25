@@ -57,7 +57,7 @@ namespace Yoyo
         GenericClassDeclaration*,
         BreakStatement*,
         ContinueStatement*> StatementVariant;
-    enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
+    enum class Ownership;
     struct Attribute {
         std::string name;
         std::vector<std::string> params;

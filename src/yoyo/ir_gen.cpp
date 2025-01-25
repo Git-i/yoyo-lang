@@ -25,11 +25,6 @@ namespace Yoyo
             type.module->ToLLVMType(type, block_hash, {}):
             module->ToLLVMType(type, block_hash, {});
         if(t) return t;
-        if(type.is_lambda())
-        {
-            if(auto t = lambdas.find(type.name); t != lambdas.end())
-                return t->second.second;
-        }
         if(type.is_tuple())
         {
             std::vector<llvm::Type*> args;
@@ -357,26 +352,25 @@ namespace Yoyo
                     flag
                 };
             }
-            //make lambda context visible TODO: really fix lambdas
             if(param.type.is_lambda())
             {
-                //if(!lambdas.contains(param.type.name)) {error(); return;}
-                auto llvm_type = lambdas[param.type.name].second;
-                auto caps = lambdas[param.type.name].first;
+                auto& entry = param.type.module->lambdas[param.type.name];
+                auto llvm_type = entry.first;
+                auto& caps = entry.second->captures;
                 size_t capture_idx = 0;
-                auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
-                for(auto& capture: *caps)
+                auto arg = func->getArg(idx + uses_sret);
+                for(auto& capture: caps)
                 {
-                    auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), capture_idx);
-                    Token tk{.type = TokenType::Identifier, .text = capture};
-                    NameExpression nexpr(std::string(tk.text));
+                    auto var = builder->CreateStructGEP(llvm_type, arg, capture_idx);
+                    NameExpression nexpr(capture.name);
                     auto type = ExpressionTypeChecker{this}(&nexpr);
-                    auto var = builder->CreateGEP(llvm_type, func->getArg(idx + uses_sret), {zero_const, idx_const}, capture);
-                    if(type->is_primitive())
-                        var = builder->CreateLoad(llvm::PointerType::get(context, 0), var);
-                    variables.back()[capture] = {
+                    Type final_type;
+                    if (capture.cp_type == Ownership::NonOwning) final_type = type->reference_to();
+                    else if (capture.cp_type == Ownership::NonOwningMut) final_type = type->mutable_reference_to();
+                    else final_type = std::move(type).value();
+                    variables.back()[capture.name] = {
                         var,
-                        std::move(type).value(),
+                        std::move(final_type),
                         nullptr
                     };
                     capture_idx++;

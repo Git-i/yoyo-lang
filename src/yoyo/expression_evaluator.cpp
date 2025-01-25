@@ -306,6 +306,10 @@ namespace Yoyo
                 }
             }
         }
+        if (dst.name == "__called_fn")
+        {
+            int a = 9;
+        }
         if (dst.is_view())
         {
             if (src.is_view())
@@ -884,7 +888,7 @@ namespace Yoyo
             size_t idx = i - 1;
             if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
             {
-                if(!std::get<1>(var->second).is_mutable) return nullptr;
+                //if(!std::get<1>(var->second).is_mutable) return nullptr;
                 return std::get<0>(var->second);
             }
         }
@@ -1245,7 +1249,7 @@ namespace Yoyo
                             llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
                             llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
                         }));
-                    irgen->builder->CreateStore(irgen->code->getFunction(irgen->block_hash + tp->name),
+                    irgen->builder->CreateStore(irgen->code->getFunction(tp->module->module_hash + tp->name),
                         irgen->builder->CreateGEP(llvm_t, buffer, {
                             llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
                             llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 1),
@@ -1599,41 +1603,56 @@ namespace Yoyo
             expr->sig.returnType = *t;
         }
         std::vector<llvm::Type*> context_types;
+        context_types.reserve(expr->captures.size());
         for(auto& capture : expr->captures)
         {
-            Token tk{.type = TokenType::Identifier, .text = capture};
-            NameExpression name(std::string(tk.text));
+            NameExpression name(capture.name);
             auto type = ExpressionTypeChecker{irgen}(&name);
-            //if(type->is_function()) { irgen->error(); return nullptr; }
-            llvm::Type* tp = irgen->ToLLVMType(*type, false);
-            context_types.push_back(tp->getPointerTo());
+            if (!type) { irgen->error(type.error()); return nullptr; }
+            llvm::Type* tp = capture.cp_type == Ownership::Owning ? irgen->ToLLVMType(*type, false) :
+                llvm::PointerType::get(irgen->context, 0);
+            context_types.push_back(tp);
         }
         auto context = llvm::StructType::get(irgen->context, context_types);
         auto ctx_object = irgen->Alloca("lambda_context", context);
         //copy types into the context
         size_t idx = 0;
-        auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
         for(auto& capture : expr->captures)
         {
-            auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
-            Token tk{.type = TokenType::Identifier, .text = capture};
-            NameExpression name(std::string(tk.text));
+            NameExpression name(capture.name);
             auto type = ExpressionTypeChecker{irgen}(&name);
-            type->is_mutable = true;
-            llvm::Value* val = LValueEvaluator{irgen}(&name);
-            llvm::Value* lhs = irgen->builder->CreateGEP(context, ctx_object, {zero_const, idx_const});
-            irgen->builder->CreateStore(val, lhs);
+            bool is_last_use = irgen->function_cfgs.back().last_uses.at(name.text).contains(expr);
+            type->is_lvalue = !is_last_use;
+            llvm::Value* lhs = irgen->builder->CreateStructGEP(context, ctx_object, idx);
+            if (capture.cp_type != Ownership::Owning)
+            {
+                llvm::Value* val = LValueEvaluator{ irgen }(&name);
+                irgen->builder->CreateStore(val, lhs);
+            }
+            else
+            {
+                llvm::Value* val = (*this)(&name);
+                clone(&name, val, *type, lhs);
+            }
             idx++;
         }
         std::string name = "__lambda" + expr->hash;
-        Token tk{.type = TokenType::Identifier, .text = name};
-        irgen->lambdas[name] = {&expr->captures, context};
-        irgen->lambdaSigs[name] = expr->sig;
+        //was considering stealing the unqiue ptr, but cloning is much more conveneient also we can choose not to store the body
+        //and free memory
+        decltype(expr->body) body = nullptr;
+        expr->body.swap(body);
+        auto new_expr_generic = ExpressionTreeCloner::copy_expr(expr);
+        expr->body.swap(body);
+        std::unique_ptr<LambdaExpression> new_expr(reinterpret_cast<LambdaExpression*>(new_expr_generic.get()));
+        new_expr_generic.release();
+        irgen->module->lambdas[name] = { context, std::move(new_expr) };
         FunctionSignature sig = expr->sig;
         //insert a pointer to the context at the end of the signature
-        sig.parameters.push_back(FunctionParameter{.type = Type{name}});
-        FunctionDeclaration decl(std::string{tk.text},std::move(sig), std::move(expr->body));
+        sig.parameters.push_back(FunctionParameter{.type = Type{.name = name, .module = irgen->module}});
+        FunctionDeclaration decl(name,std::move(sig), std::move(expr->body));
+        auto old_hash = irgen->reset_hash();
         (*irgen)(&decl);
+        irgen->block_hash.swap(old_hash);
         return ctx_object;
     }
 

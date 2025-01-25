@@ -28,6 +28,7 @@ namespace Yoyo
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericInterfaceDeclaration>>> generic_interfaces;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericClassDeclaration>>> generic_classes;
         std::unordered_map<std::string, std::vector<std::unique_ptr<EnumDeclaration>>> enums;
+        std::unordered_map < std::string, std::pair<llvm::StructType*, std::unique_ptr<LambdaExpression>>> lambdas;
         std::unordered_map<std::string, Module*> modules;
         ModuleOverloadDetails overloads;
         Engine* engine;
