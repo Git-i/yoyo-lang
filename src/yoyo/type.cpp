@@ -436,6 +436,11 @@ namespace Yoyo
         if(irgen && irgen->in_class && name == "This") 
             *this = irgen->this_t;
         for(auto& sub: subtypes) sub.saturate(src, irgen);
+        if (signature)
+        {
+            signature->returnType.saturate(src, irgen);
+            for (auto& tp : signature->parameters) tp.type.saturate(src, irgen);
+        }
     }
 
     bool Type::is_static_array() const
@@ -731,6 +736,8 @@ namespace Yoyo
             return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&mut]";
         if (tp.is_slice())
             return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&]";
+        if (tp.name == "__called_fn")
+            return "called " + tp.signature->pretty_name("");
         return tp.name;
     }
     std::string Type::pretty_name(const std::string& block) const

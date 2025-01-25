@@ -1,35 +1,17 @@
 app: module = APP
-Animal: interface = {
-    speak: fn (&this) -> str;
-}
-
-Dog: struct impl Animal = {
-    impl Animal {
-        speak: fn (&this) -> str = {
-            return "Bark";
-        }
+Ostream: struct = {
+    buffer: str,
+    add: fn (&mut this, data: str) -> &mut This = {
+        this.buffer = "${this.buffer}${data}";
+        return this;
     }
-}
-Cat: struct impl Animal = {
-    impl Animal {
-        speak: fn (&this) -> str = {
-            return "Meow";
-        }
+    call: fn (&mut this, func: called (v: &mut Ostream)) = {
+        func.invoke(this);
     }
 }
 
-print_animal_sound: fn (animal: Animal:&) = {
-    animal.speak().app::func();
-}
-
-call_fn: fn (a: called) = a.invoke();
 
 main: fn = {
-    dog := Dog{};
-    cat := Cat{};
-    func := |&dog, &cat|{
-        print_animal_sound(dog);
-        print_animal_sound(cat);
-    }
-    func.call_fn();
+    cout: mut = Ostream{.buffer = ""};
+    cout.add("Hello").add("World").call(||(v: &mut Ostream) app::func(&v.buffer););
 }

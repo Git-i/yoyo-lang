@@ -1263,9 +1263,9 @@ namespace Yoyo
 
         bool uses_sret = left_t.signature->returnType.should_sret();
         std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
+        auto return_val = fillArgs(uses_sret, *left_t.signature, args, nullptr, op->arguments);
         auto args_w_lambda = args;
         args_w_lambda.push_back(ctx);
-        auto return_val = fillArgs(uses_sret, *left_t.signature, args, nullptr, op->arguments);
         auto ctx_as_int = irgen->builder->CreatePtrToInt(ctx, llvm::Type::getInt64Ty(irgen->context), "fn_ctx_as_int");
         auto zero64 = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0);
         auto is_lambda = irgen->builder->CreateICmpEQ(ctx_as_int, zero64, "is_lambda");
@@ -1438,7 +1438,7 @@ namespace Yoyo
                         }); var != cls->methods.end())
                     {
                         auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                        auto found = left_t->module->findType(left_t->block_hash, cls->name);
+                        auto found = left_t->deref().module->findType(left_t->deref().block_hash, cls->name);
                         auto function_name  = std::get<0>(*found) + name;
                         auto callee = irgen->code->getFunction(function_name);
                         bool uses_sret = callee->hasStructRetAttr();
@@ -1585,24 +1585,9 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
     {
-        //TODO: check for capture/parameter duplicates
-        if(expr->sig.returnType.name == "__inferred")
-        {
-            auto t = irgen->inferReturnType(expr->body.get());;
-            expr->sig.returnType = *t;
-        }
-        std::vector<llvm::Type*> context_types;
-        context_types.reserve(expr->captures.size());
-        for(auto& capture : expr->captures)
-        {
-            NameExpression name(capture.name);
-            auto type = ExpressionTypeChecker{irgen}(&name);
-            if (!type) { irgen->error(type.error()); return nullptr; }
-            llvm::Type* tp = capture.cp_type == Ownership::Owning ? irgen->ToLLVMType(*type, false) :
-                llvm::PointerType::get(irgen->context, 0);
-            context_types.push_back(tp);
-        }
-        auto context = llvm::StructType::get(irgen->context, context_types);
+        auto t = ExpressionTypeChecker{ irgen }(expr);
+        if (!t) { irgen->error(t.error()); return nullptr; }
+        auto context = t->module->lambdas.at(t->name).first;
         auto ctx_object = irgen->Alloca("lambda_context", context);
         //copy types into the context
         size_t idx = 0;
@@ -1626,15 +1611,7 @@ namespace Yoyo
             idx++;
         }
         std::string name = "__lambda" + expr->hash;
-        //was considering stealing the unqiue ptr, but cloning is much more conveneient also we can choose not to store the body
-        //and free memory
-        decltype(expr->body) body = nullptr;
-        expr->body.swap(body);
-        auto new_expr_generic = ExpressionTreeCloner::copy_expr(expr);
-        expr->body.swap(body);
-        std::unique_ptr<LambdaExpression> new_expr(reinterpret_cast<LambdaExpression*>(new_expr_generic.get()));
-        new_expr_generic.release();
-        irgen->module->lambdas[name] = { context, std::move(new_expr) };
+        
         FunctionSignature sig = expr->sig;
         //insert a pointer to the context at the end of the signature
         sig.parameters.push_back(FunctionParameter{.type = Type{.name = name, .module = irgen->module}});

@@ -46,6 +46,7 @@ TEST_CASE("Test IR")
         std::cout <<  str << std::flush;
         mod.second->dumpIR();
         std::cout << "\033[0m" << std::flush;
+        if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
     }
     engine.prepareForExecution();
     std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "main";

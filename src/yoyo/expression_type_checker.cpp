@@ -1,7 +1,7 @@
 #include <csignal>
 #include <overload_resolve.h>
 #include <ranges>
-
+#include "tree_cloner.h"
 #include "ir_gen.h"
 #include "fn_type.h"
 namespace Yoyo
@@ -399,10 +399,41 @@ namespace Yoyo
             return { tp };
         return { Error(op, "Operator [] is not defined for type tp") };
     }
-    ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LambdaExpression* lmd)
+    ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LambdaExpression* expr)
     {
+        //TODO: check for capture/parameter duplicates
         auto fn_t = Type{};
-        fn_t.name = "__lambda" + lmd->hash;
+        fn_t.name = "__lambda" + expr->hash;
+        if (expr->sig.returnType.name == "__inferred")
+        {
+            auto t = irgen->inferReturnType(expr->body.get());;
+            expr->sig.returnType = *t;
+        }
+        if (!irgen->module->lambdas.contains(fn_t.name))
+        {
+            std::vector<llvm::Type*> context_types;
+            context_types.reserve(expr->captures.size());
+            irgen->saturateSignature(expr->sig, irgen->module);
+            for (auto& capture : expr->captures)
+            {
+                NameExpression name(capture.name);
+                auto type = (*this)(&name);
+                if (!type) return type;
+                llvm::Type* tp = capture.cp_type == Ownership::Owning ? irgen->ToLLVMType(*type, false) :
+                    llvm::PointerType::get(irgen->context, 0);
+                context_types.push_back(tp);
+            }
+            //was considering stealing the unqiue ptr, but cloning is much more conveneient also we can choose not to store the body
+            //and free memory
+            auto context = llvm::StructType::get(irgen->context, context_types);
+            decltype(expr->body) body = nullptr;
+            expr->body.swap(body);
+            auto new_expr_generic = ExpressionTreeCloner::copy_expr(expr);
+            expr->body.swap(body);
+            std::unique_ptr<LambdaExpression> new_expr(reinterpret_cast<LambdaExpression*>(new_expr_generic.get()));
+            new_expr_generic.release();
+            irgen->module->lambdas[fn_t.name] = { context, std::move(new_expr) };
+        }
         fn_t.module = irgen->module;
         return { fn_t };
     }
