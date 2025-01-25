@@ -1,5 +1,6 @@
 #include <app_module.h>
 #include <csignal>
+#include <ranges>
 #include <parser.h>
 #include <llvm/IR/IRBuilder.h>
 #include "engine.h"
@@ -24,11 +25,8 @@ namespace Yoyo
         }
         return llvm::FunctionType::get(return_t, argTypes, false);
     }
-    void AppModule::addFunction(std::string signature, void* func, std::string name)
+    void AppModule::addFunction(FunctionSignature sig, void* func, std::string name)
     {
-        Parser p(signature);
-        auto sig = *p.parseFunctionSignature();
-        if(p.failed()) debugbreak();
         auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, {});
         llvm::LLVMContext& ctx = *engine->llvm_context.getContext();
         auto llvm_sig = toLLVMSignature(sig, this);
@@ -57,5 +55,10 @@ namespace Yoyo
             builder.CreateRet(ret);
     }
 
-
+    Result AppModule::addEnum(std::string enum_name, std::unordered_map<std::string, int32_t> values)
+    {
+        auto st = std::set{ values | std::views::values };
+        if (st.size() != values.size()) return Result::DuplicateEnumValue;
+        enums[module_hash].emplace_back(std::make_unique<EnumDeclaration>(std::move(enum_name), std::move(values)));
+    }
 }

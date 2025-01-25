@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
-
+#include "common.h"
 
 namespace Yoyo
 {
@@ -14,7 +14,7 @@ namespace Yoyo
     class ClassDeclaration;
     class IRGenerator;
     class EnumDeclaration;
-    struct Type
+    struct YOYO_API Type
     {
         std::string name;
         std::vector<Type> subtypes;

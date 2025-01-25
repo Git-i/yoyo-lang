@@ -34,10 +34,9 @@ TEST_CASE("Test IR")
 
     Yoyo::Engine engine;
     md = engine.addAppModule("APP");
-    md->addFunction("(x: &str) -> i32", reinterpret_cast<void*>(&func), "func");
+    md->addFunction("(x: &str) -> i32", func, "func");
     engine.addModule("source.yoyo", src2);
     engine.compile();
-
     uint32_t idx = 3;
     for(auto& mod: engine.modules)
     {

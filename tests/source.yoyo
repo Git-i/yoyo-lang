@@ -29,5 +29,6 @@ main: fn = {
         "${counter}".app::func();
         if (counter > 10) break;
     }
+    "".app::func();
 }
 
