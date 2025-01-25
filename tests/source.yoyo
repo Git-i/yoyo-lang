@@ -1,34 +1,31 @@
 app: module = APP
-always_true: fn -> bool = {
-    "True function called".app::func();
-    return true;
-}
-always_false: fn -> bool = {
-    "False function called".app::func();
-    return false;
-}
-main: fn = {
-    val: mut = false;
-    val = always_true() && always_true();
-    "${val}----------------".app::func();
-    val = always_false() && always_true();
-    "${val}----------------".app::func();
-    val = always_true() && always_false();
-    "${val}----------------".app::func();
-    "--------OR---------------".app::func();
-    val = always_true() || always_true();
-    "${val}----------------".app::func();
-    val = always_false() || always_true();
-    "${val}----------------".app::func();
-    val = always_true() || always_false();
-    "${val}----------------".app::func();
-    counter: mut = 0;
-    while (true) {
-        counter = counter + 1;
-        if (counter % 2 == 0) continue;
-        "${counter}".app::func();
-        if (counter > 10) break;
-    }
-    "".app::func();
+Animal: interface = {
+    speak: fn (&this) -> str;
 }
 
+Dog: struct impl Animal = {
+    impl Animal {
+        speak: fn (&this) -> str = {
+            return "Bark";
+        }
+    }
+}
+Cat: struct impl Animal = {
+    impl Animal {
+        speak: fn (&this) -> str = {
+            return "Meow";
+        }
+    }
+}
+
+print_animal_sound: fn (animal: Animal:&) = {
+    animal.speak().app::func();
+}
+
+main: fn = {
+    dog := Dog{};
+    cat := Cat{};
+    anm := Animal{};
+    print_animal_sound(&dog);
+    print_animal_sound(&cat);
+}

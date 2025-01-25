@@ -328,7 +328,7 @@ namespace Yoyo
                 {
                     idx++;
                     auto fn_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, idx);
-                    std::string method_name = std::get<0>(*details) + "__interface" + full_name + "__%" + method->name;
+                    std::string method_name = std::get<0>(*details) + full_name + "::" + method->name;
                     auto fn = irgen->code->getFunction(method_name);
                     irgen->builder->CreateStore(fn, fn_ptr);
                 }

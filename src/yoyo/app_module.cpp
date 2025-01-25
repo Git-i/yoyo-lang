@@ -57,8 +57,9 @@ namespace Yoyo
 
     Result AppModule::addEnum(std::string enum_name, std::unordered_map<std::string, int32_t> values)
     {
-        auto st = std::set{ values | std::views::values };
-        if (st.size() != values.size()) return Result::DuplicateEnumValue;
+        //auto st = std::set{ values | std::views::values };
+        //if (st.size() != values.size()) return Result::DuplicateEnumValue;
         enums[module_hash].emplace_back(std::make_unique<EnumDeclaration>(std::move(enum_name), std::move(values)));
+        return Result::Success;
     }
 }

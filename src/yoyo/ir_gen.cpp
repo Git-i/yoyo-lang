@@ -620,7 +620,10 @@ namespace Yoyo
             variables.back()[std::string{ stat->names[0].text }] = {val , impl->impl_for.subtypes[0], flg};
 
             current_Statement = &stat->body;
+            auto old_break_to = break_to; auto old_cont_to = continue_to;
+            break_to = cont_bb; continue_to = for_bb;
             std::visit(*this, stat->body->toVariant());
+            break_to = old_break_to; continue_to = old_cont_to;
             popScope();
             if (builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(for_bb);
             builder->SetInsertPoint(cont_bb);
