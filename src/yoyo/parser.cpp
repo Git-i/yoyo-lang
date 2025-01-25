@@ -928,6 +928,15 @@ namespace Yoyo
             std::make_unique<WhileStatement>(std::move(condition), std::move(body)), tk.loc,
             body->end, parent);
     }
+    std::unique_ptr<Statement> Parser::parseBreakContinueStatement(Token tk)
+    {
+        if (!discard(TokenType::SemiColon)) error("Expected ';'", tk);
+        std::unique_ptr<Statement> stat = nullptr;
+        if (tk.type == TokenType::Break) stat = std::make_unique<BreakStatement>();
+        else if (tk.type == TokenType::Continue) stat = std::make_unique<ContinueStatement>();
+        else return nullptr;
+        return Statement::attachSLAndParent(std::move(stat), tk.loc, discardLocation, parent);
+    }
     std::unique_ptr<Statement> Parser::parseStatement()
     {
         auto tk = Peek();
@@ -940,6 +949,8 @@ namespace Yoyo
         case TokenType::While: {Get(); return parseWhileStatement(*tk);}
         case TokenType::For: {Get(); return parseForStatement(*tk);}
         case TokenType::With: {Get(); return parseWithStatement(*tk);}
+        case TokenType::Break: [[fallthrough]];
+        case TokenType::Continue: return parseBreakContinueStatement(*Get());
         default: return parseExpressionStatement();
         }
 

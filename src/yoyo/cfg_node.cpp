@@ -16,6 +16,9 @@ namespace Yoyo
         CFGNode* node;
         CFGNode* exit;
         uint32_t depth;
+
+        CFGNode* break_to = nullptr;
+        CFGNode* continue_to = nullptr;
         void operator()(ExpressionStatement* stat) const{ node->statements.push_back(stat); }
         void operator()(VariableDeclaration* decl) const{ node->statements.push_back(decl); }
         void operator()(FunctionDeclaration* stat) const {}
@@ -55,9 +58,9 @@ namespace Yoyo
             node->addChild(cond);
             auto then = node->manager->newNode(depth, "while_then");
             cond->addChild(then);
-            auto while_prep = CFGPreparator{then,exit, depth};
+            auto while_prep = CFGPreparator{then,exit, depth, cont, cond};
             std::visit(while_prep, stat->body->toVariant());
-            if(while_prep.node != exit) while_prep.node->addChild(cond);
+            if(while_prep.node != exit && while_prep.node != cont && while_prep.node != cond) while_prep.node->addChild(cond);
             if(while_prep.node == exit) node = exit;
             else node = cont;
         }
@@ -69,7 +72,7 @@ namespace Yoyo
             for(auto& sub : stat->statements)
             {
                 std::visit(visistor, sub->toVariant());
-                if(visistor.node == exit) { node = visistor.node; return; }
+                if(visistor.node == exit || visistor.node == break_to || visistor.node == continue_to) { node = visistor.node; return; }
             }
             node = visistor.node;
         }
@@ -83,9 +86,9 @@ namespace Yoyo
             node->addChild(check);
             check->addChild(then);
             check->addChild(cont);
-            auto then_prep = CFGPreparator{ then,exit, depth };
+            auto then_prep = CFGPreparator{ then,exit, depth, cont, check };
             std::visit(then_prep, stat->body->toVariant());
-            if (then_prep.node != exit) then_prep.node->addChild(check);
+            if (then_prep.node != exit && then_prep.node != cont && then_prep.node != check) then_prep.node->addChild(check);
             if (then_prep.node == exit) node = exit;
             else node = cont;
         }
@@ -123,6 +126,20 @@ namespace Yoyo
             std::visit(with_prep, stat->body->toVariant());
             with_prep.node->addChild(cont);
             node = cont;
+        }
+        void operator()(BreakStatement* stat)
+        {
+            if (break_to) {
+                node->addChild(break_to);
+                node = break_to;
+            }
+        }
+        void operator()(ContinueStatement* stat)
+        {
+            if (continue_to) {
+                node->addChild(continue_to);
+                node = continue_to;
+            }
         }
     };
     struct UsedVariablesExpression

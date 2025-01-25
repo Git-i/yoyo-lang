@@ -22,4 +22,12 @@ main: fn = {
     "${val}----------------".app::func();
     val = always_true() || always_false();
     "${val}----------------".app::func();
+    counter: mut = 0;
+    while (true) {
+        counter = counter + 1;
+        if (counter % 2 == 0) continue;
+        "${counter}".app::func();
+        if (counter > 10) break;
+    }
 }
+

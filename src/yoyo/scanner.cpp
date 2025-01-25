@@ -39,7 +39,9 @@ namespace Yoyo {
         {"alias", TokenType::Alias},
         {"gcnew", TokenType::GCNew},
         {"impl", TokenType::Impl},
-        {"for", TokenType::For}
+        {"for", TokenType::For},
+        {"break", TokenType::Break},
+        {"continue", TokenType::Continue},
     })
     {
 
@@ -75,7 +77,7 @@ namespace Yoyo {
                     }
                     return NextIs('=') ? Token{TokenType::SlashEqual, loc} : Token{TokenType::Slash, loc};
                 }
-            case '%': return NextIs('=') ? Token{TokenType::Percent, loc} : Token{TokenType::PercentEqual, loc};
+            case '%': return NextIs('=') ? Token{TokenType::PercentEqual, loc} : Token{TokenType::Percent, loc};
             case '!': return NextIs('=') ? Token{TokenType::BangEqual, loc} : Token{TokenType::Bang, loc};
             case '&':
                 {

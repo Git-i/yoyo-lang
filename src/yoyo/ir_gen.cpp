@@ -627,6 +627,24 @@ namespace Yoyo
         }
         
     }
+    void IRGenerator::operator()(BreakStatement* s)
+    {
+        if (!break_to) error(Error(s, "'break' must be used within a loop"));
+        else
+        {
+            callDestructors();
+            builder->CreateBr(break_to);
+        }
+    }
+    void IRGenerator::operator()(ContinueStatement* s)
+    {
+        if (!continue_to) error(Error(s, "'continue' statement must be used within a loop"));
+        else
+        {
+            callDestructors();
+            builder->CreateBr(continue_to);
+        }
+    }
     void IRGenerator::operator()(WhileStatement* expr)
     {
         auto fn = builder->GetInsertBlock()->getParent();
@@ -646,7 +664,12 @@ namespace Yoyo
         builder->SetInsertPoint(then_bb);
 
         current_Statement = &expr->body;
+        pushScope();
+        auto old_break_to = break_to; auto old_cont_to = continue_to;
+        break_to = cont_bb; continue_to = while_bb;
         std::visit(*this, expr->body->toVariant());
+        break_to = old_break_to; continue_to = old_cont_to;
+        popScope();
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(while_bb);
         builder->SetInsertPoint(cont_bb);
     }
@@ -930,20 +953,25 @@ namespace Yoyo
 
     void IRGenerator::popScope()
     {
+        callDestructors();
+        variables.pop_back();
+    }
+    void IRGenerator::callDestructors()
+    {
         //if there's a `br` we steal it and add it after calling destructors
         llvm::Instruction* term = nullptr;
-        if(builder->GetInsertBlock()->back().getOpcode() == llvm::Instruction::Br)
+        if (builder->GetInsertBlock()->back().getOpcode() == llvm::Instruction::Br)
         {
             term = &builder->GetInsertBlock()->back();
             term->removeFromParent();
         }
         //call destructors
         auto fn = builder->GetInsertBlock()->getParent();
-        for(auto& var : variables.back() | std::views::values)
+        for (auto& var : variables.back() | std::views::values)
         {
             auto drop_flag = std::get<2>(var);
             auto& type = std::get<1>(var);
-            if(!drop_flag) continue;
+            if (!drop_flag) continue;
             auto drop = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
             auto drop_cont = llvm::BasicBlock::Create(context, "drop_cont", fn, returnBlock);
             builder->CreateCondBr(
@@ -951,20 +979,19 @@ namespace Yoyo
                 drop, drop_cont);
             builder->SetInsertPoint(drop);
             auto to_drop = std::get<0>(var);
-            if(!type.should_sret())
+            if (!type.should_sret())
             {
                 std::string name(16 + sizeof(void*), 'c');
-                if(to_drop->getName().starts_with("__del_parents"))
+                if (to_drop->getName().starts_with("__del_parents"))
                     memcpy(name.data(), to_drop->getName().data(), 16 + sizeof(void*));
                 to_drop = builder->CreateLoad(ToLLVMType(type, false), to_drop, name);
             }
-            ExpressionEvaluator{this}.destroy(to_drop, std::get<1>(var));
+            ExpressionEvaluator{ this }.destroy(to_drop, std::get<1>(var));
             builder->CreateBr(drop_cont);
             builder->SetInsertPoint(drop_cont);
         }
         if (term)
             term->insertInto(builder->GetInsertBlock(), builder->GetInsertPoint());
-        variables.pop_back();
     }
 
     //The resultant return type is the type of the first return statement encountered

@@ -191,7 +191,14 @@ namespace Yoyo
             copy_stat(stat->then_stat),
             copy_stat(stat->else_stat));
     }
-
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(BreakStatement*)
+    {
+        return std::make_unique<BreakStatement>();
+    }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(ContinueStatement*)
+    {
+        return std::make_unique<ContinueStatement>();
+    }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(WhileStatement* stat)
     {
         return std::make_unique<WhileStatement>(copy_expr(stat->condition),copy_stat(stat->body));

@@ -87,6 +87,8 @@ namespace Yoyo
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
         std::vector<CFGNodeManager> function_cfgs;
         std::string block_hash;
+        llvm::BasicBlock* break_to = nullptr;
+        llvm::BasicBlock* continue_to = nullptr;
 
         llvm::Type* ToLLVMType(const Type& type, bool is_ref);
         void saturateSignature(FunctionSignature& sig, Module* md);
@@ -117,6 +119,8 @@ namespace Yoyo
         void operator()(GenericAliasDeclaration*);
         void operator()(GenericClassDeclaration*);
         void operator()(InterfaceDeclaration*);
+        void operator()(BreakStatement*);
+        void operator()(ContinueStatement*);
 
         void error(const Error& err);
         std::string reset_hash();
@@ -126,6 +130,7 @@ namespace Yoyo
         static std::string mangleGenericArgs(std::span<const Type> list);
         void pushScope() {variables.emplace_back();}
         void popScope();
+        void callDestructors();
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         bool has_error = false;

@@ -27,6 +27,7 @@ namespace Yoyo
             case TokenType::Star: middle = "mul__"; break;
             case TokenType::Slash: middle = "div__"; break;
             case TokenType::Spaceship: middle = "cmp__"; break;
+            case TokenType::Percent: middle = "mod__"; break;
             default: debugbreak();
             }
             return "__operator__" + middle + left.full_name() + "__" + right.full_name();

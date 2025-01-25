@@ -32,6 +32,8 @@ namespace Yoyo
     class InterfaceDeclaration;
     class GenericInterfaceDeclaration;
     class GenericClassDeclaration;
+    class BreakStatement;
+    class ContinueStatement;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -52,7 +54,9 @@ namespace Yoyo
         AliasDeclaration*,
         InterfaceDeclaration*,
         GenericInterfaceDeclaration*,
-        GenericClassDeclaration*> StatementVariant;
+        GenericClassDeclaration*,
+        BreakStatement*,
+        ContinueStatement*> StatementVariant;
     enum class Ownership {Owning = 0, NonOwning, NonOwningMut};
     struct Attribute {
         std::string name;
@@ -153,6 +157,14 @@ namespace Yoyo
     public:
         std::unique_ptr<Expression> expression;
         explicit ReturnStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {}
+        StatementVariant toVariant() override;
+    };
+    class BreakStatement : public Statement
+    {
+        StatementVariant toVariant() override;
+    };
+    class ContinueStatement : public Statement
+    {
         StatementVariant toVariant() override;
     };
     class IfStatement : public Statement

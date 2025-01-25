@@ -31,6 +31,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseWhileStatement(Token);
         std::unique_ptr<Statement> parseStatement();
         std::unique_ptr<Statement> parseWithStatement(Token);
+        std::unique_ptr<Statement> parseBreakContinueStatement(Token tk);
         uint32_t GetNextTypePrecedence();
         std::vector<std::unique_ptr<Statement>> parseProgram();
         std::optional<Type> parseType(uint32_t precedence);

@@ -67,6 +67,14 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant ContinueStatement::toVariant()
+    {
+        return this;
+    }
+    StatementVariant BreakStatement::toVariant()
+    {
+        return this;
+    }
     StatementVariant EnumDeclaration::toVariant()
     {
         return this;

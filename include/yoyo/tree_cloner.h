@@ -55,6 +55,8 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(InterfaceDeclaration*);
         std::unique_ptr<Statement> operator()(GenericInterfaceDeclaration*);
         std::unique_ptr<Statement> operator()(GenericClassDeclaration*);
+        std::unique_ptr<Statement> operator()(BreakStatement*);
+        std::unique_ptr<Statement> operator()(ContinueStatement*);
 
         static std::unique_ptr<Statement> copy_stat(Statement*);
         static std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&);
