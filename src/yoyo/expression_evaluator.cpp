@@ -308,7 +308,22 @@ namespace Yoyo
         }
         if (dst.name == "__called_fn")
         {
-            int a = 9;
+            if (src.is_function())
+            {
+                irgen->builder->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(irgen->context, 0)),
+                    irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
+                irgen->builder->CreateStore(val,
+                    irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
+                return out;
+            }
+            if (src.is_lambda())
+            {
+                irgen->builder->CreateStore(val,
+                    irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
+                irgen->builder->CreateStore(irgen->code->getFunction(src.module->module_hash + src.name),
+                    irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
+                return out;
+            }
         }
         if (dst.is_view())
         {
@@ -1225,42 +1240,9 @@ namespace Yoyo
             auto arg = std::visit(*this, exprs[i]->toVariant());
             auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
             if (!tp) continue;
-            if(sig.parameters[i + is_bound].type.name == "__called_fn")
-            {
-                auto llvm_t = irgen->ToLLVMType(sig.parameters[i + is_bound].type, false);
-                auto buffer = irgen->Alloca("called_fn_buffer", llvm_t);
-                if(tp->is_function())
-                {
-                    irgen->builder->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(irgen->context, 0)),
-                        irgen->builder->CreateGEP(llvm_t, buffer, {
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
-                        }));
-                    irgen->builder->CreateStore(arg,
-                        irgen->builder->CreateGEP(llvm_t, buffer, {
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 1),
-                        }));
-                }
-                if(tp->is_lambda())
-                {
-                    irgen->builder->CreateStore(arg,
-                        irgen->builder->CreateGEP(llvm_t, buffer, {
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
-                        }));
-                    irgen->builder->CreateStore(irgen->code->getFunction(tp->module->module_hash + tp->name),
-                        irgen->builder->CreateGEP(llvm_t, buffer, {
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0),
-                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 1),
-                        }));
-                }
-                args[i + is_bound + uses_sret] = buffer;
-            }
-            else
-            {
-                args[i + is_bound + uses_sret] = implicitConvert(exprs[i].get(), arg, *tp, sig.parameters[i + is_bound].type);
-            }
+            
+            args[i + is_bound + uses_sret] = implicitConvert(exprs[i].get(), arg, *tp, sig.parameters[i + is_bound].type);
+            
         }
         return return_value;
     }
@@ -1531,9 +1513,16 @@ namespace Yoyo
                 irgen->code->getFunction(irgen->block_hash + right_t->name) :
                 llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
             if(!callee) { /* return an llvm invalid value*/ return nullptr; }
+            const auto* sig = is_lambda ? &right_t->module->lambdas[right_t->name].second->sig
+                : &right_t->sig;
             bool uses_sret = callee->hasStructRetAttr();
             std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
-            llvm::Value* return_value = fillArgs(uses_sret, fn.sig, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
+            auto first = std::visit(*this, expr->lhs->toVariant());
+            if (left_t->deref() != sig->parameters[0].type.deref())
+            {
+                first = implicitConvert(expr->lhs.get(), first, *left_t, sig->parameters[0].type, nullptr);
+            }
+            llvm::Value* return_value = fillArgs(uses_sret, fn.sig, args, first, op->arguments);
             if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
             auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
             if(!uses_sret) return_value = call_val;

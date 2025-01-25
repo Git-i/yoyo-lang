@@ -31,5 +31,5 @@ main: fn = {
         print_animal_sound(dog);
         print_animal_sound(cat);
     }
-    call_fn(func);
+    func.call_fn();
 }
