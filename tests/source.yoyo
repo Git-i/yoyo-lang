@@ -21,7 +21,6 @@ endline: fn (v: &mut Ostream) = app::func(&v.buffer);
 main: fn = {
     cout: mut = Ostream{.buffer = ""};
     endl := ||(v: &mut Ostream) v.endline();;
-    a: i32 = 10;
     &mut 
-    cout << "Actually " << "Cursed " << a + 20 << endl;
+    cout << "Actually " << "Cursed " << 10 + 20 << endl;
 }

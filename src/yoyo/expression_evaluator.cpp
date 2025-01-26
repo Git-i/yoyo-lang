@@ -740,6 +740,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateAdd(lhs_e, rhs_e);
         auto target = resolveAdd(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Plus, irgen, target);
         std::vector<llvm::Value*> args;
@@ -763,6 +764,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSub(lhs_e, rhs_e);
         auto target = resolveSub(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Minus, irgen, target);
         std::vector<llvm::Value*> args;
@@ -786,6 +788,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateMul(lhs_e, rhs_e);
         auto target = resolveMul(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Star, irgen, target);
         std::vector<llvm::Value*> args;
@@ -809,6 +812,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSDiv(lhs_e, rhs_e);
         auto target = resolveDiv(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Slash, irgen, target);
         std::vector<llvm::Value*> args;
@@ -832,6 +836,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSRem(lhs_e, rhs_e);
         auto target = resolveRem(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Percent, irgen, target);
         std::vector<llvm::Value*> args;
@@ -851,6 +856,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateShl(lhs_e, rhs_e);
         auto target = resolveShl(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::DoubleLess, irgen, target);
         std::vector<llvm::Value*> args;
@@ -870,6 +876,7 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateLShr(lhs_e, rhs_e);
         auto target = resolveShr(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::DoubleGreater, irgen, target);
         std::vector<llvm::Value*> args;
