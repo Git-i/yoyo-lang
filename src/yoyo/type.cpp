@@ -372,8 +372,22 @@ namespace Yoyo
         tp.saturate(module, nullptr);
         return tp;
     }
-
-    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen);
+    inline static bool from_builtins(const Type& tp) {
+        return (tp.is_conversion_result() ||
+            tp.is_array() ||
+            tp.is_char() ||
+            tp.is_void() ||
+            tp.is_builtin() ||
+            tp.is_tuple() ||
+            tp.is_str() ||
+            tp.name == "__called_fn" ||
+            tp.is_optional() ||
+            tp.is_variant() ||
+            tp.is_reference() ||
+            tp.is_slice() ||
+            tp.is_view());
+    }
+    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool);
     void Type::saturate(Module* src, IRGenerator* irgen)
     {
         if(module) return; //avoid double saturation
@@ -385,19 +399,7 @@ namespace Yoyo
             auto last = it.last(subtypes.empty());
             if (subtypes.empty()) subtypes = last.subtypes;
             name = last.name;
-            if(!(is_conversion_result() || 
-                is_array() || 
-                is_char() || 
-                is_void() || 
-                is_builtin() || 
-                is_tuple() || 
-                is_str() || 
-                name == "__called_fn" || 
-                is_optional() || 
-                is_variant() || 
-                is_reference() ||
-                is_slice() ||
-                is_view()))
+            if(!from_builtins(*this))
             {
                 module = src;
                 block_hash = irgen ? irgen->block_hash : src->module_hash;
@@ -415,11 +417,13 @@ namespace Yoyo
         {
             Module* md = src;
             std::string hash = irgen ? irgen->block_hash : src->module_hash;
+            bool first = true;
             while(!it.is_end())
             {
                 auto type = it.next();
-                if (!advanceScope(type, md, hash, irgen))
+                if (!advanceScope(type, md, hash, irgen, first))
                     debugbreak();
+                first = false;
             }
             name = it.last().name;
             module = md;
@@ -432,9 +436,11 @@ namespace Yoyo
             ExpressionEvaluator{irgen}.generateGenericAlias(module, blk, alias, subtypes);
             *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
         }
-
-        if(irgen && irgen->in_class && name == "This") 
+        else if(irgen && irgen->in_class && name == "This") 
             *this = irgen->this_t;
+        
+        if (!verify()) debugbreak();
+
         for(auto& sub: subtypes) sub.saturate(src, irgen);
         if (signature)
         {
@@ -442,7 +448,15 @@ namespace Yoyo
             for (auto& tp : signature->parameters) tp.type.saturate(src, irgen);
         }
     }
-
+    bool Type::verify() const {
+        if (from_builtins(*this)) return true;
+        auto blk = module->hashOf(block_hash, name);
+        if (!blk) 
+            return false;
+        if (block_hash != blk) 
+            return false;
+        return true;
+    }
     bool Type::is_static_array() const
     {
         return name.starts_with("__arr_s");

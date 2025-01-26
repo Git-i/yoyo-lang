@@ -19,7 +19,7 @@ operator: <<(o: &mut Ostream, rhs: i32) -> &mut Ostream
 operator: <<(o: &mut Ostream, rhs: called (c: &mut Ostream)) = o.call(rhs);
 endline: fn (v: &mut Ostream) = app::func(&v.buffer);
 main: fn = {
-    cout: mut = Ostream::add::Lol::Ostream{.buffer = ""};
+    cout: mut = Ostream{.buffer = ""};
     endl := ||(v: &mut Ostream) v.endline();;
     a: i32 = 10;
     &mut 

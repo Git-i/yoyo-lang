@@ -451,9 +451,11 @@ namespace Yoyo
         fn_t.module = irgen->module;
         return { fn_t };
     }
-    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen)
+    // If its the first time the hash doesn't have to match and we can check the engine for modules
+    // but on subsequent attemps we can't check the engine and the hashes have to be exact
+    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool first)
     {
-        if (md->engine->modules.contains(type.name))
+        if (first && md->engine->modules.contains(type.name))
         {
             md = md->engine->modules.at(type.name).get();
             hash = md->module_hash;
@@ -467,6 +469,7 @@ namespace Yoyo
         }
         if(auto dets = md->findType(hash, type.name))
         {
+            if (!first && std::get<0>(*dets) != hash + type.name + "::") return false;
             hash = std::get<0>(*dets);
             return true;
         }
@@ -522,7 +525,7 @@ namespace Yoyo
         }
         if(auto alias = md->findAlias(hash, type.name); alias)
         {
-            advanceScope(*alias, md, hash, irgen);
+            advanceScope(*alias, md, hash, irgen, first);
         }
         if (auto [hsh, galias] = md->findGenericAlias(hash, type.name); galias)
         {
@@ -537,12 +540,14 @@ namespace Yoyo
         std::string hash = irgen->block_hash;
         std::string second_to_last = "";
         auto iterator = UnsaturatedTypeIterator(scp->type);
+        bool first = true;
         while (!iterator.is_end())
         {
             auto type = iterator.next();
-            if (!advanceScope(type, md, hash, irgen)) {
+            if (!advanceScope(type, md, hash, irgen, first)) {
                 return { Error(scp, "The name '" + type.name + "' does not exist in \"" + hash + "\"") };
             }
+            first = false;
             second_to_last.swap(type.name);
         }
         auto last = iterator.last();
