@@ -424,7 +424,7 @@ namespace Yoyo
         module->classes[curr_hash].emplace_back(class_hash, nullptr, std::unique_ptr<ClassDeclaration>{decl});
         for(auto& var : decl->vars) var.type.saturate(module, this);
         std::get<1>(module->classes.at(curr_hash).back()) = hanldeClassDeclaration(decl->vars, decl->ownership, "");
-
+        auto old_in_class = in_class;
         in_class = true;
         auto old_this = std::move(this_t);
         this_t = Type{ .name = name, .subtypes = {} };
@@ -476,7 +476,7 @@ namespace Yoyo
             block_hash = std::move(curr_hash);
         }
         this_t = std::move(old_this);
-        in_class = false;
+        in_class = old_in_class;
     }
     Type IRGenerator::reduceLiteral(const Type& src, llvm::Value* val)
     {

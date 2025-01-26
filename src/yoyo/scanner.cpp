@@ -55,14 +55,16 @@ namespace Yoyo {
             switch (c)
             {
             case ';': return Token{TokenType::SemiColon, loc};
-            case '+': return NextIs('=') ? Token{TokenType::PlusEqual, loc} : Token{TokenType::Plus, loc};
+            case '+': return NextIs('=') ? Token{TokenType::PlusEqual, loc, {source.data() + position - 2, 2} } : 
+                Token{TokenType::Plus, loc, {source.data() + position - 1, 1} };
             case '-':
                 {
-                    if (NextIs('=')) return Token{TokenType::MinusEqual, loc};
-                    if (NextIs('>')) return Token{TokenType::Arrow, loc};
-                    return Token{TokenType::Minus, loc};
+                    if (NextIs('=')) return Token{TokenType::MinusEqual, loc, {source.data() + position - 2, 2} };
+                    if (NextIs('>')) return Token{TokenType::Arrow, loc, {source.data() + position - 2, 2} };
+                    return Token{TokenType::Minus, loc, {source.data() + position - 1, 1} };
                 }
-            case '*': return NextIs('=') ? Token{TokenType::StarEqual, loc} : Token{TokenType::Star, loc};
+            case '*': return NextIs('=') ? Token{TokenType::StarEqual, loc, {source.data() + position - 2, 2} } :
+                Token{TokenType::Star, loc, {source.data() + position - 1, 1} };
             case '/':
                 {
                     if(NextIs('/'))
@@ -75,59 +77,62 @@ namespace Yoyo {
                         handleBlockComment();
                         break;
                     }
-                    return NextIs('=') ? Token{TokenType::SlashEqual, loc} : Token{TokenType::Slash, loc};
+                    return NextIs('=') ? Token{TokenType::SlashEqual, loc, {source.data() + position - 2, 2} } : 
+                        Token{TokenType::Slash, loc, {source.data() + position - 1, 1} };
                 }
-            case '%': return NextIs('=') ? Token{TokenType::PercentEqual, loc} : Token{TokenType::Percent, loc};
-            case '!': return NextIs('=') ? Token{TokenType::BangEqual, loc} : Token{TokenType::Bang, loc};
+            case '%': return NextIs('=') ? Token{TokenType::PercentEqual, loc, {source.data() + position - 2, 2} } :
+                Token{TokenType::Percent, loc, {source.data() + position - 1, 1} };
+            case '!': return NextIs('=') ? Token{TokenType::BangEqual, loc, {source.data() + position - 2, 2} } : 
+                Token{TokenType::Bang, loc, {source.data() + position - 1, 1} };
             case '&':
                 {
-                    if (NextIs('=')) return Token{TokenType::AmpersandEqual, loc};
-                    if (NextIs('&')) return Token{TokenType::DoubleAmpersand, loc};
-                    return Token{TokenType::Ampersand, loc};
+                    if (NextIs('=')) return Token{TokenType::AmpersandEqual, loc, {source.data() + position - 2, 2} };
+                    if (NextIs('&')) return Token{TokenType::DoubleAmpersand, loc, {source.data() + position - 2, 2} };
+                    return Token{TokenType::Ampersand, loc, {source.data() + position - 1, 1} };
                 }
             case '|':
                 {
-                    if (NextIs('=')) return Token{TokenType::PipeEqual, loc};
-                    if (NextIs('|')) return Token{TokenType::DoublePipe, loc};
-                    return Token{TokenType::Pipe, loc};
+                    if (NextIs('=')) return Token{TokenType::PipeEqual, loc, {source.data() + position - 2, 2} };
+                    if (NextIs('|')) return Token{TokenType::DoublePipe, loc, {source.data() + position - 2, 2} };
+                    return Token{TokenType::Pipe, loc, {source.data() + position - 1, 1} };
                 }
             case '>':
                 {
-                    if (NextIs('=')) return Token{TokenType::GreaterEqual, loc};
-                    if (NextIs('>')) return Token{TokenType::DoubleGreater, loc};
-                    return Token{TokenType::Greater, loc};
+                    if (NextIs('=')) return Token{TokenType::GreaterEqual, loc, {source.data() + position - 2, 2} };
+                    if (NextIs('>')) return Token{TokenType::DoubleGreater, loc, {source.data() + position - 2, 2} };
+                    return Token{TokenType::Greater, loc, {source.data() + position - 1, 1} };
                 }
             case '<':
                 {
                     if (NextIs('='))
                     {
-                        if (NextIs('>')) return Token{ TokenType::Spaceship, loc };
-                        return Token{ TokenType::LessEqual, loc };
+                        if (NextIs('>')) return Token{ TokenType::Spaceship, loc, {source.data() + position - 3, 3} };
+                        return Token{ TokenType::LessEqual, loc, {source.data() + position - 2, 2} };
                     }
-                    if (NextIs('<')) return Token{TokenType::DoubleLess, loc};
-                    return Token{TokenType::Less, loc};
+                    if (NextIs('<')) return Token{TokenType::DoubleLess, loc, {source.data() + position - 2, 2} };
+                    return Token{TokenType::Less, loc, {source.data() + position - 1, 1} };
                 }
-            case '(': return Token{TokenType::LParen, loc};
-            case ')': return Token{TokenType::RParen, loc};
-            case '{': return Token{TokenType::LCurly, loc};
+            case '(': return Token{TokenType::LParen, loc, {source.data() + position - 1, 1} };
+            case ')': return Token{TokenType::RParen, loc, {source.data() + position - 1, 1} };
+            case '{': return Token{TokenType::LCurly, loc, {source.data() + position - 1, 1} };
             case '}': return Token{TokenType::RCurly, loc, {source.data() + position -1, 1}};
-            case '[': return Token{TokenType::LSquare, loc};
-            case ']': return Token{TokenType::RSquare, loc};
-            case '.': return Token{TokenType::Dot, loc};
-            case ',': return Token{TokenType::Comma, loc};
+            case '[': return Token{TokenType::LSquare, loc, {source.data() + position - 1, 1} };
+            case ']': return Token{TokenType::RSquare, loc, {source.data() + position - 1, 1} };
+            case '.': return Token{TokenType::Dot, loc, {source.data() + position - 1, 1} };
+            case ',': return Token{TokenType::Comma, loc, {source.data() + position - 1, 1} };
             case ':':
                 {
                     if (NextIs(':'))
                     {
-                        if(NextIs('<')) return Token{TokenType::TemplateOpen, loc};
-                        return Token{TokenType::DoubleColon, loc};
+                        if(NextIs('<')) return Token{TokenType::TemplateOpen, loc, {source.data() + position - 3, 3} };
+                        return Token{TokenType::DoubleColon, loc, {source.data() + position - 2, 2} };
                     }
-                    return Token{TokenType::Colon, loc};
+                    return Token{TokenType::Colon, loc, {source.data() + position - 1, 1} };
                 }
-            case '^': return Token{TokenType::Caret, loc};
+            case '^': return Token{TokenType::Caret, loc, {source.data() + position - 1, 1} };
             case '#':
                 {
-                    if(NextIs('(')) return Token{TokenType::AttrOpen, loc};
+                    if(NextIs('(')) return Token{TokenType::AttrOpen, loc, {source.data() + position - 2, 2} };
                     return std::nullopt;
                 }
             case '_':
@@ -143,15 +148,15 @@ namespace Yoyo {
                     }
                     return Token{TokenType::Underscore, loc};
                 }
-            case '?': return Token{TokenType::Question, loc};
+            case '?': return Token{TokenType::Question, loc, {source.data() + position - 1, 1} };
             case '\t': [[fallthrough]];
             case ' ': [[fallthrough]];
             case '\r': [[fallthrough]];
             case '\n': break;
             case '=':
                 {
-                    if (NextIs('=')) return Token{TokenType::DoubleEqual, loc};
-                    return Token{TokenType::Equal, loc};
+                    if (NextIs('=')) return Token{TokenType::DoubleEqual, loc, {source.data() + position - 2, 2} };
+                    return Token{TokenType::Equal, loc, {source.data() + position - 1, 1} };
                 }
             case '"': return ScanStringLiteral();
             case '\'': return ScanCharLiteral();
