@@ -76,6 +76,7 @@ namespace Yoyo
             }
             node = visistor.node;
         }
+        void operator()(CImportDeclaration*) const {}
         void operator()(AliasDeclaration*) const {}
         void operator()(ClassDeclaration* stat) const {}
         void operator()(ForStatement* stat){

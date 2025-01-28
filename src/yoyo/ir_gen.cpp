@@ -284,6 +284,24 @@ namespace Yoyo
         irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), flag);
         return flag;
     }
+    llvm::FunctionType* toCSignature(IRGenerator* irgen, const FunctionSignature& sig)
+    {
+        //TODO
+        return irgen->ToLLVMSignature(sig);
+    }
+    void handleCImport(IRGenerator* irgen, FunctionDeclaration* decl, llvm::Function* func)
+    {
+        if (decl->signature.returnType.should_sret()) irgen->error(Error(decl, "Only primitive types allowed in Cimport"));
+        for (auto& param : decl->signature.parameters)
+            if (param.type.should_sret()) irgen->error(Error(decl, "Only primitive types allowed in Cimport"));
+        auto c_import = reinterpret_cast<CImportDeclaration*>(decl->body.get());
+        auto sig = toCSignature(irgen, decl->signature);
+        auto c_fn = llvm::Function::Create(sig, llvm::GlobalValue::ExternalLinkage, c_import->function_name, irgen->code);
+        std::vector<llvm::Value*> args;
+        for (auto& arg : func->args())
+            args.push_back(&arg);
+        irgen->builder->CreateRet(irgen->builder->CreateCall(c_fn, args));
+    }
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
         std::unique_ptr<llvm::IRBuilder<>> oldBuilder;
@@ -318,8 +336,11 @@ namespace Yoyo
         return_t.is_mutable = true;
 
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
-        returnBlock = llvm::BasicBlock::Create(context, "return", func);
         builder->SetInsertPoint(bb);
+
+        if (dynamic_cast<CImportDeclaration*>(decl->body.get())) return handleCImport(this, decl, func);
+
+        returnBlock = llvm::BasicBlock::Create(context, "return", func);
         if(!return_t.is_void()) currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
             static_cast<llvm::Value*>(Alloca("return_address", return_as_llvm_type));
         auto old_hash = block_hash;

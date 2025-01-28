@@ -182,6 +182,7 @@ namespace Yoyo {
         {
             return {kw->second, loc, view};
         }
+        if (Peek() && Peek() == '!') { std::ignore = Get(); return { TokenType::Directive, loc, view }; };
         return {TokenType::Identifier, loc, view};
     }
 

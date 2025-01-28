@@ -2,3 +2,5 @@ compile_commands.json
 .idea
 *.graphviz
 .cache/
+*.lib
+*.obj

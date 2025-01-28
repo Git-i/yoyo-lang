@@ -241,7 +241,12 @@ namespace Yoyo
             }
         }
     }
-
+    void Engine::addStaticLibrary(std::string_view path)
+    {
+        std::string path_str(path);
+        auto err = jit->linkStaticLibraryInto(jit->getMainJITDylib(), path_str.c_str());
+        if (!err) debugbreak();
+    }
     std::string_view Engine::viewString(void* str)
     {
         struct String{char* data; uint64_t len; uint64_t cap;};

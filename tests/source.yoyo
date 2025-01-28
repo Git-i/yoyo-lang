@@ -1,26 +1,6 @@
-app: module = APP
-Ostream: struct = {
-    buffer: str,
-    add: fn (&mut this, data: str) -> &mut This = {
-        Lol: struct = {
-
-        }
-        this.buffer = "${this.buffer}${data}";
-        return this;
-    }
-    call: fn (&mut this, func: called (v: &mut Ostream)) = {
-        func.invoke(this);
-    }
-}
-operator: <<(o: &mut Ostream, rhs: str) -> &mut Ostream
-    = return o.add(rhs);
-operator: <<(o: &mut Ostream, rhs: i32) -> &mut Ostream
-    = return o.add("${rhs}");
-operator: <<(o: &mut Ostream, rhs: called (c: &mut Ostream)) = o.call(rhs);
-endline: fn (v: &mut Ostream) = app::func(&v.buffer);
+sin: fn (a: f32) -> f32 = c_import!("use_sin_from_c");
 main: fn = {
-    cout: mut = Ostream{.buffer = ""};
-    endl := ||(v: &mut Ostream) v.endline();;
-    &mut 
-    cout << "Actually " << "Cursed " << 10 + 20 << endl;
+    num: f32 = 22.0;
+    sn := sin(num / 42.0);
+    "${sn}".test::print();
 }

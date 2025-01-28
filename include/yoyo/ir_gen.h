@@ -119,6 +119,7 @@ namespace Yoyo
         void operator()(InterfaceDeclaration*);
         void operator()(BreakStatement*);
         void operator()(ContinueStatement*);
+        void operator()(CImportDeclaration*) {}
 
         void error(const Error& err);
         std::string reset_hash();

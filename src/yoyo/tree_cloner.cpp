@@ -178,7 +178,10 @@ namespace Yoyo
             decl->interfaces,
             std::move(new_impls));
     }
-
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(CImportDeclaration* dcl)
+    {
+        return std::make_unique<CImportDeclaration>(dcl->function_name);
+    }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(VariableDeclaration* decl)
     {
         return std::make_unique<VariableDeclaration>(decl->identifier, decl->type,copy_expr(decl->initializer), decl->is_mut);

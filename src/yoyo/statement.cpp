@@ -96,4 +96,8 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant CImportDeclaration::toVariant()
+    {
+        return this;
+    }
 }

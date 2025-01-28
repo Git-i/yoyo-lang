@@ -34,6 +34,7 @@ namespace Yoyo
     class GenericClassDeclaration;
     class BreakStatement;
     class ContinueStatement;
+    class CImportDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -56,7 +57,8 @@ namespace Yoyo
         GenericInterfaceDeclaration*,
         GenericClassDeclaration*,
         BreakStatement*,
-        ContinueStatement*> StatementVariant;
+        ContinueStatement*,
+        CImportDeclaration*> StatementVariant;
     enum class Ownership;
     struct Attribute {
         std::string name;
@@ -193,7 +195,13 @@ namespace Yoyo
         explicit BlockStatement(std::vector<std::unique_ptr<Statement>> stats) : statements(std::move(stats)) {}
         StatementVariant toVariant() override;
     };
-
+    class CImportDeclaration : public Statement
+    {
+    public:
+        std::string function_name;
+        explicit CImportDeclaration(std::string name) : function_name(std::move(name)) {}
+        StatementVariant toVariant() override;
+    };
     class ClassDeclaration : public Statement
     {
     public:

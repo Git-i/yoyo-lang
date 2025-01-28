@@ -29,8 +29,9 @@ namespace Yoyo
             sig.returnType.saturate(this, nullptr);
             for (auto& param : sig.parameters) param.type.saturate(this, nullptr);
             size_t param_size = sig.returnType.should_sret() + sig.parameters.size();
-            if (param_size != sizeof...(Args))
-                Result::ParameterCountMismatch;
+            size_t provided_size = sizeof...(Args);
+            if (param_size != provided_size)
+               return Result::ParameterCountMismatch;
             if (sig.returnType.should_sret())
             {
                 if (!std::is_same_v<R, void>) return Result::ReturnTypeMismatch;

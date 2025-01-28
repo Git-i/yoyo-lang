@@ -33,8 +33,9 @@ TEST_CASE("Test IR")
     const char** lol = argv;
 
     Yoyo::Engine engine;
-    md = engine.addAppModule("APP");
-    md->addFunction("(x: &str) -> i32", func, "func");
+    engine.addStaticLibrary("c_file.lib");
+    md = engine.addAppModule("test");
+    md->addFunction("(x: &str) -> i32", func, "print");
     engine.addModule("source.yoyo", src2);
     engine.compile();
     uint32_t idx = 3;

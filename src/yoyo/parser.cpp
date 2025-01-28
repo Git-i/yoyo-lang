@@ -209,7 +209,21 @@ namespace Yoyo
     {
         while(Peek() && std::ranges::find(t, Peek()->type) == t.end()) Get();
     }
-
+    std::unique_ptr<Statement> parseCimport(Parser& p)
+    {
+        auto tk = p.Get();
+        std::string text;
+        if (!tk) return nullptr;
+        if (tk->type != TokenType::Directive || tk->text != "c_import") return nullptr;
+        if (!p.discard(TokenType::LParen)) p.error("Expected '('", p.Peek());
+        tk = p.Get();
+        if (!tk) return nullptr;
+        if (tk->type != TokenType::StringLiteral) p.error("Expected string literal", p.Peek());
+        text = tk->text;
+        if (!p.discard(TokenType::RParen)) p.error("Expected ')'", p.Peek());
+        if (!p.discard(TokenType::SemiColon)) p.error("Expected ';'", p.Peek());
+        return std::make_unique<CImportDeclaration>(std::move(text));
+    }
     std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
     {
         if(!discard(TokenType::Fn)) error("Expected 'fn'", Peek());
@@ -224,6 +238,16 @@ namespace Yoyo
         if(!discard(TokenType::Equal))
         {
             error("Expected '='", Peek());
+        }
+        auto tk = Peek();
+        if (tk && tk->type == TokenType::Directive && tk->text == "c_import") {
+            if (gclause) error("Generic function not supported here", tk);
+            auto fn = std::make_unique<FunctionDeclaration>(std::string{ identifier.text }, *std::move(sig), nullptr);
+            auto stat = parseCimport(*this);
+            stat->parent = fn.get();
+            auto end = stat->end;
+            fn->body = std::move(stat);
+            return Statement::attachSLAndParent(std::move(fn), identifier.loc, end, parent);
         }
         auto stat = parseStatement();
         auto stat_ptr = stat.get();

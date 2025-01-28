@@ -23,6 +23,7 @@ namespace Yoyo {
         void addModule(const std::string& module_name, std::string source);
         void compile();
         void prepareForExecution();
+        void addStaticLibrary(std::string_view path);
         std::unordered_map<std::string, std::unique_ptr<Module>> modules;
         std::unordered_map<std::string, std::pair<std::string, std::vector<std::unique_ptr<Statement>>>> sources;
         static std::string_view viewString(void* str);
