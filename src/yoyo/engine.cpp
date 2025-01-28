@@ -6,6 +6,8 @@
 #include <ranges>
 #include <statement.h>
 #include <llvm/Support/TargetSelect.h>
+#define WIN32_LEAN_AND_MEAN
+#include "windows.h"
 namespace Yoyo
 {
     llvm::LLVMContext* getLLVMContext(Module* md)
@@ -245,7 +247,29 @@ namespace Yoyo
     {
         std::string path_str(path);
         auto err = jit->linkStaticLibraryInto(jit->getMainJITDylib(), path_str.c_str());
-        if (!err) debugbreak();
+        if (err) debugbreak();
+    }
+    void Engine::addDynamicLibrary(std::string_view path)
+    {
+        std::string path_str(path);
+        std::string err;
+        auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(path_str.c_str(), &err);
+        if (!lib.isValid())
+        {
+            debugbreak();
+        }
+        auto ptr = std::make_unique<llvm::orc::DynamicLibrarySearchGenerator>(lib, jit->getDataLayout().getGlobalPrefix());
+        jit->getMainJITDylib().addGenerator(std::move(ptr));
+        //if (auto DLSGOrErr =
+        //    llvm::orc::DynamicLibrarySearchGenerator::Load(path_str.c_str(), jit->getDataLayout().getGlobalPrefix()))
+        //    lib.addGenerator(std::move(*DLSGOrErr));
+        //else
+        //{
+        //    llvm::ExitOnError eor;
+        //    eor.setBanner("Yoyo: ");
+        //    eor(DLSGOrErr.takeError());
+        //    debugbreak();
+        //}
     }
     std::string_view Engine::viewString(void* str)
     {

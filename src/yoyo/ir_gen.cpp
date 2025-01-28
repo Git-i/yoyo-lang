@@ -338,7 +338,11 @@ namespace Yoyo
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         builder->SetInsertPoint(bb);
 
-        if (dynamic_cast<CImportDeclaration*>(decl->body.get())) return handleCImport(this, decl, func);
+        if (dynamic_cast<CImportDeclaration*>(decl->body.get()))
+        {
+            return handleCImport(this, decl, func);
+            
+        }
 
         returnBlock = llvm::BasicBlock::Create(context, "return", func);
         if(!return_t.is_void()) currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
