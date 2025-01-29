@@ -292,7 +292,8 @@ namespace Yoyo
         {
             size_t sz = md->engine->jit->getDataLayout().getTypeSizeInBits(tp);
             sz = sz / 8; //convert to bytes
-            if (sz > sizeof(uint64_t)) return true;
+            //only sret if its a small type that's not a power of 2
+            if (sz > sizeof(uint64_t) || (sz & (sz - 1)) != 0) return true;
             return false;
         }
         debugbreak();
@@ -308,7 +309,9 @@ namespace Yoyo
             return_t = llvm::Type::getVoidTy(irgen->context);
             arg_tys.push_back(llvm::PointerType::get(irgen->context, 0));
         }
-        else return_t = return_as_llvm;
+        //use an integer register win64 only
+        else return_t = llvm::IntegerType::get(irgen->context, 
+            irgen->module->engine->jit->getDataLayout().getTypeSizeInBits(return_as_llvm));
         for (auto& param : sig.parameters) {
             arg_tys.push_back(irgen->ToLLVMType(param.type, false));
         }
