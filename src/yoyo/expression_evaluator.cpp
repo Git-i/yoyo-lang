@@ -1095,6 +1095,7 @@ namespace Yoyo
     {
         std::string name(nm->text);
         auto ret_type = ExpressionTypeChecker{irgen}(nm);
+        if (!ret_type) { irgen->error(ret_type.error()); return nullptr; }
         for(size_t i = irgen->variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;

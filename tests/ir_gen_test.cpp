@@ -37,7 +37,7 @@ TEST_CASE("Test IR")
     md->addFunction("(x: &str) -> i32", func, "print");
     engine.addModule("source.yoyo", src2);
     engine.compile();
-    engine.addStaticLibrary("c_file.lib");
+    engine.addDynamicLibrary("c_file.dll");
     uint32_t idx = 3;
     for(auto& mod: engine.modules)
     {

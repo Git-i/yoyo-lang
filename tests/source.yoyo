@@ -1,6 +1,15 @@
-sin: fn (a: f32) -> f32 = c_import!("use_sin_from_c");
+BigStruct: struct = {
+    a: i32, b: i32, c: i32, d: i32
+}
+SmallStruct: struct = {
+    a: i32, b: i32
+}
+print_bs: fn (s: &BigStruct) = 
+    "{ ${s.a}, ${s.b}, ${s.c}, ${s.d} }".test::print();
+print_ss: fn (s: &SmallStruct) = "{ ${s.a}, ${s.b} }".test::print();
+get_bs: fn (val: f32) -> BigStruct = c_import!("get_big_struct");
+get_ss: fn (val: f32) -> SmallStruct = c_import!("get_small_struct");
 main: fn = {
-    num: f32 = 22.0;
-    sn := sin(num / 42.0);
-    "${sn}".test::print();
+    print_bs(&get_bs(10));
+    print_ss(&get_ss(10));
 }

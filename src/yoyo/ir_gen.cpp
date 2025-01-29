@@ -284,23 +284,68 @@ namespace Yoyo
         irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), flag);
         return flag;
     }
+    bool should_sret_C(llvm::Type* tp, Module* md)
+    {
+        const auto& target = md->engine->jit->getTargetTriple();
+        constexpr auto npos = std::string::npos;
+        if (target.getArch() == llvm::Triple::x86_64 && target.getEnvironment() == llvm::Triple::MSVC)
+        {
+            size_t sz = md->engine->jit->getDataLayout().getTypeSizeInBits(tp);
+            sz = sz / 8; //convert to bytes
+            if (sz > sizeof(uint64_t)) return true;
+            return false;
+        }
+        debugbreak();
+    }
     llvm::FunctionType* toCSignature(IRGenerator* irgen, const FunctionSignature& sig)
     {
-        //TODO
-        return irgen->ToLLVMSignature(sig);
+        llvm::Type* return_t = nullptr;
+        auto return_as_llvm = irgen->ToLLVMType(sig.returnType, false);
+        bool should_sret = should_sret_C(return_as_llvm, irgen->module);
+        std::vector<llvm::Type*> arg_tys;
+        if (should_sret)
+        {
+            return_t = llvm::Type::getVoidTy(irgen->context);
+            arg_tys.push_back(llvm::PointerType::get(irgen->context, 0));
+        }
+        else return_t = return_as_llvm;
+        for (auto& param : sig.parameters) {
+            arg_tys.push_back(irgen->ToLLVMType(param.type, false));
+        }
+        return llvm::FunctionType::get(return_t, arg_tys, false);
     }
+    
     void handleCImport(IRGenerator* irgen, FunctionDeclaration* decl, llvm::Function* func)
     {
-        if (decl->signature.returnType.should_sret()) irgen->error(Error(decl, "Only primitive types allowed in Cimport"));
+        irgen->code->getTargetTriple();
+        std::vector<llvm::Value*> args;
+        bool return_sret = false;
+        size_t offset = decl->signature.returnType.should_sret();
+        if (decl->signature.returnType.should_sret())
+        {
+            auto as_llvm = irgen->ToLLVMType(decl->signature.returnType, false);
+            return_sret = should_sret_C(as_llvm, irgen->module);
+            if (return_sret) args.push_back(func->getArg(0));
+        }
         for (auto& param : decl->signature.parameters)
-            if (param.type.should_sret()) irgen->error(Error(decl, "Only primitive types allowed in Cimport"));
+            if (param.type.should_sret()) irgen->error(Error(decl, "Only primitive parameter types allowed in Cimport"));
         auto c_import = reinterpret_cast<CImportDeclaration*>(decl->body.get());
         auto sig = toCSignature(irgen, decl->signature);
         auto c_fn = llvm::Function::Create(sig, llvm::GlobalValue::ExternalLinkage, c_import->function_name, irgen->code);
-        std::vector<llvm::Value*> args;
-        for (auto& arg : func->args())
-            args.push_back(&arg);
-        irgen->builder->CreateRet(irgen->builder->CreateCall(c_fn, args));
+        for (auto arg : std::ranges::views::iota(offset, func->arg_size()))
+            args.push_back(func->getArg(arg));
+        auto call_val = irgen->builder->CreateCall(c_fn, args);
+        if (decl->signature.returnType.is_void()) irgen->builder->CreateRetVoid();
+        else if (decl->signature.returnType.should_sret())
+        {
+            if (!return_sret)
+                irgen->builder->CreateStore(call_val, func->getArg(0));
+            irgen->builder->CreateRetVoid();
+        }
+        else
+        {
+            irgen->builder->CreateRet(call_val);
+        }
     }
     void IRGenerator::operator()(FunctionDeclaration* decl)
     {
@@ -353,6 +398,8 @@ namespace Yoyo
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(CFGNodeManager{}), decl);
         function_cfgs.back().annotate();
         size_t idx = 0;
+        decltype(this->variables) new_fn_vars;
+        new_fn_vars.emplace_back();
         for(auto& param : decl->signature.parameters)
         {
             if(!param.name.empty())
@@ -371,7 +418,7 @@ namespace Yoyo
                     var = func->getArg(idx + uses_sret);
                 }
                 auto flag = prepareValidDropFlagFor(this, type);
-                variables.back()[param.name] = {
+                new_fn_vars.back()[param.name] = {
                     var,
                     std::move(type),
                     flag
@@ -393,7 +440,7 @@ namespace Yoyo
                     if (capture.cp_type == Ownership::NonOwning) final_type = type->reference_to();
                     else if (capture.cp_type == Ownership::NonOwningMut) final_type = type->mutable_reference_to();
                     else final_type = std::move(type).value();
-                    variables.back()[capture.name] = {
+                    new_fn_vars.back()[capture.name] = {
                         var,
                         std::move(final_type),
                         nullptr
@@ -403,10 +450,17 @@ namespace Yoyo
             }
             idx++;
         }
+        
+        //evaluate body we give a new scope whatever so that the function can't access outside vars
+        variables.swap(new_fn_vars);
         current_Statement = &decl->body;
         std::visit(*this, decl->body->toVariant());
+        variables.swap(new_fn_vars);
+
         function_cfgs.pop_back();
         popScope();
+        
+        
         if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br)
             builder->CreateBr(returnBlock);
         builder->SetInsertPoint(returnBlock);
