@@ -6,8 +6,6 @@
 #include <ranges>
 #include <statement.h>
 #include <llvm/Support/TargetSelect.h>
-#define WIN32_LEAN_AND_MEAN
-#include "windows.h"
 namespace Yoyo
 {
     llvm::LLVMContext* getLLVMContext(Module* md)
@@ -21,6 +19,10 @@ namespace Yoyo
         bool operator()(FunctionDeclaration* decl) const
         {
             md->functions[md->module_hash].emplace_back(decl->name, decl->signature);
+            return true;
+        }
+        bool operator()(ConstantDeclaration* decl) const
+        {
             return true;
         }
         bool operator()(GenericFunctionDeclaration* decl) const

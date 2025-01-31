@@ -27,7 +27,16 @@ namespace Yoyo
         }
         return {"", nullptr};
     }
-
+    std::pair<std::string, std::tuple<Type, std::string, llvm::Constant*>*> Module::findConst(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, details_list] : constants)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& details : details_list)
+                if (std::get<1>(details) == name) return { hash, &details };
+        }
+        return { "", nullptr };
+    }
     std::pair<std::string, GenericFunctionDeclaration*> Module::findGenericFn(const std::string& block,
         const std::string& name)
     {

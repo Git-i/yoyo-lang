@@ -1122,7 +1122,8 @@ namespace Yoyo
                 llvm_fn = declareFunction(name_prefix + name, irgen, fn->sig);
             return llvm_fn;
         }
-        return nullptr;
+        if (ret_type->is_error_ty()) return nullptr;
+        return ConstantEvaluator{ irgen }(nm);
     }
 
     llvm::Value* ExpressionEvaluator::operator()(GenericNameExpression* nm)
@@ -1684,7 +1685,9 @@ namespace Yoyo
             auto name = UnsaturatedTypeIterator(op->type).last().name;
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), enm->values[name]);
         }
-        return nullptr;
+        if (ty->is_error_ty()) return nullptr;
+        // try to eval as const
+        return ConstantEvaluator{ irgen }(op);
     }
 
     llvm::Value* ExpressionEvaluator::operator()(ObjectLiteral* lit)

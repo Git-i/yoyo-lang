@@ -129,6 +129,7 @@ namespace Yoyo
         case TokenType::Struct: decl = parseClassDeclaration(iden.value(), true); break;
         case TokenType::Enum: decl = parseEnumDeclaration(iden.value()); break;
         case TokenType::Interface: decl = parseInterfaceDeclaration(iden.value()); break;
+        case TokenType::Const: decl = parseConstDeclaration(iden.value()); break;
         case TokenType::EnumFlag: break;//TODO
         case TokenType::Union: break;//TODO
         case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
@@ -769,7 +770,18 @@ namespace Yoyo
             : std::make_unique<AliasDeclaration>(std::string(identifier.text), std::move(tp)), identifier.loc, discardLocation, parent
             );
     }
-
+    std::unique_ptr<Statement> Parser::parseConstDeclaration(Token identifier)
+    {
+        Get(); //skip the const
+        auto type = parseType(0).value_or(Type{});
+        if (!discard(TokenType::Equal)) error("Expected '='", Peek());
+        auto decl = std::make_unique<ConstantDeclaration>(std::string(identifier.text), std::move(type), nullptr);
+        auto init = parseExpression(0);
+        auto end = init->end;
+        decl->expr = std::move(init);
+        if (!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
+        return  Statement::attachSLAndParent(std::move(decl), identifier.loc, end, parent);
+    }
     //For this fn, the type has already been discarded
     /// Syntax:
     /// {.name1 = value1, .name2 = value2}

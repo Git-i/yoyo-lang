@@ -17,6 +17,7 @@ namespace Yoyo
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
         std::unique_ptr<Statement> parseVariableDeclaration(Token identifier);
         std::unique_ptr<Statement> parseEnumDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseConstDeclaration(Token identifier);
         std::unique_ptr<Statement> parseClassDeclaration(Token identifier, bool);
         std::unique_ptr<Statement> parseAliasDeclaration(Token identifier);
         std::unique_ptr<Statement> parseInterfaceDeclaration(Token identifier);

@@ -35,6 +35,7 @@ namespace Yoyo
     class BreakStatement;
     class ContinueStatement;
     class CImportDeclaration;
+    class ConstantDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -58,7 +59,8 @@ namespace Yoyo
         GenericClassDeclaration*,
         BreakStatement*,
         ContinueStatement*,
-        CImportDeclaration*> StatementVariant;
+        CImportDeclaration*,
+        ConstantDeclaration*> StatementVariant;
     enum class Ownership;
     struct Attribute {
         std::string name;
@@ -104,6 +106,16 @@ namespace Yoyo
         Type type;
         std::string name;
         AliasDeclaration(std::string name, Type t) : type(std::move(t)), name(std::move(name)) {};
+        StatementVariant toVariant() override;
+    };
+    class ConstantDeclaration : public Statement
+    {
+    public:
+        Type type;
+        std::string name;
+        std::unique_ptr<Expression> expr;
+        ConstantDeclaration(std::string name, Type t, std::unique_ptr<Expression> exr) :
+            type(std::move(t)), name(std::move(name)), expr(std::move(exr)) {}
         StatementVariant toVariant() override;
     };
     class GenericAliasDeclaration: public AliasDeclaration

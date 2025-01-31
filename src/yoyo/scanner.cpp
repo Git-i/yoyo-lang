@@ -42,6 +42,7 @@ namespace Yoyo {
         {"for", TokenType::For},
         {"break", TokenType::Break},
         {"continue", TokenType::Continue},
+        {"const", TokenType::Const},
     })
     {
 

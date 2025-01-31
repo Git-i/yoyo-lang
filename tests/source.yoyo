@@ -1,23 +1,11 @@
-BigStruct: struct = {
-    a: i32, b: i32, c: i32, d: i32
-}
-SmallStruct: struct = {
-    a: i32, b: i32,
-    print: fn (&this) = "{ ${this.a}, ${this.b} }".test::print();
-}
-print_bs: fn (s: &BigStruct) = 
-    "{ ${s.a}, ${s.b}, ${s.c}, ${s.d} }".test::print();
-get_bs: fn (val: f32) -> BigStruct = c_import!("get_big_struct");
-get_ss: fn (val: f32) -> SmallStruct = c_import!("get_small_struct");
+
+PI: const f32 = 3.141592653589793115997963468544185161590576171875;
 main: fn = {
-    print_bs(&get_bs(10));
-    get_ss(10).print();
-    pi: f32 = 3.141592653589793115997963468544185161590576171875;
-    thirty_deg := pi / 6;
-    sixty_deg := (pi as f64) / 3;
+    thirty_deg := PI / 6;
+    sixty_deg := (PI as f64) / 3;
 
     sin_32 := f32::sin(thirty_deg);
-    cos_60 := f64::cos(sixty_deg);
+    cos_60 := sixty_deg.cos(); // f64::cos;
     "${sin_32}".test::print();
     "${cos_60}".test::print();
 }

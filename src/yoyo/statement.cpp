@@ -100,4 +100,8 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant ConstantDeclaration::toVariant()
+    {
+        return this;
+    }
 }

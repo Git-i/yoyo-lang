@@ -325,6 +325,10 @@ namespace Yoyo
             std::move(new_impls),
             decl->clause);
     }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(ConstantDeclaration* decl)
+    {
+        return std::make_unique<ConstantDeclaration>(decl->name, decl->type, copy_expr(decl->expr));
+    }
     std::unique_ptr<Statement> StatementTreeCloner::copy_stat(Statement* s)
     {
         if (s == nullptr) return nullptr;

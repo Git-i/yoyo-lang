@@ -24,7 +24,7 @@ namespace Yoyo {
         Question, Null, As, Fn, Alias,
         AttrOpen, /// #(
         Spaceship, // <=>
-        Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive
+        Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const
     };
     struct Token
     {

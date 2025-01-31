@@ -1127,7 +1127,8 @@ namespace Yoyo
             std::variant<
                 std::unique_ptr<ClassDeclaration>,
                 std::unique_ptr<FunctionDeclaration>,
-                std::unique_ptr<OperatorOverload>> vnt;
+                std::unique_ptr<OperatorOverload>,
+                std::unique_ptr<ConstantDeclaration>> vnt;
             if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get()))
             {
                 std::ignore = stat.release();
@@ -1142,6 +1143,11 @@ namespace Yoyo
             {
                 std::ignore = stat.release();
                 vnt = std::unique_ptr<OperatorOverload>(ovl_ptr);
+            }
+            else if (auto ovl_ptr = dynamic_cast<ConstantDeclaration*>(stat.get()))
+            {
+                std::ignore = stat.release();
+                vnt = std::unique_ptr<ConstantDeclaration>(ovl_ptr);
             }
             else continue;
             std::visit(TopLevelVisitor{this}, std::move(vnt));

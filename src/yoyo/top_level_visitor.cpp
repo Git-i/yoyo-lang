@@ -21,6 +21,55 @@ namespace Yoyo
         }
         return true;
     }
+    uint64_t getIntMaxOf(const Type& type);
+    int64_t getIntMinOf(const Type& type);
+    bool TopLevelVisitor::operator()(std::unique_ptr<ConstantDeclaration> decl)
+    {
+        decl->type.saturate(irgen->module, irgen);
+        if (!decl->type.is_integral() && !decl->type.is_boolean() && !decl->type.is_floating_point()
+            && !decl->type.is_char())
+        {
+            irgen->error(Error(decl.get(), "Constants must be integers, booleans, chars or floats"));
+            return false;
+        }
+        auto tp = irgen->ToLLVMType(decl->type, false);
+        auto val = std::visit(ConstantEvaluator{ irgen }, decl->expr->toVariant());
+        
+        if (decl->type.is_integral() && !val->getType()->isIntegerTy() || val->getType() == llvm::Type::getInt1Ty(irgen->context))
+        {
+            irgen->error(Error(decl.get(), "Expression does not evaluate to integer type"));
+            return false;
+        }
+        if (decl->type.is_integral() || decl->type.is_floating_point())
+        {
+            auto const_int = llvm::dyn_cast_or_null<llvm::ConstantInt>(val);
+            if (const_int)
+            {
+                if (const_int->isNegative())
+                {
+                    if (decl->type.is_unsigned_integral()) { irgen->error(Error(decl.get(), "Resultant value is negative")); return false; }
+                    int64_t val_int = const_int->getSExtValue();
+                    auto max = getIntMinOf(decl->type);
+                    if (val_int < max) { irgen->error(Error(decl.get(), "Resultant value too small for type")); return false; }
+                }
+                else
+                {
+                    uint64_t val_int = const_int->getZExtValue();
+                    auto max = getIntMaxOf(decl->type);
+                    if (val_int > max) { irgen->error(Error(decl.get(), "Resultant value too large for type")); return false; }
+                }
+                val = llvm::ConstantExpr::getTrunc(val, tp);
+            }
+            auto fp = llvm::dyn_cast_or_null<llvm::ConstantFP>(val);
+            if (fp)
+            {
+                val = llvm::dyn_cast<llvm::Constant>(irgen->builder->CreateFPTrunc(val, tp));
+            }
+        }
+        
+        irgen->module->constants[irgen->block_hash].emplace_back(std::move(decl->type), std::move(decl->name), val);
+        return true;
+    }
     bool TopLevelVisitor::operator()(std::unique_ptr<ClassDeclaration> decl) const
     {
         std::string name = decl->name;

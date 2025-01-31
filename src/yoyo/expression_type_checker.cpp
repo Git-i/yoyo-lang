@@ -360,6 +360,10 @@ namespace Yoyo
             ty.block_hash = name_prefix;
             return { std::move(ty) };
         }
+        if (auto [name_pf, c] = irgen->module->findConst(irgen->module->module_hash, name); c)
+        {
+            return { std::get<0>(*c) };
+        }
         return { Error(expr, "Use of undeclared identifier '" + name + "'") };
     }
     void generic_replace(Type& type, const std::string& generic, const Type& other)
@@ -581,6 +585,10 @@ namespace Yoyo
             t.block_hash = hash;
             t.module = md;
             return { t };
+        }
+        if (auto [name, c] = md->findConst(hash, last.name); c)
+        {
+            return { std::get<0>(*c) };
         }
         return { Error(scp, "The name '" + last.name + "' does not exist in \"" + hash + "\"") };
     }

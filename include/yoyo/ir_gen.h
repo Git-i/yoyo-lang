@@ -119,6 +119,7 @@ namespace Yoyo
         void operator()(InterfaceDeclaration*);
         void operator()(BreakStatement*);
         void operator()(ContinueStatement*);
+        void operator()(ConstantDeclaration*) {};
         void operator()(CImportDeclaration*) {}
 
         void error(const Error& err);
@@ -146,6 +147,7 @@ namespace Yoyo
         bool operator()(std::unique_ptr<FunctionDeclaration>) const;
         bool operator()(std::unique_ptr<ClassDeclaration>) const;
         bool operator()(std::unique_ptr<OperatorOverload>);
+        bool operator()(std::unique_ptr<ConstantDeclaration>);
     };
     class ExpressionTypeChecker
     {
@@ -272,6 +274,23 @@ namespace Yoyo
         llvm::Value* operator()(AsExpression*);
         llvm::Value* operator()(CharLiteral*);
         llvm::Value* operator()(GCNewExpression*);
+    };
+    class ConstantEvaluator
+    {
+    public:
+        IRGenerator* irgen;
+        llvm::Constant* operator()(IntegerLiteral*);
+        llvm::Constant* operator()(BooleanLiteral*);
+        llvm::Constant* operator()(RealLiteral*);
+        llvm::Constant* operator()(PrefixOperation*);
+        llvm::Constant* operator()(NameExpression*);
+        llvm::Constant* operator()(BinaryOperation*);
+        llvm::Constant* operator()(GroupingExpression*);
+        llvm::Constant* operator()(LogicalOperation*);
+        llvm::Constant* operator()(ScopeOperation*);
+        //llvm::Constant* operator()(AsExpression*);
+        llvm::Constant* operator()(CharLiteral*);
+        llvm::Constant* operator()(Expression*) { return nullptr; }
     };
     //TODO: rename
     class LifetimeExceedsFunctionChecker

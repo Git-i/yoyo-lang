@@ -28,7 +28,8 @@ namespace Yoyo
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericInterfaceDeclaration>>> generic_interfaces;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericClassDeclaration>>> generic_classes;
         std::unordered_map<std::string, std::vector<std::unique_ptr<EnumDeclaration>>> enums;
-        std::unordered_map < std::string, std::pair<llvm::StructType*, std::unique_ptr<LambdaExpression>>> lambdas;
+        std::unordered_map<std::string, std::pair<llvm::StructType*, std::unique_ptr<LambdaExpression>>> lambdas;
+        std::unordered_map<std::string, std::vector<std::tuple<Type, std::string, llvm::Constant*>>> constants;
         std::unordered_map<std::string, Module*> modules;
         ModuleOverloadDetails overloads;
         Engine* engine;
@@ -42,6 +43,7 @@ namespace Yoyo
         std::pair<std::string, InterfaceDeclaration*> findInterface(const std::string& block, const std::string& name);
         std::pair<std::string, GenericInterfaceDeclaration*> findGenericInterface(const std::string& block, const std::string& name);
         std::pair<std::string, EnumDeclaration*> findEnum(const std::string& block, const std::string& name);
+        std::pair<std::string, std::tuple<Type, std::string, llvm::Constant*>*> findConst(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types);
         void dumpIR();
