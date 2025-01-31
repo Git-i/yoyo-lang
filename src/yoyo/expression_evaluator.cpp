@@ -1474,33 +1474,31 @@ namespace Yoyo
             //callee is a binary dot expr
             auto left_t = std::visit(ExpressionTypeChecker{irgen}, expr->lhs->toVariant());
             auto cls = left_t->deref().get_decl_if_class(irgen);
-            if(cls)
+            if(auto rhs = dynamic_cast<NameExpression*>(expr->rhs.get()))
             {
-                //handle member functions
-                if(auto rhs = dynamic_cast<NameExpression*>(expr->rhs.get()))
+                auto this_block = left_t->deref().full_name() + "::";
+                auto [block, fn] =
+                    left_t->deref().module->findFunction(this_block, rhs->text);
+                if (block == this_block && fn->sig.parameters[0].name == "this")
                 {
-                    std::string name(rhs->text);
-                    if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
-                        {
-                            return name == m.name;
-                        }); var != cls->methods.end())
-                    {
-                        auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                        auto found = left_t->deref().module->findType(left_t->deref().block_hash, cls->name);
-                        auto function_name  = std::get<0>(*found) + name;
-                        auto callee = irgen->code->getFunction(function_name);
-                        bool uses_sret = callee->hasStructRetAttr();
-                        std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret); // +1 because its bound
-                        llvm::Value* return_value = fillArgs(uses_sret, decl->signature, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
-                        auto call_val = irgen->builder->CreateCall(callee, args);
-                        if(!uses_sret) return_value = call_val;
-                        if(return_t->is_non_owning(irgen))
-                            stealUsages(args, return_value);
-                        else
-                            clearUsages(args, *this);
-                        return return_value;
-                    }
-                }
+                    std::string function_name = block + rhs->text;
+                    auto callee = irgen->code->getFunction(function_name);
+                    if (!callee)
+                        callee = declareFunction(function_name, irgen, fn->sig);
+                    bool uses_sret = callee->hasStructRetAttr();
+
+                    std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret); // +1 because its bound
+                    auto first = std::visit(*this, expr->lhs->toVariant());
+
+                    llvm::Value* return_value = fillArgs(uses_sret, fn->sig, args, first, op->arguments);
+                    auto call_val = irgen->builder->CreateCall(callee, args);
+                    if (!uses_sret) return_value = call_val;
+                    if (return_t->is_non_owning(irgen))
+                        stealUsages(args, return_value);
+                    else
+                        clearUsages(args, *this);
+                    return return_value;
+                } 
             }
             if (left_t->deref().is_view())
             {

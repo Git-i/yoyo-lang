@@ -57,6 +57,8 @@ namespace Yoyo
             Parser subparser(str);
             auto expr = subparser.parseExpression(0);
             if(subparser.failed()) parser.error("Failed to parse sub expression in string literal", std::nullopt);
+            expr->beg = SourceLocation{ tk.loc.line, tk.loc.column + pos + 1 };
+            expr->end = SourceLocation{ tk.loc.line, tk.loc.column + pos + expr->end.column};
             auto rbrace = subparser.Peek(); // has to be a '}'
             if(!rbrace) return nullptr;
             if(rbrace->type != TokenType::RCurly) parser.error("Expected '}", rbrace);

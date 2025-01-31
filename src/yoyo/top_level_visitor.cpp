@@ -25,8 +25,10 @@ namespace Yoyo
     {
         std::string name = decl->name;
         std::string mangled_name_prefix = name + "::";
-
+        
         auto ty = irgen->module->findType(irgen->block_hash, name);
+
+        if (!decl->methods.empty()) irgen->module->functions.at(std::get<0>(*ty)).clear();
 
         irgen->this_t = Type{.name = name, .subtypes = {}};
         irgen->this_t.saturate(irgen->module, irgen);

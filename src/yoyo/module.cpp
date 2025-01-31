@@ -250,7 +250,7 @@ namespace Yoyo
         }
         return nullptr;
     }
-
+    void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld);
     void makeBuiltinModule(Engine* eng)
     {
         if(eng->modules.contains("core")) return;
@@ -452,6 +452,37 @@ namespace Yoyo
         iterator->name = "Iterator";
         iterator->methods.emplace_back(std::make_unique<FunctionDeclaration>("next", std::move(sig), nullptr));
         module->generic_interfaces[module->module_hash].emplace_back(std::move(iterator));
+        addTrigFunctions(module, std::span{ types.begin(), types.begin() + 2 }, builder);
+    }
+    void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld)
+    {
+        auto& ctx = *md->code.getContext().getContext();
+        for (auto& type : types)
+        {
+            FunctionSignature sig;
+            sig.returnType = type;
+            sig.parameters.emplace_back(type, "this");
+            Module::FunctionDetails sdets{ .name = "sin", .sig = sig };
+            Module::FunctionDetails cdets{ .name = "cos", .sig = sig };
+            Module::FunctionDetails tdets{ .name = "tan", .sig = sig };
+            md->functions[type.name + "::"].emplace_back(std::move(sdets));
+            md->functions[type.name + "::"].emplace_back(std::move(cdets));
+            md->functions[type.name + "::"].emplace_back(std::move(tdets));
+
+            auto as_llvm = md->ToLLVMType(type, "", {});
+            auto f_ty = llvm::FunctionType::get(as_llvm, { as_llvm }, false);
+            auto sin_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "sin", md->code.getModuleUnlocked());
+            bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", sin_func));
+            bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::sin, { sin_func->getArg(0) }));
+
+            auto cos_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "cos", md->code.getModuleUnlocked());
+            bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", cos_func));
+            bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::cos, { cos_func->getArg(0) }));
+
+            auto tan_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "tan", md->code.getModuleUnlocked());
+            bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", tan_func));
+            bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::tan, { tan_func->getArg(0) }));
+        }
     }
     void Module::dumpIR()
     {

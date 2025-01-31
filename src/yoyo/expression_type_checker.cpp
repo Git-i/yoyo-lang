@@ -197,23 +197,23 @@ namespace Yoyo
                     t.is_lvalue = lhs.is_reference() ? true : lhs.is_lvalue;
                     return t;
                 }
-                if(auto var = std::ranges::find_if(cls->methods, [&name](ClassMethod& m)
-                {
-                    return name == m.name;
-                }); var != cls->methods.end())
-                {
-                    auto decl = reinterpret_cast<FunctionDeclaration*>(var->function_decl.get());
-                    if(decl->signature.parameters[0].name != "this")
-                        return std::nullopt;
-                    return FunctionType{decl->signature, true};
-                }
             }
         }
+        //look for subtype methods what begin with `this`
+        auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get());
+        if (name_expr)
+        {
+            auto this_block = lhs.deref().full_name() + "::";
+            if (auto [block, fn] = lhs.deref().module->findFunction(this_block, name_expr->text); fn)
+                if (block == this_block && !fn->sig.parameters.empty())
+                    if (fn->sig.parameters[0].name == "this") return FunctionType{ fn->sig, true };
+        }
+
         if (lhs.deref().is_view())
         {
             auto& viewed = lhs.deref().subtypes[0];
             auto [hsh, interface] = viewed.module->findInterface(viewed.block_hash, viewed.name);
-            if (auto* name_expr = dynamic_cast<NameExpression*>(expr->rhs.get()); name_expr && interface)
+            if (name_expr && interface)
             {
                 auto it = std::ranges::find_if(interface->methods, [name_expr](auto& mth) {
                     return mth->name == name_expr->text;
@@ -455,6 +455,11 @@ namespace Yoyo
     // but on subsequent attemps we can't check the engine and the hashes have to be exact
     bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool first)
     {
+        if (first && type.is_integral() || type.is_floating_point()) {
+            md = md->engine->modules.at("core").get();
+            hash = type.name + "::";
+            return true;
+        }
         if (first && md->engine->modules.contains(type.name))
         {
             md = md->engine->modules.at(type.name).get();
@@ -708,6 +713,7 @@ namespace Yoyo
         if(t.is_optional()) return hasToStr(t.subtypes[0]);
         if(t.is_char()) return true;
         if (t.is_str()) return true;
+        if (t.is_error_ty()) return true;
         return false;
     }
 
