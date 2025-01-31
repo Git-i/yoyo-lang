@@ -42,7 +42,16 @@ namespace Yoyo
         auto mul_isn = is_float ? FMul : Mul;
         auto div_isn = is_float ? FDiv : type->is_unsigned_integral() ? UDiv : SDiv;
         auto rem_isn = is_float ? FRem : type->is_unsigned_integral() ? URem : SRem;
-
+        auto as_float = [this] (llvm::Constant* in, llvm::Type* tp) {
+            if (llvm::isa<llvm::ConstantFP>(in)) return llvm::dyn_cast<llvm::Constant>(irgen->builder->CreateFPExt(in, tp));
+            return llvm::dyn_cast<llvm::Constant>(irgen->builder->CreateUIToFP(in, tp));
+            };
+        if (is_float)
+        {
+            auto as_llvm = irgen->ToLLVMType(*type, false);
+            left = as_float(left, as_llvm);
+            right = as_float(right, as_llvm);
+        }
         switch (bop->op.type)
         {
             using enum TokenType;
