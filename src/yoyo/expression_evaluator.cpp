@@ -1720,6 +1720,7 @@ namespace Yoyo
         auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
         auto final_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
         if (!final_ty) { irgen->error(final_ty.error()); return nullptr; }
+        if (!ty) { irgen->error(ty.error()); return nullptr; }
         auto as_llvm = irgen->ToLLVMType(*final_ty, false);
         auto internal_as_llvm = irgen->ToLLVMType(*ty, true);
         auto internal = std::visit(*this, expr->expr->toVariant());
@@ -1748,6 +1749,10 @@ namespace Yoyo
                 val->setName(name);
             }
             return val;
+        }
+        if (final_ty->is_assignable_from(*ty, irgen))
+        {
+            return implicitConvert(expr->expr.get(), internal, *ty, *final_ty);
         }
         if (final_ty->is_view())
         {

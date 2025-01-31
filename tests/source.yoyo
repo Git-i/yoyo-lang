@@ -14,7 +14,10 @@ main: fn = {
     get_ss(10).print();
     pi: f32 = 3.141592653589793115997963468544185161590576171875;
     thirty_deg := pi / 6;
-    sixty_deg := thirty_deg * 2;
-    "${thirty_deg.sin()}".test::print();
-    "${f32::cos(sixty_deg)}".test::print();
+    sixty_deg := (pi as f64) / 3;
+
+    sin_32 := f32::sin(thirty_deg);
+    cos_60 := f64::cos(sixty_deg);
+    "${sin_32}".test::print();
+    "${cos_60}".test::print();
 }

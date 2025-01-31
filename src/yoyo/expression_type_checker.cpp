@@ -655,6 +655,11 @@ namespace Yoyo
                 return { Error(expr, "Cannot perform interface cast as class does not implement interface") };
             }
         }
+        //explicit implicit conversion
+        if (expr->dest.is_assignable_from(from, irgen))
+        {
+            return { expr->dest };
+        }
         if (from.is_error_ty()) return { from };
         return { Error(expr, "The as operator is undefined for type tp") };
     }
