@@ -12,4 +12,7 @@ get_ss: fn (val: f32) -> SmallStruct = c_import!("get_small_struct");
 main: fn = {
     print_bs(&get_bs(10));
     print_ss(&get_ss(10));
+    a := 400;
+    b := 36;
+    print_ss(&SmallStruct{.a, .b});
 }

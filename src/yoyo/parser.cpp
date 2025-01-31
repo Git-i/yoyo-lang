@@ -787,8 +787,19 @@ namespace Yoyo
             std::string name(iden->text);
             if(result.contains(name)) error("Duplicate initialization of " + name, iden);
             Get(); //get the identifier
-            if(!discard(TokenType::Equal)) error("Expected '='", Peek());
-            result[name] = parseExpression(0);
+            //if not equal default to a name expression i.e Object{.y = 10, .x, .z};
+            if (!discard(TokenType::Equal))
+            {
+                auto nexpr = std::make_unique<NameExpression>(name);
+                nexpr->beg = iden->loc;
+                nexpr->parent = parent;
+                nexpr->end = SourceLocation{ iden->loc.line, iden->loc.column + iden->text.size() };
+                result[name] = std::move(nexpr);
+            }
+            else
+            {
+                result[name] = parseExpression(0);
+            }
             //must be a comma or '}' and trailing commas are allowed
             if(!discard(TokenType::Comma))
             {
