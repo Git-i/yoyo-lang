@@ -5,7 +5,7 @@
 #include <statement.h>
 #include <llvm/IR/IRBuilder.h>
 #include <ranges>
-
+#include <numbers>
 #include "engine.h"
 namespace Yoyo
 {
@@ -260,6 +260,7 @@ namespace Yoyo
         return nullptr;
     }
     void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld);
+    void addFloatConsts(Module* md, std::span<Type> types);
     void makeBuiltinModule(Engine* eng)
     {
         if(eng->modules.contains("core")) return;
@@ -462,6 +463,25 @@ namespace Yoyo
         iterator->methods.emplace_back(std::make_unique<FunctionDeclaration>("next", std::move(sig), nullptr));
         module->generic_interfaces[module->module_hash].emplace_back(std::move(iterator));
         addTrigFunctions(module, std::span{ types.begin(), types.begin() + 2 }, builder);
+        addFloatConsts(module, std::span{ types.begin(), types.begin() + 2 });
+    }
+    void addFloatConsts(Module* md, std::span<Type> types)
+    {
+        auto& ctx = *md->code.getContext().getContext();
+        for (auto& type : types)
+        {
+            auto as_llvm = md->ToLLVMType(type, "", {});
+            md->constants[type.name + "::"].emplace_back(type, "QNAN", llvm::ConstantFP::getQNaN(as_llvm));
+            md->constants[type.name + "::"].emplace_back(type, "SNAN", llvm::ConstantFP::getSNaN(as_llvm));
+  md->constants[type.name + "::"].emplace_back(type, "PI", llvm::ConstantFP::get(as_llvm, std::numbers::pi));
+            md->constants[type.name + "::"].emplace_back(type, "INV_PI", llvm::ConstantFP::get(as_llvm, std::numbers::inv_pi));
+            md->constants[type.name + "::"].emplace_back(type, "E", llvm::ConstantFP::get(as_llvm, std::numbers::e));
+            md->constants[type.name + "::"].emplace_back(type, "LN2", llvm::ConstantFP::get(as_llvm, std::numbers::ln2));
+            md->constants[type.name + "::"].emplace_back(type, "LN10", llvm::ConstantFP::get(as_llvm, std::numbers::ln10));
+            md->constants[type.name + "::"].emplace_back(type, "SQRT2", llvm::ConstantFP::get(as_llvm, std::numbers::sqrt2));
+            md->constants[type.name + "::"].emplace_back(type, "SQRT3", llvm::ConstantFP::get(as_llvm, std::numbers::sqrt3));
+
+        }
     }
     void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld)
     {

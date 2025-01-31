@@ -1,7 +1,5 @@
-
-PI: const f32 = 3.141592653589793115997963468544185161590576171875;
-THIRTY: const f32 = PI / 6;
-SIXTY: const f32 = PI / 3;
+THIRTY: const f32 = f32::PI / 6;
+SIXTY: const f32 = f32::PI / 3;
 main: fn = {
     sin_32 := f32::sin(THIRTY);
     cos_60 := SIXTY.cos();
