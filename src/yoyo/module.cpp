@@ -473,7 +473,7 @@ namespace Yoyo
             auto as_llvm = md->ToLLVMType(type, "", {});
             md->constants[type.name + "::"].emplace_back(type, "QNAN", llvm::ConstantFP::getQNaN(as_llvm));
             md->constants[type.name + "::"].emplace_back(type, "SNAN", llvm::ConstantFP::getSNaN(as_llvm));
-  md->constants[type.name + "::"].emplace_back(type, "PI", llvm::ConstantFP::get(as_llvm, std::numbers::pi));
+            md->constants[type.name + "::"].emplace_back(type, "PI", llvm::ConstantFP::get(as_llvm, std::numbers::pi));
             md->constants[type.name + "::"].emplace_back(type, "INV_PI", llvm::ConstantFP::get(as_llvm, std::numbers::inv_pi));
             md->constants[type.name + "::"].emplace_back(type, "E", llvm::ConstantFP::get(as_llvm, std::numbers::e));
             md->constants[type.name + "::"].emplace_back(type, "LN2", llvm::ConstantFP::get(as_llvm, std::numbers::ln2));
@@ -496,7 +496,7 @@ namespace Yoyo
             Module::FunctionDetails tdets{ .name = "tan", .sig = sig };
             md->functions[type.name + "::"].emplace_back(std::move(sdets));
             md->functions[type.name + "::"].emplace_back(std::move(cdets));
-            md->functions[type.name + "::"].emplace_back(std::move(tdets));
+            //md->functions[type.name + "::"].emplace_back(std::move(tdets));
 
             auto as_llvm = md->ToLLVMType(type, "", {});
             auto f_ty = llvm::FunctionType::get(as_llvm, { as_llvm }, false);
@@ -507,10 +507,10 @@ namespace Yoyo
             auto cos_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "cos", md->code.getModuleUnlocked());
             bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", cos_func));
             bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::cos, { cos_func->getArg(0) }));
-
-            auto tan_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "tan", md->code.getModuleUnlocked());
-            bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", tan_func));
-            bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::tan, { tan_func->getArg(0) }));
+            
+            //auto tan_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "tan", md->code.getModuleUnlocked());
+            //bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", tan_func));
+            //bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::tan, { tan_func->getArg(0) }));
         }
     }
     void Module::dumpIR()

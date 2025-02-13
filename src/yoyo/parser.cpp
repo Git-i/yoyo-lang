@@ -131,11 +131,11 @@ namespace Yoyo
         case TokenType::Interface: decl = parseInterfaceDeclaration(iden.value()); break;
         case TokenType::Const: decl = parseConstDeclaration(iden.value()); break;
         case TokenType::EnumFlag: break;//TODO
-        case TokenType::Union: break;//TODO
+        case TokenType::Union: parseUnionDeclaration(iden.value());//TODO
         case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
         case TokenType::Module: decl = parseModuleImport(iden.value()); break;
 
-        default: return parseVariableDeclaration(iden.value());
+        default: error("Expected 'fn', 'enum', 'const', 'alias', 'module', 'interface' or 'union'", iden);
         }
         decl->attributes = std::move(attrs);
         return decl;
@@ -163,6 +163,46 @@ namespace Yoyo
         }
         return statements;
     }
+    bool Parser::isVarDeclaration()
+    {
+        auto tk = Peek();
+        if (!tk) return false;
+        if (tk->type == TokenType::Identifier)
+        {
+            auto [tok, loc] = *GetWithEndLocation();
+            if (Peek() && Peek()->type == TokenType::Colon)
+            {
+                auto [col, col_loc] = *GetWithEndLocation();
+                if (Peek())
+                {
+                    switch (Peek()->type)
+                    {
+                    case TokenType::Fn: [[fallthrough]];
+                    case TokenType::Class: [[fallthrough]];
+                    case TokenType::Struct: [[fallthrough]];
+                    case TokenType::Enum: [[fallthrough]];
+                    case TokenType::Union: [[fallthrough]];
+                    case TokenType::Interface: {
+                        pushToken(col, col_loc);
+                        pushToken(tok, loc);
+                        return false;
+                    };
+                    default: {
+                        pushToken(col, col_loc);
+                        pushToken(tok, loc);
+                        return true;
+                    };
+                    }
+                }
+                pushToken(col, col_loc);
+                pushToken(tok, loc);
+                return true;
+            }
+            pushToken(tok, loc);
+            return false;
+        }
+        return false;
+    }
     bool Parser::isTopLevelDeclaration()
     {
         auto tk = Peek();
@@ -173,8 +213,31 @@ namespace Yoyo
             auto [tok, loc] = *GetWithEndLocation();
             if(Peek() && Peek()->type == TokenType::Colon)
             {
+                auto [col, col_loc] = *GetWithEndLocation();
+                if (Peek())
+                {
+                    switch (Peek()->type)
+                    {
+                    case TokenType::Fn: [[fallthrough]];
+                    case TokenType::Class: [[fallthrough]];
+                    case TokenType::Struct: [[fallthrough]];
+                    case TokenType::Enum: [[fallthrough]];
+                    case TokenType::Union: [[fallthrough]];
+                    case TokenType::Interface: {
+                        pushToken(col, col_loc);
+                        pushToken(tok, loc);
+                        return true;
+                    };
+                    default: {
+                        pushToken(col, col_loc);
+                        pushToken(tok, loc);
+                        return false;
+                    };
+                    }
+                }
+                pushToken(col, col_loc);
                 pushToken(tok, loc);
-                return true;
+                return false;
             }
             pushToken(tok, loc);
             return false;
@@ -291,6 +354,37 @@ namespace Yoyo
             intf->methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(decl.release()));
         }
         return Statement::attachSLAndParent(std::move(intf), identifier.loc, discardLocation, parent);
+    }
+    std::unique_ptr<Statement> Parser::parseUnionDeclaration(Token identifier)
+    {
+        if (!discard(TokenType::Union)) error("Expected 'union'", Peek());
+        if (!discard(TokenType::Equal)) error("Expected '='", Peek());
+        if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
+        std::unordered_map<std::string, Type> fields;
+        std::vector<std::unique_ptr<Statement>> stat;
+        while (!discard(TokenType::RCurly))
+        {
+            if (isTopLevelDeclaration())
+            {
+                stat.push_back(parseTopLevelDeclaration());
+                std::ignore = discard(TokenType::Comma); //optional ',' after declaration
+            }
+            else
+            {
+                auto iden = Get();
+                if (!iden) return nullptr;
+                if (iden->type != TokenType::Identifier) error("Expected identifier", Peek());
+                if (!discard(TokenType::Colon)) error("Expected ':'", Peek());
+                auto as_str = std::string{ iden->text };
+                if (fields.contains(as_str)) error("Name with field already exists", Peek());
+                fields[as_str] = parseType(0).value_or(Type{});
+                if (!discard(TokenType::Comma)) {
+                    if (!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());
+                    else break;
+                }
+            }
+        }
+        return std::make_unique<UnionDeclaration>(std::move(fields), std::move(stat));
     }
     Attribute parseAttribute(Parser& p)
     {
@@ -826,6 +920,10 @@ namespace Yoyo
         if(isTopLevelDeclaration())
         {
             return parseTopLevelDeclaration();
+        }
+        else if (isVarDeclaration())
+        {
+            return parseVariableDeclaration(*Get());
         }
         return parseStatement();
     }

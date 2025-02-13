@@ -104,4 +104,8 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant UnionDeclaration::toVariant()
+    {
+        return this
+    }
 }

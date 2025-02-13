@@ -36,6 +36,7 @@ namespace Yoyo
     class ContinueStatement;
     class CImportDeclaration;
     class ConstantDeclaration;
+    class UnionDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -60,7 +61,8 @@ namespace Yoyo
         BreakStatement*,
         ContinueStatement*,
         CImportDeclaration*,
-        ConstantDeclaration*> StatementVariant;
+        ConstantDeclaration*,
+        UnionDeclaration*> StatementVariant;
     enum class Ownership;
     struct Attribute {
         std::string name;
@@ -164,6 +166,15 @@ namespace Yoyo
         std::unique_ptr<Statement> body;
         OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body)
             : signature(std::move(sig)), tok(ident), body(std::move(body)) {}
+        StatementVariant toVariant() override;
+    };
+    class UnionDeclaration : public Statement
+    {
+    public:
+        std::unordered_map<std::string, Type> fields;
+        std::vector<std::unique_ptr<Statement>> sub_stats;
+        UnionDeclaration(std::unordered_map<std::string, Type> f, std::vector<std::unique_ptr<Statement>> s)
+            : fields(std::move(f)), sub_stats(std::move(s)) {}
         StatementVariant toVariant() override;
     };
     class ReturnStatement : public Statement

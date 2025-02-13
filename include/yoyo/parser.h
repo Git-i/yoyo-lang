@@ -21,6 +21,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseClassDeclaration(Token identifier, bool);
         std::unique_ptr<Statement> parseAliasDeclaration(Token identifier);
         std::unique_ptr<Statement> parseInterfaceDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseUnionDeclaration(Token identifier);
         std::unordered_map<std::string, std::unique_ptr<Expression>> parseObjectLiteral();
         std::unique_ptr<Statement> parseDeclaration();
         std::unique_ptr<Statement> parseReturnStatement(Token);
@@ -62,6 +63,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseTopLevelDeclaration();
         std::unique_ptr<Statement> parseOperatorOverload(const Token& tok);
         bool isTopLevelDeclaration();
+        bool isVarDeclaration();
         PrefixParselet* GetPrefixParselet(TokenType t);
         InfixParselet* GetInfixParselet(TokenType t);
         std::string& source;
