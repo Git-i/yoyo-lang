@@ -259,7 +259,21 @@ namespace Yoyo
         as_function.is_bound = true;
         return as_function;
     }
-
+    ExpressionTypeChecker::Result checkUnionVar(CallOperation* op, Type callee_ty, IRGenerator* irg) {
+        using namespace std::string_view_literals;
+        size_t dollar_off = callee_ty.name.find_first_of('$');
+        std::string variant = std::string(callee_ty.name.begin() + dollar_off + 1, callee_ty.name.end());
+        std::string type_name = std::string(callee_ty.name.begin() + "__union_var"sv.size(), callee_ty.name.begin() + dollar_off);
+        callee_ty.name = type_name;
+        auto decl = callee_ty.get_decl_if_union();
+        if (!decl) return { Error(op, "Not union") };
+        if (op->arguments.size() != 1) return { Error(op, "Union initializer must have one argument") };
+        auto arg_ty = std::visit(ExpressionTypeChecker{irg, decl->fields.at(variant)}, op->arguments[0]->toVariant()).value_or_error();
+        if(!decl->fields.at(variant).is_assignable_from(arg_ty, irg)) {
+            return { Error(op, "Union field cannot be initialized with provided type") };
+        }
+        return { std::move(callee_ty) };
+    }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(BinaryOperation* expr)
     {
         auto lhs = std::visit(*this, expr->lhs->toVariant()).value_or_error();
@@ -517,6 +531,11 @@ namespace Yoyo
             }
             return false;
         }
+        if (auto [hsh, unn] = md->findUnion(hash, type.name); unn)
+        {
+            hash = hsh + type.name + "::";
+            return true;
+        }
         if (auto [hsh, enm] = md->findEnum(hash, type.name); enm)
         {
             hash = hsh + type.name;
@@ -578,6 +597,14 @@ namespace Yoyo
             if (enm->values.contains(last.name)) return { Type{.name = second_to_last, .module = md, .block_hash = actual_hash } };
             return { Error(scp, "Enum doesn't contain specified value") };
         }
+        if (auto [actual_hash, unn] = md->findUnion(hash, second_to_last); unn)
+        {
+            if (!last.subtypes.empty()) return { Error(scp, "Union child cannot have subtypes") };
+            if (unn->fields.contains(last.name)) return { 
+                Type{.name = "__union_var" + unn->name + "$" + last.name, .module = md, .block_hash = actual_hash}
+            };
+            return { Error(scp, "Union doesn't contain specified value") };
+        }
         if (auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
             irgen->saturateSignature(fn->sig, md);
@@ -627,6 +654,16 @@ namespace Yoyo
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(AsExpression* expr)
     {
         auto from = std::visit(*this, expr->expr->toVariant()).value_or_error();
+        if (auto decl = from.get_decl_if_union())
+        {
+            if (!expr->dest.subtypes.empty()) return { Error(expr, "'as' expressions for unions must use only the variant name") };
+            if (!expr->dest.block_hash.empty()) return { Error(expr, "'as' expressions for unions must use only the variant name") };
+            if (!decl->fields.contains(expr->dest.name)) return { Error(expr, "Specified field does not exist in the union") };
+            return { Type{
+                "__conv_result_ref", { decl->fields.at(expr->dest.name) }, nullptr,
+                irgen->module->engine->modules.at("core").get(),from.is_mutable,from.is_lvalue
+            } };
+        }
         expr->dest.saturate(irgen->module, irgen);
         if(from.is_variant())
         {
@@ -933,6 +970,9 @@ namespace Yoyo
         if(!op->callee) return { Error(op, "Could not deduce generic args") };
         auto callee_ty = std::visit(*this, op->callee->toVariant()).value_or_error();
         if (callee_ty.is_error_ty()) return { std::move(callee_ty) };
+
+        if (callee_ty.name.starts_with("__union_var")) return checkUnionVar(op, std::move(callee_ty), irgen);
+
         if (!callee_ty.is_function() && !callee_ty.is_lambda() && !callee_ty.name.starts_with("__generic_fn"))
             return { Error(op->callee.get(), "Attempt to call non-function expression")};
         auto& as_fn = reinterpret_cast<FunctionType&>(callee_ty);

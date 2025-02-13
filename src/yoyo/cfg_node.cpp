@@ -24,6 +24,7 @@ namespace Yoyo
         void operator()(FunctionDeclaration* stat) const {}
         void operator()(InterfaceDeclaration* stat) const {}
         void operator()(ConstantDeclaration* stat) const {}
+        void operator()(UnionDeclaration* stat) const {}
         void operator()(IfStatement* stat)
         {
             node->statements.push_back(stat);

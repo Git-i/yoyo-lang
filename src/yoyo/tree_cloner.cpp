@@ -298,6 +298,14 @@ namespace Yoyo
         final->clause = stat->clause;
         return final;
     }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(UnionDeclaration* decl)
+    {
+        std::vector<std::unique_ptr<Statement>> stats;
+        for (auto& stat : decl->sub_stats) {
+            stats.push_back(copy_stat(stat));
+        }
+        return std::make_unique<UnionDeclaration>(decl->name, decl->fields, std::move(stats));
+    }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericClassDeclaration* decl)
     {
         std::vector<ClassMethod> new_methods;

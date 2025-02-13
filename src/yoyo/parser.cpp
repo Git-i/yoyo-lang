@@ -131,7 +131,7 @@ namespace Yoyo
         case TokenType::Interface: decl = parseInterfaceDeclaration(iden.value()); break;
         case TokenType::Const: decl = parseConstDeclaration(iden.value()); break;
         case TokenType::EnumFlag: break;//TODO
-        case TokenType::Union: parseUnionDeclaration(iden.value());//TODO
+        case TokenType::Union: decl = parseUnionDeclaration(iden.value()); break;
         case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
         case TokenType::Module: decl = parseModuleImport(iden.value()); break;
 
@@ -355,7 +355,7 @@ namespace Yoyo
         }
         return Statement::attachSLAndParent(std::move(intf), identifier.loc, discardLocation, parent);
     }
-    std::unique_ptr<Statement> Parser::parseUnionDeclaration(Token identifier)
+    std::unique_ptr<Statement> Parser::parseUnionDeclaration(Token iden)
     {
         if (!discard(TokenType::Union)) error("Expected 'union'", Peek());
         if (!discard(TokenType::Equal)) error("Expected '='", Peek());
@@ -384,7 +384,10 @@ namespace Yoyo
                 }
             }
         }
-        return std::make_unique<UnionDeclaration>(std::move(fields), std::move(stat));
+        return Statement::attachSLAndParent(
+            std::make_unique<UnionDeclaration>(std::string(iden.text), std::move(fields), std::move(stat)),
+            iden.loc, discardLocation, parent
+        );
     }
     Attribute parseAttribute(Parser& p)
     {
@@ -923,7 +926,8 @@ namespace Yoyo
         }
         else if (isVarDeclaration())
         {
-            return parseVariableDeclaration(*Get());
+            auto iden = *Get(); std::ignore = Get(); //the ':'
+            return parseVariableDeclaration(iden);
         }
         return parseStatement();
     }

@@ -207,6 +207,11 @@ namespace Yoyo
     {
         auto callee_ty = std::visit(ExpressionTypeChecker{irgen}, expr->callee->toVariant());
         std::vector<std::pair<Expression*, borrow_result_t>> borrows;
+        if (callee_ty->name.starts_with("__union_var"))
+        {
+            //TODO
+            return {};
+        }
         bool is_bound = callee_ty->is_bound;
         //bound functions borrow the first arg too!
         if(is_bound)

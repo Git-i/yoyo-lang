@@ -490,6 +490,45 @@ namespace Yoyo
         __debugbreak();
     }
     bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface);
+    void IRGenerator::operator()(UnionDeclaration* decl)
+    {
+        std::string name = decl->name;
+        if (isShadowing(name))
+        {
+            error(Error(decl, "The name '" + name + "' is already defined"));
+            return;
+        }
+        auto ptr = current_Statement->release();
+        assert(ptr = decl);
+        std::string unn_hash = block_hash + name + "::";
+        auto curr_hash = reset_hash();
+        block_hash = unn_hash;
+        for (auto& var : decl->fields | std::views::values) var.saturate(module, this);
+        size_t biggest_size = 0;
+        auto& layout = code->getDataLayout();
+        for (auto& var : decl->fields | std::views::values) {
+            auto as_llvm = ToLLVMType(var, false);
+            size_t this_size = layout.getTypeAllocSize(as_llvm);
+            biggest_size = this_size > biggest_size ? this_size : biggest_size;
+        }
+        auto llvm_t = llvm::StructType::get(context, { 
+            llvm::ArrayType::get(llvm::Type::getInt8Ty(context), biggest_size),
+            llvm::Type::getInt32Ty(context)
+        });
+        module->unions[curr_hash].emplace_back(std::unique_ptr<UnionDeclaration>{decl}, llvm_t);
+        auto old_in_class = in_class;
+        in_class = true;
+        auto old_this = std::move(this_t);
+        this_t = Type{ .name = name, .subtypes = {} };
+        this_t.saturate(module, this);
+        for (auto& stat : decl->sub_stats) {
+            current_Statement = &stat;
+            std::visit(*this, stat->toVariant());
+        }
+        block_hash.swap(curr_hash);
+        in_class = old_in_class;
+        this_t = std::move(old_this);
+    };
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
         std::string name = decl->name;
@@ -756,7 +795,7 @@ namespace Yoyo
     void IRGenerator::operator()(ConditionalExtraction* stat)
     {
         auto tp_e = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
-        auto expression = std::visit(ExpressionEvaluator{this}, stat->condition->toVariant());
+        auto expression = std::visit(ExpressionEvaluator{ this }, stat->condition->toVariant());
         auto tp = tp_e.value_or_error();
         if(!tp.is_optional() && !tp.is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
         if (!stat->else_capture.empty()) { debugbreak(); return; }
@@ -795,11 +834,11 @@ namespace Yoyo
         auto ptr = builder->CreateStructGEP(llvm_t, expression, 0, stat->captured_name);
         if(!tp.is_value_conversion_result())
         {
-            if(tp.is_ref_conversion_result())
-                ptr = builder->CreateLoad(llvm::PointerType::get(context, 0), ptr);
             //if it's not a `ref` we clone the value
             if(!stat->is_ref)
             {
+                if (tp.is_ref_conversion_result())
+                    ptr = builder->CreateLoad(llvm::PointerType::get(context, 0), ptr);
                 llvm::Value* into = nullptr;
                 if(!tp.subtypes[0].should_sret())
                 {
@@ -1128,7 +1167,8 @@ namespace Yoyo
                 std::unique_ptr<ClassDeclaration>,
                 std::unique_ptr<FunctionDeclaration>,
                 std::unique_ptr<OperatorOverload>,
-                std::unique_ptr<ConstantDeclaration>> vnt;
+                std::unique_ptr<ConstantDeclaration>,
+                std::unique_ptr<UnionDeclaration>> vnt;
             if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get()))
             {
                 std::ignore = stat.release();
@@ -1148,6 +1188,11 @@ namespace Yoyo
             {
                 std::ignore = stat.release();
                 vnt = std::unique_ptr<ConstantDeclaration>(ovl_ptr);
+            }
+            else if (auto unn_ptr = dynamic_cast<UnionDeclaration*>(stat.get()))
+            {
+                std::ignore = stat.release();
+                vnt = std::unique_ptr<UnionDeclaration>(unn_ptr);
             }
             else continue;
             std::visit(TopLevelVisitor{this}, std::move(vnt));

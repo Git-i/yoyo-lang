@@ -121,6 +121,7 @@ namespace Yoyo
         void operator()(ContinueStatement*);
         void operator()(ConstantDeclaration*) {};
         void operator()(CImportDeclaration*) {}
+        void operator()(UnionDeclaration*) ;
 
         void error(const Error& err);
         std::string reset_hash();
@@ -148,6 +149,7 @@ namespace Yoyo
         bool operator()(std::unique_ptr<ClassDeclaration>) const;
         bool operator()(std::unique_ptr<OperatorOverload>);
         bool operator()(std::unique_ptr<ConstantDeclaration>);
+        bool operator()(std::unique_ptr<UnionDeclaration>);
     };
     class ExpressionTypeChecker
     {
@@ -236,6 +238,7 @@ namespace Yoyo
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);
+        llvm::Value* doUnionVar(CallOperation* op, Type&);
         void generateGenericFunction(Module*, const std::string&,GenericFunctionDeclaration*, std::span<Type>);
         void generateGenericAlias(Module*, const std::string&,GenericAliasDeclaration*, std::span<Type>);
         void generateGenericInterface(Module*, const std::string&, GenericInterfaceDeclaration*, std::span<Type>);

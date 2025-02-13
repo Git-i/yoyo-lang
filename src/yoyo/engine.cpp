@@ -90,6 +90,10 @@ namespace Yoyo
             md->generic_interfaces[md->module_hash].emplace_back(decl);
             return true;
         }
+        bool operator()(UnionDeclaration* decl)
+        {
+            return true;
+        }
         bool operator()(Statement*) const {return false;};
     };
     struct ForwardDeclaratorPass2

@@ -78,6 +78,26 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
+    std::pair<std::string, UnionDeclaration*> Module::findUnion(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, unn_list] : unions)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& unn : unn_list)
+                if (unn.first->name == name) return { hash, unn.first.get() };
+        }
+        return { "", nullptr };
+    }
+    std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*> Module::findUnionWithType(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, unn_list] : unions)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& unn : unn_list)
+                if (unn.first->name == name) return { hash, &unn };
+        }
+        return { "", nullptr };
+    }
     std::pair<std::string, GenericInterfaceDeclaration*> Module::findGenericInterface(const std::string& block, const std::string& name)
     {
         for (auto& [hash, interface_list] : generic_interfaces)
@@ -138,6 +158,7 @@ namespace Yoyo
         if (auto [hash, _] = findGenericFn(block, name); _) return hash;
         if (auto [hash, _] = findGenericClass(block, name); _) return hash;
         if (auto [hash, _] = findEnum(block, name); _) return hash;
+        if (auto [hash, _] = findUnion(block, name); _) return hash;
         if (modules.contains(name)) return modules.at(name)->module_hash;
         return std::nullopt;
     }
@@ -212,6 +233,10 @@ namespace Yoyo
         if(type.get_decl_if_enum())
         {
             return llvm::Type::getInt32Ty(context);
+        }
+        if (auto [blk, unn] = findUnionWithType(type.block_hash, type.name); unn)
+        {
+            return unn->second;
         }
         if(type.is_ref_conversion_result())
         {

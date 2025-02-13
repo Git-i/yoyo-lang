@@ -106,6 +106,6 @@ namespace Yoyo
     }
     StatementVariant UnionDeclaration::toVariant()
     {
-        return this
+        return this;
     }
 }

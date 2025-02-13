@@ -592,6 +592,12 @@ namespace Yoyo
         auto [hsh, enm] = module->findEnum(block_hash, name);
         return enm;
     }
+    UnionDeclaration* Type::get_decl_if_union() const
+    {
+        if (!module) return nullptr;
+        auto [hsh, unn] = module->findUnion(block_hash, name);
+        return unn;
+    }
     bool Type::should_sret() const
     {
         return !is_primitive() && (get_decl_if_enum() == nullptr) && !is_reference() && !is_char();

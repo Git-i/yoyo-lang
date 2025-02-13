@@ -8,6 +8,13 @@ namespace Yoyo
         (*irgen)(reinterpret_cast<FunctionDeclaration*>(stat.get()));
         return true;
     }
+    bool TopLevelVisitor::operator()(std::unique_ptr<UnionDeclaration> decl)
+    {
+        std::unique_ptr<Statement> stat = std::move(decl);
+        irgen->current_Statement = &stat;
+        (*irgen)(reinterpret_cast<UnionDeclaration*>(stat.get()));
+        return true;
+    }
     bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface)
     {
         if (cls.parameters.size() != interface.parameters.size()) return false;

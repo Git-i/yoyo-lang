@@ -59,6 +59,7 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(ContinueStatement*);
         std::unique_ptr<Statement> operator()(CImportDeclaration*);
         std::unique_ptr<Statement> operator()(ConstantDeclaration*);
+        std::unique_ptr<Statement> operator()(UnionDeclaration* decl);
 
         static std::unique_ptr<Statement> copy_stat(Statement*);
         static std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&);

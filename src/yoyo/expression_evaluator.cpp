@@ -938,7 +938,23 @@ namespace Yoyo
                 irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq)));
         }
     }
-
+    llvm::Value* ExpressionEvaluator::doUnionVar(CallOperation* op, Type& t)
+    {
+        using namespace std::string_view_literals;
+        size_t dollar_off = t.name.find_first_of('$');
+        std::string variant = std::string(t.name.begin() + dollar_off + 1, t.name.end());
+        std::string type_name = std::string(t.name.begin() + "__union_var"sv.size(), t.name.begin() + dollar_off);
+        t.name = type_name;
+        auto as_llvm = irgen->ToLLVMType(t, false);
+        auto ret = irgen->Alloca("union_obj", as_llvm);
+        auto decl = t.get_decl_if_union();
+        auto arg = std::visit(ExpressionEvaluator{ irgen, decl->fields.at(variant) }, op->arguments[0]->toVariant());
+        auto arg_ty = std::visit(ExpressionTypeChecker{ irgen, decl->fields.at(variant) }, op->arguments[0]->toVariant()).value_or_error();
+        implicitConvert(op->arguments[0].get(), arg, arg_ty, decl->fields.at(variant), irgen->builder->CreateStructGEP(as_llvm, ret, 0));
+        irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context),
+            std::distance(decl->fields.begin(), decl->fields.find(variant))), irgen->builder->CreateStructGEP(as_llvm, ret, 1));
+        return ret;
+    }
 
     llvm::Value* ExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
     {
@@ -1457,6 +1473,10 @@ namespace Yoyo
             std::visit(*this, op->callee->toVariant());
             debugbreak();
         }
+        if (t && t->name.starts_with("__union_var"))
+        {
+            return doUnionVar(op, *t);
+        }
         if(!t || !(t->is_function() || t->is_lambda())) {irgen->error(t.error()); return nullptr;}
         if(!return_t)
             {irgen->error(return_t.error()); return nullptr;}
@@ -1780,6 +1800,34 @@ namespace Yoyo
                 return result;
             }
         }
+        if (auto decl = ty->get_decl_if_union())
+        {
+            auto it = decl->fields.find(expr->dest.name);
+            size_t idx = std::distance(decl->fields.begin(), it);
+            auto val = irgen->Alloca("union_conv", as_llvm);
+            auto ptr = irgen->builder->CreateStructGEP(as_llvm, val, 0);
+            auto internal_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 0);
+            irgen->builder->CreateStore(internal_ptr, ptr);
+
+            auto is_valid_ptr = irgen->builder->CreateStructGEP(as_llvm, val, 1);
+            auto idx_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 1);
+            auto i32_ty = llvm::Type::getInt32Ty(irgen->context);
+            auto this_idx = llvm::ConstantInt::get(i32_ty, idx);
+            auto correct_idx = irgen->builder->CreateLoad(i32_ty, idx_ptr);
+
+            auto is_valid = irgen->builder->CreateICmpEQ(this_idx, correct_idx);
+            irgen->builder->CreateStore(is_valid, is_valid_ptr);
+            if (!ty->deref().is_trivially_destructible(irgen) && !ty->deref().is_lvalue)
+            {
+                auto lf = new ExtendedLifetimes;
+                lf->objects.emplace_back(std::move(ty).value(), internal);
+                std::string name = "__del_parents___aaaaaaaa";
+                memcpy(name.data() + 16, &lf, sizeof(void*));
+                val->setName(name);
+            }
+            return val;
+        }
+        return nullptr;
     }
 
     llvm::Value* ExpressionEvaluator::operator()(CharLiteral* lit)

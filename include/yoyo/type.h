@@ -14,6 +14,7 @@ namespace Yoyo
     class ClassDeclaration;
     class IRGenerator;
     class EnumDeclaration;
+    class UnionDeclaration;
     struct YOYO_API Type
     {
         std::string name;
@@ -90,6 +91,7 @@ namespace Yoyo
         [[nodiscard]] bool is_boolean() const;
 
         [[nodiscard]] EnumDeclaration* get_decl_if_enum() const;
+        [[nodiscard]] UnionDeclaration* get_decl_if_union() const;
 
         [[nodiscard]] bool should_sret() const;
 
