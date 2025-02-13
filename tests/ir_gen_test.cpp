@@ -22,6 +22,12 @@ int32_t func(void* arg)
     std::cout << sv << std::endl;
     return 0;
 }
+uint32_t read_int()
+{
+    uint32_t val = 10;
+    std::cin >> val;
+    return val;
+}
 TEST_CASE("Test IR")
 {
     std::ifstream ifs("source.yoyo");
@@ -35,6 +41,7 @@ TEST_CASE("Test IR")
     Yoyo::Engine engine;
     md = engine.addAppModule("test");
     md->addFunction("(x: &str) -> i32", func, "print");
+    md->addFunction("() -> u32", read_int, "read_uint");
     engine.addModule("source.yoyo", src2);
     engine.compile();
     engine.addDynamicLibrary("c_file.dll");

@@ -908,6 +908,13 @@ namespace Yoyo
         auto i32 = llvm::Type::getInt32Ty(irgen->context);
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        if ((p == EQ || p == NE) && left_type.is_equal(right_type)) {
+            if (left_type.get_decl_if_enum()) {
+                return
+                    (p == EQ) ? irgen->builder->CreateICmpEQ(lhs_e, rhs_e, "enum_cmp")
+                    : irgen->builder->CreateICmpNE(lhs_e, rhs_e, "enum_cmp");
+            }
+        }
         auto target = resolveCmp(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Spaceship, irgen, target);
         std::array<llvm::Value*, 2> args;

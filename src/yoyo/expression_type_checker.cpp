@@ -92,11 +92,14 @@ namespace Yoyo
     }
     static std::optional<Type> checkCmp(const Type& a, const Type& b, IRGenerator* irgen, TokenType tk)
     {
-        if (a.name == "ilit" && b.name == "ilit") return a;
+        auto bool_ty = Type{ .name = "bool", .module = irgen->module->engine->modules.at("core").get() };
+        if (a.name == "ilit" && b.name == "ilit") return bool_ty;
+        if (a.is_equal(b) && tk == TokenType::DoubleEqual || tk == TokenType::BangEqual) {
+            if (a.get_decl_if_enum()) return bool_ty;
+        }
         auto ty = resolveCmp(a, b, irgen);
         if (!ty) return std::nullopt;
-        auto bool_ty = Type{ .name = "bool", .module = irgen->module->engine->modules.at("core").get() };
-        if (tk == TokenType::Equal || tk == TokenType::BangEqual) return bool_ty; //all cmps support equality checks
+        if (tk == TokenType::DoubleEqual || tk == TokenType::BangEqual) return bool_ty; //all cmps support equality checks
         if (tk == TokenType::Spaceship) return ty->result;
         if (ty->result.name == "CmpOrd" || ty->result.name == "CmpPartOrd") return bool_ty;
         return std::nullopt; //grater and less require ord or part ord

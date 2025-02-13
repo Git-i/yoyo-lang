@@ -1,19 +1,88 @@
-IpAddr: union = {
-    V4: (u8, u8, u8, u8),
-    V6: str,
-    to_str: fn (&this) -> str = {    
-        if |&v4| ((*this) as V4) {
-            return "${v4.0}.${v4.1}.${v4.2}.${v4.3}";
-        } else if |v6| ((*this) as V6) {
-            return v6;
+Player: enum = { X, O, None }
+player_text: fn (p: &[Player; 9], alt: i32) -> str = {
+    if (*(*p)[alt] == Player::X) 
+        return "X";
+    else if (*(*p)[alt] == Player::O)
+        return "O";
+    return "${alt}";
+}
+cycle: fn (p: Player) -> Player = {
+    if (p == Player::X) 
+        return Player::O;
+    else if (p == Player::O)
+        return Player::X;
+    return p;
+}
+Game: struct = {
+    data: [Player; 9],
+    player: Player,
+    render: fn (&this) = {
+        intermediate := "───┼───┼───";
+        row1 := " ${player_text(&this.data, 0)} │ ${player_text(&this.data, 1)} │ ${player_text(&this.data, 2)} ";
+        row2 := " ${player_text(&this.data, 3)} │ ${player_text(&this.data, 4)} │ ${player_text(&this.data, 5)} ";
+        row3 := " ${player_text(&this.data, 6)} │ ${player_text(&this.data, 7)} │ ${player_text(&this.data, 8)} ";
+        row1.test::print();
+        intermediate.test::print();
+        row2.test::print();
+        intermediate.test::print();
+        row3.test::print();
+    }
+    new: fn -> Game = {
+        return Game{ 
+            .data = [
+                Player::None, Player::None, Player::None,
+                Player::None, Player::None, Player::None,
+                Player::None, Player::None, Player::None
+            ],
+            .player = Player::X
+        };
+    }
+    play: fn (&mut this) = {
+        "${this.player}'s turn: ".test::print();
+        idx: mut u32 = 10;
+        while (idx > 9 && *this.data[idx] != Player::None) {
+            idx = test::read_uint();
+        }
+        *this.data[idx] = this.player;
+        this.player = this.player.cycle();
+    }
+    check_winner: fn (&this) -> Player? = {
+        //horizontal winner
+        if (*this.data[0] == *this.data[1] && *this.data[1] == *this.data[2])
+            return *this.data[0];
+        if (*this.data[3] == *this.data[4] && *this.data[4] == *this.data[5])
+            return *this.data[3];
+        if (*this.data[6] == *this.data[7] && *this.data[7] == *this.data[8])
+            return *this.data[6];
+
+        //vertical winner
+        if (*this.data[0] == *this.data[3] && *this.data[3] == *this.data[6])
+            return *this.data[0];
+        if (*this.data[1] == *this.data[4] && *this.data[4] == *this.data[7])
+            return *this.data[1];
+        if (*this.data[2] == *this.data[5] && *this.data[5] == *this.data[8])
+            return *this.data[2];
+        
+        //diagonal winner
+        if (*this.data[0] == *this.data[4] && *this.data[4] == *this.data[5])
+            return *this.data[0];
+        if (*this.data[2] == *this.data[4] && *this.data[4] == *this.data[6])
+            return *this.data[2];
+        return null;
+    }
+}
+
+main: fn = {
+    game: mut = Game::new();
+    game.render();
+    while (true) {
+        game.play();
+        game.render();
+        if |winner| (game.check_winner()) {
+            if (winner != Player::None) {
+                "${winner} won".test::print();
+                break;
+            }
         }
     }
 }
-main: fn = {
-    v4 := IpAddr::V4 ((192, 168, 1, 0));
-    v6 := IpAddr::V6 ("2001:db8:1234");
-    
-    v4.to_str().test::print();
-    v6.to_str().test::print();
-}
-

@@ -67,7 +67,7 @@ namespace Yoyo
             pos += offset + 1;
             current_pos = pos;
         }
-        if(current_pos != tk.text.size() - 1)
+        if(current_pos != tk.text.size())
         {
             values.emplace_back(std::string{tk.text.begin() + current_pos, tk.text.end()});
         }
