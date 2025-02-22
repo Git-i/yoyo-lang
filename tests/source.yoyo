@@ -1,88 +1,18 @@
-Player: enum = { X, O, None }
-player_text: fn (p: &[Player; 9], alt: i32) -> str = {
-    if (*(*p)[alt] == Player::X) 
-        return "X";
-    else if (*(*p)[alt] == Player::O)
-        return "O";
-    return "${alt}";
+Type: struct = {
+    x: f32, y: f32
 }
-cycle: fn (p: Player) -> Player = {
-    if (p == Player::X) 
-        return Player::O;
-    else if (p == Player::O)
-        return Player::X;
-    return p;
+Type2: struct = {
+    a: Type
 }
-Game: struct = {
-    data: [Player; 9],
-    player: Player,
-    render: fn (&this) = {
-        intermediate := "───┼───┼───";
-        row1 := " ${player_text(&this.data, 0)} │ ${player_text(&this.data, 1)} │ ${player_text(&this.data, 2)} ";
-        row2 := " ${player_text(&this.data, 3)} │ ${player_text(&this.data, 4)} │ ${player_text(&this.data, 5)} ";
-        row3 := " ${player_text(&this.data, 6)} │ ${player_text(&this.data, 7)} │ ${player_text(&this.data, 8)} ";
-        row1.test::print();
-        intermediate.test::print();
-        row2.test::print();
-        intermediate.test::print();
-        row3.test::print();
-    }
-    new: fn -> Game = {
-        return Game{ 
-            .data = [
-                Player::None, Player::None, Player::None,
-                Player::None, Player::None, Player::None,
-                Player::None, Player::None, Player::None
-            ],
-            .player = Player::X
-        };
-    }
-    play: fn (&mut this) = {
-        "${this.player}'s turn: ".test::print();
-        idx: mut u32 = 10;
-        while (idx > 9 && *this.data[idx] != Player::None) {
-            idx = test::read_uint();
-        }
-        *this.data[idx] = this.player;
-        this.player = this.player.cycle();
-    }
-    check_winner: fn (&this) -> Player? = {
-        //horizontal winner
-        if (*this.data[0] == *this.data[1] && *this.data[1] == *this.data[2])
-            return *this.data[0];
-        if (*this.data[3] == *this.data[4] && *this.data[4] == *this.data[5])
-            return *this.data[3];
-        if (*this.data[6] == *this.data[7] && *this.data[7] == *this.data[8])
-            return *this.data[6];
-
-        //vertical winner
-        if (*this.data[0] == *this.data[3] && *this.data[3] == *this.data[6])
-            return *this.data[0];
-        if (*this.data[1] == *this.data[4] && *this.data[4] == *this.data[7])
-            return *this.data[1];
-        if (*this.data[2] == *this.data[5] && *this.data[5] == *this.data[8])
-            return *this.data[2];
-        
-        //diagonal winner
-        if (*this.data[0] == *this.data[4] && *this.data[4] == *this.data[5])
-            return *this.data[0];
-        if (*this.data[2] == *this.data[4] && *this.data[4] == *this.data[6])
-            return *this.data[2];
-        return null;
-    }
+print_flt2: fn(x: &mut Type, y: &mut f32) = {}
+print_flts: fn(x: &mut f32, y: &mut f32) = {
+    test::print(&"Float 1: ${*x}, Float 2: ${*y}");
 }
-
 main: fn = {
-    game: mut = Game::new();
-    game.render();
-    while (true) {
-        game.play();
-        game.render();
-        if |winner| (game.check_winner()) {
-            if (winner != Player::None) {
-                "${winner} won".test::print();
-                break;
-            }
-        }
-    }
+    x: f32 = 10;
+    y: f32 = 20;
+    a: mut = Type{ .x, .y };
+    b: mut = Type2{ .a };
+    print_flts(&mut a.x, &mut a.y);
+    print_flt2(&mut b.a, &mut b.a.y);
 }

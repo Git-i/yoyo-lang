@@ -285,7 +285,7 @@ namespace Yoyo
         return flag;
     }
     bool should_sret_C(llvm::Type* tp, Module* md)
-    {
+    { 
         const auto& target = md->engine->jit->getTargetTriple();
         constexpr auto npos = std::string::npos;
         if (target.getArch() == llvm::Triple::x86_64 && target.getEnvironment() == llvm::Triple::MSVC)

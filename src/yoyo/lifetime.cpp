@@ -48,6 +48,17 @@ namespace Yoyo
         std::unordered_map<std::string, Expression*> mut_borrow;
         std::unordered_map<std::string, std::vector<Expression*>> const_borrows;
 
+        auto is_borrowed = [](auto& a, const std::string& value) {
+            auto view = a | std::views::keys;
+            auto it = std::ranges::find_if(view, [&value](const std::string& str) {
+                    return str == value || 
+                    (str.starts_with(value) && str[value.size()] == ':') ||
+                    (value.starts_with(str) && value[str.size()] == ':');
+                });
+            if (it != view.end()) return *it;
+            return std::string("");
+            };
+
         for(auto& expr: param)
         {
             for(auto& borrow : expr.second)
@@ -55,8 +66,8 @@ namespace Yoyo
                 if(borrow.second == BorrowResult::Const)
                 {
                     //if the value has been mutably borrowed before its error
-                    if(mut_borrow.contains(borrow.first)) { 
-                        auto err_borrow = mut_borrow[borrow.first];
+                    if (auto brw = is_borrowed(mut_borrow, borrow.first); !brw.empty()) {
+                        auto err_borrow = mut_borrow[brw];
                         Error err(expr.first, "Attempt to borrow mutably borrowed value");
                         err.markers.emplace_back(SourceSpan{ err_borrow->beg, err_borrow->end }, "Mutable borrow occurs here");
                         irgen->error(err); 
@@ -67,16 +78,16 @@ namespace Yoyo
                 else if(borrow.second == BorrowResult::Mut)
                 {
                     //if it's been mutably or immutably borrowed its error
-                    if(mut_borrow.contains(borrow.first)) { 
-                        auto err_borrow = mut_borrow[borrow.first];
+                    if (auto brw = is_borrowed(mut_borrow, borrow.first); !brw.empty()) {
+                        auto err_borrow = mut_borrow[brw];
                         Error err(expr.first, "Attempt to borrow mutably borrowed value");
                         err.markers.emplace_back(SourceSpan{ err_borrow->beg, err_borrow->end }, "Mutable borrow occurs here");
                         irgen->error(err);
                         return;
                     }
-                    if(const_borrows.contains(borrow.first)) { 
+                    if(auto brw = is_borrowed(const_borrows, borrow.first); !brw.empty()) { 
                         Error err(expr.first, "Attempt to mutably borrow already borrowed value");
-                        for (auto expr : const_borrows[borrow.first]) {
+                        for (auto expr : const_borrows[brw]) {
                             err.markers.emplace_back(SourceSpan{ expr->beg, expr->end }, "Borrow occurs here");
                         }
                         irgen->error(err); return; 
@@ -107,8 +118,21 @@ namespace Yoyo
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(BinaryOperation* expr)
     {
         BorrowResult{irgen}(expr);
-        if(expr->op.type == TokenType::Dot)
-            return std::visit(*this, expr->lhs->toVariant());
+        if (expr->op.type == TokenType::Dot)
+        {
+            auto res = std::visit(*this, expr->lhs->toVariant());
+            //field borrow
+            if (res.size() == 1)
+            {
+                auto r_nm = dynamic_cast<NameExpression*>(expr->rhs.get());
+                if (!r_nm) return res;
+                //propagating a field borrow
+                if (dynamic_cast<NameExpression*>(expr->lhs.get()) || res[0].first.find("::") != std::string::npos) {
+                    res[0].first += "::" + r_nm->text;
+                }
+            }
+            return res;
+        }
         return {};
     }
 
