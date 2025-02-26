@@ -4,19 +4,12 @@
 #include <fn_type.h>
 #include <statement.h>
 #include <llvm/IR/IRBuilder.h>
+#include <ir_gen.h>
 #include <ranges>
 #include <numbers>
 #include "engine.h"
 namespace Yoyo
 {
-    struct ForwardDeclaratorPass2
-    {
-        Module* md;
-        //to prevent infinitely looping we stop when we see a name already here
-        std::vector<Type> encountered_names;
-        bool operator()(ClassDeclaration* decl);
-        bool operator()(Statement*);
-    };
     std::pair<std::string, Module::FunctionDetails*> Module::findFunction(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : functions)
@@ -162,7 +155,7 @@ namespace Yoyo
         if (modules.contains(name)) return modules.at(name)->module_hash;
         return std::nullopt;
     }
-    llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types)
+    llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, IRGenerator* irgen, const std::vector<Type>& disallowed_types)
     {
         auto& context = *engine->llvm_context.getContext();
         if(type.is_integral())
@@ -188,7 +181,7 @@ namespace Yoyo
             std::vector<llvm::Type*> args;
             for(auto& subtype : type.subtypes)
             {
-                auto ty = subtype.module->ToLLVMType(subtype, hash, disallowed_types);
+                auto ty = subtype.module->ToLLVMType(subtype, hash, irgen, disallowed_types);
                 if(!ty) return nullptr;
                 args.push_back(ty);
             }
@@ -201,7 +194,7 @@ namespace Yoyo
         if(type.is_optional())
         {
             std::array<llvm::Type*, 2> args{};
-            args[0] = type.subtypes[0].module->ToLLVMType(type.subtypes[0], hash, disallowed_types);
+            args[0] = type.subtypes[0].module->ToLLVMType(type.subtypes[0], hash, irgen, disallowed_types);
             args[1] = llvm::Type::getInt1Ty(context);
             return llvm::StructType::get(context, args);
         }
@@ -219,7 +212,7 @@ namespace Yoyo
             auto& layout = code.getModuleUnlocked()->getDataLayout();
             for(auto& subtype : type.subtypes)
             {
-                auto sub_t = subtype.module->ToLLVMType(subtype, hash, disallowed_types);
+                auto sub_t = subtype.module->ToLLVMType(subtype, hash, irgen, disallowed_types);
                 auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
                 size_t sz = 0;
                 if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;
@@ -245,11 +238,11 @@ namespace Yoyo
         if(type.is_value_conversion_result())
         {
             return llvm::StructType::get(context, {
-                ToLLVMType(type.subtypes[0], hash, disallowed_types), llvm::Type::getInt1Ty(context)});
+                ToLLVMType(type.subtypes[0], hash, irgen, disallowed_types), llvm::Type::getInt1Ty(context)});
         }
         if(type.is_static_array())
         {
-            return llvm::ArrayType::get(ToLLVMType(type.subtypes[0], hash, disallowed_types), type.static_array_size());
+            return llvm::ArrayType::get(ToLLVMType(type.subtypes[0], hash, irgen, disallowed_types), type.static_array_size());
         }
         if (type.is_slice())
         {
@@ -279,8 +272,27 @@ namespace Yoyo
             //class is not yet defined but is recursive
             if(auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
                 return nullptr;
-            ForwardDeclaratorPass2{type.module, disallowed_types}(std::get<2>(*t).get());
-            return ptr;
+
+            //class is not defined yet and not recursive
+            auto not_allowed = disallowed_types;
+            not_allowed.push_back(type);
+
+            auto decl = std::get<2>(*t).get();
+            std::vector<llvm::Type*> args;
+            for (auto& subvar : decl->vars)
+            {
+                auto& subtype = subvar.type;
+
+                std::get<0>(*t).swap(irgen->block_hash);
+                subtype.saturate(this, irgen);
+                std::get<0>(*t).swap(irgen->block_hash);
+
+                auto ty = subtype.module->ToLLVMType(subtype, hash, irgen, disallowed_types);
+                if (!ty) return nullptr;
+                args.push_back(ty);
+            }
+            return llvm::StructType::get(context, args);
+
         }
         return nullptr;
     }
@@ -329,7 +341,7 @@ namespace Yoyo
         llvm::IRBuilder<> builder(ctx);
         for(auto& t : types)
         {
-            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto as_llvm = module->ToLLVMType(t, "", nullptr, {});
             auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm, as_llvm}, false);
             auto mangled_name_for = [&t](const std::string& op_name)
             {
@@ -377,7 +389,7 @@ namespace Yoyo
             //integer comparison is totally ordered
             Type result{ .name = "CmpOrd", .module = module, .block_hash = module->module_hash };
             std::string mangled_name = "__operator__cmp__" + t.name + "__" + t.name;
-            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto as_llvm = module->ToLLVMType(t, "", nullptr, {});
             auto i32 = llvm::Type::getInt32Ty(ctx);
             auto fn_ty = llvm::FunctionType::get(i32, {as_llvm, as_llvm}, false);
             auto cmp_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name, module->code.getModuleUnlocked());
@@ -405,7 +417,7 @@ namespace Yoyo
             //float comparison is partially ordered because of NaN
             Type result{ .name = "CmpPartOrd", .module = module, .block_hash = module->module_hash };
             std::string mangled_name = "__operator__cmp__" + t.name + "__" + t.name;
-            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto as_llvm = module->ToLLVMType(t, "", nullptr, {});
             auto i32 = llvm::Type::getInt32Ty(ctx);
             auto fn_ty = llvm::FunctionType::get(i32, { as_llvm, as_llvm }, false);
             auto cmp_fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage, mangled_name, module->code.getModuleUnlocked());
@@ -437,7 +449,7 @@ namespace Yoyo
         }
         for(auto& t : std::ranges::subrange(types.begin(), types.begin() + 6))
         {
-            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto as_llvm = module->ToLLVMType(t, "", nullptr, {});
             auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm}, false);
             auto mangled_name_for = [&t](const std::string& op_name)
             {
@@ -452,7 +464,7 @@ namespace Yoyo
         }
         for(auto& t : std::ranges::subrange(types.begin() + 2, types.end()))
         {
-            auto as_llvm = module->ToLLVMType(t, "", {});
+            auto as_llvm = module->ToLLVMType(t, "", nullptr, {});
             auto fn_ty = llvm::FunctionType::get(as_llvm, {as_llvm, as_llvm}, false);
             auto mangled_name_for = [&t](const std::string& op_name)
             {
@@ -495,7 +507,7 @@ namespace Yoyo
         auto& ctx = *md->code.getContext().getContext();
         for (auto& type : types)
         {
-            auto as_llvm = md->ToLLVMType(type, "", {});
+            auto as_llvm = md->ToLLVMType(type, "", nullptr, {});
             md->constants[type.name + "::"].emplace_back(type, "QNAN", llvm::ConstantFP::getQNaN(as_llvm));
             md->constants[type.name + "::"].emplace_back(type, "SNAN", llvm::ConstantFP::getSNaN(as_llvm));
             md->constants[type.name + "::"].emplace_back(type, "PI", llvm::ConstantFP::get(as_llvm, std::numbers::pi));
@@ -523,7 +535,7 @@ namespace Yoyo
             md->functions[type.name + "::"].emplace_back(std::move(cdets));
             //md->functions[type.name + "::"].emplace_back(std::move(tdets));
 
-            auto as_llvm = md->ToLLVMType(type, "", {});
+            auto as_llvm = md->ToLLVMType(type, "", nullptr, {});
             auto f_ty = llvm::FunctionType::get(as_llvm, { as_llvm }, false);
             auto sin_func = llvm::Function::Create(f_ty, llvm::GlobalValue::ExternalLinkage, type.name + "::" + "sin", md->code.getModuleUnlocked());
             bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", sin_func));

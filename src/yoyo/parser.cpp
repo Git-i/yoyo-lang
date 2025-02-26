@@ -726,9 +726,8 @@ namespace Yoyo
     //struct and classes are virtually the same, except structs don't have access specs
     std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct)
     {
-        std::vector<ClassMethod> methods;
+        std::vector<std::unique_ptr<Statement>> stat;
         std::vector<ClassVariable> vars;
-        std::vector<Type> intfs;
         std::vector<InterfaceImplementation> impls;
         std::optional<GenericClause> clause;
         Get(); //skip the "class" or "struct" keyword
@@ -743,17 +742,18 @@ namespace Yoyo
         {
             clause = parseGenericClause();
         }
-        if (discard(TokenType::Impl))
-        {
-            intfs.emplace_back(parseType(0).value_or(Type{}));
-            while (discard(TokenType::Comma))
-                intfs.emplace_back(parseType(0).value_or(Type{}));
-        }
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
         {
             auto attr_list = parseAttributeList();
+            if (isTopLevelDeclaration())
+            {
+                stat.push_back(parseTopLevelDeclaration());
+                stat.back()->attributes.swap(attr_list);
+                std::ignore = discard(TokenType::Comma); //optional ',' after declaration
+                continue;
+            }
             bool is_static = false;
             AccessSpecifier spec = isStruct ? AccessSpecifier::Public : AccessSpecifier::Private;
             auto peek_tk = Peek();
@@ -807,48 +807,36 @@ namespace Yoyo
             if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
             auto next_tk = Peek();
             if(!next_tk) return nullptr;
-            if(next_tk->type == TokenType::Fn)
+            
+            auto type = parseType(0);
+            vars.push_back(ClassVariable{
+                .name = std::string{iden.text},
+                .type = std::move(type).value_or(Type{}),
+                .is_static = is_static,
+                .access = spec,
+                .attributes = std::move(attr_list)
+            });
+            if(!discard(TokenType::Comma))
             {
-                if(is_static) error("'static' cannot be applied to methods", next_tk);//static doesn't apply to functions
-                auto stat = parseFunctionDeclaration(iden);
-                stat->attributes = std::move(attr_list);
-                methods.push_back(ClassMethod{.name=std::string{iden.text}, .function_decl = std::move(stat), .access = spec});
-                std::ignore = discard(TokenType::Comma); //comma is optional after function
-            }
-            else
-            {
-                auto type = parseType(0);
-                vars.push_back(ClassVariable{
-                    .name = std::string{iden.text},
-                    .type = std::move(type).value_or(Type{}),
-                    .is_static = is_static,
-                    .access = spec,
-                    .attributes = std::move(attr_list)
-                });
-                if(!discard(TokenType::Comma))
-                {
-                    if(!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());
-                    else break;
-                }
+                if(!discard(TokenType::RCurly)) error("Expected ',' or '}'", Peek());
+                else break;
             }
         }
-        std::unique_ptr<Statement> stat;
-        if (!clause) stat = std::make_unique<ClassDeclaration>(
+        std::unique_ptr<Statement> cs_stat;
+        if (!clause) cs_stat = std::make_unique<ClassDeclaration>(
             identifier,
             std::move(vars),
-            std::move(methods),
+            std::move(stat),
             own_method,
-            std::move(intfs),
             std::move(impls));
-        else stat = std::make_unique<GenericClassDeclaration>(
+        else cs_stat = std::make_unique<GenericClassDeclaration>(
             identifier,
             std::move(vars),
-            std::move(methods),
+            std::move(stat),
             own_method,
-            std::move(intfs),
             std::move(impls),
             std::move(clause).value());
-        return Statement::attachSLAndParent(std::move(stat), identifier.loc,
+        return Statement::attachSLAndParent(std::move(cs_stat), identifier.loc,
             discardLocation, parent
         );
     }

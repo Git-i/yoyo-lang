@@ -12,35 +12,39 @@ namespace Yoyo
     {
         return md->engine->llvm_context.getContext();
     }
+    //Given a declaration, forward declare it and all the other sustatements
     struct ForwardDeclaratorPass1
     {
         Module* md;
         std::unique_ptr<Statement>& stmt;
+        std::string block;
         bool operator()(FunctionDeclaration* decl) const
         {
-            md->functions[md->module_hash].emplace_back(decl->name, decl->signature);
+            md->functions[block].emplace_back(decl->name, decl->signature);
+            std::string new_blk = block + decl->name + "::";
+            std::visit(ForwardDeclaratorPass1{ md, decl->body, new_blk }, decl->body->toVariant());
             return true;
         }
         bool operator()(ConstantDeclaration* decl) const
         {
+            md->constants[block].emplace_back(decl->type, decl->name, nullptr);
             return true;
         }
         bool operator()(GenericFunctionDeclaration* decl) const
         {
             std::ignore = stmt.release();
-            md->generic_fns[md->module_hash].emplace_back(decl);
+            md->generic_fns[block].emplace_back(decl);
             return true;
         }
         bool operator()(ClassDeclaration* decl) const
         {
-            std::string mangled_name_prefix = md->module_hash + decl->name + "::";
+            std::string mangled_name_prefix = block + decl->name + "::";
 
-            for(auto& fn : decl->methods)
+            for(auto& stt : decl->stats)
             {
-                auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
-                md->functions[mangled_name_prefix].emplace_back(fn_decl->name, fn_decl->signature);
+                std::visit(ForwardDeclaratorPass1{ md, stt, mangled_name_prefix }, stt->toVariant());
             }
-            md->classes[md->module_hash].emplace_back(
+            md->classes[block].emplace_back(
                 mangled_name_prefix,
                 nullptr,
                 std::unique_ptr<ClassDeclaration>{decl}
@@ -51,7 +55,7 @@ namespace Yoyo
         bool operator()(GenericClassDeclaration* decl) const
         {
             std::ignore = stmt.release();
-            md->generic_classes[md->module_hash].emplace_back(decl);
+            md->generic_classes[block].emplace_back(decl);
             return true;
         }
         bool operator()(ModuleImport* imp)
@@ -63,100 +67,56 @@ namespace Yoyo
         bool operator()(EnumDeclaration* decl)
         {
             std::ignore = stmt.release();
-            md->enums[md->module_hash].emplace_back(decl);
+            md->enums[block].emplace_back(decl);
             return true;
         }
         bool operator()(OperatorOverload*) {return true;}
         bool operator()(AliasDeclaration* decl)
         {
-            md->aliases[md->module_hash].emplace(decl->name, decl->type);
+            md->aliases[block].emplace(decl->name, decl->type);
             return true;
         }
         bool operator()(GenericAliasDeclaration* decl)
         {
             std::ignore = stmt.release();
-            md->generic_aliases[md->module_hash].emplace_back(decl);
+            md->generic_aliases[block].emplace_back(decl);
             return true;
         }
         bool operator()(InterfaceDeclaration* decl)
         {
             std::ignore = stmt.release();
-            md->interfaces[md->module_hash].emplace_back(decl);
+            md->interfaces[block].emplace_back(decl);
             return true;
         }
         bool operator()(GenericInterfaceDeclaration* decl)
         {
             std::ignore = stmt.release();
-            md->generic_interfaces[md->module_hash].emplace_back(decl);
+            md->generic_interfaces[block].emplace_back(decl);
             return true;
         }
         bool operator()(UnionDeclaration* decl)
         {
+            std::string new_blk = block + decl->name + "::";
+
+            for (auto& stt : decl->sub_stats)
+            {
+                std::visit(ForwardDeclaratorPass1{ md, stt, new_blk }, stt->toVariant());
+            }
+            md->unions[block].emplace_back(
+                std::unique_ptr<UnionDeclaration>{decl},
+                nullptr
+            );
+
             return true;
+        }
+        bool operator()(BlockStatement* stat) {
+            for (auto& sub : stat->statements) {
+                std::visit(ForwardDeclaratorPass1{ md, sub, block }, sub->toVariant());
+            }
+            return false;
         }
         bool operator()(Statement*) const {return false;};
     };
-    struct ForwardDeclaratorPass2
-    {
-        Module* md;
-        //to prevent infinitely looping we stop when we see a name already here
-        std::vector<Type> encountered_names;
-        bool operator()(ClassDeclaration* decl);
-        bool operator()(Statement*);
-    };
-
-    bool ForwardDeclaratorPass2::operator()(ClassDeclaration* decl)
-    {
-        auto t = md->findType(md->module_hash, decl->name);
-        if(t && std::get<1>(*t)) return true;
-        std::vector<std::string> var_names(decl->vars.size());
-        std::vector<std::string> fn_names(decl->methods.size());
-        //check for duplicate names, TODO: move this to a function
-        std::ranges::transform(decl->vars, var_names.begin(), [](ClassVariable& var)
-        {
-            return var.name;
-        });
-        std::ranges::transform(decl->methods, fn_names.begin(), [](ClassMethod& method)
-        {
-            return method.name;
-        });
-        for(const auto& name: var_names)
-            if(std::ranges::find(fn_names, name) != fn_names.end()){return false;}
-
-        for(const auto& name: fn_names)
-            if(std::ranges::find(var_names, name) != var_names.end()){return false;}
-        for(size_t i = 0; i < var_names.size(); ++i)
-        {
-            for(size_t j = 0; j < var_names.size(); ++j)
-            {
-                if(j == i) continue;
-                if(var_names[i] == var_names[j]) {return false;}
-            }
-        }
-        for(size_t i = 0; i < fn_names.size(); ++i)
-        {
-            for(size_t j = 0; j < fn_names.size(); ++j)
-            {
-                if(j == i) continue;
-                if(fn_names[i] == fn_names[j]) {return false;}
-            }
-        }
-        //----------------------------------------------------------
-        encountered_names.push_back(Type{.name = decl->name, .module = md});
-        std::vector<llvm::Type*> args(decl->vars.size());
-        std::transform(decl->vars.begin(), decl->vars.end(), args.begin(),
-                       [this](ClassVariable& p)
-                       {
-                           p.type.saturate(md, nullptr);
-                           return md->ToLLVMType(p.type, md->module_hash, encountered_names);
-                       });
-        if(std::ranges::any_of(args, [](llvm::Type* t) {return t == nullptr;})) return false;
-        std::get<1>(*t) = llvm::StructType::create(*getLLVMContext(md), args, decl->name);
-        return true;
-    }
-
-    bool ForwardDeclaratorPass2::operator()(Statement*)
-    { return true; }
 
 
     extern "C"
@@ -207,7 +167,7 @@ namespace Yoyo
         md->modules["core"] = modules.at("core").get();
         for(auto& stat : prog)
         {
-            if (!std::visit(ForwardDeclaratorPass1{md.get(), stat}, stat->toVariant()))
+            if (!std::visit(ForwardDeclaratorPass1{md.get(), stat, md->module_hash}, stat->toVariant()))
             {
                 modules.erase(module_name);
                 break;
@@ -222,21 +182,7 @@ namespace Yoyo
         IRGenerator irgen(*llvm_context.getContext());
         auto keys_view = std::ranges::views::keys(modules);
         std::vector module_names(keys_view.begin(), keys_view.end());
-        for (const auto& module_name : module_names)
-        {
-            if (sources.contains(module_name))
-            {
-                for (auto& stat : sources[module_name].second)
-                {
-                    if (!stat) continue; //by this point some statements have already been handled(enums)
-                    if (!std::visit(ForwardDeclaratorPass2{ modules[module_name].get() }, stat->toVariant()))
-                    {
-                        modules.erase(module_name);
-                        break;
-                    };
-                }
-            }
-        }
+        
         for (auto& mod : modules)
         {
             if (!mod.second->code)

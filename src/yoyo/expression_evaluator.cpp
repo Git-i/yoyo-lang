@@ -471,17 +471,18 @@ namespace Yoyo
         {
             auto decl = std::get<2>(*decl_tup).get();
             if(!decl->has_clone) { irgen->error(Error(xp, "Expression cannot be cloned")); return nullptr; }
-            auto candidate = std::ranges::find_if(decl->methods, [](auto& meth)
+            auto candidate = std::ranges::find_if(decl->stats, [](auto& meth)
             {
-                auto end = meth.function_decl->attributes.end();
-                return std::ranges::find_if(meth.function_decl->attributes, [](auto& attr) {
+                auto end = meth->attributes.end();
+                return std::ranges::find_if(meth->attributes, [](auto& attr) {
                     return static_cast<Attribute&>(attr).name == "clone";
                 }) != end;
             });
-            if(candidate != decl->methods.end())
+            if(candidate != decl->stats.end() && dynamic_cast<FunctionDeclaration*>(candidate->get()))
             {
-                auto& sig = reinterpret_cast<FunctionDeclaration*>(candidate->function_decl.get())->signature;
-                std::string fn_name = std::get<0>(*decl_tup) + candidate->name;
+                auto decl = reinterpret_cast<FunctionDeclaration*>(candidate->get());
+                auto& sig = decl->signature;
+                std::string fn_name = std::get<0>(*decl_tup) + decl->name;
                 auto fn = irgen->code->getFunction(fn_name);
                 if(!fn) fn = declareFunction(fn_name, irgen, sig);
                 irgen->builder->CreateCall(fn, {into, value});

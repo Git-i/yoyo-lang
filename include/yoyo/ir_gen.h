@@ -139,18 +139,6 @@ namespace Yoyo
         bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng);
     };
 
-
-
-    struct TopLevelVisitor
-    {
-        IRGenerator* irgen;
-        //return true on success
-        bool operator()(std::unique_ptr<FunctionDeclaration>) const;
-        bool operator()(std::unique_ptr<ClassDeclaration>) const;
-        bool operator()(std::unique_ptr<OperatorOverload>);
-        bool operator()(std::unique_ptr<ConstantDeclaration>);
-        bool operator()(std::unique_ptr<UnionDeclaration>);
-    };
     class ExpressionTypeChecker
     {
         IRGenerator* irgen;

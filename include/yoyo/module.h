@@ -49,7 +49,7 @@ namespace Yoyo
         std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*>findUnionWithType(const std::string& block, const std::string& name);
         std::pair<std::string, std::tuple<Type, std::string, llvm::Constant*>*> findConst(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);
-        llvm::Type* ToLLVMType(const Type& type, const std::string& hash, const std::vector<Type>& disallowed_types);
+        llvm::Type* ToLLVMType(const Type& type, const std::string& hash, IRGenerator*, const std::vector<Type>& disallowed_types);
         void dumpIR();
     };
     void makeBuiltinModule(Engine* eng);

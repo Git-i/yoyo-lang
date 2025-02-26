@@ -11,7 +11,7 @@ namespace Yoyo
         llvm::LLVMContext& ctx = *module->engine->llvm_context.getContext();
         std::vector<llvm::Type*> argTypes;
         //sret
-        auto return_t = module->ToLLVMType(sig.returnType, module->module_hash, {});
+        auto return_t = module->ToLLVMType(sig.returnType, module->module_hash, nullptr, {});
         if(sig.returnType.should_sret())
         {
             argTypes.push_back(llvm::PointerType::get(ctx, 0));
@@ -21,13 +21,13 @@ namespace Yoyo
         {
             if(p.type.should_sret())
                 argTypes.push_back(llvm::PointerType::get(ctx, 0));
-            else argTypes.push_back(module->ToLLVMType(p.type, module->module_hash, {}));
+            else argTypes.push_back(module->ToLLVMType(p.type, module->module_hash, nullptr, {}));
         }
         return llvm::FunctionType::get(return_t, argTypes, false);
     }
     void AppModule::addFunction(FunctionSignature sig, void* func, std::string name)
     {
-        auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, {});
+        auto return_as_llvm = ToLLVMType(sig.returnType, module_hash, nullptr, {});
         llvm::LLVMContext& ctx = *engine->llvm_context.getContext();
         auto llvm_sig = toLLVMSignature(sig, this);
 

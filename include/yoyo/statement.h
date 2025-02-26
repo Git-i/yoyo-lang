@@ -77,6 +77,7 @@ namespace Yoyo
         virtual ~Statement() = default;
         virtual StatementVariant toVariant() = 0;
         std::vector<Attribute> attributes;
+        AccessSpecifier access; //only really needed for declarations
         static auto attachSLAndParent(std::unique_ptr<Statement> self, SourceLocation bg, SourceLocation end,ASTNode* parent = nullptr)
             -> std::unique_ptr<Statement>
         {
@@ -231,9 +232,8 @@ namespace Yoyo
     public:
         std::string name;
         std::vector<ClassVariable> vars;
-        std::vector<ClassMethod> methods;
+        std::vector<std::unique_ptr<Statement>> stats;
         //consider an unordered map, although types should generally implement too many interfaces
-        std::vector<Type> interfaces;
         std::vector<InterfaceImplementation> impls;
         std::string destructor_name;
         std::optional<bool> is_trivially_destructible; //we use optional bool because we want to lazy evaluate
@@ -242,12 +242,11 @@ namespace Yoyo
         ClassDeclaration(
             Token ident,
             std::vector<ClassVariable> vars,
-            std::vector<ClassMethod> methods,
+            std::vector<std::unique_ptr<Statement>> stats,
             Ownership sh,
-            std::vector<Type> intfs,
             std::vector<InterfaceImplementation> impls)
-            : name(ident.text), vars(std::move(vars)), methods(std::move(methods)), ownership(sh), 
-            interfaces(std::move(intfs)), impls(std::move(impls)){}
+            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), ownership(sh), 
+            impls(std::move(impls)){}
         StatementVariant toVariant() override;
     };
     class GenericClassDeclaration : public ClassDeclaration
@@ -257,14 +256,13 @@ namespace Yoyo
         GenericClassDeclaration(
             Token ident,
             std::vector<ClassVariable> vars,
-            std::vector<ClassMethod> methods,
+            std::vector<std::unique_ptr<Statement>> stats,
             Ownership sh,
-            std::vector<Type> intfs,
             std::vector<InterfaceImplementation> impls,
             GenericClause cl) :
             ClassDeclaration(ident, 
                 std::move(vars), 
-                std::move(methods), sh, std::move(intfs), std::move(impls)), clause(std::move(cl)) {}
+                std::move(stats), sh, std::move(impls)), clause(std::move(cl)) {}
         StatementVariant toVariant() override;
     };
     class ForStatement : public Statement

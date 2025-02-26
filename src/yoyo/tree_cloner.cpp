@@ -154,10 +154,10 @@ namespace Yoyo
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(ClassDeclaration* decl)
     {
-        std::vector<ClassMethod> new_methods;
-        for(auto& method : decl->methods)
+        std::vector<std::unique_ptr<Statement>> new_methods;
+        for(auto& method : decl->stats)
         {
-            new_methods.emplace_back(method.name, copy_stat(method.function_decl), method.access);
+            new_methods.emplace_back(copy_stat(method));
         }
         std::vector<InterfaceImplementation> new_impls;
         for (auto& impl : decl->impls)
@@ -175,7 +175,6 @@ namespace Yoyo
             decl->vars,
             std::move(new_methods),
             decl->ownership,
-            decl->interfaces,
             std::move(new_impls));
     }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(CImportDeclaration* dcl)
@@ -308,10 +307,10 @@ namespace Yoyo
     }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericClassDeclaration* decl)
     {
-        std::vector<ClassMethod> new_methods;
-        for (auto& method : decl->methods)
+        std::vector<std::unique_ptr<Statement>> new_methods;
+        for (auto& stt : decl->stats)
         {
-            new_methods.emplace_back(method.name, copy_stat(method.function_decl), method.access);
+            new_methods.emplace_back(copy_stat(stt));
         }
         std::vector<InterfaceImplementation> new_impls;
         for (auto& impl : decl->impls)
@@ -329,7 +328,6 @@ namespace Yoyo
             decl->vars,
             std::move(new_methods),
             decl->ownership,
-            decl->interfaces,
             std::move(new_impls),
             decl->clause);
     }

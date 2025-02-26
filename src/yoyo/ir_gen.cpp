@@ -22,8 +22,8 @@ namespace Yoyo
     {
         //type is not required not have a module (built-ins)
         auto t = type.module ?
-            type.module->ToLLVMType(type, block_hash, {}):
-            module->ToLLVMType(type, block_hash, {});
+            type.module->ToLLVMType(type, block_hash, this, {}):
+            module->ToLLVMType(type, block_hash, this, {});
         if(t) return t;
         if(type.is_tuple())
         {
@@ -183,31 +183,31 @@ namespace Yoyo
             return attr.name == "no_clone";
         }) != decl->attributes.end();
         
-        ClassMethod* clone_ptr = nullptr;
-        ClassMethod* destructor = nullptr;
-        for(auto& method: decl->methods)
+        FunctionDeclaration* clone_ptr = nullptr;
+        FunctionDeclaration* destructor = nullptr;
+        for(auto& method: decl->stats)
         {
-            if(auto it = std::ranges::find_if(method.function_decl->attributes, [](Attribute& attr) {
+            if(auto it = std::ranges::find_if(method->attributes, [](Attribute& attr) {
                 return attr.name == "clone";
-            }); it != method.function_decl->attributes.end())
+            }); it != method->attributes.end())
             {
-                if(clone_ptr) error(Error(method.function_decl.get(), "Multiple methods marked with #(clone)")); //mutiple clone methods
-                if(has_no_clone) error(Error(method.function_decl.get(), "Clone method specified for class with #(no_clone)"));
-                clone_ptr = &method;
+                if(clone_ptr) error(Error(method.get(), "Multiple methods marked with #(clone)")); //mutiple clone methods
+                if(has_no_clone) error(Error(method.get(), "Clone method specified for class with #(no_clone)"));
+                clone_ptr = dynamic_cast<FunctionDeclaration*>(method.get());
             }
-            if(auto it = std::ranges::find_if(method.function_decl->attributes, [](Attribute& attr) {
+            if(auto it = std::ranges::find_if(method->attributes, [](Attribute& attr) {
                 return attr.name == "destructor";
-            }); it != method.function_decl->attributes.end())
+            }); it != method->attributes.end())
             {
-                if(destructor) error(Error(method.function_decl.get(), "Multiple destructors specified for class"));
-                destructor = &method;
+                if(destructor) error(Error(method.get(), "Multiple destructors specified for class"));
+                destructor = dynamic_cast<FunctionDeclaration*>(method.get());
             }
         }
         if(has_no_clone) decl->has_clone = false;
         else decl->has_clone = true;
         if(clone_ptr)
         {
-            auto fn_decl = reinterpret_cast<FunctionDeclaration*>(clone_ptr->function_decl.get());
+            auto fn_decl = clone_ptr;
             if(!isValidCloneMethod(this_t, fn_decl->signature)) error(Error(fn_decl, "Invalid clone method signature"));
         }
         if (destructor)decl->destructor_name = destructor->name;
@@ -216,20 +216,10 @@ namespace Yoyo
     {
         using namespace std::string_view_literals;
         using namespace std::ranges;
-        for (auto& tp : decl->interfaces) tp.saturate(module, this);
         //TODO: check that all decl->interfaces is unique
         for (auto& impl : decl->impls)
         {
             impl.impl_for.saturate(module, this);
-            auto it = std::ranges::find(decl->interfaces, impl.impl_for);
-            if (it == decl->interfaces.end())
-            {
-                Error err(impl.location.begin, impl.location.end,
-                    "Implementation is either a reimplementation or does not implement a previously declared interface");
-                error(err);
-                continue;
-            }
-            decl->interfaces.erase(it);
             Yoyo::InterfaceDeclaration* decl;
             if (!impl.impl_for.subtypes.empty())
             {
@@ -363,6 +353,7 @@ namespace Yoyo
         bool uses_sret;
 
         llvm::Type* return_as_llvm_type;
+        auto this_entry = module->findFunction(block_hash, decl->name).second;
         if((func = code->getFunction(name)))
         {
             if(!func->empty()) { error(Error(decl, "Function already exists")); return; }
@@ -371,16 +362,15 @@ namespace Yoyo
         }
         else
         {
-            saturateSignature(decl->signature, module);
-            return_as_llvm_type = ToLLVMType(decl->signature.returnType, false);
-            func = llvm::Function::Create(ToLLVMSignature(decl->signature), llvm::GlobalValue::ExternalLinkage, name, code);
+            saturateSignature(this_entry->sig, module);
+            return_as_llvm_type = ToLLVMType(this_entry->sig.returnType, false);
+            func = llvm::Function::Create(ToLLVMSignature(this_entry->sig), llvm::GlobalValue::ExternalLinkage, name, code);
             uses_sret = decl->signature.returnType.should_sret();
             if(uses_sret)
                 func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
-            module->functions[block_hash].emplace_back(decl->name, decl->signature);
         }
 
-        return_t = decl->signature.returnType;
+        return_t = this_entry->sig.returnType;
         return_t.is_mutable = true;
 
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
@@ -403,7 +393,7 @@ namespace Yoyo
         size_t idx = 0;
         decltype(this->variables) new_fn_vars;
         new_fn_vars.emplace_back();
-        for(auto& param : decl->signature.parameters)
+        for(auto& param : this_entry->sig.parameters)
         {
             if(!param.name.empty())
             {
@@ -489,7 +479,19 @@ namespace Yoyo
     {
         __debugbreak();
     }
-    bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface);
+    bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface)
+    {
+        if (cls.parameters.size() != interface.parameters.size()) return false;
+        if (!cls.returnType.is_equal(interface.returnType)) return false;
+        for (size_t i = 0; i < cls.parameters.size(); i++)
+        {
+            auto& cls_param = cls.parameters[i];
+            auto& intf_param = interface.parameters[i];
+            if (!cls_param.type.is_equal(intf_param.type))
+                if (cls_param.name != "this" || intf_param.name != "this") return false;
+        }
+        return true;
+    }
     void IRGenerator::operator()(UnionDeclaration* decl)
     {
         std::string name = decl->name;
@@ -542,20 +544,19 @@ namespace Yoyo
         std::string class_hash = block_hash + name + "::";
         auto curr_hash = reset_hash();
         block_hash = class_hash;
-        module->classes[curr_hash].emplace_back(class_hash, nullptr, std::unique_ptr<ClassDeclaration>{decl});
+        auto cls = module->findType(curr_hash, decl->name);
         for(auto& var : decl->vars) var.type.saturate(module, this);
-        std::get<1>(module->classes.at(curr_hash).back()) = hanldeClassDeclaration(decl->vars, decl->ownership, "");
+        std::get<1>(*cls) = hanldeClassDeclaration(decl->vars, decl->ownership, "");
         auto old_in_class = in_class;
         in_class = true;
         auto old_this = std::move(this_t);
         this_t = Type{ .name = name, .subtypes = {} };
         this_t.saturate(module, this);
         checkClass(decl);
-        for(auto& fn: decl->methods)
+        for(auto& stt: decl->stats)
         {
-            auto fn_decl = reinterpret_cast<FunctionDeclaration*>(fn.function_decl.get());
-            current_Statement = &fn.function_decl;
-            (*this)(fn_decl);
+            current_Statement = &stt;
+            std::visit(*this, stt->toVariant());
         }
         block_hash = std::move(curr_hash);
         for (auto& impl : decl->impls)
@@ -1161,41 +1162,9 @@ namespace Yoyo
         code = md->code.getModuleUnlocked();
         builder = std::make_unique<llvm::IRBuilder<>>(context);
         pushScope();
-        for(auto& stat : statements)
-        {
-            std::variant<
-                std::unique_ptr<ClassDeclaration>,
-                std::unique_ptr<FunctionDeclaration>,
-                std::unique_ptr<OperatorOverload>,
-                std::unique_ptr<ConstantDeclaration>,
-                std::unique_ptr<UnionDeclaration>> vnt;
-            if(auto ptr = dynamic_cast<ClassDeclaration*>(stat.get()))
-            {
-                std::ignore = stat.release();
-                vnt = std::unique_ptr<ClassDeclaration>(ptr);
-            }
-            else if(auto fn_ptr = dynamic_cast<FunctionDeclaration*>(stat.get()))
-            {
-                std::ignore = stat.release();
-                vnt = std::unique_ptr<FunctionDeclaration>(fn_ptr);
-            }
-            else if(auto ovl_ptr = dynamic_cast<OperatorOverload*>(stat.get()))
-            {
-                std::ignore = stat.release();
-                vnt = std::unique_ptr<OperatorOverload>(ovl_ptr);
-            }
-            else if (auto ovl_ptr = dynamic_cast<ConstantDeclaration*>(stat.get()))
-            {
-                std::ignore = stat.release();
-                vnt = std::unique_ptr<ConstantDeclaration>(ovl_ptr);
-            }
-            else if (auto unn_ptr = dynamic_cast<UnionDeclaration*>(stat.get()))
-            {
-                std::ignore = stat.release();
-                vnt = std::unique_ptr<UnionDeclaration>(unn_ptr);
-            }
-            else continue;
-            std::visit(TopLevelVisitor{this}, std::move(vnt));
+        for (auto& stat : statements) {
+            current_Statement = &stat;
+            std::visit(*this, stat->toVariant());
         }
         builder = nullptr;
         return !has_error;
