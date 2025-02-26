@@ -270,8 +270,11 @@ namespace Yoyo
             auto& ptr = std::get<1>(*t);
             if(ptr) return ptr;
             //class is not yet defined but is recursive
-            if(auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
-                return nullptr;
+            if (auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
+            {
+                auto decl = std::get<2>(*t).get();
+                irgen->error(Error(decl, "Type is recursive"));
+            }
 
             //class is not defined yet and not recursive
             auto not_allowed = disallowed_types;
@@ -287,7 +290,7 @@ namespace Yoyo
                 subtype.saturate(this, irgen);
                 std::get<0>(*t).swap(irgen->block_hash);
 
-                auto ty = subtype.module->ToLLVMType(subtype, hash, irgen, disallowed_types);
+                auto ty = subtype.module->ToLLVMType(subtype, hash, irgen, not_allowed);
                 if (!ty) return nullptr;
                 args.push_back(ty);
             }

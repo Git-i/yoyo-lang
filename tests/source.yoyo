@@ -9,7 +9,8 @@ main: fn = {
 
     {
         OtherType: struct = {
-            value: i32
+            value: i32,
+            tr: Type
         }
     }
 
