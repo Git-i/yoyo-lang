@@ -15,12 +15,23 @@ namespace Yoyo
     }
     llvm::Constant* ConstantEvaluator::operator()(NameExpression* nexpr)
     {
-        auto [_, dets] = irgen->module->findConst(irgen->block_hash, nexpr->text);
+        auto [blk, dets] = irgen->module->findConst(irgen->block_hash, nexpr->text);
         if (!dets)
         {
             irgen->error(Error(nexpr, nexpr->text + " does not name a constant")); return nullptr;
         }
-        return std::get<2>(*dets);
+        //check if its recursive
+        if (auto it = std::ranges::find(disallowed_consts, std::pair{ blk, std::get<1>(*dets) })
+            ; it != disallowed_consts.end()) {
+            irgen->error(Error(nexpr, "Constant is recursive"));
+        }
+        auto& val = std::get<2>(*dets);
+        if (std::holds_alternative<llvm::Constant*>(val)) return std::get<llvm::Constant*>(val);
+        
+        irgen->block_hash.swap(blk);
+        (*irgen)(std::get<ConstantDeclaration*>(val));
+        irgen->block_hash.swap(blk);
+        return std::get<llvm::Constant*>(val);
     }
     llvm::Constant* ConstantEvaluator::operator()(PrefixOperation*)
     {
@@ -103,12 +114,25 @@ namespace Yoyo
             first = false;
         }
         std::string c_name = iterator.last().name;
-        auto [_, dets] = md->findConst(hash, c_name);
+        auto [blk, dets] = md->findConst(hash, c_name);
         if (!dets)
         {
             irgen->error(Error(scp, c_name + " does not name a constant")); return nullptr;
         }
-        return std::get<2>(*dets);
+
+        if (auto it = std::ranges::find(disallowed_consts, std::pair{ blk, std::get<1>(*dets) })
+            ; it != disallowed_consts.end()) {
+            irgen->error(Error(scp, "Constant is recursive"));
+        }
+        auto& val = std::get<2>(*dets);
+        if (std::holds_alternative<llvm::Constant*>(val)) return std::get<llvm::Constant*>(val);
+
+        irgen->block_hash.swap(blk);
+        std::swap(md, irgen->module);
+        (*irgen)(std::get<ConstantDeclaration*>(val));
+        std::swap(md, irgen->module);
+        irgen->block_hash.swap(blk);
+        return std::get<llvm::Constant*>(val);
     }
     llvm::Constant* ConstantEvaluator::operator()(CharLiteral* ch)
     {

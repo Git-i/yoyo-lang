@@ -223,6 +223,7 @@ namespace Yoyo
                     case TokenType::Struct: [[fallthrough]];
                     case TokenType::Enum: [[fallthrough]];
                     case TokenType::Union: [[fallthrough]];
+                    case TokenType::Const: [[fallthrough]];
                     case TokenType::Interface: {
                         pushToken(col, col_loc);
                         pushToken(tok, loc);

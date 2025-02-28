@@ -475,6 +475,12 @@ namespace Yoyo
         if(!ty.is_lvalue)
             eval.destroy(val, ty);
     }
+    void IRGenerator::operator()(ConstantDeclaration* decl)
+    {
+        auto [_, constant] = module->findConst(block_hash, decl->name);
+        auto val = std::visit(ConstantEvaluator{ this }, decl->expr->toVariant());
+        std::get<2>(*constant) = val;
+    }
     void IRGenerator::operator()(InterfaceDeclaration* decl)
     {
         __debugbreak();

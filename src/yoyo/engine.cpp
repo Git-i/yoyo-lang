@@ -27,7 +27,7 @@ namespace Yoyo
         }
         bool operator()(ConstantDeclaration* decl) const
         {
-            md->constants[block].emplace_back(decl->type, decl->name, nullptr);
+            md->constants[block].emplace_back(decl->type, decl->name, decl);
             return true;
         }
         bool operator()(GenericFunctionDeclaration* decl) const

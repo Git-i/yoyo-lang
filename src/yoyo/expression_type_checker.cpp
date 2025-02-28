@@ -364,12 +364,12 @@ namespace Yoyo
                 return { type };
             }
         }
-        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->module->module_hash, name); fn)
+        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, name); fn)
         {
             irgen->saturateSignature(fn->sig, irgen->module);
             return { FunctionType{fn->sig, false} };
         }
-        if (auto [name_prefix, fn] = irgen->module->findGenericFn(irgen->module->module_hash, name); fn)
+        if (auto [name_prefix, fn] = irgen->module->findGenericFn(irgen->block_hash, name); fn)
         {
             auto ty = FunctionType(fn->signature, false);
             ty.name = "__generic_fn" + name;
@@ -377,7 +377,7 @@ namespace Yoyo
             ty.block_hash = name_prefix;
             return { std::move(ty) };
         }
-        if (auto [name_pf, c] = irgen->module->findConst(irgen->module->module_hash, name); c)
+        if (auto [name_pf, c] = irgen->module->findConst(irgen->block_hash, name); c)
         {
             return { std::get<0>(*c) };
         }
@@ -618,6 +618,7 @@ namespace Yoyo
         }
         if (auto [name, c] = md->findConst(hash, last.name); c)
         {
+            std::get<0>(*c).saturate(md, irgen);
             return { std::get<0>(*c) };
         }
         return { Error(scp, "The name '" + last.name + "' does not exist in \"" + hash + "\"") };

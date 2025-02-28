@@ -1,18 +1,7 @@
-Type: struct = {
-    other: main::OtherType
-}
+
+Fifty: const i32 = main::Hundred / 2;
 
 main: fn = {
-    value := 100;
-
-    b := Type{ .other = OtherType{ .value } };
-
-    {
-        OtherType: struct = {
-            value: i32,
-            tr: Type
-        }
-    }
-
-    "${b.other.value}".test::print();
+    Hundred: const i32 = 100;
+    "Fifty: ${Fifty}, Hundred: ${Hundred}".test::print();
 }

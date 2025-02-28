@@ -119,7 +119,7 @@ namespace Yoyo
         void operator()(InterfaceDeclaration*);
         void operator()(BreakStatement*);
         void operator()(ContinueStatement*);
-        void operator()(ConstantDeclaration*) {};
+        void operator()(ConstantDeclaration*);
         void operator()(CImportDeclaration*) {}
         void operator()(UnionDeclaration*) ;
 
@@ -270,6 +270,7 @@ namespace Yoyo
     {
     public:
         IRGenerator* irgen;
+        std::vector<std::pair<std::string, std::string>> disallowed_consts;
         llvm::Constant* operator()(IntegerLiteral*);
         llvm::Constant* operator()(BooleanLiteral*);
         llvm::Constant* operator()(RealLiteral*);
