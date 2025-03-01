@@ -187,6 +187,7 @@ namespace Yoyo
         FunctionDeclaration* destructor = nullptr;
         for(auto& method: decl->stats)
         {
+            if (!method) continue;
             if(auto it = std::ranges::find_if(method->attributes, [](Attribute& attr) {
                 return attr.name == "clone";
             }); it != method->attributes.end())
@@ -276,6 +277,7 @@ namespace Yoyo
     }
     bool should_sret_C(llvm::Type* tp, Module* md)
     { 
+        if (tp->isVoidTy()) return false;
         const auto& target = md->engine->jit->getTargetTriple();
         constexpr auto npos = std::string::npos;
         if (target.getArch() == llvm::Triple::x86_64 && target.getEnvironment() == llvm::Triple::MSVC)
@@ -288,22 +290,45 @@ namespace Yoyo
         }
         debugbreak();
     }
+    bool should_sptr_C(llvm::Type* tp, Module* md)
+    {
+        const auto& target = md->engine->jit->getTargetTriple();
+        if (target.getArch() == llvm::Triple::x86_64 && target.getEnvironment() == llvm::Triple::MSVC)
+        {
+            size_t sz = md->engine->jit->getDataLayout().getTypeSizeInBits(tp);
+            sz = sz / 8; //convert to bytes
+            //only sret if its a small type that's not a power of 2
+            if (sz > sizeof(uint64_t) || (sz & (sz - 1)) != 0) return true;
+            return false;
+        }
+    }
     llvm::FunctionType* toCSignature(IRGenerator* irgen, const FunctionSignature& sig)
     {
         llvm::Type* return_t = nullptr;
         auto return_as_llvm = irgen->ToLLVMType(sig.returnType, false);
         bool should_sret = should_sret_C(return_as_llvm, irgen->module);
         std::vector<llvm::Type*> arg_tys;
-        if (should_sret)
-        {
-            return_t = llvm::Type::getVoidTy(irgen->context);
-            arg_tys.push_back(llvm::PointerType::get(irgen->context, 0));
+        if (!return_as_llvm->isVoidTy()) {
+            if (should_sret)
+            {
+                return_t = llvm::Type::getVoidTy(irgen->context);
+                arg_tys.push_back(llvm::PointerType::get(irgen->context, 0));
+            }
+            //use an integer register win64 only
+            else return_t = llvm::IntegerType::get(irgen->context,
+                irgen->module->engine->jit->getDataLayout().getTypeSizeInBits(return_as_llvm));
         }
-        //use an integer register win64 only
-        else return_t = llvm::IntegerType::get(irgen->context, 
-            irgen->module->engine->jit->getDataLayout().getTypeSizeInBits(return_as_llvm));
+        else return_t = return_as_llvm;
+        
         for (auto& param : sig.parameters) {
-            arg_tys.push_back(irgen->ToLLVMType(param.type, false));
+            auto as_llvm = irgen->ToLLVMType(param.type, false);
+            if (should_sptr_C(as_llvm, irgen->module)) {
+                arg_tys.push_back(llvm::PointerType::get(irgen->context, 0));
+            }
+            else {
+                arg_tys.push_back(as_llvm->isPointerTy() ? as_llvm : llvm::IntegerType::get(irgen->context,
+                    irgen->module->engine->jit->getDataLayout().getTypeSizeInBits(as_llvm)));
+            }
         }
         return llvm::FunctionType::get(return_t, arg_tys, false);
     }
@@ -320,13 +345,29 @@ namespace Yoyo
             return_sret = should_sret_C(as_llvm, irgen->module);
             if (return_sret) args.push_back(func->getArg(0));
         }
-        for (auto& param : decl->signature.parameters)
-            if (param.type.should_sret()) irgen->error(Error(decl, "Only primitive parameter types allowed in Cimport"));
         auto c_import = reinterpret_cast<CImportDeclaration*>(decl->body.get());
         auto sig = toCSignature(irgen, decl->signature);
         auto c_fn = llvm::Function::Create(sig, llvm::GlobalValue::ExternalLinkage, c_import->function_name, irgen->code);
+        size_t param_idx = 0;
         for (auto arg : std::ranges::views::iota(offset, func->arg_size()))
-            args.push_back(func->getArg(arg));
+        {
+            auto arg_val = func->getArg(arg);
+
+            if (decl->signature.parameters[param_idx].type.should_sret()) {
+                
+                auto as_llvm = irgen->ToLLVMType(decl->signature.parameters[param_idx].type, false);
+                if (should_sptr_C(as_llvm, irgen->module)) {
+                    args.push_back(arg_val);
+                }
+                else {
+                    auto ty = llvm::IntegerType::get(irgen->context,
+                        irgen->module->engine->jit->getDataLayout().getTypeSizeInBits(as_llvm));
+                    args.push_back(irgen->builder->CreateLoad(ty, arg_val));
+                }
+            }
+            else args.push_back(arg_val);
+            param_idx++;
+        }
         auto call_val = irgen->builder->CreateCall(c_fn, args);
         if (decl->signature.returnType.is_void()) irgen->builder->CreateRetVoid();
         else if (decl->signature.returnType.should_sret())
@@ -370,17 +411,20 @@ namespace Yoyo
                 func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
         }
 
-        return_t = this_entry->sig.returnType;
-        return_t.is_mutable = true;
 
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         builder->SetInsertPoint(bb);
 
         if (dynamic_cast<CImportDeclaration*>(decl->body.get()))
         {
-            return handleCImport(this, decl, func);
-            
+            saturateSignature(decl->signature, module);
+            handleCImport(this, decl, func);
+            if (oldBuilder) builder.swap(oldBuilder);
+            return;
+
         }
+        return_t = this_entry->sig.returnType;
+        return_t.is_mutable = true;
 
         returnBlock = llvm::BasicBlock::Create(context, "return", func);
         if(!return_t.is_void()) currentReturnAddress = uses_sret ? static_cast<llvm::Value*>(func->getArg(0)) :
@@ -561,6 +605,7 @@ namespace Yoyo
         checkClass(decl);
         for(auto& stt: decl->stats)
         {
+            if (!stt) continue;
             current_Statement = &stt;
             std::visit(*this, stt->toVariant());
         }

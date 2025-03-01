@@ -381,6 +381,7 @@ namespace Yoyo
             tp.is_tuple() ||
             tp.is_str() ||
             tp.name == "__called_fn" ||
+            tp.is_opaque_pointer() ||
             tp.is_optional() ||
             tp.is_variant() ||
             tp.is_reference() ||
@@ -600,7 +601,7 @@ namespace Yoyo
     }
     bool Type::should_sret() const
     {
-        return !is_primitive() && (get_decl_if_enum() == nullptr) && !is_reference() && !is_char();
+        return !is_primitive() && (get_decl_if_enum() == nullptr) && !is_reference() && !is_char() && !is_opaque_pointer();
     }
 
     bool Type::is_integral() const

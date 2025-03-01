@@ -107,7 +107,7 @@ namespace Yoyo
 
         [[nodiscard]] bool is_function() const {return name == "__fn";}
         [[nodiscard]] bool is_primitive() const {return is_integral() || is_floating_point() ||  is_boolean() || is_void();}
-        [[nodiscard]] bool is_opaque_pointer() const {return name == "__ptr";}
+        [[nodiscard]] bool is_opaque_pointer() const {return name == "ptr";}
         [[nodiscard]] bool is_lambda() const {return name.starts_with("__lambda");}
         [[nodiscard]] std::string full_name() const;
         [[nodiscard]] std::string full_name_no_block() const;

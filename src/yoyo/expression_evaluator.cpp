@@ -1092,15 +1092,22 @@ namespace Yoyo
         //combine all the strings into one buffer
         for(auto& pair : std::ranges::subrange(substrings.begin() + 1, substrings.end()))
             final_len = irgen->builder->CreateAdd(final_len, pair.second);
-        llvm::Value* final_buffer = irgen->Malloc("string_buffer", final_len);
+        //add 1 for null termination
+        llvm::Value* final_buffer = irgen->Malloc("string_buffer", irgen->builder->CreateAdd(
+            final_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 1)
+            ));
         llvm::Value* offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0);
+        auto i8_ty = llvm::Type::getInt8Ty(irgen->context);
         for(auto& pair : substrings)
         {
-            auto current_pointer = irgen->builder->CreateGEP(llvm::Type::getInt8Ty(irgen->context), final_buffer, {offset});
+            auto current_pointer = irgen->builder->CreateGEP(i8_ty, final_buffer, {offset});
             irgen->builder->CreateMemCpy(current_pointer, std::nullopt, pair.first, std::nullopt, pair.second);
             irgen->Free(pair.first);
             offset = irgen->builder->CreateAdd(offset, pair.second);
         }
+        irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, 0),
+            irgen->builder->CreateGEP(i8_ty, final_buffer, { offset }));
+
         auto llvm_t = irgen->ToLLVMType(Type{"str"}, false);
         auto string = irgen->Alloca("str_obj", llvm_t);
 
@@ -1201,6 +1208,11 @@ namespace Yoyo
             {
                 return std::visit(LValueEvaluator{irgen}, op->operand->toVariant());
             }
+        case TokenType::Bang:
+        {
+            auto operand = std::visit(*this, op->operand->toVariant());
+            return irgen->builder->CreateNot(operand);
+        }
         }
     }
     llvm::Value* ExpressionEvaluator::operator()(BinaryOperation* op)

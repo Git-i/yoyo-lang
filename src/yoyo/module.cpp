@@ -504,6 +504,25 @@ namespace Yoyo
         module->generic_interfaces[module->module_hash].emplace_back(std::move(iterator));
         addTrigFunctions(module, std::span{ types.begin(), types.begin() + 2 }, builder);
         addFloatConsts(module, std::span{ types.begin(), types.begin() + 2 });
+
+
+        
+        module->functions["str::"].emplace_back(Module::FunctionDetails{
+                .name = "c_str",
+                .sig = FunctionSignature{
+                    .returnType = Type{.name = "ptr", .module = module },
+                    .parameters = { FunctionParameter{.type = Type{.name = "__ref", .subtypes = {Type{.name = "str", .module = module}}, .module = module}, .name = "this"}}
+                }
+            });
+        auto ptr_ty = llvm::PointerType::get(ctx, 0);
+        auto size_ty = llvm::Type::getInt64Ty(ctx);
+        auto c_str_sig = llvm::FunctionType::get(ptr_ty, {ptr_ty}, false);
+        auto string_ty = llvm::StructType::get(ctx, { ptr_ty, size_ty, size_ty });
+        auto c_str_fn = llvm::Function::Create(c_str_sig, llvm::GlobalValue::ExternalLinkage, "str::c_str", module->code.getModuleUnlocked());
+        builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", c_str_fn));
+        builder.CreateRet(
+            builder.CreateLoad(ptr_ty, builder.CreateStructGEP(string_ty, c_str_fn->getArg(0), 0)));
+        
     }
     void addFloatConsts(Module* md, std::span<Type> types)
     {

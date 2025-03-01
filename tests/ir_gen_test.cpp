@@ -44,7 +44,7 @@ TEST_CASE("Test IR")
     md->addFunction("() -> u32", read_int, "read_uint");
     engine.addModule("source.yoyo", src2);
     engine.compile();
-    engine.addDynamicLibrary("c_file.dll");
+    engine.addDynamicLibrary("raylib.dll");
     uint32_t idx = 3;
     for(auto& mod: engine.modules)
     {
