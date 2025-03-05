@@ -1,0 +1,71 @@
+Window: struct = {
+    init: fn(w: i32, h: i32, title: &str) -> Window = {
+        init_window_i: fn(w: i32, h: i32, title: ptr) = c_import!("InitWindow");
+        init_window_i(w, h, title.c_str());
+        return Window{};
+    }
+    should_close: fn(&this) -> bool  = {
+       should_close_i: fn -> bool = c_import!("WindowShouldClose");
+       return should_close_i();
+    }
+    #(destructor)
+    destroy: fn(&mut this) = {
+        dst: fn = c_import!("CloseWindow");
+        dst();       
+    }
+}
+AudioDevice: struct = {
+    init: fn -> AudioDevice = {
+        init_ad: fn = c_import!("InitAudioDevice");
+        init_ad();
+        return This{};
+    }
+    #(destructor)
+    destroy: fn(&mut this) = {
+        dst: fn = c_import!("CloseAudioDevice");
+        dst();
+    }
+}
+AudioStream: struct = {
+    buffer: ptr,
+    processor: ptr,
+    sample_rate: u32,
+    sample_size: u32,
+    channels: u32
+}
+Sound: struct = {
+    stream: AudioStream,
+    frame_count: u32,
+    load: fn(src: &str) -> Sound = {
+        load_sound_i: fn(file: ptr) -> This = c_import!("LoadSound");
+        return load_sound_i(src.c_str());
+    }
+    play: fn(&this) = {
+        play_sound: fn(sound: Sound) = c_import!("PlaySound");
+        play_sound(*this);
+    }
+    #(destructor)
+    unload: fn(&mut this) = {
+        unload_sound: fn(sound: Sound) = c_import!("UnloadSound");
+        unload_sound(*this);
+    }
+}
+set_target_fps: fn(fps: i32) = c_import!("SetTargetFPS");
+Key: enum = {
+    Space = 32, Enter = 257
+}
+begin_drawing: fn = c_import!("BeginDrawing");
+end_drawing: fn = c_import!("EndDrawing");
+
+Color: struct = {
+    r: u8, g: u8, b: u8, a: u8,
+    white: fn -> This = return Color{.r = 245, .g = 245, .b = 245, .a = 245};
+    light_gray: fn -> This = return Color{.r = 200, .g = 200, .b = 200, .a = 255};
+}
+
+draw_text: fn(text: &str, posx: i32, posy: i32, fontsz: i32, color: Color) = {
+    dtxt_i: fn(text: ptr, px: i32, py: i32, font: i32, color: Color)
+        = c_import!("DrawText");
+    dtxt_i(text.c_str(), posx, posy, fontsz, color);
+}
+clear_background: fn(color: Color) = c_import!("ClearBackground");

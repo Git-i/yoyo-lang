@@ -38,11 +38,17 @@ TEST_CASE("Test IR")
     const char* argv[] = {"foo"};
     const char** lol = argv;
 
+    std::ifstream raylib_file("raylib-yoyo/module.yoyo");
+    std::ostringstream oss2;
+    oss2 << raylib_file.rdbuf();
+    std::string raylib_src = oss2.str();
+
     Yoyo::Engine engine;
     md = engine.addAppModule("test");
     md->addFunction("(x: &str) -> i32", func, "print");
     md->addFunction("() -> u32", read_int, "read_uint");
     engine.addModule("source.yoyo", src2);
+    engine.addModule("rl", raylib_src);
     engine.compile();
     engine.addDynamicLibrary("raylib.dll");
     uint32_t idx = 3;

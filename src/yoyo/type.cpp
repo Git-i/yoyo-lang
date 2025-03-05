@@ -317,6 +317,10 @@ namespace Yoyo
         {
             auto decl = std::get<2>(*dets).get();
             if(decl->is_trivially_destructible) return *decl->is_trivially_destructible;
+            //declaration is probably not properly saturated here
+            irgen->block_hash.swap(std::get<0>(*dets));
+            for (auto& var : decl->vars) var.type.saturate(module, irgen);
+            irgen->block_hash.swap(std::get<0>(*dets));
             evaluateDestructability(decl, irgen);
             return *decl->is_trivially_destructible;
         }
@@ -437,8 +441,15 @@ namespace Yoyo
             ExpressionEvaluator{irgen}.generateGenericAlias(module, blk, alias, subtypes);
             *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
         }
-        else if(irgen && irgen->in_class && name == "This") 
-            *this = irgen->this_t;
+        // since "This" is one word it tends to skip through the right modules
+        // so we resaturate with the new block hash
+        else if (name == "This")
+        {
+            if (block_hash.empty()) debugbreak();
+            name = block_hash + name;
+            block_hash = ""; module = nullptr;
+            saturate(src, irgen);
+        }
         
         if (!verify()) debugbreak();
 

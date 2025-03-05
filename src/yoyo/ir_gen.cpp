@@ -1214,6 +1214,7 @@ namespace Yoyo
         builder = std::make_unique<llvm::IRBuilder<>>(context);
         pushScope();
         for (auto& stat : statements) {
+            if (!stat) continue;
             current_Statement = &stat;
             std::visit(*this, stat->toVariant());
         }

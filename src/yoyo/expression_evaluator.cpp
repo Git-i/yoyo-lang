@@ -1525,7 +1525,11 @@ namespace Yoyo
                     std::string function_name = block + rhs->text;
                     auto callee = irgen->code->getFunction(function_name);
                     if (!callee)
+                    {
+                        irgen->block_hash.swap(block);
                         callee = declareFunction(function_name, irgen, fn->sig);
+                        irgen->block_hash.swap(block);
+                    }
                     bool uses_sret = callee->hasStructRetAttr();
 
                     std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret); // +1 because its bound

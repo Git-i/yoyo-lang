@@ -610,7 +610,9 @@ namespace Yoyo
         }
         if (auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
+            irgen->block_hash.swap(hash);
             irgen->saturateSignature(fn->sig, md);
+            irgen->block_hash.swap(hash);
             auto t = FunctionType{ fn->sig, false };
             t.block_hash = hash;
             t.module = md;

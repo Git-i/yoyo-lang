@@ -44,6 +44,11 @@ namespace Yoyo
             {
                 std::visit(ForwardDeclaratorPass1{ md, stt, mangled_name_prefix }, stt->toVariant());
             }
+            md->aliases[mangled_name_prefix]["This"] = Type{
+                .name = decl->name,
+                .module = md,
+                .block_hash = block,
+            };
             md->classes[block].emplace_back(
                 mangled_name_prefix,
                 nullptr,
@@ -102,6 +107,11 @@ namespace Yoyo
             {
                 std::visit(ForwardDeclaratorPass1{ md, stt, new_blk }, stt->toVariant());
             }
+            md->aliases[new_blk]["This"] = Type{
+                .name = decl->name,
+                .module = md,
+                .block_hash = block,
+            };
             md->unions[block].emplace_back(
                 std::unique_ptr<UnionDeclaration>{decl},
                 nullptr
