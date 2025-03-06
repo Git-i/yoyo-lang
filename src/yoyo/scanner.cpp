@@ -207,7 +207,7 @@ namespace Yoyo {
         loc.column--;
         size_t iden_begin = position;
         uint32_t num_open_braces = 0;
-        bool in_sub_string = false;
+        bool in_sub_string = true;
         while (!IsEof())
         {
             char c = Get();
@@ -215,6 +215,11 @@ namespace Yoyo {
             {
                 if(num_open_braces == 0) break;
                 in_sub_string = !in_sub_string;
+            }
+            else if (c == '\\')
+            {
+                //escape the next character
+                if (in_sub_string) std::ignore = Get();
             }
             else if(c == '$')
             {

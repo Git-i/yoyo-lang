@@ -40,17 +40,52 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> StringLiteralParselet::parse(Parser& parser, Token tk)
     {
+        auto escape_string = [](std::string input) -> std::string {
+            size_t pos = 0;
+            size_t current = 0;
+            std::string output;
+            output.reserve(input.size());
+            while (pos != input.npos) {
+                pos = input.find_first_of('\\', pos);
+                if (pos == input.npos) break;
+                if (current != pos) {
+                    output.append(&input[current], pos - current);
+                }
+                switch (input[pos + 1])
+                {
+                case '\\': [[fallthtough]];
+                case '\"': [[fallthtough]];
+                case '\'': [[fallthtough]];
+                case '$': { output += input[pos + 1]; break; }
+                case 'a': { output += '\a'; break; }
+                case 'b': { output += '\b'; break; }
+                case 'f': { output += '\f'; break; }
+                case 'n': { output += '\n'; break; }
+                case 'r': { output += '\r'; break; }
+                case 't': { output += '\t'; break; }
+                case 'v': { output += '\v'; break; }
+                default: { output.append("<Invlid seq, idk what to do>"); break; }
+                }
+                pos += 2;
+                current = pos;
+            }
+            if (current <= input.size()) output.append(&input[current]);
+            return output;
+        };
         std::vector<std::variant<std::string, std::unique_ptr<Expression>>> values;
         size_t pos = 0;
         size_t current_pos = 0;
         while(pos != tk.text.npos)
         {
+            if (auto escape = tk.text.find_first_of('\\', pos); escape != tk.text.npos) {
+                pos = escape + 2;
+            }
             pos = tk.text.find_first_of('$', pos);
             if(pos == tk.text.npos) break;
             if(tk.text[pos + 1] != '{') { pos++; continue; }
             if(current_pos != pos)
             {
-                values.emplace_back(std::string{tk.text.begin() + current_pos, tk.text.begin() + pos});
+                values.emplace_back(escape_string(std::string{tk.text.begin() + current_pos, tk.text.begin() + pos}));
             }
             pos += 2; //skip the ${
             std::string str(tk.text.begin() + pos, tk.text.end());
@@ -69,7 +104,7 @@ namespace Yoyo
         }
         if(current_pos != tk.text.size())
         {
-            values.emplace_back(std::string{tk.text.begin() + current_pos, tk.text.end()});
+            values.emplace_back(escape_string(std::string{tk.text.begin() + current_pos, tk.text.end()}));
         }
 
         auto expr = std::make_unique<StringLiteral>(std::move(values));
