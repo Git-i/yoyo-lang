@@ -512,7 +512,8 @@ namespace Yoyo
                 .sig = FunctionSignature{
                     .returnType = Type{.name = "ptr", .module = module },
                     .parameters = { FunctionParameter{.type = Type{.name = "__ref", .subtypes = {Type{.name = "str", .module = module}}, .module = module}, .name = "this"}}
-                }
+                },
+                .attributes = std::vector{ Attribute{"public"}}
             });
         auto ptr_ty = llvm::PointerType::get(ctx, 0);
         auto size_ty = llvm::Type::getInt64Ty(ctx);

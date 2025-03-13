@@ -209,7 +209,12 @@ namespace Yoyo
             auto this_block = lhs.deref().full_name() + "::";
             if (auto [block, fn] = lhs.deref().module->findFunction(this_block, name_expr->text); fn)
                 if (block == this_block && !fn->sig.parameters.empty())
-                    if (fn->sig.parameters[0].name == "this") return FunctionType{ fn->sig, true };
+                    if (fn->sig.parameters[0].name == "this") {
+                        if (lhs.deref().module != irgen->module && fn->is_private()) {
+                            return std::nullopt;
+                        }
+                        return FunctionType{ fn->sig, true };
+                    }
         }
 
         if (lhs.deref().is_view())
@@ -614,6 +619,10 @@ namespace Yoyo
         }
         if (auto [name, fn] = md->findFunction(hash, last.name); fn)
         {
+            if (md != irgen->module && fn->is_private()) return {
+                Error(scp, "The function type " + name + fn->name + " is private")
+            };
+
             irgen->block_hash.swap(hash);
             irgen->saturateSignature(fn->sig, md);
             irgen->block_hash.swap(hash);

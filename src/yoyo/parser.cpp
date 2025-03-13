@@ -365,9 +365,11 @@ namespace Yoyo
         std::vector<std::unique_ptr<Statement>> stat;
         while (!discard(TokenType::RCurly))
         {
+            auto attr_list = parseAttributeList();
             if (isTopLevelDeclaration())
             {
                 stat.push_back(parseTopLevelDeclaration());
+                stat.back()->attributes.swap(attr_list);
                 std::ignore = discard(TokenType::Comma); //optional ',' after declaration
             }
             else
@@ -684,9 +686,11 @@ namespace Yoyo
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
         {
+            auto attr_list = parseAttributeList();
             if (isTopLevelDeclaration())
             {
                 stats.push_back(parseTopLevelDeclaration());
+                stats.back()->attributes.swap(attr_list);
                 std::ignore = discard(TokenType::Comma); //optional ',' after declaration
                 continue;
             }

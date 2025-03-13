@@ -34,7 +34,7 @@ namespace Yoyo
 
         bool uses_sret = sig.returnType.should_sret();
         std::string mangled_name = module_hash + name;
-        functions[module_hash].emplace_back(name, std::move(sig));
+        functions[module_hash].emplace_back(name, std::move(sig), std::vector{ Attribute{"public"} });
 
         auto fn = llvm::Function::Create(llvm_sig, llvm::GlobalValue::ExternalLinkage, mangled_name, code.getModuleUnlocked());
         if(uses_sret)

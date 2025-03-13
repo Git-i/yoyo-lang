@@ -17,6 +17,11 @@ namespace Yoyo
         {
             std::string name;
             FunctionSignature sig;
+            std::vector<Attribute> attributes;
+            bool is_private() const {
+                return attributes.end()
+                    == std::ranges::find_if(attributes, [](const auto& attr) { return attr.name == "public"; });
+            }
         };
         llvm::orc::ThreadSafeModule code;
         std::unordered_map<std::string, std::vector<FunctionDetails>> functions;

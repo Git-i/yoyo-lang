@@ -20,7 +20,7 @@ namespace Yoyo
         std::string block;
         bool operator()(FunctionDeclaration* decl) const
         {
-            md->functions[block].emplace_back(decl->name, decl->signature);
+            md->functions[block].emplace_back(decl->name, decl->signature, decl->attributes);
             std::string new_blk = block + decl->name + "::";
             std::visit(ForwardDeclaratorPass1{ md, decl->body, new_blk }, decl->body->toVariant());
             return true;
