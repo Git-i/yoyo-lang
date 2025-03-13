@@ -64,7 +64,7 @@ namespace Yoyo
                 case 'r': { output += '\r'; break; }
                 case 't': { output += '\t'; break; }
                 case 'v': { output += '\v'; break; }
-                default: { output.append("<Invlid seq, idk what to do>"); break; }
+                default: { output += input[pos + 1]; break; }
                 }
                 pos += 2;
                 current = pos;

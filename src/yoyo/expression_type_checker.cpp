@@ -596,12 +596,16 @@ namespace Yoyo
         //is_enum
         if (auto [actual_hash, enm] = md->findEnum(hash, second_to_last); enm)
         {
+            if (md != irgen->module && enm->is_private()) return { Error(scp, "The enum type " + actual_hash + enm->identifier + " is private") };
             if (!last.subtypes.empty()) return { Error(scp, "Enum child cannot have subtypes") };
             if (enm->values.contains(last.name)) return { Type{.name = second_to_last, .module = md, .block_hash = actual_hash } };
             return { Error(scp, "Enum doesn't contain specified value") };
         }
         if (auto [actual_hash, unn] = md->findUnion(hash, second_to_last); unn)
         {
+            if (md != irgen->module && unn->is_private()) return { 
+                Error(scp, "The union type " + actual_hash + unn->name + " is private") 
+            };
             if (!last.subtypes.empty()) return { Error(scp, "Union child cannot have subtypes") };
             if (unn->fields.contains(last.name)) return { 
                 Type{.name = "__union_var" + unn->name + "$" + last.name, .module = md, .block_hash = actual_hash}
@@ -630,6 +634,9 @@ namespace Yoyo
         obj->t.saturate(irgen->module, irgen);
         auto decl = obj->t.get_decl_if_class(irgen);
         if (!decl) return { Error(obj, "The type tp does not exist or is not a class/struct") };
+        if (obj->t.module != irgen->module && decl->is_private()) return {
+            Error(obj, "The type " + obj->t.full_name() + " is private")
+        };
         if (obj->values.size() != decl->vars.size())
         {
             //TODO

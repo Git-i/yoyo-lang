@@ -86,6 +86,11 @@ namespace Yoyo
             self->parent = parent;
             return self;
         }
+        bool is_private() const {
+            return attributes.end() == std::ranges::find_if(attributes, [](const Attribute& attr) {
+                return attr.name == "public";
+            });
+        }
     };
     class ExpressionStatement : public Statement
     {

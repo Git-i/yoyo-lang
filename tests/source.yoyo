@@ -1,6 +1,8 @@
 is_key_pressed: fn(key: rl::Key) -> bool = c_import!("IsKeyPressed");
 
 main: fn = {
+    test::print(&"\${escaped} \n text \t lmao \"in quotes \" \5");
+    lol := rl::Window{};
     wd := rl::Window::init(1280, 720, &"Game");
     ad := rl::AudioDevice::init();
     fx_wav := rl::Sound::load(&"resource/sound.wav");

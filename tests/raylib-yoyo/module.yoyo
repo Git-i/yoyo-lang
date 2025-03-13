@@ -51,6 +51,8 @@ Sound: struct = {
     }
 }
 set_target_fps: fn(fps: i32) = c_import!("SetTargetFPS");
+
+#(public)
 Key: enum = {
     Space = 32, Enter = 257
 }
