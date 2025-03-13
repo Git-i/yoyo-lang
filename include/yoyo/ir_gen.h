@@ -107,7 +107,7 @@ namespace Yoyo
         void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
-        void operator()(EnumDeclaration*){}
+        void operator()(EnumDeclaration*);
         void operator()(ModuleImport*){}
         void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);

@@ -286,8 +286,9 @@ namespace Yoyo
     public:
         std::string identifier;
         std::unordered_map<std::string, int32_t> values;
-        EnumDeclaration(std::string iden, std::unordered_map<std::string, int32_t> vals)
-            : identifier(std::move(iden)), values(std::move(vals)) {}
+        std::vector<std::unique_ptr<Statement>> stats;
+        EnumDeclaration(std::string iden, std::unordered_map<std::string, int32_t> vals, std::vector<std::unique_ptr<Statement>> stats)
+            : identifier(std::move(iden)), values(std::move(vals)), stats(std::move(stats)) {}
         StatementVariant toVariant() override;
     };
     // if |value| (optional) { }

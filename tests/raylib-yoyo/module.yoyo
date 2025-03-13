@@ -54,7 +54,8 @@ set_target_fps: fn(fps: i32) = c_import!("SetTargetFPS");
 
 #(public)
 Key: enum = {
-    Space = 32, Enter = 257
+    Space = 32, Enter = 257,
+    is_key_pressed: fn(this) -> bool = c_import!("IsKeyPressed");
 }
 begin_drawing: fn = c_import!("BeginDrawing");
 end_drawing: fn = c_import!("EndDrawing");

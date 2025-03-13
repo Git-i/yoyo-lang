@@ -315,13 +315,13 @@ namespace Yoyo
         constexpr int32_t unord = 4;
         auto cmp_eq = std::make_unique<EnumDeclaration>( "CmpEq", decltype(EnumDeclaration::values){
             {"Eq", eq}, {"Ne", ne}
-        });
+        }, decltype(EnumDeclaration::stats){});
         auto cmp_ord = std::make_unique<EnumDeclaration>( "CmpOrd", decltype(EnumDeclaration::values){ 
             {"Eq", eq}, {"Less", less}, {"Greater", greater}
-        });
+        }, decltype(EnumDeclaration::stats){});
         auto cmp_pord = std::make_unique<EnumDeclaration>("CmpPartOrd", decltype(EnumDeclaration::values){
             {"Eq", eq}, { "Less", less }, { "Greater", greater }, { "Unord", unord }
-        });
+        }, decltype(EnumDeclaration::stats){});
         module->enums[module->module_hash].emplace_back(std::move(cmp_eq));
         module->enums[module->module_hash].emplace_back(std::move(cmp_ord));
         module->enums[module->module_hash].emplace_back(std::move(cmp_pord));

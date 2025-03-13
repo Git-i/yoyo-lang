@@ -59,7 +59,7 @@ namespace Yoyo
     {
         //auto st = std::set{ values | std::views::values };
         //if (st.size() != values.size()) return Result::DuplicateEnumValue;
-        enums[module_hash].emplace_back(std::make_unique<EnumDeclaration>(std::move(enum_name), std::move(values)));
+        enums[module_hash].emplace_back(std::make_unique<EnumDeclaration>(std::move(enum_name), std::move(values), std::vector<std::unique_ptr<Statement>>{}));
         return Result::Success;
     }
 }

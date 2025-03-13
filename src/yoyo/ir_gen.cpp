@@ -542,6 +542,29 @@ namespace Yoyo
         }
         return true;
     }
+    void IRGenerator::operator()(EnumDeclaration* decl)
+    {
+        auto ptr = current_Statement->release();
+        assert(ptr == decl);
+
+        auto old_in_class = in_class;
+        in_class = true;
+        auto old_this = std::move(this_t);
+        this_t = Type{ .name = decl->identifier, .subtypes = {} };
+        this_t.saturate(module, this);
+        
+        std::string this_hash = block_hash + decl->identifier + "::";
+        block_hash.swap(this_hash);
+
+        for (auto& stat : decl->stats) {
+            current_Statement = &stat;
+            std::visit(*this, stat->toVariant());
+        }
+        block_hash.swap(this_hash);
+        this_t = std::move(old_this);
+        in_class = old_in_class;
+    }
+
     void IRGenerator::operator()(UnionDeclaration* decl)
     {
         std::string name = decl->name;
@@ -605,7 +628,6 @@ namespace Yoyo
         checkClass(decl);
         for(auto& stt: decl->stats)
         {
-            if (!stt) continue;
             current_Statement = &stt;
             std::visit(*this, stt->toVariant());
         }
@@ -1214,7 +1236,6 @@ namespace Yoyo
         builder = std::make_unique<llvm::IRBuilder<>>(context);
         pushScope();
         for (auto& stat : statements) {
-            if (!stat) continue;
             current_Statement = &stat;
             std::visit(*this, stat->toVariant());
         }

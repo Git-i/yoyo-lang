@@ -677,12 +677,19 @@ namespace Yoyo
         //Unspecified values cannot equal to specified values unlike in c++
         std::vector<int32_t> usedIntegers;
         std::unordered_map<std::string, int32_t> values;
+        std::vector<std::unique_ptr<Statement>> stats;
         int32_t nextValue = 0;
         Get(); //skip "enum"
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))
         {
+            if (isTopLevelDeclaration())
+            {
+                stats.push_back(parseTopLevelDeclaration());
+                std::ignore = discard(TokenType::Comma); //optional ',' after declaration
+                continue;
+            }
             auto name_tk = Get();
             if(name_tk->type != TokenType::Identifier) { error("Expected identifier", Peek()); continue; }
             std::string name(name_tk->text);
@@ -722,7 +729,7 @@ namespace Yoyo
             }
         }
         return Statement::attachSLAndParent(
-            std::make_unique<EnumDeclaration>(std::string{identifier.text}, std::move(values)), identifier.loc, discardLocation, parent);
+            std::make_unique<EnumDeclaration>(std::string{identifier.text}, std::move(values), std::move(stats)), identifier.loc, discardLocation, parent);
     }
     //struct and classes are virtually the same, except structs don't have access specs
     std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier, bool isStruct)

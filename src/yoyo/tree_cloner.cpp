@@ -231,7 +231,9 @@ namespace Yoyo
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(EnumDeclaration* decl)
     {
-        return std::make_unique<EnumDeclaration>(*decl);
+        std::vector<std::unique_ptr<Statement>> stats;
+        for (auto& stat : decl->stats) stats.emplace_back(copy_stat(stat));
+        return std::make_unique<EnumDeclaration>(decl->identifier, decl->values, std::move(stats));
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(ModuleImport* imp)

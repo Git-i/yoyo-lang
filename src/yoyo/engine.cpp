@@ -71,7 +71,17 @@ namespace Yoyo
         }
         bool operator()(EnumDeclaration* decl)
         {
-            std::ignore = stmt.release();
+            std::string new_blk = block + decl->identifier + "::";
+
+            for (auto& stt : decl->stats)
+            {
+                std::visit(ForwardDeclaratorPass1{ md, stt, new_blk }, stt->toVariant());
+            }
+            md->aliases[new_blk]["This"] = Type{
+                .name = decl->identifier,
+                .module = md,
+                .block_hash = block,
+            };
             md->enums[block].emplace_back(decl);
             return true;
         }

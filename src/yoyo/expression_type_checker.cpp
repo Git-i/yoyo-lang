@@ -541,7 +541,7 @@ namespace Yoyo
         }
         if (auto [hsh, enm] = md->findEnum(hash, type.name); enm)
         {
-            hash = hsh + type.name;
+            hash = hsh + type.name + "::";
             return true;
         }
         if(auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
