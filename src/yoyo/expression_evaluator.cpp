@@ -1077,9 +1077,8 @@ namespace Yoyo
                 auto gvar = irgen->builder->CreateGlobalString(as_str);
 
                 auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,as_str.size());
-                substrings.emplace_back(irgen->Malloc("tmp_string_buffer", str_size), str_size);
+                substrings.emplace_back(gvar, str_size);
 
-                irgen->builder->CreateMemCpy(substrings.back().first, std::nullopt, gvar, std::nullopt, str_size);
             }
             else //if(std::holds_alternative<std::unique_ptr<Expression>>)
             {
@@ -1103,7 +1102,7 @@ namespace Yoyo
         {
             auto current_pointer = irgen->builder->CreateGEP(i8_ty, final_buffer, {offset});
             irgen->builder->CreateMemCpy(current_pointer, std::nullopt, pair.first, std::nullopt, pair.second);
-            irgen->Free(pair.first);
+            if(!llvm::isa<llvm::GlobalVariable>(pair.first)) irgen->Free(pair.first);
             offset = irgen->builder->CreateAdd(offset, pair.second);
         }
         irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, 0),

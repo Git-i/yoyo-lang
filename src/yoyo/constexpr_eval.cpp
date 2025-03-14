@@ -64,6 +64,29 @@ namespace Yoyo
         return new llvm::GlobalVariable(as_llvm_type, true, llvm::GlobalValue::ExternalLinkage,
             llvm::ConstantStruct::get( reinterpret_cast<llvm::StructType*>(as_llvm_type), args ));
     }
+    llvm::Constant* ConstantEvaluator::operator()(StringLiteral* lit) {
+        if (lit->literal.size() != 1) {
+            irgen->error(Error(lit, "String interpolation is not supported in constant strings"));
+            return nullptr;
+        }
+        if (std::holds_alternative<std::string>(lit->literal[0]))
+        {
+            auto& as_str = std::get<std::string>(lit->literal[0]);
+            auto gvar = irgen->builder->CreateGlobalString(as_str);
+
+            auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), as_str.size());
+
+            auto llvm_t = irgen->ToLLVMType(Type{ "str" }, false);
+            auto string = new llvm::GlobalVariable(llvm_t, true, llvm::GlobalValue::ExternalLinkage,
+                llvm::ConstantStruct::get(reinterpret_cast<llvm::StructType*>(llvm_t), { gvar, str_size, str_size }));
+
+            return string;
+        }
+        else {
+            irgen->error(Error(lit, "String interpolation is not supported in constant strings"));
+            return nullptr;
+        }
+    }
     llvm::Constant* ConstantEvaluator::operator()(PrefixOperation*)
     {
         debugbreak();

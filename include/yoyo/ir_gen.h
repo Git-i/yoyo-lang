@@ -284,6 +284,7 @@ namespace Yoyo
         //llvm::Constant* operator()(AsExpression*);
         llvm::Constant* operator()(CharLiteral*);
         llvm::Constant* operator()(ObjectLiteral*);
+        llvm::Constant* operator()(StringLiteral*);
         llvm::Constant* operator()(Expression*) { return nullptr; }
     };
     //TODO: rename
