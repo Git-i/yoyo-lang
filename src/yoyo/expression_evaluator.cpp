@@ -149,6 +149,7 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::implicitConvert(Expression* xp, llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
     {
+        llvm::Type* int_ty = llvm::Type::getInt32Ty(irgen->context);
         if(dst.is_equal(src)) { return clone(xp, val, src, out); }
         if(!dst.is_assignable_from(src, irgen)) { irgen->error(Error(xp, "Expression of type tp cannot be converted to type tp")); return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);

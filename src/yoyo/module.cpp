@@ -551,9 +551,9 @@ namespace Yoyo
             FunctionSignature sig;
             sig.returnType = type;
             sig.parameters.emplace_back(type, "this");
-            Module::FunctionDetails sdets{ .name = "sin", .sig = sig };
-            Module::FunctionDetails cdets{ .name = "cos", .sig = sig };
-            Module::FunctionDetails tdets{ .name = "tan", .sig = sig };
+            Module::FunctionDetails sdets{ .name = "sin", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
+            Module::FunctionDetails cdets{ .name = "cos", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
+            Module::FunctionDetails tdets{ .name = "tan", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
             md->functions[type.name + "::"].emplace_back(std::move(sdets));
             md->functions[type.name + "::"].emplace_back(std::move(cdets));
             //md->functions[type.name + "::"].emplace_back(std::move(tdets));

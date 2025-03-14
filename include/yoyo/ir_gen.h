@@ -268,6 +268,7 @@ namespace Yoyo
     };
     class ConstantEvaluator
     {
+        llvm::Constant* constConvert(llvm::Constant* in, const Type& source, const Type& dest);
     public:
         IRGenerator* irgen;
         std::vector<std::pair<std::string, std::string>> disallowed_consts;
@@ -282,6 +283,7 @@ namespace Yoyo
         llvm::Constant* operator()(ScopeOperation*);
         //llvm::Constant* operator()(AsExpression*);
         llvm::Constant* operator()(CharLiteral*);
+        llvm::Constant* operator()(ObjectLiteral*);
         llvm::Constant* operator()(Expression*) { return nullptr; }
     };
     //TODO: rename

@@ -633,7 +633,9 @@ namespace Yoyo
         }
         if (auto [name, c] = md->findConst(hash, last.name); c)
         {
+            irgen->block_hash.swap(hash);
             std::get<0>(*c).saturate(md, irgen);
+            irgen->block_hash.swap(hash);
             return { std::get<0>(*c) };
         }
         return { Error(scp, "The name '" + last.name + "' does not exist in \"" + hash + "\"") };

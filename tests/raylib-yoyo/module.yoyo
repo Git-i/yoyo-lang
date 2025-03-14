@@ -76,9 +76,9 @@ end_drawing: fn = c_import!("EndDrawing");
 Color: struct = {
     r: u8, g: u8, b: u8, a: u8,
     #(public)
-    white: fn -> This = return Color{.r = 245, .g = 245, .b = 245, .a = 245};
+    RAY_WHITE: const Color = Color{.r = 245, .g = 245, .b = 245, .a = 245};
     #(public)
-    light_gray: fn -> This = return Color{.r = 200, .g = 200, .b = 200, .a = 255};
+    LIGHT_GRAY: const Color = Color{.r = 200, .g = 200, .b = 200, .a = 255};
 }
 
 #(public)

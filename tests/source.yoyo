@@ -11,9 +11,9 @@ main: fn = {
 
         rl::begin_drawing();
 
-        rl::clear_background(rl::Color::white());
-        "Press SPACE to play the WAV sound".rl::draw_text(200, 180, 40, rl::Color::light_gray());
-        "Press ENTER to play the OGG sound".rl::draw_text(200, 220, 40, rl::Color::light_gray());
+        rl::clear_background(rl::Color::RAY_WHITE);
+        "Press SPACE to play the WAV sound".rl::draw_text(200, 180, 40, rl::Color::LIGHT_GRAY);
+        "Press ENTER to play the OGG sound".rl::draw_text(200, 220, 40, rl::Color::LIGHT_GRAY);
         
         rl::end_drawing();
     }

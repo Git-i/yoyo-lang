@@ -522,7 +522,12 @@ namespace Yoyo
     void IRGenerator::operator()(ConstantDeclaration* decl)
     {
         auto [_, constant] = module->findConst(block_hash, decl->name);
+        std::get<0>(*constant).saturate(module, this);
         auto val = std::visit(ConstantEvaluator{ this }, decl->expr->toVariant());
+        if (auto gv = llvm::dyn_cast_or_null<llvm::GlobalVariable>(val)) {
+            val->setName(block_hash + decl->name);
+            code->insertGlobalVariable(gv);
+        }
         std::get<2>(*constant) = val;
     }
     void IRGenerator::operator()(InterfaceDeclaration* decl)

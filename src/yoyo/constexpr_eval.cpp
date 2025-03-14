@@ -33,6 +33,37 @@ namespace Yoyo
         irgen->block_hash.swap(blk);
         return std::get<llvm::Constant*>(val);
     }
+    llvm::Constant* ConstantEvaluator::constConvert(llvm::Constant* src, const Type& source, const Type& destination) {
+        if (source.is_integral() && destination.is_integral()) {
+            if(destination.is_signed_integral())
+                return llvm::ConstantInt::get(irgen->ToLLVMType(destination, false),
+                    reinterpret_cast<llvm::ConstantInt*>(src)->getSExtValue(), true);
+            else
+                return llvm::ConstantInt::get(irgen->ToLLVMType(destination, false),
+                    reinterpret_cast<llvm::ConstantInt*>(src)->getZExtValue(), true);
+        }
+        return nullptr;
+    }
+    llvm::Constant* ConstantEvaluator::operator()(ObjectLiteral* lit)
+    {
+        auto t = ExpressionTypeChecker{ irgen }(lit);
+        if (!t) { irgen->error(t.error());return nullptr; }
+        auto as_llvm_type = irgen->ToLLVMType(*t, false);
+        auto decl = t->get_decl_if_class(irgen);
+        std::vector<llvm::Constant*> args;
+        args.reserve(lit->values.size());
+        for (size_t i = 0; i < decl->vars.size(); i++)
+        {
+            auto& var = decl->vars[i];
+            auto val_ty = std::visit(ExpressionTypeChecker{ irgen, var.type }, lit->values[var.name]->toVariant());
+            if (!val_ty) { irgen->error(val_ty.error()); continue; }
+            auto val = std::visit(*this, lit->values[var.name]->toVariant());
+
+            args.push_back(constConvert(val, val_ty.value(), var.type));
+        }
+        return new llvm::GlobalVariable(as_llvm_type, true, llvm::GlobalValue::ExternalLinkage,
+            llvm::ConstantStruct::get( reinterpret_cast<llvm::StructType*>(as_llvm_type), args ));
+    }
     llvm::Constant* ConstantEvaluator::operator()(PrefixOperation*)
     {
         debugbreak();
@@ -125,7 +156,16 @@ namespace Yoyo
             irgen->error(Error(scp, "Constant is recursive"));
         }
         auto& val = std::get<2>(*dets);
-        if (std::holds_alternative<llvm::Constant*>(val)) return std::get<llvm::Constant*>(val);
+
+        if (md != irgen->module) {
+            auto glb = irgen->code->getOrInsertGlobal(hash + c_name, irgen->ToLLVMType(std::get<0>(*dets), false));
+            reinterpret_cast<llvm::GlobalVariable*>(glb)->setExternallyInitialized(true);
+            return glb;
+        }
+        if (std::holds_alternative<llvm::Constant*>(val)) {
+            
+            return std::get<llvm::Constant*>(val);
+        }
 
         irgen->block_hash.swap(blk);
         std::swap(md, irgen->module);
