@@ -1,6 +1,4 @@
 main: fn = {
-    lmao: const str = "This string does not use the heap";
-    test::print(&lmao);
     wd := rl::Window::init(1280, 720, &"Game");
     ad := rl::AudioDevice::init();
     fx_wav := rl::Sound::load(&"resource/sound.wav");
@@ -19,3 +17,4 @@ main: fn = {
         rl::end_drawing();
     }
 }
+

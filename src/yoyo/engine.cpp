@@ -27,6 +27,9 @@ namespace Yoyo
         }
         bool operator()(ConstantDeclaration* decl) const
         {
+            //constants should never be moved out of or destroyed
+            decl->type.is_lvalue = true;
+            decl->type.is_mutable = false;
             md->constants[block].emplace_back(decl->type, decl->name, decl);
             return true;
         }

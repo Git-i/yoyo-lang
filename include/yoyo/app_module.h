@@ -40,5 +40,6 @@ namespace Yoyo
             return Result::Success;
         }
         Result addEnum(std::string enum_name, std::unordered_map<std::string, int32_t> values);
+        Result addClass(std::string class_name, std::vector<ClassVariable> variables, Ownership sh, std::string block_hash);
     };
 }

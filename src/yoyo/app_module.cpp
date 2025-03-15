@@ -62,4 +62,17 @@ namespace Yoyo
         enums[module_hash].emplace_back(std::make_unique<EnumDeclaration>(std::move(enum_name), std::move(values), std::vector<std::unique_ptr<Statement>>{}));
         return Result::Success;
     }
+    Result AppModule::addClass(std::string class_name, std::vector<ClassVariable> variables, Ownership sh, std::string block_hash)
+    {
+        auto hash = module_hash + block_hash;
+        classes[hash].emplace_back(hash + class_name + "::", nullptr, 
+            std::make_unique<ClassDeclaration>(
+                Token{ .text = class_name },
+                std::move(variables), 
+                std::vector<std::unique_ptr<Statement>>{}, 
+                sh, 
+                std::vector<std::vector<InterfaceImplementation>>{}
+            ));
+        return Result::Success;;
+    }
 }
