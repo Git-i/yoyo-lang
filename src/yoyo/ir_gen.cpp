@@ -21,6 +21,7 @@ namespace Yoyo
     llvm::Type* IRGenerator::ToLLVMType(const Type& type, bool is_ref)
     {
         //type is not required not have a module (built-ins)
+        if (type.name.starts_with("__gc_refcell_borrow")) return nullptr;
         auto t = type.module ?
             type.module->ToLLVMType(type, block_hash, this, {}):
             module->ToLLVMType(type, block_hash, this, {});
@@ -82,6 +83,11 @@ namespace Yoyo
     extern "C"
     {
         YOYO_API  void* Yoyo_malloc_wrapper_dont_use_name(size_t size);
+        YOYO_API  void Yoyo_compiler_print(const char* string);
+        void Yoyo_compiler_print(const char* string)
+        {
+            printf("%s\n", string);
+        }
         void* Yoyo_malloc_wrapper_dont_use_name(size_t size)
         {
             return GC_malloc(size);
@@ -96,6 +102,17 @@ namespace Yoyo
             { llvm::Type::getInt64Ty(irgen->context) }, false);
         fn = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage, "Yoyo_malloc_wrapper_dont_use_name", irgen->code);
         return fn;
+    }
+    void IRGenerator::printString(const char* string)
+    {
+        auto fn = code->getFunction("Yoyo_compiler_print");
+        if (!fn)
+        {
+            auto type = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                { llvm::PointerType::get(context, 0) }, false);
+            fn = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage, "Yoyo_compiler_print", code);
+        }
+        builder->CreateCall(fn, { builder->CreateGlobalString(string) });
     }
     llvm::Value* IRGenerator::GCMalloc(size_t size)
     {

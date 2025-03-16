@@ -188,6 +188,15 @@ namespace Yoyo
 
         auto expr = parser.parseExpression(0);
         if(!expr) parser.synchronizeTo({{TokenType::RSquare, TokenType::Comma}});
+        if (parser.discard(TokenType::Colon)) {
+            // [<expr>; <count>] repeat notation
+            auto other = parser.parseExpression(0);
+            if (!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
+            return Expression::attachSLAndParent(std::make_unique<ArrayLiteral>(
+                std::pair{ std::move(expr), std::move(other) }
+            ),
+                tk.loc, parser.discardLocation, parser.parent);
+        }
         std::vector<std::unique_ptr<Expression>> expressions;
         expressions.push_back(std::move(expr));
         while(parser.discard(TokenType::Comma))

@@ -1113,16 +1113,18 @@ namespace Yoyo
     {
         auto next = parser.parseType(0);
         if(!next) parser.synchronizeTo({{TokenType::RSquare}});
-        size_t numElems = 0;
+        bool is_static = false;
+        std::shared_ptr<FunctionSignature> sig;
         if(parser.discard(TokenType::SemiColon))
         {
-            auto size = parser.Peek();
-            if(!size || size->type != TokenType::IntegerLiteral) parser.error("Invalid array size", size);
-            else { parser.Get(); numElems = std::stoi(std::string(size->text)); }
+            auto size = parser.parseExpression(0);
+            //this is really dirty and bad code don't learn from this
+            sig.reset(reinterpret_cast<FunctionSignature*>(size.release()));
+            is_static = true;
         }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
-        std::string name = numElems == 0 ? "__arr_d" : "__arr_s" + std::to_string(numElems);
-        return Type(name, { std::move(next).value_or(Type{}) });
+        std::string name = is_static ? "__arr_s_uneval" : "__arr_d";
+        return Type{ .name = name, .subtypes = { std::move(next).value_or(Type{}) }, .signature = sig };
     }
     std::optional<Type> parseTypeGroup(Token t, Parser& parser)
     {

@@ -99,12 +99,19 @@ namespace Yoyo
     }
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(NameExpression* expr)
     {
-
+        bool should_const = false;
         for(auto& i : irgen->variables | std::views::reverse)
         {
-            if(i.contains(expr->text) && 
-                !(std::get<1>(i.at(expr->text)).is_mutable || std::get<1>(i.at(expr->text)).is_mutable_reference()))
+            if (i.contains(expr->text) &&
+                !(
+                    std::get<1>(i.at(expr->text)).is_mutable ||
+                    std::get<1>(i.at(expr->text)).is_mutable_reference() ||
+                    std::get<1>(i.at(expr->text)).is_gc_reference()
+                    ))
+            {
+                should_const = std::get<1>(i.at(expr->text)).is_gc_reference();
                 irgen->error(Error(expr, "'" + expr->text + "' cannot be mutably borrowed"));
+            }
         }
         if(irgen->lifetimeExtensions.contains(expr->text))
         {
@@ -112,7 +119,7 @@ namespace Yoyo
             v.emplace_back(expr->text, Mut);
             return  v;
         }
-        return {{expr->text, Mut }};
+        return {{expr->text, should_const ? Const : Mut }};
     }
 
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(BinaryOperation* expr)

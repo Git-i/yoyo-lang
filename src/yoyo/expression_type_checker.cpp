@@ -146,7 +146,33 @@ namespace Yoyo
     }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(ArrayLiteral* lit)
     {
-        auto subtype = peerResolve(lit->elements | std::views::transform([this](std::unique_ptr<Expression>& elem)
+        using repeat_notation = std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>;
+        using list_notation = std::vector<std::unique_ptr<Expression>>;
+        if (std::holds_alternative<repeat_notation>(lit->elements)) {
+            auto& expr = std::get<repeat_notation>(lit->elements);
+
+            auto size = std::visit(ConstantEvaluator{ irgen }, expr.second->toVariant());
+            if (size == nullptr || !llvm::isa<llvm::ConstantInt>(size)) 
+                return { Error(expr.second.get(), "Array size must be a compile time integer")};
+
+            size_t sz = reinterpret_cast<llvm::ConstantInt*>(size)->getZExtValue();
+            if (target && target->is_array()) {
+                auto type = std::visit(ExpressionTypeChecker{ irgen, target->subtypes[0] }, expr.first->toVariant());
+                if (!type) return type;
+                return {
+                    Type{
+                        .name = "__arr_s" + std::to_string(sz),
+                        .subtypes = {type.value()},
+                        .module = type->module->engine->modules.at("core").get()}
+                };
+             }
+                
+            
+            return std::visit(*this, expr.first->toVariant());
+        }
+
+        auto& elements = std::get<list_notation>(lit->elements);
+        auto subtype = peerResolve(elements | std::views::transform([this](std::unique_ptr<Expression>& elem)
         {
             return std::make_pair(std::visit(*this, elem->toVariant()), elem.get());
         }), irgen);
@@ -156,7 +182,7 @@ namespace Yoyo
             err.markers.emplace_back(subtype.error().span, "This element is not convertible to the others encountered");
             return { err };
         }
-        return { Type{.name = "__arr_s" + std::to_string(lit->elements.size()), .subtypes = {*subtype},
+        return { Type{.name = "__arr_s" + std::to_string(elements.size()), .subtypes = {*subtype},
             .module = subtype->module->engine->modules.at("core").get()} };
     }
 

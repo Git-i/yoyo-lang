@@ -312,6 +312,8 @@ namespace Yoyo
             });
             return !is_not_trivially_destructible;
         }
+        if (name.starts_with("__gc_refcell_borrow")) 
+            return false;
         if(is_str()) return false;
         if(auto dets = module->findType(block_hash, name))
         {
@@ -454,6 +456,16 @@ namespace Yoyo
         if (!verify()) debugbreak();
 
         for(auto& sub: subtypes) sub.saturate(src, irgen);
+        if (name == "__arr_s_uneval") {
+            auto size_expr = reinterpret_cast<Expression*>(signature.get());
+            auto size = std::visit(ConstantEvaluator{ irgen }, size_expr->toVariant());
+            if (!size || !llvm::isa<llvm::ConstantInt>(size)) debugbreak();
+            size_t val = reinterpret_cast<llvm::ConstantInt*>(size)->getZExtValue();
+            name = "__arr_s" + std::to_string(val);
+            if(signature.use_count() == 1) delete size_expr;
+            struct Deleter { void operator()(FunctionSignature* ptr) {} };
+            signature.reset((FunctionSignature*)nullptr, Deleter{});
+        }
         if (signature)
         {
             signature->returnType.saturate(src, irgen);

@@ -71,7 +71,7 @@ namespace Yoyo
                 std::move(variables), 
                 std::vector<std::unique_ptr<Statement>>{}, 
                 sh, 
-                std::vector<std::vector<InterfaceImplementation>>{}
+                std::vector<InterfaceImplementation>{}
             ));
         return Result::Success;;
     }

@@ -166,15 +166,18 @@ namespace Yoyo
         std::unordered_map<std::string, Expression*> operator()(ArrayLiteral* lit)
         {
             std::unordered_map<std::string, Expression*> vars;
-            for(auto& expr: lit->elements)
-            {
-                auto st = std::visit(*this, expr->toVariant());
-                for(auto&[name, use] : st)
+            if (std::holds_alternative<std::vector<std::unique_ptr<Expression>>>(lit->elements)) {
+                for (auto& expr : std::get<std::vector<std::unique_ptr<Expression>>>(lit->elements))
                 {
-                    if(is_first && vars.contains(name)) continue;
-                    vars[name] = use;
+                    auto st = std::visit(*this, expr->toVariant());
+                    for (auto& [name, use] : st)
+                    {
+                        if (is_first && vars.contains(name)) continue;
+                        vars[name] = use;
+                    }
                 }
             }
+            
             return vars;
         }
         std::unordered_map<std::string, Expression*> operator()(StringLiteral* lit)

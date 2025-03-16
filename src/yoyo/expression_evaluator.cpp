@@ -33,7 +33,7 @@ namespace Yoyo
         if(ext)
         {
             std::string name = "__del_parents___aaaaaaaa";
-            memcpy(name.data() + 16, ext, sizeof(void*));
+            memcpy(name.data() + 16, &ext, sizeof(void*));
             out->setName(name);
         }
     }
@@ -250,7 +250,47 @@ namespace Yoyo
             irgen->builder->CreateStore(val, out);
             return val;
         }
-
+        //gc borrows are checked at runtime
+        //so gc -> ref conversion increments a counter
+        if (src.is_gc_reference())
+        {
+            std::string error_str = std::format("Borrow check failed at {}:{}:{}", irgen->view->filename, xp->beg.line, xp->beg.column);
+            //the borrow count is -1 if theres a living mutable borrow
+            auto i64_ty = llvm::Type::getInt64Ty(irgen->context);
+            auto const_zero = llvm::ConstantInt::get(i64_ty, 0);
+            auto const_min_1 = llvm::ConstantInt::get(i64_ty, -1, true);
+            auto gcref_subtype = llvm::StructType::get(irgen->context, {irgen->ToLLVMType(src.deref(), false), i64_ty}, false);
+            auto gc_borrow_count_ptr = irgen->builder->CreateStructGEP(gcref_subtype, val, 1);
+            auto gc_object_ptr = irgen->builder->CreateStructGEP(gcref_subtype, val, 0);
+            auto gc_borrow_count = irgen->builder->CreateLoad(i64_ty, gc_borrow_count_ptr);
+            std::string type_name = "__gc_refcell_borrow";
+            auto fn = irgen->builder->GetInsertBlock()->getParent();
+            llvm::Value* new_count;
+            //borrow count must be zero to borrow mutably
+            auto invalid_borrow = llvm::BasicBlock::Create(irgen->context, "borrow_check_fail", fn, irgen->returnBlock);
+            auto valid_borrow = llvm::BasicBlock::Create(irgen->context, "borrow_check_pass", fn, irgen->returnBlock);
+            if (dst.is_mutable_reference()) {
+                type_name += "_mut";
+                irgen->builder->CreateCondBr(irgen->builder->CreateICmpNE(const_zero, gc_borrow_count), invalid_borrow, valid_borrow);
+                new_count = const_min_1;
+            }
+            else {
+                new_count = irgen->builder->CreateAdd(gc_borrow_count, llvm::ConstantInt::get(i64_ty, 1));
+                irgen->builder->CreateCondBr(irgen->builder->CreateICmpEQ(const_min_1, gc_borrow_count), invalid_borrow, valid_borrow);
+            }
+            irgen->builder->SetInsertPoint(invalid_borrow);
+            irgen->printString(error_str.c_str());
+            irgen->builder->CreateBr(irgen->returnBlock);
+            irgen->builder->SetInsertPoint(valid_borrow);
+            irgen->builder->CreateStore(new_count, gc_borrow_count_ptr);
+            irgen->builder->CreateStore(gc_object_ptr, out);
+            auto lf = new ExtendedLifetimes;
+            lf->objects.emplace_back(Type{type_name}, gc_borrow_count_ptr);
+            std::string name = "__del_parents___aaaaaaaa";
+            memcpy(name.data() + 16, &lf, sizeof(void*));
+            gc_object_ptr->setName(name);
+            return gc_object_ptr;
+        }
         if(dst.is_reference())
         {
             //other is a mutable reference
@@ -545,6 +585,14 @@ namespace Yoyo
             destroy(value, type.subtypes[0]);
             irgen->builder->CreateBr(destroy_cont);
             irgen->builder->SetInsertPoint(destroy_cont);
+        }
+        else if (type.name == "__gc_refcell_borrow") {
+            auto i64_ty = llvm::Type::getInt64Ty(irgen->context);
+            auto new_val = irgen->builder->CreateLoad(i64_ty, value);
+            irgen->builder->CreateStore(irgen->builder->CreateSub(new_val, llvm::ConstantInt::get(i64_ty, 1)), value);
+        }
+        else if (type.name == "__gc_refcell_borrow_mut") {
+            irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0), value);
         }
         else if(type.is_tuple())
         {
@@ -1038,20 +1086,37 @@ namespace Yoyo
     }
     llvm::Value* ExpressionEvaluator::operator()(ArrayLiteral* lit)
     {
+        using repeat_notation = std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>;
+        using list_notation = std::vector<std::unique_ptr<Expression>>;
         auto tp_check = ExpressionTypeChecker{irgen};
-        auto type = std::visit(tp_check, lit->toVariant());
+        auto type = ExpressionTypeChecker{ irgen, target }(lit);
         if (!type) { irgen->error(type.error()); return nullptr; }
         auto as_llvm = irgen->ToLLVMType(type.value(), false);
         auto val = irgen->Alloca("array_literal", as_llvm);
         if(type->is_static_array())
         {
-            for(size_t i = 0; i < lit->elements.size(); ++i)
+            if (std::holds_alternative<repeat_notation>(lit->elements)) {
+                auto& rpn = std::get<repeat_notation>(lit->elements);
+                llvm::Value* val = nullptr;
+                if (target && target->is_array())
+                    val = std::visit(ExpressionEvaluator{ irgen, target->subtypes[0] }, rpn.first->toVariant());
+                else
+                    val = std::visit(*this, rpn.first->toVariant());
+                for (size_t i = 0; i < type->static_array_size(); i++)
+                {
+                    auto elem = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
+                    clone(rpn.first.get(), val, type->subtypes[0], elem);
+                }
+                return val;
+            }
+            auto& elements = std::get<list_notation>(lit->elements);
+            for(size_t i = 0; i < elements.size(); ++i)
             {
                 auto elem = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
-                auto tp = std::visit(tp_check, lit->elements[i]->toVariant());
+                auto tp = std::visit(tp_check, elements[i]->toVariant());
                 if (!tp) {irgen->error(tp.error()); continue;}
-                implicitConvert(lit->elements[i].get(),
-                    std::visit(*this, lit->elements[i]->toVariant()),
+                implicitConvert(elements[i].get(),
+                    std::visit(*this, elements[i]->toVariant()),
                     tp.value(),
                     type->subtypes[0],
                     elem);
@@ -1534,7 +1599,7 @@ namespace Yoyo
 
                     std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret); // +1 because its bound
                     auto first = std::visit(*this, expr->lhs->toVariant());
-
+                    first = implicitConvert(expr->lhs.get(), first, *left_t, fn->sig.parameters[0].type);
                     llvm::Value* return_value = fillArgs(uses_sret, fn->sig, args, first, op->arguments);
                     auto call_val = irgen->builder->CreateCall(callee, args);
                     if (!uses_sret) return_value = call_val;
@@ -1668,10 +1733,17 @@ namespace Yoyo
         auto tp = &gc_tp.value();
         auto value = std::visit(*this, expr->target_expression->toVariant());
         if (tp->is_error_ty()) return nullptr;
-        auto llvm_ty = irgen->ToLLVMType((*tp).subtypes[0], false);
+        auto internal_ty = irgen->ToLLVMType((*tp).subtypes[0], false);
+        auto llvm_ty = llvm::StructType::get(irgen->context, {
+            internal_ty,
+            llvm::Type::getInt64Ty(irgen->context)
+        }, false);
         size_t type_size = irgen->code->getDataLayout().getTypeAllocSize(llvm_ty);
+        size_t internal_size = irgen->code->getDataLayout().getTypeAllocSize(internal_ty);
         auto memory = irgen->GCMalloc(type_size);
-        irgen->builder->CreateMemCpy(memory, std::nullopt, value, std::nullopt, type_size);
+        auto copy_to = irgen->builder->CreateStructGEP(llvm_ty, memory, 0);
+        irgen->builder->CreateMemCpy(copy_to, std::nullopt, value, std::nullopt, internal_size);
+        irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0), irgen->builder->CreateStructGEP(llvm_ty, memory, 1));
         return memory;
     }
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)

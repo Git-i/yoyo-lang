@@ -101,9 +101,15 @@ namespace Yoyo
     };
     class YOYO_API ArrayLiteral : public Expression {
     public:
-        std::vector<std::unique_ptr<Expression>> elements;
+        std::variant<
+            std::vector<std::unique_ptr<Expression>>,
+            std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>
+        >
+            elements;
         ArrayLiteral(ArrayLiteral&&) noexcept = default;
         explicit ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems) : elements(std::move(elems)) {}
+        explicit ArrayLiteral(std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>> elems) 
+            : elements(std::move(elems)) {}
         ExpressionVariant toVariant() override;
     };
     class YOYO_API RealLiteral : public Expression {

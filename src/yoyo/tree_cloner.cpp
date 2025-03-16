@@ -22,8 +22,15 @@ namespace Yoyo
 
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(ArrayLiteral* lit)
     {
+        if (std::holds_alternative<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>(lit->elements)) {
+            auto& notation = std::get<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>(lit->elements);
+            std::remove_reference_t<decltype(notation)> clone;
+            clone.first = copy_expr(notation.first);
+            clone.second = copy_expr(notation.second);
+            return std::make_unique<ArrayLiteral>(std::move(clone));
+        }
         std::vector<std::unique_ptr<Expression>> children;
-        for(auto& child : lit->elements)
+        for(auto& child : std::get<decltype(children)>(lit->elements))
             children.emplace_back(copy_expr(child));
         return std::make_unique<ArrayLiteral>(std::move(children));
     }
