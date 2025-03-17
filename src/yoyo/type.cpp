@@ -462,9 +462,8 @@ namespace Yoyo
             if (!size || !llvm::isa<llvm::ConstantInt>(size)) debugbreak();
             size_t val = reinterpret_cast<llvm::ConstantInt*>(size)->getZExtValue();
             name = "__arr_s" + std::to_string(val);
-            if(signature.use_count() == 1) delete size_expr;
-            struct Deleter { void operator()(FunctionSignature* ptr) {} };
-            signature.reset((FunctionSignature*)nullptr, Deleter{});
+            signature = nullptr;
+            
         }
         if (signature)
         {

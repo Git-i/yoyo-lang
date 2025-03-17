@@ -541,6 +541,15 @@ namespace Yoyo
         auto [_, constant] = module->findConst(block_hash, decl->name);
         std::get<0>(*constant).saturate(module, this);
         auto val = std::visit(ConstantEvaluator{ this }, decl->expr->toVariant());
+        if (std::get<0>(*constant).is_integral()) {
+            auto type = ToLLVMType(std::get<0>(*constant), false);
+            auto val_int = reinterpret_cast<llvm::ConstantInt*>(val)->getValue();
+            if (val_int.isNegative()) {
+                val = llvm::ConstantInt::get(type, val_int.getSExtValue());
+            } else {
+                val = llvm::ConstantInt::get(type, val_int.getZExtValue());
+            }
+        }
         if (auto gv = llvm::dyn_cast_or_null<llvm::GlobalVariable>(val)) {
             val->setName(block_hash + decl->name);
             code->insertGlobalVariable(gv);
@@ -862,7 +871,9 @@ namespace Yoyo
     void IRGenerator::operator()(WhileStatement* expr)
     {
         auto fn = builder->GetInsertBlock()->getParent();
-        if(!std::visit(ExpressionTypeChecker{this}, expr->condition->toVariant())->is_boolean())
+        auto cond_ty = std::visit(ExpressionTypeChecker{ this }, expr->condition->toVariant());
+        if (!cond_ty) error(cond_ty.error());
+        if(cond_ty && !cond_ty->is_boolean() && !cond_ty->is_error_ty())
         {
             error(Error(expr->condition.get(), "Condition in 'while' must evaluate to a boolean"));
             return;
@@ -1039,24 +1050,21 @@ namespace Yoyo
 
     void IRGenerator::operator()(GenericFunctionDeclaration*)
     {
-        debugbreak();
+        current_Statement->release();
     }
     void IRGenerator::operator()(GenericClassDeclaration*)
     {
-        debugbreak();
+        current_Statement->release();
     }
     void IRGenerator::operator()(AliasDeclaration* decl)
     {
-        auto hash = block_hash;
-        block_hash += decl->name + "::"; //in the case of generics
-        decl->type.saturate(module, this);
-        block_hash = std::move(hash);
-        module->aliases[block_hash].emplace(decl->name, decl->type);
+        auto type = module->findAlias(block_hash, decl->name);
+        type->saturate(module, this);
     }
 
     void IRGenerator::operator()(GenericAliasDeclaration*)
     {
-        debugbreak();
+        current_Statement->release();
     }
 
     void IRGenerator::error(const Error& e)

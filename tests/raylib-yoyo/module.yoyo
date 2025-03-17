@@ -61,7 +61,7 @@ set_target_fps: fn(fps: i32) = c_import!("SetTargetFPS");
 
 #(public)
 Key: enum = {
-    Space = 32, Enter = 257,
+    Space = 32, Enter = 257, C = 67,
     #(public)
     is_key_pressed: fn(this) -> bool = c_import!("IsKeyPressed");
 }
@@ -87,5 +87,17 @@ draw_text: fn(text: &str, posx: i32, posy: i32, fontsz: i32, color: Color) = {
         = c_import!("DrawText");
     dtxt_i(text.c_str(), posx, posy, fontsz, color);
 }
+
+#(public)
+draw_rectangle: fn(posx: i32, posy: i32, width: i32, height: i32, color: Color) =
+    c_import!("DrawRectangle");
+
 #(public)
 clear_background: fn(color: Color) = c_import!("ClearBackground");
+
+#(public)
+get_mouse_x: fn -> i32 = c_import!("GetMouseX");
+#(public)
+get_mouse_y: fn -> i32 = c_import!("GetMouseY");
+#(public)
+is_mouse_pressed: fn(btn: i32) -> bool = c_import!("IsMouseButtonPressed");

@@ -477,8 +477,10 @@ namespace Yoyo
         {
             Get();
             if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
+            auto is_mut = discard(TokenType::Mut);
             auto p = parseParam(std::string(tk->text));
             if(!p) synchronizeTo({{TokenType::Comma, TokenType::RParen}});
+            p->type.is_mutable = is_mut;
             sig.parameters.push_back(std::move(p).value_or(FunctionParameter{}));
         }
         //this is allowed for first parameter
@@ -520,8 +522,10 @@ namespace Yoyo
             {
                 Get();
                 if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
+                auto is_mut = discard(TokenType::Mut);
                 auto p = parseParam(std::string(tk->text));
-                if(!p) synchronizeTo({{TokenType::Comma, TokenType::RParen}});
+                if (!p) synchronizeTo({ {TokenType::Comma, TokenType::RParen} });
+                p->type.is_mutable = is_mut;
                 sig.parameters.push_back(std::move(p).value_or(FunctionParameter{}));
             }
         }
@@ -1119,7 +1123,8 @@ namespace Yoyo
         {
             auto size = parser.parseExpression(0);
             //this is really dirty and bad code don't learn from this
-            sig.reset(reinterpret_cast<FunctionSignature*>(size.release()));
+            struct Deleter { void operator()(FunctionSignature* ptr) { delete (Expression*)ptr; } };
+            sig.reset(reinterpret_cast<FunctionSignature*>(size.release()), Deleter{});
             is_static = true;
         }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());

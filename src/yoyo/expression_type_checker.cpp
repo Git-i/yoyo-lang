@@ -457,6 +457,8 @@ namespace Yoyo
         auto tp = std::visit(*this, op->object->toVariant()).value_or_error();
         if (tp.is_array())
             return { tp.is_mutable ? tp.subtypes[0].mutable_reference_to() : tp.subtypes[0].reference_to() };
+        if (tp.deref().is_array())
+            return { tp.is_mutable_reference() ? tp.deref().subtypes[0].mutable_reference_to() : tp.deref().subtypes[0].reference_to() };
         if (tp.is_mut_slice())
             return { tp.subtypes[0].mutable_reference_to() };
         if (tp.is_slice())
@@ -819,6 +821,7 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(IntegerLiteral*)
     {
+        if (target && target->is_integral()) return { *target };
         return { Type{.name = "ilit", .module = irgen->module->engine->modules.at("core").get()} };
     }
 

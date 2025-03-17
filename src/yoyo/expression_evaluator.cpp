@@ -151,7 +151,9 @@ namespace Yoyo
     {
         llvm::Type* int_ty = llvm::Type::getInt32Ty(irgen->context);
         if(dst.is_equal(src)) { return clone(xp, val, src, out); }
-        if(!dst.is_assignable_from(src, irgen)) { irgen->error(Error(xp, "Expression of type tp cannot be converted to type tp")); return nullptr; }
+        if(!dst.is_assignable_from(src, irgen)) { 
+            irgen->error(Error(xp, std::format("Expression of type {} cannot be converted to type {}", src.pretty_name(irgen->block_hash), dst.pretty_name(irgen->block_hash)))); 
+            return nullptr; }
         auto dst_as_llvm = irgen->ToLLVMType(dst, false);
         if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
         if (src.is_error_ty() || dst.is_error_ty()) return out;
@@ -977,10 +979,7 @@ namespace Yoyo
         if (p == LT) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, less));
         if (p == NE)
         {
-            if (target->result.name == "CmpPartOrd") return irgen->builder->CreateOr(
-                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, unord)),
-                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, ne)));
-            else return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, ne));
+            return irgen->builder->CreateICmpNE(ret, llvm::ConstantInt::get(i32, eq));
         }
         if (p == EQ_GT)
         {
@@ -1059,7 +1058,9 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::operator()(IntegerLiteral* lit) {
         const auto ul = std::stoull(std::string{lit->text});
-        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), ul);
+        llvm::Type* llvm_ty = llvm::Type::getInt64Ty(irgen->context);
+        if (target && target->is_integral()) llvm_ty = irgen->ToLLVMType(*target, false);
+        return llvm::ConstantInt::get(llvm_ty, ul);
     }
     llvm::Value* ExpressionEvaluator::operator()(BooleanLiteral* lit)
     {
@@ -1097,15 +1098,15 @@ namespace Yoyo
         {
             if (std::holds_alternative<repeat_notation>(lit->elements)) {
                 auto& rpn = std::get<repeat_notation>(lit->elements);
-                llvm::Value* val = nullptr;
+                llvm::Value* elem = nullptr;
                 if (target && target->is_array())
-                    val = std::visit(ExpressionEvaluator{ irgen, target->subtypes[0] }, rpn.first->toVariant());
+                    elem = std::visit(ExpressionEvaluator{ irgen, target->subtypes[0] }, rpn.first->toVariant());
                 else
-                    val = std::visit(*this, rpn.first->toVariant());
+                    elem = std::visit(*this, rpn.first->toVariant());
                 for (size_t i = 0; i < type->static_array_size(); i++)
                 {
-                    auto elem = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
-                    clone(rpn.first.get(), val, type->subtypes[0], elem);
+                    auto ptr = irgen->builder->CreateConstGEP2_32(as_llvm, val, 0, i);
+                    clone(rpn.first.get(), elem, type->subtypes[0], ptr);
                 }
                 return val;
             }
@@ -1329,7 +1330,6 @@ namespace Yoyo
 
     llvm::Value* ExpressionEvaluator::operator()(LogicalOperation* op) { 
         auto fn = irgen->builder->GetInsertBlock()->getParent();
-        auto orig_block = irgen->builder->GetInsertBlock();
         auto type_checker = ExpressionTypeChecker{ irgen };
         auto ovrl_type = type_checker(op);
         if (!ovrl_type) { irgen->error(ovrl_type.error()); return nullptr; }
@@ -1344,29 +1344,36 @@ namespace Yoyo
         if (ovrl_type->is_error_ty()) return nullptr;
 
         auto left = std::visit(*this, l_as_var);
+        auto orig_block = irgen->builder->GetInsertBlock();
         if (!left) return left;
         auto left_ext = llvm::BasicBlock::Create(irgen->context, "lft_ext", fn, irgen->returnBlock);
         auto cont = llvm::BasicBlock::Create(irgen->context, "logi_cont", fn, irgen->returnBlock);
         if (op->op.type == TokenType::DoubleAmpersand) {
+            // if left is true we need to verify id right is true
             irgen->builder->CreateCondBr(left, left_ext, cont);
             irgen->builder->SetInsertPoint(left_ext);
+            // here we evaluate the right side
             auto right = std::visit(*this, r_as_var);
+            // we go to cont whatever is the value of right is our answer
+            // we need to retrieve block because it can be changed
+            auto current_block = irgen->builder->GetInsertBlock();
             irgen->builder->CreateBr(cont);
             irgen->builder->SetInsertPoint(cont);
             auto result = irgen->builder->CreatePHI(llvm::Type::getInt1Ty(irgen->context), 2, "logi_result");
             result->addIncoming(llvm::ConstantInt::getFalse(irgen->context), orig_block);
-            result->addIncoming(right, left_ext);
+            result->addIncoming(right, current_block);
             return result;
         }
         if (op->op.type == TokenType::DoublePipe) {
             irgen->builder->CreateCondBr(left, cont, left_ext);
             irgen->builder->SetInsertPoint(left_ext);
             auto right = std::visit(*this, r_as_var);
+            auto current_block = irgen->builder->GetInsertBlock();
             irgen->builder->CreateBr(cont);
             irgen->builder->SetInsertPoint(cont);
             auto result = irgen->builder->CreatePHI(llvm::Type::getInt1Ty(irgen->context), 2, "logi_result");
             result->addIncoming(llvm::ConstantInt::getTrue(irgen->context), orig_block);
-            result->addIncoming(right, left_ext);
+            result->addIncoming(right, current_block);
             return result;
         }
         return nullptr;
@@ -1599,7 +1606,8 @@ namespace Yoyo
 
                     std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret); // +1 because its bound
                     auto first = std::visit(*this, expr->lhs->toVariant());
-                    first = implicitConvert(expr->lhs.get(), first, *left_t, fn->sig.parameters[0].type);
+                    if(left_t->deref() != fn->sig.parameters[0].type.deref())
+                        first = implicitConvert(expr->lhs.get(), first, *left_t, fn->sig.parameters[0].type);
                     llvm::Value* return_value = fillArgs(uses_sret, fn->sig, args, first, op->arguments);
                     auto call_val = irgen->builder->CreateCall(callee, args);
                     if (!uses_sret) return_value = call_val;
@@ -1710,10 +1718,10 @@ namespace Yoyo
     {
         auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
         if (!obj_ty) { irgen->error(obj_ty.error()); return nullptr; }
-        auto llvm_t = irgen->ToLLVMType(*obj_ty, false);
+        auto llvm_t = irgen->ToLLVMType(obj_ty->deref(), false);
         auto obj = std::visit(*this, op->object->toVariant());
         auto idx = std::visit(*this, op->index->toVariant());
-        if(obj_ty->is_static_array())
+        if(obj_ty->deref().is_static_array())
         {
             auto const_zero = llvm::ConstantInt::get(idx->getType(), 0);
             return irgen->builder->CreateGEP(llvm_t, obj, {const_zero, idx});

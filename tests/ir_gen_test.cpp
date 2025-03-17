@@ -28,6 +28,12 @@ uint32_t read_int()
     std::cin >> val;
     return val;
 }
+int32_t random_int(int32_t low, int32_t high) {
+    return rand() % (high - low + 1) + low;
+}
+int32_t cast_integer(uint64_t val) {
+    return val;
+}
 TEST_CASE("Test IR")
 {
     std::ifstream ifs("source.yoyo");
@@ -47,6 +53,8 @@ TEST_CASE("Test IR")
     md = engine.addAppModule("test");
     md->addFunction("(x: &str) -> i32", func, "print");
     md->addFunction("() -> u32", read_int, "read_uint");
+    md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
+    md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");
     engine.addModule("source.yoyo", src2);
     engine.addModule("rl", raylib_src);
     engine.compile();

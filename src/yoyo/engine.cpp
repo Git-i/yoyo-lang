@@ -35,7 +35,6 @@ namespace Yoyo
         }
         bool operator()(GenericFunctionDeclaration* decl) const
         {
-            std::ignore = stmt.release();
             md->generic_fns[block].emplace_back(decl);
             return true;
         }
@@ -62,7 +61,6 @@ namespace Yoyo
         }
         bool operator()(GenericClassDeclaration* decl) const
         {
-            std::ignore = stmt.release();
             md->generic_classes[block].emplace_back(decl);
             return true;
         }
@@ -96,7 +94,6 @@ namespace Yoyo
         }
         bool operator()(GenericAliasDeclaration* decl)
         {
-            std::ignore = stmt.release();
             md->generic_aliases[block].emplace_back(decl);
             return true;
         }
@@ -108,7 +105,6 @@ namespace Yoyo
         }
         bool operator()(GenericInterfaceDeclaration* decl)
         {
-            std::ignore = stmt.release();
             md->generic_interfaces[block].emplace_back(decl);
             return true;
         }

@@ -188,7 +188,7 @@ namespace Yoyo
 
         auto expr = parser.parseExpression(0);
         if(!expr) parser.synchronizeTo({{TokenType::RSquare, TokenType::Comma}});
-        if (parser.discard(TokenType::Colon)) {
+        if (parser.discard(TokenType::SemiColon)) {
             // [<expr>; <count>] repeat notation
             auto other = parser.parseExpression(0);
             if (!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
