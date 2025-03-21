@@ -119,7 +119,15 @@ namespace Yoyo {
             case '}': return Token{TokenType::RCurly, loc, {source.data() + position -1, 1}};
             case '[': return Token{TokenType::LSquare, loc, {source.data() + position - 1, 1} };
             case ']': return Token{TokenType::RSquare, loc, {source.data() + position - 1, 1} };
-            case '.': return Token{TokenType::Dot, loc, {source.data() + position - 1, 1} };
+            case '.': 
+            {
+                if (NextIs('.'))
+                {
+                    if (NextIs('=')) return Token{ TokenType::DoubleDotEqual, loc, {source.data() + position - 3, 3} };
+                    return Token{ TokenType::DoubleDot, loc, {source.data() + position - 2, 2} };
+                }
+                return Token{ TokenType::Dot, loc, {source.data() + position - 1, 1} };
+            }
             case ',': return Token{TokenType::Comma, loc, {source.data() + position - 1, 1} };
             case ':':
                 {

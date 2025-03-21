@@ -8,18 +8,11 @@ GridTy: alias = [[i32; COLS]; ROWS];
 
 random_grid: fn -> GridTy = {
     grid: mut GridTy;
-    // no ranges yet
-    row: mut u64 = 0;
-    col: mut u64 = 0;
-    
-    while(row < ROWS) {
-        col = 0;
-        while(col < COLS) {
+
+    for(row in 0..ROWS)
+        for(col in 0..COLS)
             *grid[row][col] = test::random_int(0, 1);
-            col = col + 1;
-        }
-        row = row + 1;
-    }
+
     return grid;
 }
 
@@ -66,39 +59,22 @@ get_next_state: fn(grid: &GridTy, row: u64, col: u64) -> i32 = {
 update_grid: fn(grid: &mut GridTy) = {
     new_grid: mut GridTy = [[0; COLS]; ROWS];
 
-    row: mut u64 = 0;
-    col: mut u64 = 0;
-
-    while(row < ROWS) {
-        col = 0;
-        while(col < COLS) {
+    for(row in 0..ROWS)
+        for(col in 0..COLS)
             *new_grid[row][col] = get_next_state(grid, row, col);
-            col = col + 1; 
-        }
-        row = row + 1;
-    }
 
     *grid = new_grid;
 }
 
 clear_grid: fn(grid: &mut GridTy) = {
-    row: mut u64 = 0;
-    while(row < ROWS) {
-        col: mut u64 = 0;
-        while(col < COLS) {
+    for(row in 0..ROWS)
+        for(col in 0..COLS)
             *grid[row][col] = 0;
-            col = col + 1;
-        }
-        row = row + 1;
-    }
 }
 
 draw_grid: fn(grid: &GridTy) = {
-    row: mut u64 = 0;
-    col: mut u64 = 0;
-    while(row < ROWS) {
-        col = 0;
-        while(col < COLS) {
+    for(row in 0..ROWS) {
+        for(col in 0..COLS) {
             count := get_neighbour_count(grid, row, col);
             color: mut = rl::Color{ .r = 0, .g = 0, .b = 0, .a = 255 };
             if(*grid[row][col] == 1) {
@@ -114,9 +90,7 @@ draw_grid: fn(grid: &GridTy) = {
                 GRID_SIZE,
                 GRID_SIZE,
                 color);
-            col = col + 1;
         }
-        row = row + 1;
     }    
 }
 

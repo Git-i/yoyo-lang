@@ -856,6 +856,23 @@ namespace Yoyo
             clearUsages(args, *this);
         return final;
     }
+    llvm::Value* ExpressionEvaluator::doRange(
+        Expression* lhs,
+        Expression* rhs,
+        const Type& left_type,
+        const Type& right_type,
+        const Type& result)
+    {
+        using namespace std::string_view_literals;
+        auto subtype = Type{ .name = std::string(result.name.begin() + "range_"sv.size(), result.name.end()) };
+        auto type = irgen->ToLLVMType(result, false);
+        auto ptr = irgen->Alloca("range_literal", type);
+        implicitConvert(lhs, std::visit(*this, lhs->toVariant()), left_type, subtype,
+            irgen->builder->CreateStructGEP(type, ptr, 0));
+        implicitConvert(lhs, std::visit(*this, rhs->toVariant()), right_type, subtype,
+            irgen->builder->CreateStructGEP(type, ptr, 1));
+        return ptr;
+    }
     llvm::Value* ExpressionEvaluator::doDiv(
         Expression* lhs,
         Expression* rhs,
@@ -1316,7 +1333,8 @@ namespace Yoyo
         case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t, *res);
         case Spaceship: return doCmp(SPACE, lhs, rhs, *left_t, *right_t, *res);
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
-
+        case DoubleDotEqual: irgen->error(Error(op, "Not implemented yet")); return nullptr;
+        case DoubleDot: return doRange(lhs, rhs, *left_t, *right_t, *res);
         case Equal:
             return implicitConvert(rhs, std::visit(*this, r_as_var), *right_t, *left_t, std::visit(LValueEvaluator{ irgen }, l_as_var));
         default:; //TODO

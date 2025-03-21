@@ -222,6 +222,7 @@ namespace Yoyo
         llvm::Value* doMult(Expression*, Expression*, const Type&, const Type&);
         llvm::Value* doDiv(Expression*, Expression*, const Type&, const Type&);
         llvm::Value* doRem(Expression*, Expression*, const Type&, const Type&);
+        llvm::Value* doRange(Expression*, Expression*, const Type&, const Type&, const Type&);
         llvm::Value* doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
                            const Type& right_type, const Type&);
         llvm::Value* fillArgs(bool,const FunctionSignature&,std::vector<llvm::Value*>&, llvm::Value*,

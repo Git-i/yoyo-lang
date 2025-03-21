@@ -43,6 +43,24 @@ namespace Yoyo
         auto ty = resolveAdd(a, b, irgen);
         if(ty) return ty->result; return std::nullopt;
     }
+    static std::optional<Type> checkRange(const Type& a, const Type& b, Expression* left, Expression* right, IRGenerator* irgen)
+    {
+        if (a.is_integral() && b.is_integral())
+        {
+            std::string type_name;
+            if (a.name == "ilit" && b.name == "ilit")
+            {
+                auto l_val = llvm::dyn_cast<llvm::ConstantInt>(std::visit(ConstantEvaluator{ irgen }, left->toVariant()));
+                auto r_val = llvm::dyn_cast<llvm::ConstantInt>(std::visit(ConstantEvaluator{ irgen }, left->toVariant()));
+                type_name = (l_val->isNegative() || r_val->isNegative()) ? "range_i32" : "range_u32";
+            }
+            else if (a.is_assignable_from(b, irgen)) type_name = "range_" + a.name;
+            else if (b.is_assignable_from(a, irgen)) type_name = "range_" + b.name;
+            ;
+            return Type{ .name = type_name, .module = irgen->module->engine->modules.at("core").get(), .block_hash = "core::" };
+        }
+        return std::nullopt;
+    }
     static std::optional<Type> checkAssign(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if (!a.is_mutable)
@@ -340,6 +358,8 @@ namespace Yoyo
         case Ampersand: result = checkBitAnd(lhs, rhs); break;
         case Dot: result = checkDot(expr, lhs, irgen); break;
         case Equal: result = checkAssign(lhs, rhs, irgen); break;
+        case DoubleDot: [[fallthrough]];
+        case DoubleDotEqual: result = checkRange(lhs, rhs, expr->lhs.get(), expr->rhs.get(), irgen); break;
         default: ;//TODO
         }
         if (result) return { std::move(result).value() };

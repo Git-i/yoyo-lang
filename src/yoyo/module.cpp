@@ -301,6 +301,7 @@ namespace Yoyo
     }
     void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld);
     void addFloatConsts(Module* md, std::span<Type> types);
+    void addRangeIteratorMethods(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld);
     void makeBuiltinModule(Engine* eng)
     {
         if(eng->modules.contains("core")) return;
@@ -504,7 +505,7 @@ namespace Yoyo
         module->generic_interfaces[module->module_hash].emplace_back(std::move(iterator));
         addTrigFunctions(module, std::span{ types.begin(), types.begin() + 2 }, builder);
         addFloatConsts(module, std::span{ types.begin(), types.begin() + 2 });
-
+        addRangeIteratorMethods(module, std::span{ types.begin() + 2, types.end() }, builder);
 
         
         module->functions["str::"].emplace_back(Module::FunctionDetails{
@@ -541,6 +542,72 @@ namespace Yoyo
             md->constants[type.name + "::"].emplace_back(type, "SQRT2", llvm::ConstantFP::get(as_llvm, std::numbers::sqrt2));
             md->constants[type.name + "::"].emplace_back(type, "SQRT3", llvm::ConstantFP::get(as_llvm, std::numbers::sqrt3));
 
+        }
+    }
+    //integer types only
+    void addRangeIteratorMethods(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld)
+    {
+        auto& ctx = bld.getContext();
+        for (auto& type : types) {
+            auto return_ty = Type{ .name = "__opt", .subtypes = {type} };
+            auto return_as_llvm = md->ToLLVMType(return_ty, "", nullptr, {});
+            auto subtype_llvm = md->ToLLVMType(type, "", nullptr, {});
+            auto range_as_llvm = llvm::StructType::get(ctx, { subtype_llvm, subtype_llvm }, false);
+            auto range_ty = Type{ .name = "range_" + type.name, .module = md, .block_hash = "core::" };
+
+            std::vector<std::unique_ptr<FunctionDeclaration>> methods;
+            methods.emplace_back(
+                    std::make_unique<FunctionDeclaration>(
+                        "next",
+                        FunctionSignature{
+                            .returnType = Type{.name = "__opt", .subtypes = {type}, .module = md},
+                            .parameters = {
+                                FunctionParameter{.type = Type{.name = "__ref_mut", .subtypes = {range_ty}}, .name = "this"}
+                            }
+                        },
+                        nullptr
+                    )
+            );
+            std::vector<InterfaceImplementation> impl;
+            impl.emplace_back(
+                Type{.name = "Iterator", .subtypes = {type}, .module = md, .block_hash = "core::"},
+                SourceSpan{},
+                std::move(methods)
+            );
+            auto decl_ptr = 
+                std::make_unique<ClassDeclaration>(
+                    Token{ .text = range_ty.name }, 
+                    std::vector<ClassVariable>{}, 
+                    std::vector<std::unique_ptr<Statement>>{}, Ownership::Owning, std::move(impl));
+
+            md->classes["core::"].emplace_back("core::range_" + type.name + "::", range_as_llvm, std::move(decl_ptr));
+
+            auto ptr_ty = llvm::PointerType::get(bld.getContext(), 0);
+            // for the .next() it translates to fn(:&mut range_ty) -> ty?
+            auto iter_sig = llvm::FunctionType::get(llvm::Type::getVoidTy(bld.getContext()), {ptr_ty, ptr_ty}, false);
+            
+            auto iter_fn = llvm::Function::Create(
+                iter_sig, 
+                llvm::GlobalValue::ExternalLinkage, 
+                "core::range_" + type.name + "::core::Iterator::<" + type.name + ">::next",
+                md->code.getModuleUnlocked());
+
+            iter_fn->addAttributeAtIndex(1, llvm::Attribute::get(ctx, llvm::Attribute::StructRet, return_as_llvm));
+
+            bld.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", iter_fn));
+            auto start_ptr = bld.CreateStructGEP(range_as_llvm, iter_fn->getArg(1), 0);
+            auto end_val = bld.CreateLoad(subtype_llvm,
+                bld.CreateStructGEP(range_as_llvm, iter_fn->getArg(1), 1));
+            auto old_start_val = bld.CreateLoad(subtype_llvm, start_ptr);
+            auto start_val = bld.CreateAdd(old_start_val, llvm::ConstantInt::get(subtype_llvm, 1));
+            bld.CreateStore(start_val, start_ptr);
+            llvm::Value* cmp_res;
+            if (type.is_signed_integral())
+                cmp_res = bld.CreateICmpSLT(old_start_val, end_val);
+            else cmp_res = bld.CreateICmpULT(old_start_val, end_val);
+            bld.CreateStore(cmp_res, bld.CreateStructGEP(return_as_llvm, iter_fn->getArg(0), 1));
+            bld.CreateStore(old_start_val, bld.CreateStructGEP(return_as_llvm, iter_fn->getArg(0), 0));
+            bld.CreateRetVoid();
         }
     }
     void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld)

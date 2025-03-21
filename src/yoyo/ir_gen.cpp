@@ -792,6 +792,7 @@ namespace Yoyo
         }
         popScope();
     }
+    llvm::Function* declareFunction(const std::string& mangled_name, IRGenerator* irgen, FunctionSignature& fn_sig);
     void IRGenerator::operator()(ForStatement* stat)
     {
         auto fn = builder->GetInsertBlock()->getParent();
@@ -819,8 +820,9 @@ namespace Yoyo
                 error(Error(stat->iterable.get(), "Expression does not evaluate to an iterable type"));
                 return;
             }
-            std::string fn_name = hash + "coreIterator" + mangleGenericArgs(impl->impl_for.subtypes) + "::next";
+            std::string fn_name = hash + "core::Iterator" + mangleGenericArgs(impl->impl_for.subtypes) + "::next";
             auto next_fn = code->getFunction(fn_name);
+            if (!next_fn) next_fn = declareFunction(fn_name, this, impl->methods[0]->signature);
             auto memory_ty = ToLLVMType(impl->methods[0]->signature.returnType, false);
             auto memory = Alloca("for_obj", memory_ty);
             auto flg = prepareValidDropFlagFor(this, impl->impl_for.subtypes[0]);
