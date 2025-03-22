@@ -302,6 +302,52 @@ namespace Yoyo
         bool operator()(Expression*);
 
     };
+    struct MacroEvaluator
+    {
+        // objects in macros can only be
+        // str, Expr(and subtypes), Stat(and subtypes), null, int, float, bool ,
+        // token
+        struct OwnedToken {
+            TokenType type;
+            std::string text;
+        };
+        struct ObjectTy;
+        struct ObjectTy : std::variant<
+            std::string,
+            std::unique_ptr<ASTNode>,
+            std::unique_ptr<ASTNode>*,
+            bool,
+            double,
+            int64_t,
+            OwnedToken,
+            std::pair<std::string, std::function<ObjectTy(std::vector<ObjectTy>)>>,
+            std::monostate
+        >{};
+        enum TypeType {
+            Int, Float, Double, Array, Str, Token,
+            Expr, IntLit, BoolLit, TupleLit, ArrayLit,
+            RealLit, StrLit, NameExpr, PrefixExpr, BinaryExpr,
+            PostfixExpr, CallExpr,
+            SubscriptExpr, LambdaExpr, ScopeExpr,ObjLit,
+            NullLit,CharLit,GenericNameExpr,GCNewExpression,
+            AsExpr,
+        };
+        struct Type {
+            TypeType tp;
+            std::unique_ptr<Type> subtype;
+        };
+        std::vector<std::unordered_map<std::string, std::pair<bool, ObjectTy>>> variables;
+        void operator()(VariableDeclaration*);
+        void operator()(IfStatement*);
+        void operator()(WhileStatement*);
+        void operator()(ForStatement*);
+        void operator()(BlockStatement*);
+        void operator()(ReturnStatement*);
+        void operator()(ExpressionStatement*);
+        void operator()(ConditionalExtraction*);
+        void operator()(BreakStatement*);
+        void operator()(ContinueStatement*);
+    };
 
     void validate_expression_borrows(Expression*, IRGenerator*);
     void validate_borrows(std::span<const std::pair<Expression*, BorrowResult::borrow_result_t>> param, IRGenerator* irgen);

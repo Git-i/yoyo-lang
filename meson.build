@@ -20,7 +20,36 @@ sources = [
     'src/yoyo/overload_resolve.cpp',
     'src/yoyo/tree_cloner.cpp',
     'src/yoyo/error.cpp',
-    'src/yoyo/constexpr_eval.cpp'
+    'src/yoyo/constexpr_eval.cpp',
+    'src/yoyo/macro_eval.cpp',
+
+    # headers
+    'include/yoyo/app_module.h',
+    'include/yoyo/ast_node.h',
+    'include/yoyo/cfg_node.h',
+    'include/yoyo/class_entry.h',
+    'include/yoyo/common.h',
+    'include/yoyo/constraint.h',
+    'include/yoyo/engine.h',
+    'include/yoyo/error.h',
+    'include/yoyo/expression.h',
+    'include/yoyo/fn_type.h',
+    'include/yoyo/func_sig.h',
+    'include/yoyo/generic_clause.h',
+    'include/yoyo/ir_gen.h',
+    'include/yoyo/module.h',
+    'include/yoyo/overload_details.h',
+    'include/yoyo/overload_resolve.h',
+    'include/yoyo/parser.h',
+    'include/yoyo/precedences.h',
+    'include/yoyo/scanner.h',
+    'include/yoyo/source_location.h',
+    'include/yoyo/statement.h',
+    'include/yoyo/token.h',
+    'include/yoyo/tree_cloner.h',
+    'include/yoyo/type.h',
+    'include/yoyo/parselets/infix_parselets.h',
+    'include/yoyo/parselets/prefix_parselets.h',
 ]
 llvm_static = get_option('llvm_static')
 yoyo_args = ['-DYOYO_DLL']
