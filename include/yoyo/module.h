@@ -37,6 +37,7 @@ namespace Yoyo
         std::unordered_map<std::string, std::vector<std::tuple<Type, std::string, std::variant<llvm::Constant*, ConstantDeclaration*>>>> constants;
         std::unordered_map<std::string, std::vector<std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>>> unions;
         std::unordered_map<std::string, std::vector<std::unique_ptr<UnionDeclaration>>> generic_unions;
+        std::unordered_map<std::string, std::vector<std::unique_ptr<MacroDeclaration>>> macros;
         std::unordered_map<std::string, Module*> modules;
         ModuleOverloadDetails overloads;
         Engine* engine;
@@ -51,6 +52,7 @@ namespace Yoyo
         std::pair<std::string, GenericInterfaceDeclaration*> findGenericInterface(const std::string& block, const std::string& name);
         std::pair<std::string, EnumDeclaration*> findEnum(const std::string& block, const std::string& name);
         std::pair<std::string, UnionDeclaration*> findUnion(const std::string& block, const std::string& name);
+        MacroDeclaration* findMacro(const std::string& block, const std::string& name);
         std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*>findUnionWithType(const std::string& block, const std::string& name);
         std::pair<std::string, std::tuple<Type, std::string, std::variant<llvm::Constant*, ConstantDeclaration*>>*> findConst(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);

@@ -130,6 +130,16 @@ namespace Yoyo
     {
         return std::make_unique<GCNewExpression>(copy_expr(expr->target_expression));
     }
+    std::unique_ptr<Expression> ExpressionTreeCloner::operator()(MacroInvocation* invc)
+    {
+        auto new_name = copy_expr(invc->macro_name);
+        auto right = invc->right ? copy_expr(invc->right) : nullptr;
+        if (std::holds_alternative<std::unique_ptr<Expression>>(invc->left))
+        {
+            auto left = copy_expr(std::get<std::unique_ptr<Expression>>(invc->left));
+            return std::make_unique<MacroInvocation>(std::move(new_name), std::move(left), std::move(right));
+        }
+    }
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(CharLiteral* lit)
     {
         auto lt =  std::make_unique<CharLiteral>();

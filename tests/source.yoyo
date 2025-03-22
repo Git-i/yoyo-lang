@@ -1,120 +1,14 @@
-WIDTH: const i32 = 800;
-HEIGHT: const i32 = 600;
-GRID_SIZE: const i32 = 20;
-ROWS: const u64 = WIDTH / GRID_SIZE;
-COLS: const u64 = HEIGHT / GRID_SIZE;
-
-GridTy: alias = [[i32; COLS]; ROWS];
-
-random_grid: fn -> GridTy = {
-    grid: mut GridTy;
-
-    for(row in 0..ROWS)
-        for(col in 0..COLS)
-            *grid[row][col] = test::random_int(0, 1);
-
-    return grid;
-}
-
-
-process_rules: fn(current: i32, ng: [i32; 4]) -> i32 = {
-    alive_neighbours := *ng[0] + *ng[1] + *ng[2] + *ng[3];
-    if(current == 1) {
-        if((*ng[0] == 1 && *ng[2] == 1) ||(*ng[1] == 1 && *ng[3] == 1)) return 0;
-        else if(alive_neighbours == 3) return 0;
-        else if(alive_neighbours == 2) return 1;
-        else if(alive_neighbours == 1) return 1 - current;
-        else if(alive_neighbours == 0) return current;
-        else if(alive_neighbours == 4) return 0;
-    } else {
-        if(alive_neighbours == 3) return 1;
-        else if(alive_neighbours == 2) return 0;
-        else if(alive_neighbours == 1) return 1 - current;
-        else if(alive_neighbours == 0) return current;
-        else if(alive_neighbours == 4) return 0;
+format: macro (expr: TupleExpr) -> Expr = {
+    final_expr := StrLit::new();
+    for (child in 0..expr.child_size()) {
+        final_expr.push_expr(expr.extract_child_at(0));
     }
-    return 0;
-}
-get_neighbour_count: fn(grid: &GridTy, row: u64, col: u64) -> i32 = {
-    count := *grid[(row + ROWS - 1) % ROWS][col];
-    count2 := *grid[row][(col + COLS - 1) % COLS];
-    count3 := *grid[row][(col + 1) % COLS];
-    count4 := *grid[(row + 1) % ROWS][col];
-    ret_val := count + count2 + count3 + count4;
-    return ret_val;
-}
-
-get_next_state: fn(grid: &GridTy, row: u64, col: u64) -> i32 = {
-    neigbours := [
-        *grid[(row + ROWS - 1) % ROWS][col],
-        *grid[row][(col + COLS - 1) % COLS],
-        *grid[row][(col + 1) % COLS],
-        *grid[(row + 1) % ROWS][col]
-    ];
-
-    current := *grid[row][col];
-    return process_rules(current, neigbours);
-}
-
-update_grid: fn(grid: &mut GridTy) = {
-    new_grid: mut GridTy = [[0; COLS]; ROWS];
-
-    for(row in 0..ROWS)
-        for(col in 0..COLS)
-            *new_grid[row][col] = get_next_state(grid, row, col);
-
-    *grid = new_grid;
-}
-
-clear_grid: fn(grid: &mut GridTy) = {
-    for(row in 0..ROWS)
-        for(col in 0..COLS)
-            *grid[row][col] = 0;
-}
-
-draw_grid: fn(grid: &GridTy) = {
-    for(row in 0..ROWS) {
-        for(col in 0..COLS) {
-            count := get_neighbour_count(grid, row, col);
-            color: mut = rl::Color{ .r = 0, .g = 0, .b = 0, .a = 255 };
-            if(*grid[row][col] == 1) {
-                if(count == 0) color = rl::Color::RAY_WHITE;
-                else if(count == 1) color = rl::Color{ .r = 255, .g = 255, .b = 0, .a = 255};
-                else if(count == 2) color = rl::Color{ .r = 255, .g = 165, .b = 0, .a = 255};
-                else if(count == 3) color = rl::Color{ .r = 255, .g = 0, .b = 0, .a = 255};
-                else if(count == 4) color = rl::Color{.r = 255, .g = 192, .b = 203, .a = 255};
-            }
-            rl::draw_rectangle(
-                test::unsafe_int_cast(row) * GRID_SIZE,
-                test::unsafe_int_cast(col) * GRID_SIZE,
-                GRID_SIZE,
-                GRID_SIZE,
-                color);
-        }
-    }    
+    return final_expr;
 }
 
 main: fn = {
-    //Thankfullly I haven't enforced initialization
-    grid: mut = random_grid();
-    wd := rl::Window::init(WIDTH, HEIGHT, &"Game of life");
-    rl::set_target_fps(5);
-    paused: mut = false;
-    while(!wd.should_close()) {
-        rl::begin_drawing();
-        rl::clear_background(rl::Color::RAY_WHITE);
-
-        
-        if(rl::Key::Space.is_key_pressed()) paused = !paused;        
-        if(paused && rl::Key::Enter.is_key_pressed()) grid.update_grid();
-        if(rl::Key::C.is_key_pressed()) grid.clear_grid();
-        if(rl::is_mouse_pressed(0)) {
-            row := rl::get_mouse_x() / GRID_SIZE;
-            col := rl::get_mouse_y() / GRID_SIZE;
-            *grid[row][col] = 1; 
-        }
-        if(!paused) grid.update_grid();
-        draw_grid(&grid);
-        rl::end_drawing();
-    }
+    a := 10;
+    b := "Hello";
+    c := "World";
+    test::print(&format!(a, b, c));
 }

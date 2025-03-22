@@ -1141,4 +1141,9 @@ namespace Yoyo
         tp.name = "__gcref";
         return { tp };
     }
+    ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(MacroInvocation* mcr)
+    {
+        MacroEvaluator{ irgen }.eval(mcr);
+        return std::visit(*this, mcr->result->toVariant());
+    }
 }

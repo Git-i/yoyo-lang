@@ -234,6 +234,11 @@ namespace Yoyo
         for(auto& val : v) val.second = Const;
         return v;
     }
+    BorrowResult::borrow_result_t BorrowResult::operator()(MacroInvocation* invc)
+    {
+        ExpressionTypeChecker{ irgen }(invc);
+        return std::visit(*this, invc->result->toVariant());
+    }
     BorrowResult::borrow_result_t BorrowResult::doCall(CallOperation* expr)
     {
         auto callee_ty = std::visit(ExpressionTypeChecker{irgen}, expr->callee->toVariant());

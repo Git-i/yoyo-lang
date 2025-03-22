@@ -9,6 +9,17 @@ namespace Yoyo
 {
     std::unique_ptr<Expression> PrefixOperationParselet::parse(Parser& parser, Token tk)
     {
+        if (tk.type == TokenType::Directive) {
+            auto expr = parser.parseExpression(Precedences::Prefix - 1);
+            auto self = std::make_unique<MacroInvocation>(
+                std::make_unique<NameExpression>(std::string(tk.text)),
+                nullptr
+            );
+            expr->parent = self.get();
+            auto end = expr->end;
+            self->left = std::move(expr);
+            return Expression::attachSLAndParent(std::move(self), tk.loc, end, parser.parent);
+        }
         if(tk.type == TokenType::Ampersand && parser.discard(TokenType::Mut)) tk.type = TokenType::RefMut;
         //prefix operations are right associative
         auto self = std::make_unique<PrefixOperation>(tk, nullptr);

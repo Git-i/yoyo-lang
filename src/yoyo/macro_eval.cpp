@@ -1,5 +1,5 @@
 #include "ir_gen.h"
-
+#include <ranges>
 
 
 namespace Yoyo
@@ -18,7 +18,7 @@ namespace Yoyo
 			else 
 				return { false };
 		}
-		MacroEvaluator::ObjectTy operator()(ArrayLiteral*);
+		MacroEvaluator::ObjectTy operator()(ArrayLiteral*) { return {}; }
 		MacroEvaluator::ObjectTy operator()(RealLiteral* lit)
 		{
 			return { std::stod(std::string(lit->token.text)) };
@@ -30,7 +30,7 @@ namespace Yoyo
 				irgen->error(Error(lit, "Strings in macros cannot have interpolation"));
 			return { std::get<0>(lit->literal[0]) };
 		}
-		MacroEvaluator::ObjectTy operator()(NameExpression*);
+		MacroEvaluator::ObjectTy operator()(NameExpression*) { return {}; }
 		Yoyo::MacroEvaluator::ObjectTy doBexprCall(Yoyo::MacroEvaluator::ObjectTy& left, std::string& fn_name)
 		{
 			using ObjTy = MacroEvaluator::ObjectTy;
@@ -93,10 +93,10 @@ namespace Yoyo
 
 		}
 		MacroEvaluator::ObjectTy operator()(GroupingExpression*) {
-
+			return {};
 		}
-		MacroEvaluator::ObjectTy operator()(LogicalOperation*);
-		MacroEvaluator::ObjectTy operator()(PostfixOperation*);
+		MacroEvaluator::ObjectTy operator()(LogicalOperation*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(PostfixOperation*) { return {}; }
 		MacroEvaluator::ObjectTy operator()(CallOperation* expr) {
 			using FnType = std::pair<std::string, std::function<MacroEvaluator::ObjectTy(std::vector<MacroEvaluator::ObjectTy>)>>;
 			auto callee = std::visit(*this, expr->callee->toVariant());
@@ -108,9 +108,9 @@ namespace Yoyo
 			}
 			return fn.second(std::move(args));
 		}
-		MacroEvaluator::ObjectTy operator()(SubscriptOperation*);
-		MacroEvaluator::ObjectTy operator()(LambdaExpression*);
-		MacroEvaluator::ObjectTy operator()(ScopeOperation*);
+		MacroEvaluator::ObjectTy operator()(SubscriptOperation*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(LambdaExpression*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(ScopeOperation*) { return {}; }
 		MacroEvaluator::ObjectTy operator()(ObjectLiteral* lit)
 		{
 			if (!lit->t.block_hash.empty()) irgen->error(Error(lit, "Type is not usable from macro"));
@@ -119,13 +119,22 @@ namespace Yoyo
 				return { std::make_unique<StringLiteral>(decltype(StringLiteral::literal){}) };
 			}
 		}
-		MacroEvaluator::ObjectTy operator()(NullLiteral*);
-		MacroEvaluator::ObjectTy operator()(AsExpression*);
-		MacroEvaluator::ObjectTy operator()(CharLiteral*);
-		MacroEvaluator::ObjectTy operator()(GCNewExpression*);
+		MacroEvaluator::ObjectTy operator()(NullLiteral*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(AsExpression*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(CharLiteral*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(GCNewExpression*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(Expression* exp) {
+			irgen->error(Error(exp, "Expression is not allowed inside macro"));
+			return {};
+		}
 	};
-	void MacroEvaluator::operator()(VariableDeclaration*)
+	void MacroEvaluator::operator()(VariableDeclaration* decl)
 	{
+		std::string name(decl->identifier.text);
+		if (variables.back().contains(name)) irgen->error(Error(decl, "Duplicate variables"));
+		if (!decl->initializer) irgen->error(Error(decl, "Macro variable cannot be left uninitialized"));
+		
+		variables.back()[name] = std::visit(MacroExprEval{ irgen }, decl->initializer->toVariant());
 	}
 	void MacroEvaluator::operator()(IfStatement*)
 	{
@@ -133,17 +142,58 @@ namespace Yoyo
 	void MacroEvaluator::operator()(WhileStatement*)
 	{
 	}
-	void MacroEvaluator::operator()(ForStatement*)
+	// for only supoprts ranges expressions
+	void MacroEvaluator::operator()(ForStatement* stat)
 	{
+		auto as_rexp = dynamic_cast<BinaryOperation*>(stat->iterable.get());
+		if (!as_rexp || as_rexp->op.type != TokenType::DoubleDot) 
+			irgen->error(Error(stat->iterable.get(), "Only range expressions are allowed"));
+		auto lhs = std::visit(MacroExprEval{ irgen }, as_rexp->lhs->toVariant());
+		auto rhs = std::visit(MacroExprEval{ irgen }, as_rexp->rhs->toVariant());
+
+		if(!std::holds_alternative<int64_t>(lhs) || !std::holds_alternative<int64_t>(rhs))
+			irgen->error(Error(as_rexp, "Range must be with integer types"));
+
+		auto left = std::get<int64_t>(lhs);
+		auto right = std::get<int64_t>(rhs);
+
+		if (stat->names.size() != 1) irgen->error(Error(stat, "Invalid number of captures"));
+		std::string var_name(stat->names[0].text);
+
+		variables.emplace_back();
+		for (auto i : std::views::iota(left, right))
+		{
+			variables.back()[var_name] = { i };
+			std::visit(*this, stat->body->toVariant());
+		}
+		variables.pop_back();
 	}
-	void MacroEvaluator::operator()(BlockStatement*)
+	void MacroEvaluator::operator()(BlockStatement* stats)
 	{
+		variables.emplace_back();
+		for (auto& stat : stats->statements) {
+			std::visit(*this, stat->toVariant());
+			if (return_addr && *return_addr) {
+				variables.pop_back();
+				return;
+			}
+		}
+		variables.pop_back();
 	}
-	void MacroEvaluator::operator()(ReturnStatement*)
+	void MacroEvaluator::operator()(ReturnStatement* ret)
 	{
+		if (!ret->expression) irgen->error(Error(ret, "Must return expression"));
+		auto ret_obj = std::visit(MacroExprEval{ irgen }, ret->expression->toVariant());
+		if (!std::holds_alternative<std::unique_ptr<ASTNode>>(ret_obj))
+			irgen->error(Error(ret, "Must return expression"));
+		auto node = std::get<std::unique_ptr<ASTNode>>(ret_obj).release();
+		auto as_expr = dynamic_cast<Expression*>(node);
+		if (!as_expr) irgen->error(Error(ret, "Must return expression"));
+		*return_addr = std::unique_ptr<Expression>{ as_expr };
 	}
-	void MacroEvaluator::operator()(ExpressionStatement*)
+	void MacroEvaluator::operator()(ExpressionStatement* expr)
 	{
+		std::visit(MacroExprEval{ irgen }, expr->expression->toVariant());
 	}
 	void MacroEvaluator::operator()(ConditionalExtraction*)
 	{
@@ -153,5 +203,22 @@ namespace Yoyo
 	}
 	void MacroEvaluator::operator()(ContinueStatement*)
 	{
+	}
+	void MacroEvaluator::operator()(Statement* stat)
+	{
+		irgen->error(Error(stat, "Statement is not allowed inside macro"));
+	}
+	void MacroEvaluator::eval(MacroInvocation* invc)
+	{
+		if (invc->result) return;
+		if (auto nexpr = dynamic_cast<NameExpression*>(invc->macro_name.get())) {
+			auto decl = irgen->module->findMacro(irgen->block_hash, nexpr->text);
+			if (!decl) {
+				irgen->error(Error(invc, "Macro " + nexpr->text, " cannot be found in the current context"));
+			}
+			return_addr = &invc->result;
+			std::visit(*this, decl->body->toVariant());
+		};
+		irgen->error(Error(invc, "Not implemented"));
 	}
 }

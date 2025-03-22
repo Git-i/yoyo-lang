@@ -109,4 +109,9 @@ namespace Yoyo
     : captures(std::move(captures)), sig(std::move(sig)), body(std::move(body)) {}
 
 
+    ExpressionVariant MacroInvocation::toVariant()
+    {
+        return this;
+    }
+
 }

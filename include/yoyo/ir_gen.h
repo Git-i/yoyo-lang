@@ -56,6 +56,7 @@ namespace Yoyo
         borrow_result_t operator()(BinaryOperation*);
         borrow_result_t operator()(GroupingExpression*);
         borrow_result_t operator()(CallOperation*);
+        borrow_result_t operator()(MacroInvocation*);
         borrow_result_t doCall(CallOperation* expr);
         //TODO
         borrow_result_t operator()(PostfixOperation*){ return {}; }
@@ -198,6 +199,7 @@ namespace Yoyo
         Result operator()(AsExpression*);
         Result operator()(CharLiteral*);
         Result operator()(GCNewExpression*);
+        Result operator()(MacroInvocation*);
     };
     class ExpressionEvaluator
     {
@@ -267,6 +269,7 @@ namespace Yoyo
         llvm::Value* operator()(AsExpression*);
         llvm::Value* operator()(CharLiteral*);
         llvm::Value* operator()(GCNewExpression*);
+        llvm::Value* operator()(MacroInvocation*);
     };
     class ConstantEvaluator
     {
@@ -307,12 +310,14 @@ namespace Yoyo
         // objects in macros can only be
         // str, Expr(and subtypes), Stat(and subtypes), null, int, float, bool ,
         // token
+        IRGenerator* irgen;
         struct OwnedToken {
             TokenType type;
             std::string text;
         };
         struct ObjectTy;
-        struct ObjectTy : std::variant<
+        using VarintTy = std::variant<
+            std::monostate,
             std::string,
             std::unique_ptr<ASTNode>,
             std::unique_ptr<ASTNode>*,
@@ -320,9 +325,15 @@ namespace Yoyo
             double,
             int64_t,
             OwnedToken,
-            std::pair<std::string, std::function<ObjectTy(std::vector<ObjectTy>)>>,
-            std::monostate
-        >{};
+            std::pair<std::string, std::function<ObjectTy(std::vector<ObjectTy>)>>
+        >;
+        struct ObjectTy : VarintTy {
+            ObjectTy() = default;
+            template<typename T>
+            ObjectTy(T&& obj) noexcept : VarintTy(std::forward<T>(obj)) {}
+            ObjectTy(ObjectTy&& other) noexcept = default;
+            ObjectTy& operator=(ObjectTy&& other) noexcept = default;
+        };
         enum TypeType {
             Int, Float, Double, Array, Str, Token,
             Expr, IntLit, BoolLit, TupleLit, ArrayLit,
@@ -336,7 +347,13 @@ namespace Yoyo
             TypeType tp;
             std::unique_ptr<Type> subtype;
         };
-        std::vector<std::unordered_map<std::string, std::pair<bool, ObjectTy>>> variables;
+        struct MapTy : std::unordered_map<std::string, ObjectTy> {
+            MapTy() = default;
+            MapTy(const MapTy&) = delete;
+            MapTy(MapTy&&) noexcept = default;
+        };
+        std::unique_ptr<Expression>* return_addr;
+        std::vector<MapTy> variables;
         void operator()(VariableDeclaration*);
         void operator()(IfStatement*);
         void operator()(WhileStatement*);
@@ -347,6 +364,8 @@ namespace Yoyo
         void operator()(ConditionalExtraction*);
         void operator()(BreakStatement*);
         void operator()(ContinueStatement*);
+        void operator()(Statement*);
+        void eval(MacroInvocation*);
     };
 
     void validate_expression_borrows(Expression*, IRGenerator*);

@@ -40,6 +40,7 @@ namespace Yoyo
     class GenericNameExpression;
     class AsExpression;
     class GCNewExpression;
+    class MacroInvocation;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -62,7 +63,8 @@ namespace Yoyo
         CharLiteral*,
         GenericNameExpression*,
         GCNewExpression*,
-        AsExpression*>;
+        AsExpression*,
+        MacroInvocation*>;
     enum class Ownership { Owning = 0, NonOwning, NonOwningMut };
     class YOYO_API Expression : public ASTNode {
     public:
@@ -246,5 +248,24 @@ namespace Yoyo
         ExpressionVariant toVariant() override;
         GCNewExpression(std::unique_ptr<Expression> expr)
             : target_expression(std::move(expr)){}
+    };
+    class YOYO_API MacroInvocation: public Expression
+    {
+    public:
+        std::unique_ptr<Expression> macro_name;
+
+        std::variant<
+            std::unique_ptr<Expression>,
+            std::vector<Token>
+        > left;
+        std::unique_ptr<Expression> right;
+        
+        std::unique_ptr<Expression> result;
+        MacroInvocation(std::unique_ptr<Expression> name, std::unique_ptr<Expression> left)
+            : macro_name(std::move(name)), left(std::move(left)) {}
+        MacroInvocation(std::unique_ptr<Expression> name, std::unique_ptr<Expression> left, std::unique_ptr<Expression> right)
+            : macro_name(std::move(name)), left(std::move(left)), right(std::move(right)) {}
+
+        ExpressionVariant toVariant() override;
     };
 }

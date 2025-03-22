@@ -1772,6 +1772,11 @@ namespace Yoyo
         irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0), irgen->builder->CreateStructGEP(llvm_ty, memory, 1));
         return memory;
     }
+    llvm::Value* ExpressionEvaluator::operator()(MacroInvocation* invc)
+    {
+        ExpressionTypeChecker{ irgen }(invc);
+        return std::visit(*this, invc->result->toVariant());
+    }
     llvm::Value* ExpressionEvaluator::operator()(LambdaExpression* expr)
     {
         auto t = ExpressionTypeChecker{ irgen }(expr);

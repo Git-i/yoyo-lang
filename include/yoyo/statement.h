@@ -339,4 +339,12 @@ namespace Yoyo
         GenericClause clause;
         StatementVariant toVariant() override;
     };
+    class MacroDeclaration : public Statement
+    {
+    public:
+        std::unique_ptr<Statement> body;
+        std::pair<std::string, std::string> first_param;
+        std::optional<std::pair<std::string, std::string>> second_param;
+        std::string name;
+    };
 }

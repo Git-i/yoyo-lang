@@ -16,6 +16,7 @@ namespace Yoyo
         prefixParselets[TokenType::Tilde] = prefix_op_parselet;
         prefixParselets[TokenType::Star] = prefix_op_parselet;
         prefixParselets[TokenType::Ampersand] = prefix_op_parselet;
+        prefixParselets[TokenType::Directive] = prefix_op_parselet;
         prefixParselets[TokenType::IntegerLiteral] = std::make_shared<IntLiteralParselet>();
         prefixParselets[TokenType::RealLiteral] = std::make_shared<RealLiteralParselet>();
         prefixParselets[TokenType::StringLiteral] = std::make_shared<StringLiteralParselet>();

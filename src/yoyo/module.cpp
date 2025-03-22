@@ -81,6 +81,16 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
+    MacroDeclaration* Module::findMacro(const std::string& block, const std::string& name)
+    {
+        for (auto& [hash, mac_list] : macros)
+        {
+            if (!block.starts_with(hash)) continue;
+            for (auto& mac : mac_list)
+                if (mac->name == name) return mac.get();
+        }
+        return nullptr;
+    }
     std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*> Module::findUnionWithType(const std::string& block, const std::string& name)
     {
         for (auto& [hash, unn_list] : unions)
