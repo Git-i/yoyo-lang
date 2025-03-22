@@ -138,6 +138,7 @@ namespace Yoyo
         case TokenType::Union: decl = parseUnionDeclaration(iden.value()); break;
         case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
         case TokenType::Module: decl = parseModuleImport(iden.value()); break;
+        case TokenType::Macro: decl = parseMacroDeclaration(iden.value()); break;
 
         default: error("Expected 'fn', 'enum', 'const', 'alias', 'module', 'interface' or 'union'", iden);
         }
@@ -395,6 +396,33 @@ namespace Yoyo
             std::make_unique<UnionDeclaration>(std::string(iden.text), std::move(fields), std::move(stat)),
             iden.loc, discardLocation, parent
         );
+    }
+    std::unique_ptr<Statement> Parser::parseMacroDeclaration(Token identifier)
+    {
+        if (!discard(TokenType::Macro)) error("Expected 'union'", Peek());
+        // only single param macros for now
+        if (!discard(TokenType::LParen)) error("Expected '('", Peek());
+        auto iden = Get();
+        if (!iden || iden->type != TokenType::Identifier) {
+            error("Expected identifier", iden);
+        }
+        std::string param_name(iden->text);
+        if (!discard(TokenType::Colon)) error("Expected ':'", Peek());
+        iden = Get();
+        if (!iden || iden->type != TokenType::Identifier) {
+            error("Expected expression type", iden);
+        }
+        std::string param_type(iden->text);
+
+        if (!discard(TokenType::RParen)) error("Expected ')'", Peek());
+        if (!discard(TokenType::Equal)) error("Expected '='", Peek());
+        auto decl = std::make_unique<MacroDeclaration>();
+        decl->first_param = { param_name, param_type };
+        decl->name = identifier.text;
+        decl->body = parseStatement();
+        decl->body->parent = decl.get();
+        auto end = decl->body->end;
+        return Statement::attachSLAndParent(std::move(decl), identifier.loc, end, parent);
     }
     Attribute parseAttribute(Parser& p)
     {

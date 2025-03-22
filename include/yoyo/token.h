@@ -21,7 +21,7 @@ namespace Yoyo {
         DoubleGreater, DoubleLess,
         Class, Struct, Enum, EnumFlag, Union, Scheme, Interface, Module,
         SemiColon, In, InOut, This, Operator, Return, Called, Tilde, Pub, Static, Mod, With,
-        Question, Null, As, Fn, Alias, DoubleDot, DoubleDotEqual,
+        Question, Null, As, Fn, Alias, DoubleDot, DoubleDotEqual, Macro,
         AttrOpen, /// #(
         Spaceship, // <=>
         Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const

@@ -1,14 +1,15 @@
-format: macro (expr: TupleExpr) -> Expr = {
+to_str: macro (expr: TupleExpr) = {
     final_expr := StrLit::new();
     for (child in 0..expr.child_size()) {
         final_expr.push_expr(expr.extract_child_at(0));
+        final_expr.push_str(" ");
     }
     return final_expr;
 }
 
 main: fn = {
-    a := 10;
+    a: i32 = 10;
     b := "Hello";
     c := "World";
-    test::print(&format!(a, b, c));
+    test::print(&to_str!(a, b, c));
 }

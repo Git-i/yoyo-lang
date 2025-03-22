@@ -134,6 +134,10 @@ namespace Yoyo
             }
             return false;
         }
+        bool operator()(MacroDeclaration* decl) {
+            md->macros[block].emplace_back(decl);
+            return true;
+        }
         bool operator()(Statement*) const {return false;};
     };
 

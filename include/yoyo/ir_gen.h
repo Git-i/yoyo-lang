@@ -123,7 +123,8 @@ namespace Yoyo
         void operator()(ContinueStatement*);
         void operator()(ConstantDeclaration*);
         void operator()(CImportDeclaration*) {}
-        void operator()(UnionDeclaration*) ;
+        void operator()(UnionDeclaration*);
+        void operator()(MacroDeclaration*);
 
         void error(const Error& err);
         std::string reset_hash();
@@ -333,6 +334,7 @@ namespace Yoyo
             ObjectTy(T&& obj) noexcept : VarintTy(std::forward<T>(obj)) {}
             ObjectTy(ObjectTy&& other) noexcept = default;
             ObjectTy& operator=(ObjectTy&& other) noexcept = default;
+            ObjectTy clone_or_ref_to();
         };
         enum TypeType {
             Int, Float, Double, Array, Str, Token,

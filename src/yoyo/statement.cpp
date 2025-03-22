@@ -108,4 +108,8 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant MacroDeclaration::toVariant()
+    {
+        return this;
+    }
 }

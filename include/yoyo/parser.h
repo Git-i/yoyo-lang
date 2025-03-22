@@ -22,6 +22,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseAliasDeclaration(Token identifier);
         std::unique_ptr<Statement> parseInterfaceDeclaration(Token identifier);
         std::unique_ptr<Statement> parseUnionDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseMacroDeclaration(Token identifier);
         std::unordered_map<std::string, std::unique_ptr<Expression>> parseObjectLiteral();
         std::unique_ptr<Statement> parseDeclaration();
         std::unique_ptr<Statement> parseReturnStatement(Token);

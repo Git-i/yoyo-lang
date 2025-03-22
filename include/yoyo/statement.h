@@ -37,6 +37,7 @@ namespace Yoyo
     class CImportDeclaration;
     class ConstantDeclaration;
     class UnionDeclaration;
+    class MacroDeclaration;
     typedef std::variant<
         ForStatement*,
         ClassDeclaration*,
@@ -62,7 +63,8 @@ namespace Yoyo
         ContinueStatement*,
         CImportDeclaration*,
         ConstantDeclaration*,
-        UnionDeclaration*> StatementVariant;
+        UnionDeclaration*,
+        MacroDeclaration*> StatementVariant;
     enum class Ownership;
     struct Attribute {
         std::string name;
@@ -346,5 +348,7 @@ namespace Yoyo
         std::pair<std::string, std::string> first_param;
         std::optional<std::pair<std::string, std::string>> second_param;
         std::string name;
+
+        StatementVariant toVariant() override;
     };
 }

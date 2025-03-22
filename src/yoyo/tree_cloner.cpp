@@ -324,6 +324,14 @@ namespace Yoyo
         }
         return std::make_unique<UnionDeclaration>(decl->name, decl->fields, std::move(stats));
     }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(MacroDeclaration* decl)
+    {
+        auto new_decl = std::make_unique<MacroDeclaration>();
+        new_decl->body = copy_stat(decl->body);
+        new_decl->first_param = decl->first_param;
+        new_decl->name = decl->name;
+        return new_decl;
+    }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericClassDeclaration* decl)
     {
         std::vector<std::unique_ptr<Statement>> new_methods;

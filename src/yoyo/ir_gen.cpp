@@ -634,7 +634,12 @@ namespace Yoyo
         block_hash.swap(curr_hash);
         in_class = old_in_class;
         this_t = std::move(old_this);
-    };
+    }
+    void IRGenerator::operator()(MacroDeclaration* decl)
+    {
+        assert(current_Statement->get() == decl);
+        current_Statement->release();
+    }
     void IRGenerator::operator()(ClassDeclaration* decl)
     {
         std::string name = decl->name;
@@ -1275,4 +1280,5 @@ namespace Yoyo
         return !has_error;
     }
 
+    
 }
