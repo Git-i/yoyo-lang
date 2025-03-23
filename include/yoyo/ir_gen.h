@@ -291,6 +291,7 @@ namespace Yoyo
         llvm::Constant* operator()(CharLiteral*);
         llvm::Constant* operator()(ObjectLiteral*);
         llvm::Constant* operator()(StringLiteral*);
+        llvm::Constant* operator()(MacroInvocation*);
         llvm::Constant* operator()(Expression*) { return nullptr; }
     };
     //TODO: rename
@@ -354,7 +355,8 @@ namespace Yoyo
             MapTy(const MapTy&) = delete;
             MapTy(MapTy&&) noexcept = default;
         };
-        std::unique_ptr<Expression>* return_addr;
+        ObjectTy return_addr;
+        bool has_returned;
         std::vector<MapTy> variables;
         void operator()(VariableDeclaration*);
         void operator()(IfStatement*);

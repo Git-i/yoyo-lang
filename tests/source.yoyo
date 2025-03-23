@@ -7,9 +7,16 @@ to_str: macro (expr: TupleExpr) = {
     return final_expr;
 }
 
+comptime_fibonacci: macro (expr: IntLit) = {
+    value := expr.value();
+    fib_seq := ||(val: int) {
+        if(val < 2) return val;
+        return this(val - 1) + this(val - 2);
+    };
+    expr.set_value(fib_seq(value));
+    return expr;
+}
+FIB_10: const i32 = comptime_fibonacci! 10;
 main: fn = {
-    a: i32 = 10;
-    b := "Hello";
-    c := "World";
-    test::print(&to_str!(a, b, c));
+    test::print(&"${FIB_10}");
 }

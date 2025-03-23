@@ -87,6 +87,11 @@ namespace Yoyo
             return nullptr;
         }
     }
+    llvm::Constant* ConstantEvaluator::operator()(MacroInvocation* invc)
+    {
+        ExpressionTypeChecker{ irgen }(invc);
+        return std::visit(*this, invc->result->toVariant());
+    }
     llvm::Constant* ConstantEvaluator::operator()(PrefixOperation*)
     {
         debugbreak();
