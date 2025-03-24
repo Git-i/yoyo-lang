@@ -1,22 +1,39 @@
-to_str: macro (expr: TupleExpr) = {
-    final_expr := StrLit::new();
-    for (child in 0..expr.child_size()) {
-        final_expr.push_expr(expr.extract_child_at(0));
-        final_expr.push_str(" ");
+lisp: macro (toks: TokSeq) = {
+    lisp_expr := ||(toks: TokSeq) {
+        og_size := toks.size();
+        if (toks.front().type() == TokenType::LBracket) {
+            toks.pop_front();
+            op := toks.pop_front();
+
+            arr := this(toks);
+            toks.pop_n(arr[1]);
+            left := arr[0];
+
+            rarr := this(toks);
+            toks.pop_n(rarr[1]);
+            right := rarr[0];
+
+            toks.pop_or_fail(TokenType::RBracket);
+            return BinaryExpr::new(left, op, right);
+        } else {
+            return parse_expr(toks); // [Expr, int]
+        }
     }
-    return final_expr;
+
+    toks.pop_or_fail(TokenType::LBracket);
+    op := toks.pop_front();
+
+    return BinaryExpr::new(
+        lisp_expr(toks),
+        op,
+        lisp_expr(toks)
+    );
 }
 
-comptime_fibonacci: macro (expr: IntLit) = {
-    value := expr.value();
-    fib_seq := ||(val: int) {
-        if(val < 2) return val;
-        return this(val - 1) + this(val - 2);
-    };
-    expr.set_value(fib_seq(value));
-    return expr;
-}
-FIB_10: const i32 = comptime_fibonacci! 10;
 main: fn = {
-    test::print(&"${FIB_10}");
+    integer: i32 = 450;
+    value := lisp! {
+        (+ (* 2 3) (/ integer 10))
+    \};
+    test::print(&"${value}");
 }

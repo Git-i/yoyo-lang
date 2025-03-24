@@ -10,14 +10,29 @@ namespace Yoyo
     std::unique_ptr<Expression> PrefixOperationParselet::parse(Parser& parser, Token tk)
     {
         if (tk.type == TokenType::Directive) {
-            auto expr = parser.parseExpression(Precedences::Prefix - 1);
             auto self = std::make_unique<MacroInvocation>(
                 std::make_unique<NameExpression>(std::string(tk.text)),
                 nullptr
             );
-            expr->parent = self.get();
-            auto end = expr->end;
-            self->left = std::move(expr);
+            SourceLocation end;
+            if (parser.discard(TokenType::LCurly)) {
+                using TokSeqTy = std::vector<std::pair<Token, SourceLocation>>;
+                self->left = TokSeqTy{};
+                auto& tok_seq = std::get<TokSeqTy>(self->left);
+                while (!parser.discard(TokenType::SlashBrace)) {
+                    auto opt = parser.GetWithEndLocation();
+                    if (!opt) return nullptr;
+                    tok_seq.push_back(std::move(opt).value());
+                }
+                end = parser.discardLocation;
+            }
+            else {
+                auto expr = parser.parseExpression(Precedences::Prefix - 1);
+                expr->parent = self.get();
+                end = expr->end;
+                self->left = std::move(expr);
+            }
+            
             return Expression::attachSLAndParent(std::move(self), tk.loc, end, parser.parent);
         }
         if(tk.type == TokenType::Ampersand && parser.discard(TokenType::Mut)) tk.type = TokenType::RefMut;

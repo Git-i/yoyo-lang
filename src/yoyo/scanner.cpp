@@ -170,6 +170,11 @@ namespace Yoyo {
                 }
             case '"': return ScanStringLiteral();
             case '\'': return ScanCharLiteral();
+            case '\\': 
+            {
+                if (NextIs('}')) return Token{ TokenType::SlashBrace, loc, {source.data() + position - 2, 2} };
+                return std::nullopt;
+            }
             default:
                 {
                     if(std::isdigit(c)) return ScanNumber();

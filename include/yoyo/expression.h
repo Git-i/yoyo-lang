@@ -256,7 +256,7 @@ namespace Yoyo
 
         std::variant<
             std::unique_ptr<Expression>,
-            std::vector<Token>
+            std::vector<std::pair<Token, SourceLocation>>
         > left;
         std::unique_ptr<Expression> right;
         

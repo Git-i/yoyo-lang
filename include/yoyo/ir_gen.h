@@ -10,6 +10,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "module.h"
 #include "cfg_node.h"
+#include "token.h"
 namespace Yoyo
 {
     class IRGenerator;
@@ -316,8 +317,20 @@ namespace Yoyo
         struct OwnedToken {
             TokenType type;
             std::string text;
+            static OwnedToken from_token(const Token& tk) {
+                return OwnedToken{ tk.type, std::string(tk.text) };
+            }
         };
         struct ObjectTy;
+        // normally tokens use string view 
+        // in the case where we transofom and owned token to a tokseq
+        // we need to keep the string alive
+        // the vector is just the way we can cheese the parser to parse
+        // directly from tokens and not a string
+        struct TokSeq {
+            std::string composite_string;
+            std::vector<std::pair<Token, SourceLocation>> tokens;
+        };
         using VarintTy = std::variant<
             std::monostate,
             std::string,
@@ -327,6 +340,10 @@ namespace Yoyo
             double,
             int64_t,
             OwnedToken,
+            TokSeq,
+            TokSeq*,
+            std::vector<ObjectTy>,
+            std::vector<ObjectTy>*,
             std::pair<std::string, std::function<ObjectTy(std::vector<ObjectTy>)>>
         >;
         struct ObjectTy : VarintTy {
@@ -336,19 +353,6 @@ namespace Yoyo
             ObjectTy(ObjectTy&& other) noexcept = default;
             ObjectTy& operator=(ObjectTy&& other) noexcept = default;
             ObjectTy clone_or_ref_to();
-        };
-        enum TypeType {
-            Int, Float, Double, Array, Str, Token,
-            Expr, IntLit, BoolLit, TupleLit, ArrayLit,
-            RealLit, StrLit, NameExpr, PrefixExpr, BinaryExpr,
-            PostfixExpr, CallExpr,
-            SubscriptExpr, LambdaExpr, ScopeExpr,ObjLit,
-            NullLit,CharLit,GenericNameExpr,GCNewExpression,
-            AsExpr,
-        };
-        struct Type {
-            TypeType tp;
-            std::unique_ptr<Type> subtype;
         };
         struct MapTy : std::unordered_map<std::string, ObjectTy> {
             MapTy() = default;
