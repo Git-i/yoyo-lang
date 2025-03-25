@@ -275,6 +275,34 @@ namespace Yoyo
 					}
 				} };
 			}
+			if (fn_name == "is_binary_operator") {
+				auto type = tk.type;
+				return { FnType{"", [type](std::vector<ObjTy> objs) -> ObjTy {
+						using enum TokenType;
+						Token tk {.type = type};
+						if (tk.can_be_overloaded_binary_only()) return true;
+						return type == Minus
+							|| type == Greater
+							|| type == Less
+							|| type == GreaterEqual
+							|| type == LessEqual;
+					}
+				} };
+			}
+		}
+		MacroEvaluator::ObjectTy doBexprArrayRefCall(std::vector<MacroEvaluator::ObjectTy>* tk, std::string& fn_name) {
+			using ObjTy = MacroEvaluator::ObjectTy;
+			using FnType = std::pair<std::string, std::function<ObjTy(std::vector<ObjTy>)>>;
+			if (fn_name == "size") {
+				return FnType{ "", [tk](std::vector<ObjTy> objs) -> ObjTy { return static_cast<int64_t>(tk->size()); } };
+			}
+			if (fn_name == "push") {
+				return FnType{ "", [tk](std::vector<ObjTy> objs) -> ObjTy {
+						tk->push_back(std::move(objs[0]));
+						return std::monostate{};
+					}
+				};
+			}
 		}
 		MacroEvaluator::ObjectTy operator()(BinaryOperation* bexpr) {
 			using ObjTy = MacroEvaluator::ObjectTy;
@@ -289,6 +317,10 @@ namespace Yoyo
 			if (std::holds_alternative<TokSeq*>(left)) {
 				auto fn_name = reinterpret_cast<NameExpression*>(bexpr->rhs.get())->text;
 				return doBexprTokSeqRefCall(std::get<TokSeq*>(left), fn_name);
+			}
+			if (std::holds_alternative<std::vector<ObjTy>*>(left)) {
+				auto fn_name = reinterpret_cast<NameExpression*>(bexpr->rhs.get())->text;
+				return doBexprArrayRefCall(std::get<std::vector<ObjTy>*>(left), fn_name);
 			}
 			if (std::holds_alternative<TokSeq>(left)) {
 				auto fn_name = reinterpret_cast<NameExpression*>(bexpr->rhs.get())->text;
@@ -309,6 +341,12 @@ namespace Yoyo
 		}
 		MacroEvaluator::ObjectTy operator()(LogicalOperation*) { return {}; }
 		MacroEvaluator::ObjectTy operator()(PostfixOperation*) { return {}; }
+		MacroEvaluator::ObjectTy operator()(PrefixOperation* op) {
+			if (op->op.type != TokenType::Bang) irgen->error(Error(op, "Expression is not allowed"));
+			auto result = std::visit(*this, op->operand->toVariant());
+			if (!std::holds_alternative<bool>(result)) irgen->error(Error(op, "Expression must evaluate to bool"));
+			return !std::get<bool>(result);
+		}
 		MacroEvaluator::ObjectTy operator()(CallOperation* expr) {
 			using FnType = std::pair<std::string, std::function<MacroEvaluator::ObjectTy(std::vector<MacroEvaluator::ObjectTy>)>>;
 			auto callee = std::visit(*this, expr->callee->toVariant());
@@ -376,6 +414,45 @@ namespace Yoyo
 						if (objs.size() != 1) irgen->error(Error(nullptr, "Expected one argument"));
 						if (!std::holds_alternative<int64_t>(objs[0])) irgen->error(Error(nullptr, "Argument is not of type 'int'"));
 						return { std::make_unique<IntegerLiteral>(std::to_string(std::get<int64_t>(objs[0]))) };
+					}
+				} };
+			}
+			if (op->type.name == "CallExpr::new") {
+				return { FnType{"CallExpr::new", [irgen](std::vector<ObjTy> objs) -> ObjTy {
+						if (objs.size() != 2) irgen->error(Error(nullptr, "Expected one argument"));
+						auto get_expr = [](auto& objs) {
+							if (std::holds_alternative<std::unique_ptr<ASTNode>>(objs))
+								return dynamic_cast<Expression*>(std::get<std::unique_ptr<ASTNode>>(objs).get());
+							else if(std::holds_alternative< std::unique_ptr<ASTNode>*>(objs))
+								return dynamic_cast<Expression*>(std::get<std::unique_ptr<ASTNode>*>(objs)->get());
+							return static_cast<Expression*>(nullptr);
+							};
+						auto release = []<typename T>(T & obj) {
+							if constexpr (std::is_same_v<T, std::unique_ptr<ASTNode>>)
+								obj.release();
+							else if constexpr (std::is_same_v<T, std::unique_ptr<ASTNode>*>)
+								obj->release();
+						};
+						auto get_arr = [](auto& objs) {
+							if (std::holds_alternative<std::vector<ObjTy>>(objs))
+								return &std::get<std::vector<ObjTy>>(objs);
+							else if (std::holds_alternative<std::vector<ObjTy>*>(objs))
+								return std::get<std::vector<ObjTy>*>(objs);
+							return static_cast<std::vector<ObjTy>*>(nullptr);
+							};
+						auto callee = get_expr(objs[0]);
+						if (!callee) irgen->error(Error(nullptr, "Argument 1 is not of type Expression"));
+						std::visit(release, objs[0]);
+						std::vector<std::unique_ptr<Expression>> args;
+						auto args_arr = get_arr(objs[1]);
+						if (!args_arr) irgen->error(Error(nullptr, "Argument 2 is not of array type"));
+						for (auto& arg : *args_arr) {
+							auto this_arg = get_expr(arg);
+							if (!this_arg) irgen->error(Error(nullptr, "Argument 2 is supposed to be array of expressions"));
+							std::visit(release, arg);
+							args.emplace_back(this_arg);
+						}
+						return std::make_unique<CallOperation>(std::unique_ptr<Expression>(callee), std::move(args));
 					}
 				} };
 			}
@@ -473,8 +550,22 @@ namespace Yoyo
 			}
 		}
 	}
-	void MacroEvaluator::operator()(WhileStatement*)
+	void MacroEvaluator::operator()(WhileStatement* stat)
 	{
+		auto expr_eval = MacroExprEval{ irgen, this };
+		auto as_variant = stat->condition->toVariant();
+		auto body_var = stat->body->toVariant();
+		while (true) {
+			auto cond_eval = std::visit(expr_eval, as_variant);
+			if (std::holds_alternative<std::monostate>(cond_eval)) break;
+			if (!std::holds_alternative<bool>(cond_eval)) 
+				irgen->error(Error(stat->condition.get(), "While condition did not eval to bool or null"));
+			if (std::get<bool>(cond_eval) == false) break;
+
+			variables.emplace_back();
+			std::visit(*this, body_var);
+			variables.pop_back();
+		}
 	}
 	// for only supoprts ranges expressions
 	void MacroEvaluator::operator()(ForStatement* stat)

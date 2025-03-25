@@ -5,35 +5,26 @@ lisp: macro (toks: TokSeq) = {
             toks.pop_front();
             op := toks.pop_front();
 
-            arr := this(toks);
-            toks.pop_n(arr[1]);
-            left := arr[0];
-
-            rarr := this(toks);
-            toks.pop_n(rarr[1]);
-            right := rarr[0];
+            left := this(toks);
+            right := this(toks);
 
             toks.pop_or_fail(TokenType::RBracket);
             return BinaryExpr::new(left, op, right);
         } else {
-            return parse_expr(toks); // [Expr, int]
+            arr := parse_expr(toks);
+            toks.pop_n(arr[1]);
+            return arr[0];
         }
     }
-
-    toks.pop_or_fail(TokenType::LBracket);
-    op := toks.pop_front();
-
-    return BinaryExpr::new(
-        lisp_expr(toks),
-        op,
-        lisp_expr(toks)
-    );
+    return lisp_expr(toks);
 }
-
+print_str_and_int: fn(int: i32, string: str) = {
+    test::print(&"${string} and ${int}");
+}
 main: fn = {
     integer: i32 = 450;
     value := lisp! {
-        (+ (* 2 3) (/ integer 10))
+         (+ (* 2 3) (/ integer 10))
     \};
     test::print(&"${value}");
 }
