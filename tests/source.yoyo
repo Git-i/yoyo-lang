@@ -1,30 +1,19 @@
-lisp: macro (toks: TokSeq) = {
-    lisp_expr := ||(toks: TokSeq) {
-        og_size := toks.size();
-        if (toks.front().type() == TokenType::LBracket) {
-            toks.pop_front();
-            op := toks.pop_front();
-
-            left := this(toks);
-            right := this(toks);
-
-            toks.pop_or_fail(TokenType::RBracket);
-            return BinaryExpr::new(left, op, right);
-        } else {
-            arr := parse_expr(toks);
-            toks.pop_n(arr[1]);
-            return arr[0];
-        }
+Type: struct = {
+    #(destructor)
+    destroy: fn(&mut this) = {
+        test::print(&"Destroyed type obj");
     }
-    return lisp_expr(toks);
 }
-print_str_and_int: fn(int: i32, string: str) = {
-    test::print(&"${string} and ${int}");
+call_yoyo_fn: fn = {
+    test::panic();
+}
+panic: fn(xc: i32, flg: i32, narg: i32, arg: ptr) = c_import!("RaiseException");
+
+function_that_panics: fn = {
+    panic(7090, 0, 0, "asds".c_str());
+    test::print(&"unreachable");
 }
 main: fn = {
-    integer: i32 = 450;
-    value := lisp! {
-         (+ (* 2 3) (/ integer 10))
-    \};
-    test::print(&"${value}");
+    function_that_panics();
+    test::print(&"got here somehow");
 }

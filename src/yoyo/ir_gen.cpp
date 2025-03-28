@@ -428,7 +428,6 @@ namespace Yoyo
                 func->addAttributeAtIndex(1, llvm::Attribute::get(context, llvm::Attribute::StructRet, return_as_llvm_type));
         }
 
-
         auto bb = llvm::BasicBlock::Create(context, "entry", func);
         builder->SetInsertPoint(bb);
 
@@ -1111,6 +1110,8 @@ namespace Yoyo
 
     void IRGenerator::operator()(ReturnStatement* stat)
     {
+        for (auto i : std::views::iota(size_t{ 0 }, variables.size()))
+            callDestructors(i);
         if(stat->expression)
         {
             auto t = std::visit(ExpressionTypeChecker{this, return_t}, stat->expression->toVariant()).value_or_error();
@@ -1185,24 +1186,25 @@ namespace Yoyo
         callDestructors();
         variables.pop_back();
     }
-    void IRGenerator::callDestructors()
+    void IRGenerator::callDestructors(size_t depth)
     {
-        //if there's a `br` we steal it and add it after calling destructors
+        //if there's a `br` dont steal it and assume destructors have already been called
         llvm::Instruction* term = nullptr;
         if (builder->GetInsertBlock()->back().getOpcode() == llvm::Instruction::Br)
         {
+            return;
             term = &builder->GetInsertBlock()->back();
             term->removeFromParent();
         }
         //call destructors
         auto fn = builder->GetInsertBlock()->getParent();
-        for (auto& var : variables.back() | std::views::values)
+        for (auto& [name, var] : *(variables.end() - depth - 1))
         {
             auto drop_flag = std::get<2>(var);
             auto& type = std::get<1>(var);
             if (!drop_flag) continue;
-            auto drop = llvm::BasicBlock::Create(context, "drop_var", fn, returnBlock);
-            auto drop_cont = llvm::BasicBlock::Create(context, "drop_cont", fn, returnBlock);
+            auto drop = llvm::BasicBlock::Create(context, "drop_var" + name, fn, returnBlock);
+            auto drop_cont = llvm::BasicBlock::Create(context, "drop_cont" + name, fn, returnBlock);
             builder->CreateCondBr(
                 builder->CreateLoad(llvm::Type::getInt1Ty(context), drop_flag),
                 drop, drop_cont);

@@ -34,7 +34,7 @@ int32_t random_int(int32_t low, int32_t high) {
 int32_t cast_integer(uint64_t val) {
     return val;
 }
-TEST_CASE("Test IR")
+TEST_CASE("Test IR") 
 {
     std::ifstream ifs("source.yoyo");
     std::ostringstream oss;

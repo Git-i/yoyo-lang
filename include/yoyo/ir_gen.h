@@ -135,7 +135,7 @@ namespace Yoyo
         static std::string mangleGenericArgs(std::span<const Type> list);
         void pushScope() {variables.emplace_back();}
         void popScope();
-        void callDestructors();
+        void callDestructors(size_t depth = 0);
         std::optional<Type> inferReturnType(Statement* stat);
         explicit IRGenerator(llvm::LLVMContext& ctx) : context(ctx) {}
         bool has_error = false;
