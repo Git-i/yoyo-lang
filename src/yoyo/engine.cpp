@@ -246,9 +246,37 @@ namespace Yoyo
         //    debugbreak();
         //}
     }
-    void* Engine::createGlobalConstant(const Type& type, const std::vector<Constant>& args, Module*)
+    void* Engine::createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator* irgen)
     {
-        //TODO
+        auto llvm_t = irgen->ToLLVMType(type, false);
+        if (type.name == "str") {
+            auto str_ptr = static_cast<char*>(std::get<void*>(args[0].internal_repr));
+            auto str_sz = strlen(str_ptr);
+            auto string = irgen->builder->CreateGlobalString(str_ptr);
+            auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), str_sz);
+
+            return new llvm::GlobalVariable(llvm_t, true, llvm::GlobalValue::ExternalLinkage,
+                llvm::ConstantStruct::get(reinterpret_cast<llvm::StructType*>(llvm_t), { string, str_size, str_size }));
+        }
+        std::vector<llvm::Constant*> consts; consts.reserve(args.size());
+        size_t n = 0;
+        auto as_struct = llvm::dyn_cast<llvm::StructType>(llvm_t);
+        for (auto& constant : args) {
+            auto elem_ty = llvm_t->getStructElementType(n);
+            if (auto as_int = llvm::dyn_cast<llvm::IntegerType>(elem_ty)) {
+                consts.push_back(std::visit([elem_ty]<typename T>(T& val) {
+                    if constexpr (std::is_integral_v<T>) {
+                        return llvm::ConstantInt::get(elem_ty, val);
+                    }
+                    else {
+                        return static_cast<llvm::ConstantInt*>(nullptr);
+                    }
+                }, constant.internal_repr));
+            }
+            n++;
+        }
+        return new llvm::GlobalVariable(llvm_t, true, llvm::GlobalValue::ExternalLinkage,
+            llvm::ConstantStruct::get(as_struct, consts));
     }
     std::string_view Engine::viewString(void* str)
     {

@@ -8,7 +8,7 @@ sources = [
     'src/yoyo/expression_type_checker.cpp',
     'src/yoyo/expression.cpp',
     'src/yoyo/type.cpp',
-    'src/yoyo/expression_evaluator.cpp',
+    
     'src/yoyo/parselets/infix_parselets.cpp',
     'src/yoyo/parselets/prefix_parselets.cpp',
     'src/yoyo/engine.cpp',
@@ -22,6 +22,10 @@ sources = [
     'src/yoyo/error.cpp',
     'src/yoyo/constexpr_eval.cpp',
     'src/yoyo/macro_eval.cpp',
+
+    #llvm_specific
+    'src/yoyo/llvm/ir_gen.cpp',
+    'src/yoyo/llvm/expression_evaluator.cpp',
 
     # headers
     'include/yoyo/app_module.h',
@@ -50,6 +54,8 @@ sources = [
     'include/yoyo/type.h',
     'include/yoyo/parselets/infix_parselets.h',
     'include/yoyo/parselets/prefix_parselets.h',
+    'include/yoyo/constant.h',
+    'include/yoyo/llvm/llvm_irgen.h',
 ]
 llvm_static = get_option('llvm_static')
 yoyo_args = ['-DYOYO_DLL']
