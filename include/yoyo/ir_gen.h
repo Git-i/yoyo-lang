@@ -273,28 +273,7 @@ namespace Yoyo
         llvm::Value* operator()(GCNewExpression*);
         llvm::Value* operator()(MacroInvocation*);
     };
-    class ConstantEvaluator
-    {
-        llvm::Constant* constConvert(llvm::Constant* in, const Type& source, const Type& dest);
-    public:
-        IRGenerator* irgen;
-        std::vector<std::pair<std::string, std::string>> disallowed_consts;
-        llvm::Constant* operator()(IntegerLiteral*);
-        llvm::Constant* operator()(BooleanLiteral*);
-        llvm::Constant* operator()(RealLiteral*);
-        llvm::Constant* operator()(PrefixOperation*);
-        llvm::Constant* operator()(NameExpression*);
-        llvm::Constant* operator()(BinaryOperation*);
-        llvm::Constant* operator()(GroupingExpression*);
-        llvm::Constant* operator()(LogicalOperation*);
-        llvm::Constant* operator()(ScopeOperation*);
-        //llvm::Constant* operator()(AsExpression*);
-        llvm::Constant* operator()(CharLiteral*);
-        llvm::Constant* operator()(ObjectLiteral*);
-        llvm::Constant* operator()(StringLiteral*);
-        llvm::Constant* operator()(MacroInvocation*);
-        llvm::Constant* operator()(Expression*) { return nullptr; }
-    };
+    
     //TODO: rename
     class LifetimeExceedsFunctionChecker
     {

@@ -246,6 +246,10 @@ namespace Yoyo
         //    debugbreak();
         //}
     }
+    void* Engine::createGlobalConstant(const Type& type, const std::vector<Constant>& args, Module*)
+    {
+        //TODO
+    }
     std::string_view Engine::viewString(void* str)
     {
         struct String{char* data; uint64_t len; uint64_t cap;};

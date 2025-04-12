@@ -1237,7 +1237,14 @@ namespace Yoyo
             return llvm_fn;
         }
         if (ret_type->is_error_ty()) return nullptr;
-        return ConstantEvaluator{ irgen }(nm);
+        auto cnst = ConstantEvaluator{ irgen }(nm);
+        auto as_llvm = irgen->ToLLVMType(*ret_type, false);
+        if (ret_type->is_integral() || ret_type->is_char() || ret_type->is_boolean() || ret_type->get_decl_if_enum())
+            return std::visit([as_llvm]<typename T>(T & val) {
+            if constexpr (std::is_integral_v<T>) return llvm::ConstantInt::get(as_llvm, val);
+            else return static_cast<llvm::ConstantInt*>(nullptr);
+        }, cnst.internal_repr);
+        else return reinterpret_cast<llvm::Constant*>(std::get<void*>(cnst.internal_repr));
     }
 
     llvm::Value* ExpressionEvaluator::operator()(GenericNameExpression* nm)
@@ -1834,7 +1841,15 @@ namespace Yoyo
         }
         if (ty->is_error_ty()) return nullptr;
         // try to eval as const
-        return ConstantEvaluator{ irgen }(op);
+        auto cnst = ConstantEvaluator{ irgen }(op);
+        
+        auto as_llvm = irgen->ToLLVMType(*ty, false);
+        if (ty->is_integral() || ty->is_char() || ty->is_boolean() || ty->get_decl_if_enum())
+            return std::visit([as_llvm]<typename T>(T & val) {
+            if constexpr (std::is_integral_v<T>) return llvm::ConstantInt::get(as_llvm, val);
+            else return static_cast<llvm::ConstantInt*>(nullptr);
+        }, cnst.internal_repr);
+        else return reinterpret_cast<llvm::Constant*>(std::get<void*>(cnst.internal_repr));
     }
 
     llvm::Value* ExpressionEvaluator::operator()(ObjectLiteral* lit)

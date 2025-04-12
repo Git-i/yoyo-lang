@@ -1,19 +1,20 @@
 #include "ir_gen.h"
+#include "constant.h"
 namespace Yoyo
 {
-    llvm::Constant* ConstantEvaluator::operator()(IntegerLiteral* lit)
+    Constant ConstantEvaluator::operator()(IntegerLiteral* lit)
     {
-        return llvm::ConstantInt::get(llvm::IntegerType::getInt64Ty(irgen->context), std::stoull(lit->text));
+        return std::stoull(lit->text);
     }
-    llvm::Constant* ConstantEvaluator::operator()(BooleanLiteral* lit)
+    Constant ConstantEvaluator::operator()(BooleanLiteral* lit)
     {
-        return llvm::ConstantInt::getTrue(irgen->context);
+        return lit->token.text == "true";
     }
-    llvm::Constant* ConstantEvaluator::operator()(RealLiteral* lit)
+    Constant ConstantEvaluator::operator()(RealLiteral* lit)
     {
-        return llvm::ConstantFP::get(llvm::Type::getDoubleTy(irgen->context), lit->token.text);
+        return std::stod(std::string(lit->token.text));
     }
-    llvm::Constant* ConstantEvaluator::operator()(NameExpression* nexpr)
+    Constant ConstantEvaluator::operator()(NameExpression* nexpr)
     {
         auto [blk, dets] = irgen->module->findConst(irgen->block_hash, nexpr->text);
         if (!dets)
@@ -26,31 +27,28 @@ namespace Yoyo
             irgen->error(Error(nexpr, "Constant is recursive"));
         }
         auto& val = std::get<2>(*dets);
-        if (std::holds_alternative<llvm::Constant*>(val)) return std::get<llvm::Constant*>(val);
+        if (std::holds_alternative<Constant>(val)) return std::get<Constant>(val);
         
         irgen->block_hash.swap(blk);
         (*irgen)(std::get<ConstantDeclaration*>(val));
         irgen->block_hash.swap(blk);
-        return std::get<llvm::Constant*>(val);
+        return std::get<Constant>(val);
     }
-    llvm::Constant* ConstantEvaluator::constConvert(llvm::Constant* src, const Type& source, const Type& destination) {
+    Constant ConstantEvaluator::constConvert(const Constant& src, const Type& source, const Type& destination) {
         if (source.is_integral() && destination.is_integral()) {
-            if(destination.is_signed_integral())
-                return llvm::ConstantInt::get(irgen->ToLLVMType(destination, false),
-                    reinterpret_cast<llvm::ConstantInt*>(src)->getSExtValue(), true);
+            if (destination.is_signed_integral())
+                return int64_t{ source.is_unsigned_integral() ? src.internal_repr.u64 : src.internal_repr.i64 };
             else
-                return llvm::ConstantInt::get(irgen->ToLLVMType(destination, false),
-                    reinterpret_cast<llvm::ConstantInt*>(src)->getZExtValue(), true);
+                return uint64_t{ source.is_unsigned_integral() ? src.internal_repr.u64 : src.internal_repr.i64 };
         }
         return nullptr;
     }
-    llvm::Constant* ConstantEvaluator::operator()(ObjectLiteral* lit)
+    Constant ConstantEvaluator::operator()(ObjectLiteral* lit)
     {
         auto t = ExpressionTypeChecker{ irgen }(lit);
         if (!t) { irgen->error(t.error());return nullptr; }
-        auto as_llvm_type = irgen->ToLLVMType(*t, false);
         auto decl = t->get_decl_if_class(irgen);
-        std::vector<llvm::Constant*> args;
+        std::vector<Constant> args;
         args.reserve(lit->values.size());
         for (size_t i = 0; i < decl->vars.size(); i++)
         {
@@ -61,10 +59,9 @@ namespace Yoyo
 
             args.push_back(constConvert(val, val_ty.value(), var.type));
         }
-        return new llvm::GlobalVariable(as_llvm_type, true, llvm::GlobalValue::ExternalLinkage,
-            llvm::ConstantStruct::get( reinterpret_cast<llvm::StructType*>(as_llvm_type), args ));
+        return irgen->module->engine->createGlobalConstant(*t, args, irgen->module);
     }
-    llvm::Constant* ConstantEvaluator::operator()(StringLiteral* lit) {
+    Constant ConstantEvaluator::operator()(StringLiteral* lit) {
         if (lit->literal.size() != 1) {
             irgen->error(Error(lit, "String interpolation is not supported in constant strings"));
             return nullptr;
@@ -72,66 +69,54 @@ namespace Yoyo
         if (std::holds_alternative<std::string>(lit->literal[0]))
         {
             auto& as_str = std::get<std::string>(lit->literal[0]);
-            auto gvar = irgen->builder->CreateGlobalString(as_str);
-
-            auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), as_str.size());
-
-            auto llvm_t = irgen->ToLLVMType(Type{ "str" }, false);
-            auto string = new llvm::GlobalVariable(llvm_t, true, llvm::GlobalValue::ExternalLinkage,
-                llvm::ConstantStruct::get(reinterpret_cast<llvm::StructType*>(llvm_t), { gvar, str_size, str_size }));
-
-            return string;
+            return irgen->module->engine->createGlobalConstant(Type{ "str" }, { as_str.c_str() }, irgen->module);
         }
         else {
             irgen->error(Error(lit, "String interpolation is not supported in constant strings"));
             return nullptr;
         }
     }
-    llvm::Constant* ConstantEvaluator::operator()(MacroInvocation* invc)
+    Constant ConstantEvaluator::operator()(MacroInvocation* invc)
     {
         ExpressionTypeChecker{ irgen }(invc);
         return std::visit(*this, invc->result->toVariant());
     }
-    llvm::Constant* ConstantEvaluator::operator()(PrefixOperation*)
+    Constant ConstantEvaluator::operator()(PrefixOperation*)
     {
         debugbreak();
-        return nullptr;
+        return {};
     }
-    llvm::Constant* ConstantEvaluator::operator()(BinaryOperation* bop)
+    Constant ConstantEvaluator::operator()(BinaryOperation* bop)
     {
         auto type = ExpressionTypeChecker{ irgen }(bop);
         if (!type) { irgen->error(type.error()); return nullptr; }
+
         auto left = std::visit(*this, bop->lhs->toVariant());
-        if (!left) { return nullptr; }
         auto right = std::visit(*this, bop->rhs->toVariant());
-        if (!right) { return nullptr; }
-        using enum llvm::Instruction::BinaryOps;
-        const bool is_float = type->is_floating_point();
-        auto add_isn = is_float ? FAdd : Add;
-        auto sub_isn = is_float ? FSub : Sub;
-        auto mul_isn = is_float ? FMul : Mul;
-        auto div_isn = is_float ? FDiv : type->is_unsigned_integral() ? UDiv : SDiv;
-        auto rem_isn = is_float ? FRem : type->is_unsigned_integral() ? URem : SRem;
-        auto as_float = [this] (llvm::Constant* in, llvm::Type* tp) {
-            if (llvm::isa<llvm::ConstantFP>(in)) return llvm::dyn_cast<llvm::Constant>(irgen->builder->CreateFPExt(in, tp));
-            return llvm::dyn_cast<llvm::Constant>(irgen->builder->CreateUIToFP(in, tp));
-            };
-        if (is_float)
-        {
-            auto as_llvm = irgen->ToLLVMType(*type, false);
-            left = as_float(left, as_llvm);
-            right = as_float(right, as_llvm);
-        }
+
+        auto is_float = type->is_floating_point();
+        auto& left_repr = left.internal_repr;
+        auto& right_repr = right.internal_repr;
         switch (bop->op.type)
         {
             using enum TokenType;
-        case Plus: return llvm::ConstantExpr::get(add_isn, left, right);
-        case Star: return llvm::ConstantExpr::get(mul_isn, left, right);
-        case Minus: return llvm::ConstantExpr::get(sub_isn, left, right);
-        case Slash: return llvm::ConstantExpr::get(div_isn, left, right);
-        case Percent: return llvm::ConstantExpr::get(rem_isn, left, right);
-        case DoubleGreater: return llvm::ConstantExpr::get(LShr, left, right);
-        case DoubleLess: return llvm::ConstantExpr::get(Shl, left, right);
+            //Implicit requirement for the machine / compiler to use twos complement
+        case Plus: return is_float ? Constant{ left_repr.f64 + right_repr.f64 } : Constant{ left_repr.u64 + right_repr.u64 };
+        case Star: return is_float ? Constant{ left_repr.f64 * right_repr.f64 } : Constant{ left_repr.u64 * right_repr.u64 };
+        case Minus: return is_float ? Constant{ left_repr.f64 - right_repr.f64 } : Constant{ left_repr.u64 - right_repr.u64 };
+        case Slash: 
+        {
+            if (is_float) return left_repr.f64 / right_repr.f64;
+            else if (type->is_signed_integral()) return left_repr.i64 / right_repr.i64;
+            else return left_repr.u64 / right_repr.u64;
+        }
+        case Percent: 
+        {
+            if (type->is_signed_integral()) return left_repr.i64 % right_repr.i64;
+            else return left_repr.u64 % right_repr.u64;
+        }
+        case DoubleGreater: return left_repr.u64 >> right_repr.u64;
+        case DoubleLess: return left_repr.u64 << right_repr.u64;
         /*
         case DoubleEqual: 
         case GreaterEqual:
@@ -148,16 +133,16 @@ namespace Yoyo
         }
         return nullptr;
     }
-    llvm::Constant* ConstantEvaluator::operator()(GroupingExpression* gex)
+    Constant ConstantEvaluator::operator()(GroupingExpression* gex)
     {
         return std::visit(*this, gex->expr->toVariant());
     }
-    llvm::Constant* ConstantEvaluator::operator()(LogicalOperation* lgx)
+    Constant ConstantEvaluator::operator()(LogicalOperation* lgx)
     {
         return nullptr;
     }
     bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool first);
-    llvm::Constant* ConstantEvaluator::operator()(ScopeOperation* scp)
+    Constant ConstantEvaluator::operator()(ScopeOperation* scp)
     {
         Module* md = irgen->module;
         std::string hash = irgen->block_hash;
@@ -185,14 +170,10 @@ namespace Yoyo
         }
         auto& val = std::get<2>(*dets);
 
-        if (md != irgen->module) {
-            auto glb = irgen->code->getOrInsertGlobal(hash + c_name, irgen->ToLLVMType(std::get<0>(*dets), false));
-            reinterpret_cast<llvm::GlobalVariable*>(glb)->setExternallyInitialized(true);
-            return glb;
-        }
-        if (std::holds_alternative<llvm::Constant*>(val)) {
+        // TODO: functionality to register constant with llvm
+        if (std::holds_alternative<Constant>(val)) {
             
-            return std::get<llvm::Constant*>(val);
+            return std::get<Constant>(val);
         }
 
         irgen->block_hash.swap(blk);
@@ -200,10 +181,10 @@ namespace Yoyo
         (*irgen)(std::get<ConstantDeclaration*>(val));
         std::swap(md, irgen->module);
         irgen->block_hash.swap(blk);
-        return std::get<llvm::Constant*>(val);
+        return std::get<Constant>(val);
     }
-    llvm::Constant* ConstantEvaluator::operator()(CharLiteral* ch)
+    Constant ConstantEvaluator::operator()(CharLiteral* ch)
     {
-        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), ch->value);
+        return uint64_t{ ch->value };
     }
 }

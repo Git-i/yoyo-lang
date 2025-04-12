@@ -6,7 +6,7 @@
 #include <llvm/IR/Module.h>
 #include "overload_details.h"
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
-
+#include "constant.h"
 namespace Yoyo
 {
     class Engine;
@@ -34,7 +34,7 @@ namespace Yoyo
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericClassDeclaration>>> generic_classes;
         std::unordered_map<std::string, std::vector<std::unique_ptr<EnumDeclaration>>> enums;
         std::unordered_map<std::string, std::pair<llvm::StructType*, std::unique_ptr<LambdaExpression>>> lambdas;
-        std::unordered_map<std::string, std::vector<std::tuple<Type, std::string, std::variant<llvm::Constant*, ConstantDeclaration*>>>> constants;
+        std::unordered_map<std::string, std::vector<std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>>> constants;
         std::unordered_map<std::string, std::vector<std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>>> unions;
         std::unordered_map<std::string, std::vector<std::unique_ptr<UnionDeclaration>>> generic_unions;
         std::unordered_map<std::string, std::vector<std::unique_ptr<MacroDeclaration>>> macros;
@@ -54,7 +54,7 @@ namespace Yoyo
         std::pair<std::string, UnionDeclaration*> findUnion(const std::string& block, const std::string& name);
         MacroDeclaration* findMacro(const std::string& block, const std::string& name);
         std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*>findUnionWithType(const std::string& block, const std::string& name);
-        std::pair<std::string, std::tuple<Type, std::string, std::variant<llvm::Constant*, ConstantDeclaration*>>*> findConst(const std::string& block, const std::string& name);
+        std::pair<std::string, std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>*> findConst(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);
         llvm::Type* ToLLVMType(const Type& type, const std::string& hash, IRGenerator*, const std::vector<Type>& disallowed_types);
         void dumpIR();

@@ -12,7 +12,7 @@
 namespace Yoyo {
     struct Module;
     class Statement;
-
+    class Type;
     class YOYO_API Engine
     {
     public:
@@ -25,6 +25,7 @@ namespace Yoyo {
         void prepareForExecution();
         void addStaticLibrary(std::string_view path);
         void addDynamicLibrary(std::string_view path);
+        void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, Module*);
         std::unordered_map<std::string, std::unique_ptr<Module>> modules;
         std::unordered_map<std::string, std::pair<std::string, std::vector<std::unique_ptr<Statement>>>> sources;
         static std::string_view viewString(void* str);

@@ -20,7 +20,7 @@ namespace Yoyo
         }
         return {"", nullptr};
     }
-    std::pair<std::string, std::tuple<Type, std::string, std::variant<llvm::Constant*, ConstantDeclaration*>>*> Module::findConst(const std::string& block, const std::string& name)
+    std::pair<std::string, std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>*> Module::findConst(const std::string& block, const std::string& name)
     {
         for (auto& [hash, details_list] : constants)
         {

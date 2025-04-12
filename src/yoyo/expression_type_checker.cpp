@@ -48,12 +48,7 @@ namespace Yoyo
         if (a.is_integral() && b.is_integral())
         {
             std::string type_name;
-            if (a.name == "ilit" && b.name == "ilit")
-            {
-                auto l_val = llvm::dyn_cast<llvm::ConstantInt>(std::visit(ConstantEvaluator{ irgen }, left->toVariant()));
-                auto r_val = llvm::dyn_cast<llvm::ConstantInt>(std::visit(ConstantEvaluator{ irgen }, left->toVariant()));
-                type_name = (l_val->isNegative() || r_val->isNegative()) ? "range_i32" : "range_u32";
-            }
+            if (a.name == "ilit" && b.name == "ilit")type_name = "range_i32";
             else if (a.is_assignable_from(b, irgen)) type_name = "range_" + a.name;
             else if (b.is_assignable_from(a, irgen)) type_name = "range_" + b.name;
             ;
@@ -169,11 +164,22 @@ namespace Yoyo
         if (std::holds_alternative<repeat_notation>(lit->elements)) {
             auto& expr = std::get<repeat_notation>(lit->elements);
 
+            auto type = std::visit(ExpressionTypeChecker{ irgen }, expr.second->toVariant());
+            if (!type) return type;
+            if (!type->is_integral()) return { Error(lit, "Size must be an integral constant") };
             auto size = std::visit(ConstantEvaluator{ irgen }, expr.second->toVariant());
-            if (size == nullptr || !llvm::isa<llvm::ConstantInt>(size)) 
-                return { Error(expr.second.get(), "Array size must be a compile time integer")};
 
-            size_t sz = reinterpret_cast<llvm::ConstantInt*>(size)->getZExtValue();
+            size_t sz;
+            if (std::holds_alternative<int64_t>(size.internal_repr))
+            {
+                // cannot be negative
+                auto val = std::get<int64_t>(size.internal_repr);
+                auto err = Error(lit, "Array literal cannot have negative size");
+                err.markers.emplace_back(SourceSpan{ expr.second->beg, expr.second->end }, "This expression evaluated to " + std::to_string(val));
+                return { std::move(err) };
+                sz = val;
+            }
+            else sz = std::get<uint64_t>(size.internal_repr);
             if (target && target->is_array()) {
                 auto type = std::visit(ExpressionTypeChecker{ irgen, target->subtypes[0] }, expr.first->toVariant());
                 if (!type) return type;

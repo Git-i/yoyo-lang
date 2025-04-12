@@ -74,8 +74,10 @@ TEST_CASE("Test IR")
     std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "main";
     auto addr = engine.jit->lookup(unmangled_name);
     if (!addr) Yoyo::debugbreak();
-    void(*fn)() = addr.get().toPtr<void()>();
-    fn();
+    auto fn = addr.get().toPtr<void(void*)>();
+    jmp_buf bff;
+    fn(bff);
+    std::cout << "Left fn" << std::endl;
 }
 
 TEST_CASE("Error formatting", "[errors]")
