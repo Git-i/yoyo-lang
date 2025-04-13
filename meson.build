@@ -26,6 +26,7 @@ sources = [
     #llvm_specific
     'src/yoyo/llvm/ir_gen.cpp',
     'src/yoyo/llvm/expression_evaluator.cpp',
+    'src/yoyo/llvm/engine.cpp',
 
     # headers
     'include/yoyo/app_module.h',
@@ -56,6 +57,7 @@ sources = [
     'include/yoyo/parselets/prefix_parselets.h',
     'include/yoyo/constant.h',
     'include/yoyo/llvm/llvm_irgen.h',
+    'include/yoyo/llvm/llvm_engine.h',
 ]
 llvm_static = get_option('llvm_static')
 yoyo_args = ['-DYOYO_DLL']

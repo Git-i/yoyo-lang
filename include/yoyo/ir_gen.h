@@ -76,13 +76,13 @@ namespace Yoyo
         Type this_t;
         Type return_t;
         bool in_class = false;
-        Module* module;
+        ModuleBase* module;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
         std::vector<CFGNodeManager> function_cfgs;
         std::string block_hash;
 
-        void saturateSignature(FunctionSignature& sig, Module* md);
+        void saturateSignature(FunctionSignature& sig, ModuleBase* md);
         bool isShadowing(const std::string&) const;
         
         
@@ -93,12 +93,20 @@ namespace Yoyo
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
         static std::string mangleGenericArgs(std::span<const Type> list);
         
-        void callDestructors(size_t depth = 0);
+        
         std::optional<Type> inferReturnType(Statement* stat);
         
         bool has_error = false;
+        virtual std::optional<Type> getVariableType(const std::string& name, Expression*) = 0;
+        virtual void doFunction(FunctionDeclaration*) = 0;
+        virtual void doClass(ClassDeclaration*) = 0;
+        virtual void doAlias(AliasDeclaration*) = 0;
+        void generateGenericFunction(ModuleBase* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types);
+        void generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types);
+        void generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types);
+        void generateGenericAlias(ModuleBase* mod, const std::string& block, GenericAliasDeclaration* decl, std::span<Type> types);
+        void generateGenericInterface(ModuleBase* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types);
         
-        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng);
     };
 
     class ExpressionTypeChecker

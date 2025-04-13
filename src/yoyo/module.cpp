@@ -10,7 +10,7 @@
 #include "engine.h"
 namespace Yoyo
 {
-    std::pair<std::string, Module::FunctionDetails*> Module::findFunction(const std::string& block, const std::string& name)
+    std::pair<std::string, ModuleBase::FunctionDetails*> ModuleBase::findFunction(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : functions)
         {
@@ -20,7 +20,7 @@ namespace Yoyo
         }
         return {"", nullptr};
     }
-    std::pair<std::string, std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>*> Module::findConst(const std::string& block, const std::string& name)
+    std::pair<std::string, std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>*> ModuleBase::findConst(const std::string& block, const std::string& name)
     {
         for (auto& [hash, details_list] : constants)
         {
@@ -30,7 +30,7 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
-    std::pair<std::string, GenericFunctionDeclaration*> Module::findGenericFn(const std::string& block,
+    std::pair<std::string, GenericFunctionDeclaration*> ModuleBase::findGenericFn(const std::string& block,
         const std::string& name)
     {
         for(auto&[hash, details_list] : generic_fns)
@@ -42,7 +42,7 @@ namespace Yoyo
         return {"", nullptr};
     }
 
-    Type* Module::findAlias(const std::string& block, const std::string& name)
+    Type* ModuleBase::findAlias(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : aliases)
         {
@@ -51,7 +51,7 @@ namespace Yoyo
         }
         return nullptr;
     }
-    std::pair<std::string, InterfaceDeclaration*> Module::findInterface(const std::string& block, const std::string& name)
+    std::pair<std::string, InterfaceDeclaration*> ModuleBase::findInterface(const std::string& block, const std::string& name)
     {
         for (auto& [hash, interface_list] : interfaces)
         {
@@ -61,7 +61,7 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
-    std::pair<std::string, EnumDeclaration*> Module::findEnum(const std::string& block, const std::string& name)
+    std::pair<std::string, EnumDeclaration*> ModuleBase::findEnum(const std::string& block, const std::string& name)
     {
         for (auto& [hash, enum_list] : enums)
         {
@@ -71,17 +71,17 @@ namespace Yoyo
         }
         return { "", nullptr };
     }
-    std::pair<std::string, UnionDeclaration*> Module::findUnion(const std::string& block, const std::string& name)
+    std::pair<std::string, UnionDeclaration*> ModuleBase::findUnion(const std::string& block, const std::string& name)
     {
         for (auto& [hash, unn_list] : unions)
         {
             if (!block.starts_with(hash)) continue;
             for (auto& unn : unn_list)
-                if (unn.first->name == name) return { hash, unn.first.get() };
+                if (unn->name == name) return { hash, unn.get() };
         }
         return { "", nullptr };
     }
-    MacroDeclaration* Module::findMacro(const std::string& block, const std::string& name)
+    MacroDeclaration* ModuleBase::findMacro(const std::string& block, const std::string& name)
     {
         for (auto& [hash, mac_list] : macros)
         {
@@ -91,17 +91,17 @@ namespace Yoyo
         }
         return nullptr;
     }
-    std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*> Module::findUnionWithType(const std::string& block, const std::string& name)
+    std::pair<std::string, std::pair<UnionDeclaration*, llvm::StructType*>> LLModule::findUnionWithType(const std::string& block, const std::string& name)
     {
         for (auto& [hash, unn_list] : unions)
         {
             if (!block.starts_with(hash)) continue;
             for (auto& unn : unn_list)
-                if (unn.first->name == name) return { hash, &unn };
+                if (unn->name == name) return { hash, {unn.get(), union_types[unn.get()]} };
         }
-        return { "", nullptr };
+        return { "", {nullptr, nullptr} };
     }
-    std::pair<std::string, GenericInterfaceDeclaration*> Module::findGenericInterface(const std::string& block, const std::string& name)
+    std::pair<std::string, GenericInterfaceDeclaration*> ModuleBase::findGenericInterface(const std::string& block, const std::string& name)
     {
         for (auto& [hash, interface_list] : generic_interfaces)
         {
@@ -112,7 +112,7 @@ namespace Yoyo
         return { "", nullptr };
     }
 
-    std::pair<std::string, GenericAliasDeclaration*> Module::findGenericAlias(const std::string& block, const std::string& name)
+    std::pair<std::string, GenericAliasDeclaration*> ModuleBase::findGenericAlias(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : generic_aliases)
         {
@@ -124,17 +124,17 @@ namespace Yoyo
         return {"",nullptr};
     }
 
-    Module::ClassDetails* Module::findType(const std::string& block, const std::string& name)
+    std::pair<std::string, std::pair<std::string, std::unique_ptr<ClassDeclaration>>*> ModuleBase::findClass(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : classes)
         {
             if(!block.starts_with(hash)) continue;
             for(auto& details : details_list)
-                if(std::get<2>(details)->name == name) return &details;
+                if (std::get<2>(details)->name == name) return { hash, &details };
         }
-        return nullptr;
+        return { "",nullptr };
     }
-    std::pair<std::string, GenericClassDeclaration*> Module::findGenericClass(const std::string& block, const std::string& name)
+    std::pair<std::string, GenericClassDeclaration*> ModuleBase::findGenericClass(const std::string& block, const std::string& name)
     {
         for (auto& [hash, details_list] : generic_classes)
         {
@@ -145,7 +145,7 @@ namespace Yoyo
         return { "", nullptr };
     }
 
-    std::optional<std::string> Module::hashOf(const std::string& block, const std::string& name)
+    std::optional<std::string> ModuleBase::hashOf(const std::string& block, const std::string& name)
     {
         for(auto&[hash, details_list] : classes)
         {
@@ -162,10 +162,10 @@ namespace Yoyo
         if (auto [hash, _] = findGenericClass(block, name); _) return hash;
         if (auto [hash, _] = findEnum(block, name); _) return hash;
         if (auto [hash, _] = findUnion(block, name); _) return hash;
-        if (modules.contains(name)) return modules.at(name)->module_hash;
+        //if (modules.contains(name)) return modules.at(name)->module_hash;
         return std::nullopt;
     }
-    llvm::Type* Module::ToLLVMType(const Type& type, const std::string& hash, IRGenerator* irgen, const std::vector<Type>& disallowed_types)
+    llvm::Type* LLModule::ToLLVMType(const Type& type, const std::string& hash, IRGenerator* irgen, const std::vector<Type>& disallowed_types)
     {
         auto& context = *engine->llvm_context.getContext();
         if(type.is_integral())
@@ -191,7 +191,7 @@ namespace Yoyo
             std::vector<llvm::Type*> args;
             for(auto& subtype : type.subtypes)
             {
-                auto ty = subtype.module->ToLLVMType(subtype, hash, irgen, disallowed_types);
+                auto ty = reinterpret_cast<LLModule*>(subtype.module)->ToLLVMType(subtype, hash, irgen, disallowed_types);
                 if(!ty) return nullptr;
                 args.push_back(ty);
             }
@@ -199,12 +199,12 @@ namespace Yoyo
         }
         if (type.is_lambda())
         {
-            return type.module->lambdas.at(type.name).first;
+            return reinterpret_cast<LLModule*>(type.module)->lambdas.at(type.name).first;
         }
         if(type.is_optional())
         {
             std::array<llvm::Type*, 2> args{};
-            args[0] = type.subtypes[0].module->ToLLVMType(type.subtypes[0], hash, irgen, disallowed_types);
+            args[0] = reinterpret_cast<LLModule*>(type.subtypes[0].module)->ToLLVMType(type.subtypes[0], hash, irgen, disallowed_types);
             args[1] = llvm::Type::getInt1Ty(context);
             return llvm::StructType::get(context, args);
         }
@@ -222,7 +222,7 @@ namespace Yoyo
             auto& layout = code.getModuleUnlocked()->getDataLayout();
             for(auto& subtype : type.subtypes)
             {
-                auto sub_t = subtype.module->ToLLVMType(subtype, hash, irgen, disallowed_types);
+                auto sub_t = reinterpret_cast<LLModule*>(subtype.module)->ToLLVMType(subtype, hash, irgen, disallowed_types);
                 auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
                 size_t sz = 0;
                 if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;
@@ -237,9 +237,9 @@ namespace Yoyo
         {
             return llvm::Type::getInt32Ty(context);
         }
-        if (auto [blk, unn] = findUnionWithType(type.block_hash, type.name); unn)
+        if (auto [blk, unn] = findUnionWithType(type.block_hash, type.name); unn.second)
         {
-            return unn->second;
+            return unn.second;
         }
         if(type.is_ref_conversion_result())
         {
@@ -275,14 +275,14 @@ namespace Yoyo
             return nullptr;
         }
         if(type.is_lambda()) return nullptr;
-        if(auto t = findType(type.block_hash, type.name))
+        if(auto t = findClassWithType(type.block_hash, type.name); std::get<2>(t.second))
         {
-            auto& ptr = std::get<1>(*t);
+            auto ptr = std::get<1>(t.second);
             if(ptr) return ptr;
             //class is not yet defined but is recursive
             if (auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
             {
-                auto decl = std::get<2>(*t).get();
+                auto decl = std::get<2>(t.second);
                 irgen->error(Error(decl, "Type is recursive"));
             }
 
@@ -290,17 +290,17 @@ namespace Yoyo
             auto not_allowed = disallowed_types;
             not_allowed.push_back(type);
 
-            auto decl = std::get<2>(*t).get();
+            auto decl = std::get<2>(t.second);
             std::vector<llvm::Type*> args;
             for (auto& subvar : decl->vars)
             {
                 auto& subtype = subvar.type;
 
-                std::get<0>(*t).swap(irgen->block_hash);
+                std::get<0>(t.second).swap(irgen->block_hash);
                 subtype.saturate(this, irgen);
-                std::get<0>(*t).swap(irgen->block_hash);
+                std::get<0>(t.second).swap(irgen->block_hash);
 
-                auto ty = subtype.module->ToLLVMType(subtype, hash, irgen, not_allowed);
+                auto ty = reinterpret_cast<LLModule*>(subtype.module)->ToLLVMType(subtype, hash, irgen, not_allowed);
                 if (!ty) return nullptr;
                 args.push_back(ty);
             }
@@ -315,8 +315,8 @@ namespace Yoyo
     void makeBuiltinModule(Engine* eng)
     {
         if(eng->modules.contains("core")) return;
-        eng->modules["core"] = std::make_unique<Module>();
-        auto module = eng->modules.at("core").get();
+        eng->modules["core"] = std::make_unique<LLModule>();
+        auto module = reinterpret_cast<LLModule*>(eng->modules.at("core").get());
         module->module_hash = "core";
         module->engine = eng;
         constexpr int32_t eq = 1;
@@ -518,7 +518,7 @@ namespace Yoyo
         addRangeIteratorMethods(module, std::span{ types.begin() + 2, types.end() }, builder);
 
         
-        module->functions["str::"].emplace_back(Module::FunctionDetails{
+        module->functions["str::"].emplace_back(ModuleBase::FunctionDetails{
                 .name = "c_str",
                 .sig = FunctionSignature{
                     .returnType = Type{.name = "ptr", .module = module },
@@ -536,7 +536,7 @@ namespace Yoyo
             builder.CreateLoad(ptr_ty, builder.CreateStructGEP(string_ty, c_str_fn->getArg(0), 0)));
         
     }
-    void addFloatConsts(Module* md, std::span<Type> types)
+    void addFloatConsts(LLModule* md, std::span<Type> types)
     {
         auto& ctx = *md->code.getContext().getContext();
         for (auto& type : types)
@@ -555,7 +555,7 @@ namespace Yoyo
         }
     }
     //integer types only
-    void addRangeIteratorMethods(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld)
+    void addRangeIteratorMethods(LLModule* md, std::span<Type> types, llvm::IRBuilder<>& bld)
     {
         auto& ctx = bld.getContext();
         for (auto& type : types) {
@@ -620,7 +620,7 @@ namespace Yoyo
             bld.CreateRetVoid();
         }
     }
-    void addTrigFunctions(Module* md, std::span<Type> types, llvm::IRBuilder<>& bld)
+    void addTrigFunctions(LLModule* md, std::span<Type> types, llvm::IRBuilder<>& bld)
     {
         auto& ctx = *md->code.getContext().getContext();
         for (auto& type : types)
@@ -628,9 +628,9 @@ namespace Yoyo
             FunctionSignature sig;
             sig.returnType = type;
             sig.parameters.emplace_back(type, "this");
-            Module::FunctionDetails sdets{ .name = "sin", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
-            Module::FunctionDetails cdets{ .name = "cos", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
-            Module::FunctionDetails tdets{ .name = "tan", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
+            ModuleBase::FunctionDetails sdets{ .name = "sin", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
+            ModuleBase::FunctionDetails cdets{ .name = "cos", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
+            ModuleBase::FunctionDetails tdets{ .name = "tan", .sig = sig, .attributes = std::vector{Attribute{"public"}} };
             md->functions[type.name + "::"].emplace_back(std::move(sdets));
             md->functions[type.name + "::"].emplace_back(std::move(cdets));
             //md->functions[type.name + "::"].emplace_back(std::move(tdets));
@@ -650,7 +650,7 @@ namespace Yoyo
             //bld.CreateRet(bld.CreateIntrinsic(as_llvm, llvm::Intrinsic::tan, { tan_func->getArg(0) }));
         }
     }
-    void Module::dumpIR()
+    void LLModule::dumpIR()
     {
         code.getModuleUnlocked()->print(llvm::outs(), nullptr);
     }

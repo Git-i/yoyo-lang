@@ -13,8 +13,8 @@ namespace Yoyo
         //type is not required not have a module (built-ins)
         if (type.name.starts_with("__gc_refcell_borrow")) return nullptr;
         auto t = type.module ?
-            type.module->ToLLVMType(type, block_hash, this, {}):
-            module->ToLLVMType(type, block_hash, this, {});
+            reinterpret_cast<LLModule*>(type.module)->ToLLVMType(type, block_hash, this, {}):
+            reinterpret_cast<LLModule*>(module)->ToLLVMType(type, block_hash, this, {});
         if(t) return t;
         if(type.is_tuple())
         {
@@ -55,14 +55,14 @@ namespace Yoyo
         {
             if (auto [_, exists] = type.module->findGenericClass(type.block_hash, type.name); exists)
             {
-                ExpressionEvaluator{ this }.generateGenericClass(
+                generateGenericClass(
                     type.module,
                     type.block_hash,
                     exists,
                     type.subtypes); //this should generally be safe(hopefully)
                 std::string name = type.name + mangleGenericArgs(type.subtypes);
-                if (auto det = type.module->findType(type.block_hash, name))
-                    return std::get<1>(*det);
+                if (auto det = std::get<1>(reinterpret_cast<LLModule*>(type.module)->findClassWithType(type.block_hash, name).second))
+                    return det;
             }
                 
         }
@@ -149,8 +149,6 @@ namespace Yoyo
 
     bool IRGenerator::isShadowing(const std::string& name) const
     {
-        for(auto& map : variables)
-            if(map.contains(name)) return true;
         return false;
     }
     bool isValidCloneMethod(const Type& tp, const FunctionSignature& sig)
@@ -168,7 +166,7 @@ namespace Yoyo
         irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), flag);
         return flag;
     }
-    bool should_sret_C(llvm::Type* tp, Module* md)
+    bool should_sret_C(llvm::Type* tp, ModuleBase* md)
     { 
         if (tp->isVoidTy()) return false;
         const auto& target = md->engine->jit->getTargetTriple();
@@ -183,7 +181,7 @@ namespace Yoyo
         }
         debugbreak();
     }
-    bool should_sptr_C(llvm::Type* tp, Module* md)
+    bool should_sptr_C(llvm::Type* tp, ModuleBase* md)
     {
         const auto& target = md->engine->jit->getTargetTriple();
         if (target.getArch() == llvm::Triple::x86_64 && target.getEnvironment() == llvm::Triple::MSVC)
@@ -355,7 +353,7 @@ namespace Yoyo
             }
             if(param.type.is_lambda())
             {
-                auto& entry = param.type.module->lambdas[param.type.name];
+                auto& entry = reinterpret_cast<LLModule*>(param.type.module)->lambdas[param.type.name];
                 auto llvm_type = entry.first;
                 auto& caps = entry.second->captures;
                 size_t capture_idx = 0;
@@ -416,17 +414,9 @@ namespace Yoyo
         auto [_, constant] = module->findConst(block_hash, decl->name);
         std::get<0>(*constant).saturate(module, this);
         auto val = std::visit(ConstantEvaluator{ this }, decl->expr->toVariant());
-        if (std::get<0>(*constant).is_integral()) {
-            auto type = ToLLVMType(std::get<0>(*constant), false);
-            auto val_int = reinterpret_cast<llvm::ConstantInt*>(val)->getValue();
-            if (val_int.isNegative()) {
-                val = llvm::ConstantInt::get(type, val_int.getSExtValue());
-            } else {
-                val = llvm::ConstantInt::get(type, val_int.getZExtValue());
-            }
-        }
-        if (auto gv = llvm::dyn_cast_or_null<llvm::GlobalVariable>(val)) {
-            val->setName(block_hash + decl->name);
+        
+        if (std::holds_alternative<void*>(val.internal_repr)) {
+            auto gv = reinterpret_cast<llvm::GlobalVariable*>(std::get<void*>(val.internal_repr));
             code->insertGlobalVariable(gv);
         }
         std::get<2>(*constant) = val;
@@ -515,6 +505,22 @@ namespace Yoyo
         assert(current_Statement->get() == decl);
         current_Statement->release();
     }
+    std::optional<Type> LLVMIRGenerator::getVariableType(const std::string& name, Expression* expr)
+    {
+        for (size_t i = variables.size(); i > 0; --i)
+        {
+            size_t idx = i - 1;
+            if (auto var = variables[idx].find(name); var != variables[idx].end())
+            {
+                auto& type = std::get<1>(var->second);
+                //its only lvalue if its not last use
+                bool is_last_use = function_cfgs.back().last_uses.at(name).contains(expr);
+                type.is_lvalue = !is_last_use;
+                type.saturate(module, this);
+                return { type };
+            }
+        }
+    }
     void LLVMIRGenerator::operator()(ClassDeclaration* decl)
     {
         std::string name = decl->name;
@@ -528,9 +534,9 @@ namespace Yoyo
         std::string class_hash = block_hash + name + "::";
         auto curr_hash = reset_hash();
         block_hash = class_hash;
-        auto cls = module->findType(curr_hash, decl->name);
+        auto cls = module->findClass(curr_hash, decl->name);
         for(auto& var : decl->vars) var.type.saturate(module, this);
-        std::get<1>(*cls) = hanldeClassDeclaration(decl->vars, decl->ownership, "");
+        reinterpret_cast<LLModule*>(module)->classes_types[cls.second->second.get()] = hanldeClassDeclaration(decl->vars, decl->ownership, "");
         auto old_in_class = in_class;
         in_class = true;
         auto old_this = std::move(this_t);
@@ -683,7 +689,7 @@ namespace Yoyo
         if (auto cls = ty.get_decl_if_class(this))
         {
             auto decl = cls;
-            auto hash = std::get<0>(*ty.module->findType(ty.block_hash, cls->name));
+            auto hash = ty.module->findClass(ty.block_hash, cls->name).second->first;
             Yoyo::InterfaceImplementation* impl = nullptr;
             for (auto& im : decl->impls)
             {
@@ -1085,7 +1091,7 @@ namespace Yoyo
         return llvm::StructType::create(context, args, name);
     }
 
-    bool IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng)
+    bool LLVMIRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, LLModule* md, Engine* eng)
     {
         block_hash = md->module_hash;
         md->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>(name, context), eng->llvm_context);

@@ -3,16 +3,20 @@
 #include <statement.h>
 #include <type.h>
 #include <unordered_map>
-#include <llvm/IR/Module.h>
 #include "overload_details.h"
-#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include "constant.h"
+#include <llvm/IR/Module.h>
+namespace llvm
+{
+    class StructType;
+    class Type;
+}
 namespace Yoyo
 {
     class Engine;
-    struct YOYO_API Module
+    class ModuleBase
     {
-        using ClassDetails = std::tuple<std::string,llvm::StructType*, std::unique_ptr<ClassDeclaration>>;
+    public:
         struct FunctionDetails
         {
             std::string name;
@@ -23,43 +27,52 @@ namespace Yoyo
                     == std::ranges::find_if(attributes, [](const auto& attr) { return attr.name == "public"; });
             }
         };
-        llvm::orc::ThreadSafeModule code;
+        ModuleOverloadDetails overloads;
+        Engine* engine;
+        std::unordered_map<std::string, ModuleBase*> modules;
+        std::string module_hash;
         std::unordered_map<std::string, std::vector<FunctionDetails>> functions;
-        std::unordered_map<std::string, std::vector<ClassDetails>> classes;
+        std::unordered_map<std::string, std::vector<std::pair<std::string, std::unique_ptr<ClassDeclaration>>>> classes;
+        std::unordered_map<std::string, std::vector<std::unique_ptr<UnionDeclaration>>> unions;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericFunctionDeclaration>>> generic_fns;
-        std::unordered_map<std::string, std::unordered_map<std::string, Type>> aliases;
         std::unordered_map<std::string, std::vector<std::unique_ptr<InterfaceDeclaration>>> interfaces;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericAliasDeclaration>>> generic_aliases;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericInterfaceDeclaration>>> generic_interfaces;
+        std::unordered_map<std::string, std::unordered_map<std::string, Type>> aliases;
         std::unordered_map<std::string, std::vector<std::unique_ptr<GenericClassDeclaration>>> generic_classes;
         std::unordered_map<std::string, std::vector<std::unique_ptr<EnumDeclaration>>> enums;
-        std::unordered_map<std::string, std::pair<llvm::StructType*, std::unique_ptr<LambdaExpression>>> lambdas;
         std::unordered_map<std::string, std::vector<std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>>> constants;
-        std::unordered_map<std::string, std::vector<std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>>> unions;
         std::unordered_map<std::string, std::vector<std::unique_ptr<UnionDeclaration>>> generic_unions;
         std::unordered_map<std::string, std::vector<std::unique_ptr<MacroDeclaration>>> macros;
-        std::unordered_map<std::string, Module*> modules;
-        ModuleOverloadDetails overloads;
-        Engine* engine;
-        std::string module_hash;
         std::pair<std::string, FunctionDetails*> findFunction(const std::string& block, const std::string& name);
         std::pair<std::string, GenericFunctionDeclaration*> findGenericFn(const std::string& block, const std::string& name);
         Type* findAlias(const std::string& block, const std::string& name);
         std::pair<std::string, GenericAliasDeclaration*> findGenericAlias(const std::string& block, const std::string& name);
-        ClassDetails* findType(const std::string& block, const std::string& name);
         std::pair<std::string, GenericClassDeclaration*> findGenericClass(const std::string& block, const std::string& name);
         std::pair<std::string, InterfaceDeclaration*> findInterface(const std::string& block, const std::string& name);
         std::pair<std::string, GenericInterfaceDeclaration*> findGenericInterface(const std::string& block, const std::string& name);
         std::pair<std::string, EnumDeclaration*> findEnum(const std::string& block, const std::string& name);
-        std::pair<std::string, UnionDeclaration*> findUnion(const std::string& block, const std::string& name);
         MacroDeclaration* findMacro(const std::string& block, const std::string& name);
-        std::pair<std::string, std::pair<std::unique_ptr<UnionDeclaration>, llvm::StructType*>*>findUnionWithType(const std::string& block, const std::string& name);
+        std::pair<std::string, UnionDeclaration*> findUnion(const std::string& block, const std::string& name);
+        std::pair<std::string, std::pair<std::string, std::unique_ptr<ClassDeclaration>>*> findClass(const std::string& block, const std::string& name);
         std::pair<std::string, std::tuple<Type, std::string, std::variant<Constant, ConstantDeclaration*>>*> findConst(const std::string& block, const std::string& name);
         std::optional<std::string> hashOf(const std::string& base_block, const std::string& name);
+    };
+    struct YOYO_API LLModule : public ModuleBase
+    {
+        llvm::orc::ThreadSafeModule code;
+        
+        std::unordered_map<ClassDeclaration*, llvm::StructType*> classes_types;
+        std::unordered_map<UnionDeclaration*, llvm::StructType*> union_types;
+        std::unordered_map<std::string, std::pair<llvm::StructType*, std::unique_ptr<LambdaExpression>>> lambdas;
+        
+        std::pair<std::string, std::tuple<std::string, llvm::StructType*, ClassDeclaration*>> findClassWithType(const std::string& block, const std::string& name);
+        std::pair<std::string, std::pair<UnionDeclaration*, llvm::StructType*>>findUnionWithType(const std::string& block, const std::string& name);
+        
         llvm::Type* ToLLVMType(const Type& type, const std::string& hash, IRGenerator*, const std::vector<Type>& disallowed_types);
+        static void makeBuiltinModule(Engine* eng);
         void dumpIR();
     };
-    void makeBuiltinModule(Engine* eng);
     /*
      * void makeStd();
      * void makeStdExtended();

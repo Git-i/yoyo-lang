@@ -281,7 +281,6 @@ namespace Yoyo
                 irgen->builder->CreateCondBr(irgen->builder->CreateICmpEQ(const_min_1, gc_borrow_count), invalid_borrow, valid_borrow);
             }
             irgen->builder->SetInsertPoint(invalid_borrow);
-            irgen->printString(error_str.c_str());
             irgen->builder->CreateBr(irgen->returnBlock);
             irgen->builder->SetInsertPoint(valid_borrow);
             irgen->builder->CreateStore(new_count, gc_borrow_count_ptr);
@@ -382,7 +381,7 @@ namespace Yoyo
             std::string full_name = name + intf->name;
             if (auto cls = src.deref().get_decl_if_class(irgen))
             {
-                auto details = src.deref().module->findType(src.deref().block_hash, src.deref().name);
+                auto details = src.deref().module->findClass(src.deref().block_hash, src.deref().name).second;
                 auto this_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 0);
                 irgen->builder->CreateStore(val, this_ptr);
                 size_t idx = 0;
@@ -510,8 +509,9 @@ namespace Yoyo
             irgen->builder->CreateStore(value, into);
         }
         //class types can define custom clone
-        else if(auto decl_tup = left_type.module->findType(left_type.block_hash, left_type.name))
+        else if(auto decl_tup = left_type.module->findClass(left_type.block_hash, left_type.name).second)
         {
+            constexpr auto asdf = std::is_same_v<decltype(std::get<1>(*decl_tup)), decltype(std::get<10>(*decl_tup))>;
             auto decl = std::get<2>(*decl_tup).get();
             if(!decl->has_clone) { irgen->error(Error(xp, "Expression cannot be cloned")); return nullptr; }
             auto candidate = std::ranges::find_if(decl->stats, [](auto& meth)
@@ -635,7 +635,7 @@ namespace Yoyo
             irgen->Free(irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context,0), mem_ptr));
             //irgen->builder->CreateCall(getStringDestroy(irgen));
         }
-        else if(auto dets = type.module->findType(type.block_hash, type.name))
+        else if(auto dets = type.module->findClass(type.block_hash, type.name).second)
         {
             auto decl = std::get<2>(*dets).get();
             if(!decl->destructor_name.empty())
@@ -1254,7 +1254,7 @@ namespace Yoyo
             std::string mangled_name_suffix = nm->text + IRGenerator::mangleGenericArgs(nm->arguments);
             //it has not already been instantiated
             if(auto[name_prefx, ifn] = irgen->module->findFunction(irgen->block_hash, mangled_name_suffix); !ifn)
-                generateGenericFunction(irgen->module, hash, fn, nm->arguments);
+                irgen->generateGenericFunction(irgen->module, hash, fn, nm->arguments);
             return irgen->code->getFunction(hash + mangled_name_suffix);
         }
     }
@@ -1486,98 +1486,9 @@ namespace Yoyo
         return return_val;
     }
 
-    void LLVMExpressionEvaluator::generateGenericFunction(Module* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
-    {
-        for(auto& type: types) type.saturate(mod, irgen);
-        std::string name = fn->name + IRGenerator::mangleGenericArgs(types);
-        if(auto[_,exists] = mod->findFunction(hash, name); exists) return;
-        auto module = irgen->module;
-        irgen->module = mod;
+    
 
-        for(size_t i = 0; i < types.size(); i++)
-            irgen->module->aliases[hash + name + "::"].emplace(fn->clause.types[i], types[i]);
-
-        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn));
-        auto new_decl = reinterpret_cast<FunctionDeclaration*>(ptr.get());
-        new_decl->name = name;
-        auto old_hash = irgen->reset_hash();
-        irgen->block_hash = hash + name + "::";
-        irgen->saturateSignature(new_decl->signature, mod);
-        irgen->block_hash = hash;
-
-        (*irgen)(new_decl);
-        
-        irgen->block_hash = std::move(old_hash);
-        irgen->module = module;
-    }
-    void LLVMExpressionEvaluator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types)
-    {
-        for (auto& type : types) type.saturate(mod, irgen);
-        generateGenericClass(mod, hash, decl, std::span<const Type>{types});
-    }
-    void LLVMExpressionEvaluator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types)
-    {
-        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
-        if (auto exists = mod->findType(hash, name); exists) return;
-        auto module = irgen->module;
-        irgen->module = mod;
-
-        for (size_t i = 0; i < types.size(); i++)
-            irgen->module->aliases[hash + name + "::"].emplace(decl->clause.types[i], types[i]);
-
-        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<ClassDeclaration*>(decl));
-        auto new_decl = reinterpret_cast<ClassDeclaration*>(ptr.get());
-        new_decl->name = name;
-        auto old_hash = irgen->reset_hash();
-
-        irgen->current_Statement = &ptr;
-        (*irgen)(new_decl);
-
-        irgen->block_hash = std::move(old_hash);
-        irgen->module = module;
-    }
-
-    void LLVMExpressionEvaluator::generateGenericAlias(Module* mod, const std::string& block, GenericAliasDeclaration* decl,
-        std::span<Type> types)
-    {
-        for(auto& type: types) type.saturate(mod, irgen);
-        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
-        if(auto exists = mod->findAlias(block, name)) return;
-        auto old_hash = std::move(irgen->block_hash);
-        irgen->block_hash = block;
-        auto module = irgen->module;
-        irgen->module = mod;
-        for(size_t i = 0; i < types.size(); i++)
-            irgen->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
-        auto new_statement = StatementTreeCloner::copy_stat_specific(static_cast<AliasDeclaration*>(decl));
-        auto alias = reinterpret_cast<AliasDeclaration*>(new_statement.get());
-        alias->name = name;
-        (*irgen)(alias);
-        irgen->block_hash = std::move(old_hash);
-        irgen->module = module;
-    }
-    void LLVMExpressionEvaluator::generateGenericInterface(Module* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types)
-    {
-        for (auto& type : types) type.saturate(md, irgen);
-        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
-        if (auto [_, exists] = md->findInterface(block, name); exists) return;
-        auto new_interface = StatementTreeCloner::copy_stat_specific(static_cast<InterfaceDeclaration*>(decl));
-        auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.release());
-        itf->name = name;
-        //TODO interface visitors to automatically saturate signatures
-        for (size_t i = 0; i < types.size(); i++)
-            md->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
-        auto old_mod = irgen->module;
-        auto old_hash = irgen->reset_hash();
-
-        irgen->module = md;
-        irgen->block_hash = block + name + "__";
-        for (auto& fn : itf->methods)
-            irgen->saturateSignature(fn->signature, md);
-        irgen->block_hash.swap(old_hash);
-        irgen->module = old_mod;
-        md->interfaces[block].emplace_back(itf);
-    }
+    
     llvm::Value* LLVMExpressionEvaluator::operator()(CallOperation* op)
     {
         ExpressionTypeChecker type_checker{irgen};
@@ -1682,7 +1593,7 @@ namespace Yoyo
                 auto pos = right_t->name.find_first_of('$');
                 std::string name = right_t->name.substr("__interface_fn"sv.size(), pos - "__interface_fn"sv.size());
                 std::string fn_name = right_t->name.substr(pos + 1);
-                auto dets = irgen->module->findType(left_t->deref().block_hash, left_t->deref().full_name_no_block());
+                auto dets = irgen->module->findClass(left_t->deref().block_hash, left_t->deref().full_name_no_block()).second;
                 fn_name = std::get<0>(*dets) + name + "::" + fn_name;
                 auto callee = irgen->code->getFunction(fn_name);
                 bool uses_sret = callee->hasStructRetAttr();
@@ -1702,7 +1613,7 @@ namespace Yoyo
                 irgen->code->getFunction(irgen->block_hash + right_t->name) :
                 llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
             if(!callee) { /* return an llvm invalid value*/ return nullptr; }
-            const auto* sig = is_lambda ? &right_t->module->lambdas[right_t->name].second->sig
+            const auto* sig = is_lambda ? &reinterpret_cast<LLModule*>(right_t->module)->lambdas[right_t->name].second->sig
                 : &right_t->sig;
             bool uses_sret = callee->hasStructRetAttr();
             std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
@@ -1788,10 +1699,35 @@ namespace Yoyo
     {
         auto t = ExpressionTypeChecker{ irgen }(expr);
         if (!t) { irgen->error(t.error()); return nullptr; }
-        auto context = t->module->lambdas.at(t->name).first;
+        auto context = reinterpret_cast<LLModule*>(t->module)->lambdas.at(t->name).first;
         auto ctx_object = irgen->Alloca("lambda_context", context);
         //copy types into the context
         size_t idx = 0;
+        if (!reinterpret_cast<LLModule*>(irgen->module)->lambdas.contains(t->name))
+        {
+            std::vector<llvm::Type*> context_types;
+            context_types.reserve(expr->captures.size());
+            irgen->saturateSignature(expr->sig, irgen->module);
+            for (auto& capture : expr->captures)
+            {
+                NameExpression name(capture.name);
+                auto type = ExpressionTypeChecker{ irgen }(&name);
+                if (!type) irgen->error(type.error());
+                llvm::Type* tp = capture.cp_type == Ownership::Owning ? irgen->ToLLVMType(*type, false) :
+                    llvm::PointerType::get(irgen->context, 0);
+                context_types.push_back(tp);
+            }
+            //was considering stealing the unique ptr, but cloning is much more convenient also we can choose not to store the body
+            //and free memory
+            auto context = llvm::StructType::get(irgen->context, context_types);
+            decltype(expr->body) body = nullptr;
+            expr->body.swap(body);
+            auto new_expr_generic = ExpressionTreeCloner::copy_expr(expr);
+            expr->body.swap(body);
+            std::unique_ptr<LambdaExpression> new_expr(reinterpret_cast<LambdaExpression*>(new_expr_generic.get()));
+            new_expr_generic.release();
+            reinterpret_cast<LLModule*>(irgen->module)->lambdas[t->name] = { context, std::move(new_expr) };
+        }
         for(auto& capture : expr->captures)
         {
             NameExpression name(capture.name);
@@ -1926,7 +1862,7 @@ namespace Yoyo
             std::string full_name = name + intf->name;
             if (auto cls = ty->deref().get_decl_if_class(irgen))
             {
-                auto details = ty->deref().module->findType(ty->deref().block_hash, ty->deref().name);
+                auto details = ty->deref().module->findClass(ty->deref().block_hash, ty->deref().name).second;
                 auto result = irgen->Alloca("interface_cast", as_llvm);
                 auto this_ptr = irgen->builder->CreateStructGEP(as_llvm, result, 0);
                 irgen->builder->CreateStore(internal, this_ptr);

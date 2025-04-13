@@ -5,7 +5,7 @@
 #include <ranges>
 #include <set>
 #include <iostream>
-#include "gc/gc.h"
+#include "tree_cloner.h"
 namespace Yoyo
 {
     void debugbreak()
@@ -241,6 +241,97 @@ namespace Yoyo
         return std::nullopt;
     }
 
+    void IRGenerator::generateGenericFunction(Module* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
+    {
+        for (auto& type : types) type.saturate(mod, this);
+        std::string name = fn->name + IRGenerator::mangleGenericArgs(types);
+        if (auto [_, exists] = mod->findFunction(hash, name); exists) return;
+        auto module = this->module;
+        this->module = mod;
+
+        for (size_t i = 0; i < types.size(); i++)
+            this->module->aliases[hash + name + "::"].emplace(fn->clause.types[i], types[i]);
+
+        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn));
+        auto new_decl = reinterpret_cast<FunctionDeclaration*>(ptr.get());
+        new_decl->name = name;
+        auto old_hash = this->reset_hash();
+        this->block_hash = hash + name + "::";
+        this->saturateSignature(new_decl->signature, mod);
+        this->block_hash = hash;
+
+        doFunction(new_decl);
+
+        this->block_hash = std::move(old_hash);
+        this->module = module;
+    }
+    void IRGenerator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types)
+    {
+        for (auto& type : types) type.saturate(mod, this);
+        generateGenericClass(mod, hash, decl, std::span<const Type>{types});
+    }
+    void IRGenerator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types)
+    {
+        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
+        if (auto exists = mod->findType(hash, name); exists) return;
+        auto module = this->module;
+        this->module = mod;
+
+        for (size_t i = 0; i < types.size(); i++)
+            this->module->aliases[hash + name + "::"].emplace(decl->clause.types[i], types[i]);
+
+        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<ClassDeclaration*>(decl));
+        auto new_decl = reinterpret_cast<ClassDeclaration*>(ptr.get());
+        new_decl->name = name;
+        auto old_hash = this->reset_hash();
+
+        this->current_Statement = &ptr;
+        doClass(new_decl);
+
+        this->block_hash = std::move(old_hash);
+        this->module = module;
+    }
+    void IRGenerator::generateGenericAlias(Module* mod, const std::string& block, GenericAliasDeclaration* decl,
+        std::span<Type> types)
+    {
+        for (auto& type : types) type.saturate(mod, this);
+        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
+        if (auto exists = mod->findAlias(block, name)) return;
+        auto old_hash = std::move(this->block_hash);
+        this->block_hash = block;
+        auto module = this->module;
+        this->module = mod;
+        for (size_t i = 0; i < types.size(); i++)
+            this->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
+        auto new_statement = StatementTreeCloner::copy_stat_specific(static_cast<AliasDeclaration*>(decl));
+        auto alias = reinterpret_cast<AliasDeclaration*>(new_statement.get());
+        alias->name = name;
+        doAlias(alias);
+        this->block_hash = std::move(old_hash);
+        this->module = module;
+    }
+    void IRGenerator::generateGenericInterface(Module* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types)
+    {
+        for (auto& type : types) type.saturate(md, this);
+        std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
+        if (auto [_, exists] = md->findInterface(block, name); exists) return;
+        auto new_interface = StatementTreeCloner::copy_stat_specific(static_cast<InterfaceDeclaration*>(decl));
+        auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.release());
+        itf->name = name;
+        //TODO interface visitors to automatically saturate signatures
+        for (size_t i = 0; i < types.size(); i++)
+            md->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
+        auto old_mod = this->module;
+        auto old_hash = this->reset_hash();
+
+        this->module = md;
+        this->block_hash = block + name + "__";
+        for (auto& fn : itf->methods)
+            this->saturateSignature(fn->signature, md);
+        this->block_hash.swap(old_hash);
+        this->module = old_mod;
+        md->interfaces[block].emplace_back(itf);
+    }
 
     bool IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng)
     {

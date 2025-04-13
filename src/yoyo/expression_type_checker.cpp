@@ -145,14 +145,14 @@ namespace Yoyo
         }
         return std::nullopt;
     }
-    static std::optional<Type> unaryNegateResult(Module* mod, const Type& typ)
+    static std::optional<Type> unaryNegateResult(ModuleBase* mod, const Type& typ)
     {
         if(typ.is_unsigned_integral()) return std::nullopt;
         if(typ.is_signed_integral() || typ.is_floating_point()) return typ.strip_lvalue();
 
         return std::nullopt;
     }
-    static std::optional<Type> unaryNotResult(Module* module, const Type& type)
+    static std::optional<Type> unaryNotResult(ModuleBase* module, const Type& type)
     {
         if(type.is_boolean()) return type;
         return std::nullopt;
@@ -407,38 +407,29 @@ namespace Yoyo
 
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(NameExpression* expr)
     {
-        std::string name(expr->text);
-        for(size_t i = irgen->variables.size(); i > 0; --i)
+        if (auto type = irgen->getVariableType(expr->text, expr))
         {
-            size_t idx = i - 1;
-            if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
-            {
-                auto& type = std::get<1>(var->second);
-                //its only lvalue if its not last use
-                bool is_last_use = irgen->function_cfgs.back().last_uses.at(name).contains(expr);
-                type.is_lvalue = !is_last_use;
-                type.saturate(irgen->module, irgen);
-                return { type };
-            }
+            return { std::move(type).value() };
         }
-        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, name); fn)
+        
+        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, expr->text); fn)
         {
             irgen->saturateSignature(fn->sig, irgen->module);
             return { FunctionType{fn->sig, false} };
         }
-        if (auto [name_prefix, fn] = irgen->module->findGenericFn(irgen->block_hash, name); fn)
+        if (auto [name_prefix, fn] = irgen->module->findGenericFn(irgen->block_hash, expr->text); fn)
         {
             auto ty = FunctionType(fn->signature, false);
-            ty.name = "__generic_fn" + name;
+            ty.name = "__generic_fn" + expr->text;
             ty.module = irgen->module;
             ty.block_hash = name_prefix;
             return { std::move(ty) };
         }
-        if (auto [name_pf, c] = irgen->module->findConst(irgen->block_hash, name); c)
+        if (auto [name_pf, c] = irgen->module->findConst(irgen->block_hash, expr->text); c)
         {
             return { std::get<0>(*c) };
         }
-        return { Error(expr, "Use of undeclared identifier '" + name + "'") };
+        return { Error(expr, "Use of undeclared identifier '" + expr->text + "'") };
     }
     void generic_replace(Type& type, const std::string& generic, const Type& other)
     {
@@ -462,7 +453,7 @@ namespace Yoyo
                         decl->body->beg.column)) };
             }
             
-            ExpressionEvaluator{ irgen }.generateGenericFunction(irgen->module, hash, decl, expr->arguments);
+            irgen->generateGenericFunction(irgen->module, hash, decl, expr->arguments);
             if (auto [_, fn_decl] = irgen->module->findFunction(hash,
                 expr->text + IRGenerator::mangleGenericArgs(expr->arguments)); fn_decl)
             {
@@ -503,37 +494,13 @@ namespace Yoyo
             auto t = irgen->inferReturnType(expr->body.get());;
             expr->sig.returnType = *t;
         }
-        if (!irgen->module->lambdas.contains(fn_t.name))
-        {
-            std::vector<llvm::Type*> context_types;
-            context_types.reserve(expr->captures.size());
-            irgen->saturateSignature(expr->sig, irgen->module);
-            for (auto& capture : expr->captures)
-            {
-                NameExpression name(capture.name);
-                auto type = (*this)(&name);
-                if (!type) return type;
-                llvm::Type* tp = capture.cp_type == Ownership::Owning ? irgen->ToLLVMType(*type, false) :
-                    llvm::PointerType::get(irgen->context, 0);
-                context_types.push_back(tp);
-            }
-            //was considering stealing the unqiue ptr, but cloning is much more conveneient also we can choose not to store the body
-            //and free memory
-            auto context = llvm::StructType::get(irgen->context, context_types);
-            decltype(expr->body) body = nullptr;
-            expr->body.swap(body);
-            auto new_expr_generic = ExpressionTreeCloner::copy_expr(expr);
-            expr->body.swap(body);
-            std::unique_ptr<LambdaExpression> new_expr(reinterpret_cast<LambdaExpression*>(new_expr_generic.get()));
-            new_expr_generic.release();
-            irgen->module->lambdas[fn_t.name] = { context, std::move(new_expr) };
-        }
+            
         fn_t.module = irgen->module;
         return { fn_t };
     }
     // If its the first time the hash doesn't have to match and we can check the engine for modules
     // but on subsequent attemps we can't check the engine and the hashes have to be exact
-    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool first)
+    bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first)
     {
         if (first && type.is_integral() || type.is_floating_point()) {
             md = md->engine->modules.at("core").get();
@@ -552,10 +519,10 @@ namespace Yoyo
             hash = md->module_hash;
             return true;
         }
-        if(auto dets = md->findType(hash, type.name))
+        if(auto dets = md->findClass(hash, type.name); dets.second)
         {
-            if (!first && std::get<0>(*dets) != hash + type.name + "::") return false;
-            hash = std::get<0>(*dets);
+            if (!first && std::get<0>(*dets.second) != hash + type.name + "::") return false;
+            hash = std::get<0>(*dets.second);
             return true;
         }
         if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
@@ -563,10 +530,10 @@ namespace Yoyo
             if (type.subtypes.size() != decl->clause.types.size()) return false;
             for (auto& sub : type.subtypes) sub.saturate(md, irgen);
             auto mangled_name = decl->name + IRGenerator::mangleGenericArgs(type.subtypes);
-            ExpressionEvaluator{ irgen }.generateGenericClass(md, hsh, decl, std::span{ type.subtypes });
-            if (auto dets = md->findType(hash, mangled_name))
+            irgen->generateGenericClass(md, hsh, decl, std::span{ type.subtypes });
+            if (auto dets = md->findClass(hash, mangled_name); dets.second)
             {
-                hash = std::get<0>(*dets); return true;
+                hash = std::get<0>(*dets.second); return true;
             }
             return false;
         }
@@ -584,7 +551,7 @@ namespace Yoyo
         {
             if (type.subtypes.size() != interface->clause.types.size()) return false;
             for (auto& sub : type.subtypes) sub.saturate(irgen->module, irgen);
-            ExpressionEvaluator{ irgen }.generateGenericInterface(md, hsh, interface, type.subtypes);
+            irgen->generateGenericInterface(md, hsh, interface, type.subtypes);
             std::string name = interface->name + IRGenerator::mangleGenericArgs(type.subtypes);
             if (auto [_, exists] = md->findInterface(hsh, name); exists)
             {
@@ -609,7 +576,7 @@ namespace Yoyo
             for(auto& sub : type.subtypes) sub.saturate(md, irgen);
             auto mangled_name = fn->name + IRGenerator::mangleGenericArgs(type.subtypes);
             if(auto [_, exists] = md->findFunction(this_hash, mangled_name); !exists)
-                ExpressionEvaluator{irgen}.generateGenericFunction(md, this_hash, fn, type.subtypes);
+                irgen->generateGenericFunction(md, this_hash, fn, type.subtypes);
             hash = this_hash + mangled_name + "::";
             return true;
         }
@@ -626,7 +593,7 @@ namespace Yoyo
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(ScopeOperation* scp)
     {
         using namespace std::string_view_literals;
-        Module* md = irgen->module;
+        ModuleBase* md = irgen->module;
         std::string hash = irgen->block_hash;
         std::string second_to_last = "";
         auto iterator = UnsaturatedTypeIterator(scp->type);
@@ -806,11 +773,11 @@ namespace Yoyo
                 tp.subtypes.push_back(target->subtypes[i]);
                 continue;
             }
-            //IMPORTANT: Normally we cant evaluate expression when type checking, but tuples need to resolve literals
             if(type_i.name == "ilit" || type_i.name == "flit")
             {
-                auto val = std::visit(ExpressionEvaluator{irgen}, tup->elements[i]->toVariant());
-                type_i = irgen->reduceLiteral(type_i, val);
+                auto val = std::visit(ConstantEvaluator{irgen}, tup->elements[i]->toVariant());
+                // TODO: select the appropriate type
+                return { Type{.name = "i32" } };
             }
             tp.subtypes.push_back(type_i);
         }

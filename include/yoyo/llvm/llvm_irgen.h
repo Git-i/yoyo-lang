@@ -24,6 +24,9 @@ namespace Yoyo {
 		Type reduceLiteral(const Type& src, llvm::Value* val);
 		void pushScope();
 		void popScope();
+        virtual void doFunction(FunctionDeclaration* decl) override { (*this)(decl); };
+        virtual void doClass(ClassDeclaration* decl) override { (*this)(decl); };
+        virtual void doAlias(AliasDeclaration* decl) override { (*this)(decl); };
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
         void operator()(VariableDeclaration*);
@@ -49,6 +52,9 @@ namespace Yoyo {
         void operator()(CImportDeclaration*);
         void operator()(UnionDeclaration*);
         void operator()(MacroDeclaration*);
+        void callDestructors(size_t depth = 0);
+        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, LLModule* md, Engine* eng);
+        std::optional<Type> getVariableType(const std::string& name, Expression*) override;
         llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
 	};
     class LLVMExpressionEvaluator
@@ -82,11 +88,6 @@ namespace Yoyo {
             std::vector<std::unique_ptr<Expression>>& exprs);
         llvm::Value* doInvoke(CallOperation* op, const Type&);
         llvm::Value* doUnionVar(CallOperation* op, Type&);
-        void generateGenericFunction(Module*, const std::string&, GenericFunctionDeclaration*, std::span<Type>);
-        void generateGenericAlias(Module*, const std::string&, GenericAliasDeclaration*, std::span<Type>);
-        void generateGenericInterface(Module*, const std::string&, GenericInterfaceDeclaration*, std::span<Type>);
-        void generateGenericClass(Module*, const std::string&, GenericClassDeclaration*, std::span<Type>);
-        void generateGenericClass(Module*, const std::string&, GenericClassDeclaration*, std::span<const Type>);
         //the malloc and the size
         std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator

@@ -395,7 +395,7 @@ namespace Yoyo
             tp.is_view());
     }
     bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool);
-    void Type::saturate(Module* src, IRGenerator* irgen)
+    void Type::saturate(ModuleBase* src, IRGenerator* irgen)
     {
         if(module) return; //avoid double saturation
         auto module_path = split(name, "::");
@@ -440,7 +440,7 @@ namespace Yoyo
             *this = *alias;
         else if(auto [blk, alias] = module->findGenericAlias(block_hash, name); alias)
         {
-            ExpressionEvaluator{irgen}.generateGenericAlias(module, blk, alias, subtypes);
+            irgen->generateGenericAlias(module, blk, alias, subtypes);
             *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
         }
         // since "This" is one word it tends to skip through the right modules
@@ -562,7 +562,7 @@ namespace Yoyo
             if (auto [hsh, decl] = module->findGenericClass(block_hash, name); decl)
             {
                 if (subtypes.size() != decl->clause.types.size()) { debugbreak(); return nullptr; }
-                ExpressionEvaluator{ irgen }.generateGenericClass(module, hsh, decl, subtypes);
+                irgen->generateGenericClass(module, hsh, decl, subtypes);
                 if (auto decl = module->findType(block_hash, full_name_no_block()))
                     return std::get<2>(*decl).get();
             }

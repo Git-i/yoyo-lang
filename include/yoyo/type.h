@@ -22,7 +22,7 @@ namespace Yoyo
         //shared ptr because I want the object to be copyable, its mostly nullptr anyway
         //this is to store the signature for callable and storable functions
         std::shared_ptr<FunctionSignature> signature;
-        Module* module;
+        ModuleBase* module;
         mutable bool is_mutable = false;
         bool is_lvalue = false;
         std::string block_hash;
@@ -57,7 +57,7 @@ namespace Yoyo
         [[nodiscard]] Type saturated(Module* src, IRGenerator* irgen) const;
         [[nodiscard]] Type reference_to() const;
         [[nodiscard]] Type mutable_reference_to() const;
-        void saturate(Module* src, IRGenerator* irgen);
+        void saturate(ModuleBase* src, IRGenerator* irgen);
         [[nodiscard]] bool verify() const;
         [[nodiscard]] bool is_shallow_equal(const Type& other) const
         {
