@@ -1,1 +1,2 @@
 option('llvm_static', type: 'boolean', value: true)
+option('executor', type: 'combo', choices: ['llvm', 'yvm', 'both'], value: 'yvm')

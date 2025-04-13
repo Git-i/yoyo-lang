@@ -1,18 +1,11 @@
-#include "llvm/llvm_engine.h"
-
 #include <ir_gen.h>
-#include <llvm/llvm_module.h>
+#include <yvm/yvm_module.h>
 #include <parser.h>
 #include <ranges>
 #include <statement.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/llvm_irgen.h>
+#include <yvm/yvm_engine.h>
 namespace Yoyo
 {
-    llvm::LLVMContext* getLLVMContext(ModuleBase* md)
-    {
-        return md->engine->llvm_context.getContext();
-    }
     //Given a declaration, forward declare it and all the other sustatements
     struct ForwardDeclaratorPass1
     {
@@ -67,7 +60,7 @@ namespace Yoyo
         }
         bool operator()(ModuleImport* imp)
         {
-            reinterpret_cast<LLVMEngine*>(md->engine)->addModule(imp->module_path, "");
+            reinterpret_cast<YVMEngine*>(md->engine)->addModule(imp->module_path, "");
             md->modules[imp->module_name] = md->engine->modules[imp->module_path].get();
             return true;
         }
@@ -149,21 +142,13 @@ namespace Yoyo
         // NEED TO REPORT THIS ISSUE
         return "detect_container_overflow=0";
     }
-    LLVMEngine::LLVMEngine()
+    YVMEngine::YVMEngine()
     {
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-        auto value = llvm::orc::LLJITBuilder().create();
-        llvm_context = llvm::orc::ThreadSafeContext(std::make_unique<llvm::LLVMContext>());
-        if (!value) Yoyo::debugbreak();
-        std::move(value).moveInto(jit);
-        LLModule::makeBuiltinModule(this);
     }
 
     Engine::~Engine()
     {
 
-        //delete static_cast<llvm::LLVMContext*>(llvm_context);
     }
 
     LLVMAppModule* LLVMEngine::addAppModule(const std::string& name)
@@ -203,7 +188,7 @@ namespace Yoyo
 
     void LLVMEngine::compile()
     {
-        LLVMIRGenerator irgen(*llvm_context.getContext());
+        YVMIRGenerator irgen(*llvm_context.getContext());
         auto keys_view = std::ranges::views::keys(modules);
         std::vector module_names(keys_view.begin(), keys_view.end());
 

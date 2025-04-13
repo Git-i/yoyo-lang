@@ -1,0 +1,3 @@
+[submodule "subprojects/yoyo-vm"]
+	path = subprojects/yoyo-vm
+	url = https://github.com/Git-i/yoyo-vm.git

@@ -1,5 +1,5 @@
 #pragma once
-#include "module.h"
+#include "llvm/llvm_module.h"
 #include "parser.h"
 #include <func_sig.h>
 namespace Yoyo
@@ -14,7 +14,7 @@ namespace Yoyo
         ParameterTypeMismatch,
         DuplicateEnumValue,
     };
-    class YOYO_API AppModule : public Module
+    class YOYO_API LLVMAppModule : public LLModule
     {
         void addFunction(FunctionSignature sig, void* func, std::string name);
     public:

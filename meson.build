@@ -23,10 +23,10 @@ sources = [
     'src/yoyo/constexpr_eval.cpp',
     'src/yoyo/macro_eval.cpp',
 
-    #llvm_specific
-    'src/yoyo/llvm/ir_gen.cpp',
-    'src/yoyo/llvm/expression_evaluator.cpp',
-    'src/yoyo/llvm/engine.cpp',
+    # llvm specific
+    
+
+    
 
     # headers
     'include/yoyo/app_module.h',
@@ -56,15 +56,51 @@ sources = [
     'include/yoyo/parselets/infix_parselets.h',
     'include/yoyo/parselets/prefix_parselets.h',
     'include/yoyo/constant.h',
-    'include/yoyo/llvm/llvm_irgen.h',
-    'include/yoyo/llvm/llvm_engine.h',
+
+    #llvm
+    
+
+    #yvm
+    
 ]
-llvm_static = get_option('llvm_static')
+backend = get_option('executor')
+deps =  [dependency('bdw-gc')]
+if backend == 'llvm' or backend == 'both'
+    llvm_static = get_option('llvm_static')
+    deps += [dependency('llvm', static: llvm_static)]
+    sources += [
+        'src/yoyo/llvm/ir_gen.cpp',
+        'src/yoyo/llvm/expression_evaluator.cpp',
+        'src/yoyo/llvm/engine.cpp',
+        'src/yoyo/llvm/module.cpp',
+
+        'include/yoyo/llvm/llvm_irgen.h',
+        'include/yoyo/llvm/llvm_engine.h',
+        'include/yoyo/llvm/llvm_module.h',
+    ]
+endif
+
+if backend == 'yvm' or backend == 'both'
+    yoyo_vm = subproject('yoyo-vm')
+    deps += [yoyo_vm.get_variable('yoyo_vm_dep'), dependency('libffi')]
+    sources += [
+        'include/yoyo/yvm/yvm_irgen.h',
+        'include/yoyo/yvm/yvm_engine.h',
+        'include/yoyo/yvm/yvm_module.h',
+        'include/yoyo/yvm/native_type.h',
+
+        'src/yoyo/yvm/ir_gen.cpp',
+        'src/yoyo/yvm/expression_evaluator.cpp',
+        'src/yoyo/yvm/engine.cpp',
+        'src/yoyo/yvm/module.cpp',
+        'src/yoyo/yvm/native_type.cpp',
+    ]
+endif
 yoyo_args = ['-DYOYO_DLL']
 yoyo_lib = library('yoyo', sources, include_directories: 'include/yoyo',
-    dependencies: [dependency('llvm', static: llvm_static), dependency('bdw-gc')],
+    dependencies: deps,
     cpp_args: yoyo_args)
-yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: dependency('llvm', static: llvm_static))
+yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)
 parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
 irgen_deps = [
     yoyo_dep,
