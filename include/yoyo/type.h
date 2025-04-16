@@ -39,7 +39,7 @@ namespace Yoyo
         [[nodiscard]] bool is_non_owning_mut(IRGenerator* irgen) const;
         [[nodiscard]] bool is_reference() const;
         [[nodiscard]] bool is_gc_reference() const;
-        [[nodiscard]] bool is_trivially_destructible(IRGenerator* irgen) const;
+        [[nodiscard]] bool is_trivially_destructible(IRGenerator* irgen, bool consider_no = true) const;
         [[nodiscard]] bool can_be_stored() const;
         [[nodiscard]] bool is_conversion_result() const;
         [[nodiscard]] bool is_value_conversion_result() const;

@@ -298,9 +298,10 @@ namespace Yoyo
         }
         decl->is_trivially_destructible = true;
     }
-    bool Type::is_trivially_destructible(IRGenerator* irgen) const
+    bool Type::is_trivially_destructible(IRGenerator* irgen, bool consider_no) const
     {
-        if(is_non_owning(irgen)) return false;
+        //if we're not on llvm, lifetime extension are handled differently
+        if(consider_no && is_non_owning(irgen)) return false;
         if (is_error_ty()) return true;
         if(is_builtin() || is_opaque_pointer()) return true;
         if (is_void()) return true;

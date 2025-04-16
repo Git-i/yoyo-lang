@@ -4,10 +4,11 @@
 #include <ranges>
 #include <set>
 #include <tree_cloner.h>
-#include <llvm/Support/Error.h>
 
-#include "llvm/llvm_irgen.h"
+#include "yvm/yvm_irgen.h"
 #include "fn_type.h"
+#include <format>
+using Yvm::OpCode;
 namespace Yoyo
 {
     struct ExtendedLifetimes
@@ -51,19 +52,6 @@ namespace Yoyo
                 delete &lifetimes;
             }
         }
-    }
-    llvm::Function* declareFunction(const std::string& mangled_name, LLVMIRGenerator* irgen, FunctionSignature& fn_sig)
-    {
-        llvm::Function* fn = nullptr;
-        irgen->saturateSignature(fn_sig, irgen->module);
-        fn = llvm::Function::Create(irgen->ToLLVMSignature(fn_sig), llvm::GlobalValue::ExternalLinkage, mangled_name,
-            irgen->code);
-        if(fn_sig.returnType.should_sret())
-        {
-            const auto return_as_llvm = irgen->ToLLVMType(fn_sig.returnType, false);
-            fn->addAttributeAtIndex(1, llvm::Attribute::get(irgen->context, llvm::Attribute::StructRet, return_as_llvm));
-        }
-        return fn;
     }
     int64_t getIntMinOf(const Type& type)
     {
@@ -147,109 +135,120 @@ namespace Yoyo
         return 0;
     }
 
-    llvm::Value* LLVMExpressionEvaluator::implicitConvert(Expression* xp, llvm::Value* val, const Type& src, const Type& dst, llvm::Value* out) const
+    void YVMExpressionEvaluator::implicitConvert(Expression* xp, const Type& src, const Type& dst, bool on_stack, bool do_load) const
     {
-        llvm::Type* int_ty = llvm::Type::getInt32Ty(irgen->context);
-        if(dst.is_equal(src)) { return clone(xp, val, src, out); }
+        if(dst.is_equal(src)) { return clone(xp, src, on_stack, do_load); }
         if(!dst.is_assignable_from(src, irgen)) { 
             irgen->error(Error(xp, std::format("Expression of type {} cannot be converted to type {}", src.pretty_name(irgen->block_hash), dst.pretty_name(irgen->block_hash)))); 
-            return nullptr; }
-        auto dst_as_llvm = irgen->ToLLVMType(dst, false);
-        if(!out) out = irgen->Alloca("implicit_convert", dst_as_llvm);
-        if (src.is_error_ty() || dst.is_error_ty()) return out;
+            return; 
+        }
+        if (src.is_error_ty() || dst.is_error_ty()) return;
+
         if(src.name == "ilit")
         {
-            auto as_int = llvm::dyn_cast<llvm::ConstantInt>(val);
-            int64_t min_bound = getIntMinOf(dst);
-            uint64_t max_bound = getIntMaxOf(dst);
+            // There's no way to check the value of the constant till folding is implemented
+            // in Yvm::Emitter
+            /*int64_t min_bound = getIntMinOf(dst);
+            uint64_t max_bound = getIntMaxOf(dst);*/
             if(dst.is_integral())
             {
-                if(as_int->isNegative())
-                {
-                    if(as_int->getSExtValue() >= min_bound && as_int->getSExtValue() <= max_bound)
-                    {
-                        val = irgen->builder->CreateSExtOrTrunc(val, dst_as_llvm);
-                        irgen->builder->CreateStore(val, out);
-                        return val;
-                    }
-                    irgen->error(Error(xp, "Literal out of bounds for destination type"));
-                    return nullptr;
-                }
-                if(as_int->getZExtValue() <= max_bound)
-                {
-                    val = irgen->builder->CreateZExtOrTrunc(val, dst_as_llvm);
-                    irgen->builder->CreateStore(val, out);
-                    return val;
-                }
-                irgen->error(Error(xp, "Literal out of bound for destination type"));
-                return nullptr;
+                irgen->builder->write_const(0);
             }
             if(dst.is_floating_point())
             {
-                if(as_int->isNegative())
-                {
-                    if(as_int->getSExtValue() >= min_bound && as_int->getSExtValue() <= max_bound)
-                    {
-                        val = irgen->builder->CreateSIToFP(val, dst_as_llvm);
-                        irgen->builder->CreateStore(val, out);
-                        return val;
-                    }
-                    irgen->error(Error(xp, "Literal out of bound for destination type"));
-                    return nullptr;
-                }
-                if(as_int->getZExtValue() <= max_bound)
-                {
-                    val = irgen->builder->CreateUIToFP(val, dst_as_llvm);
-                    irgen->builder->CreateStore(val, out);
-                    return val;
-                }
-                irgen->error(Error(xp, "Literal out of bound for destination type"));
-                return nullptr;
+                irgen->builder->write_const(0.0);
             }
         }
         if(src.name == "flit")
         {
-            auto as_float = llvm::dyn_cast<llvm::ConstantFP>(val);
             double min_bound = getFloatMinOf(dst);
             double max_bound = getFloatMaxOf(dst);
-            double value = as_float->getValue().convertToDouble();
             if(dst.is_floating_point())
             {
-                if(*dst.float_width() == 64)
-                {
-                    irgen->builder->CreateStore(val, out);
-                    return val;
+                if(*dst.float_width() != 64)
+                    irgen->builder->write_3b_inst(OpCode::FpConv, 64, 32);
+                if (do_load && on_stack) {
+                    irgen->error(Error(xp, "Internal, error do_load and on_stack set"));
                 }
-                if(value >= min_bound && value <= max_bound)
-                {
-                    val = irgen->builder->CreateFPTrunc(val, dst_as_llvm);
-                    irgen->builder->CreateStore(val, out);
-                    return val;
+                else if (on_stack) irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                else if (!do_load && !on_stack) {
+                    irgen->builder->write_alloca(*dst.float_width()/8);
+                    irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
                 }
+                else if (do_load && !on_stack);
+                return;
             }
         }
         if(dst.is_unsigned_integral())
         {
-            if(!dst.is_equal(src))
-                val = irgen->builder->CreateZExt(val, dst_as_llvm, "assign_zext");
-            irgen->builder->CreateStore(val, out);
-            return val;
+            //unsigned conversion only happen between unsigned vales
+            irgen->builder->write_3b_inst(OpCode::UConv, *src.integer_width(), *dst.integer_width());
+            if (do_load && on_stack) {
+                irgen->error(Error(xp, "Internal, error do_load and on_stack set"));
+            }
+            else if (on_stack) irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+            else if (!do_load && !on_stack) {
+                irgen->builder->write_alloca(*dst.integer_width() / 8);
+                irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+            }
+            else if (do_load && !on_stack);
+            return;
         }
         if(dst.is_signed_integral())
         {
-            if(!dst.is_equal(src))
-                if(src.is_signed_integral()) val = irgen->builder->CreateSExt(val, dst_as_llvm, "assign_sext");
-                else if(src.is_unsigned_integral()) val = irgen->builder->CreateZExt(val, dst_as_llvm, "assign_zext");
-            irgen->builder->CreateStore(val, out);
-            return val;
+            if (src.is_signed_integral())
+            {
+                irgen->builder->write_3b_inst(OpCode::SConv, *src.integer_width(), *dst.integer_width());
+                if (do_load && on_stack) {
+                    irgen->error(Error(xp, "Internal, error do_load and on_stack set"));
+                }
+                else if (on_stack) irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                else if (!do_load && !on_stack) {
+                    irgen->builder->write_alloca(*dst.integer_width() / 8);
+                    irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                }
+                else if (do_load && !on_stack);
+                return;
+            }
+            else if (src.is_unsigned_integral())
+            {
+                irgen->builder->write_3b_inst(OpCode::UConv, *src.integer_width(), *dst.integer_width());
+                if (do_load && on_stack) {
+                    irgen->error(Error(xp, "Internal, error do_load and on_stack set"));
+                }
+                else if (on_stack) irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                else if (!do_load && !on_stack) {
+                    irgen->builder->write_alloca(*dst.integer_width() / 8);
+                    irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                }
+                else if (do_load && !on_stack);
+                return;
+            }
         }
         if(dst.is_floating_point())
         {
-            if(!dst.is_equal(src))
-                if(src.is_floating_point()) val = irgen->builder->CreateFPExt(val, dst_as_llvm, "assign_fpext");
-                else if(src.is_unsigned_integral()) val = irgen->builder->CreateUIToFP(val, dst_as_llvm, "assign_uitofp");
-                else if(src.is_signed_integral()) val = irgen->builder->CreateSIToFP(val, dst_as_llvm, "assign_uitofp");
-            irgen->builder->CreateStore(val, out);
+            if (src.is_floating_point())
+            {
+                irgen->builder->write_3b_inst(OpCode::FpConv, *src.float_width(), *dst.float_width());
+                if (do_load && on_stack) {
+                    irgen->error(Error(xp, "Internal, error do_load and on_stack set"));
+                }
+                else if (on_stack) irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                else if (!do_load && !on_stack) {
+                    irgen->builder->write_alloca(*dst.float_width() / 8);
+                    irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+                }
+                else if (do_load && !on_stack);
+            }
+            else if (src.is_unsigned_integral())
+            {
+
+            }
+            else if (src.is_signed_integral())
+            {
+
+            }
+            
             return val;
         }
         //gc borrows are checked at runtime
@@ -258,118 +257,151 @@ namespace Yoyo
         {
             std::string error_str = std::format("Borrow check failed at {}:{}:{}", irgen->view->filename, xp->beg.line, xp->beg.column);
             //the borrow count is -1 if theres a living mutable borrow
-            auto i64_ty = llvm::Type::getInt64Ty(irgen->context);
-            auto const_zero = llvm::ConstantInt::get(i64_ty, 0);
-            auto const_min_1 = llvm::ConstantInt::get(i64_ty, -1, true);
-            auto gcref_subtype = llvm::StructType::get(irgen->context, {irgen->ToLLVMType(src.deref(), false), i64_ty}, false);
-            auto gc_borrow_count_ptr = irgen->builder->CreateStructGEP(gcref_subtype, val, 1);
-            auto gc_object_ptr = irgen->builder->CreateStructGEP(gcref_subtype, val, 0);
-            auto gc_borrow_count = irgen->builder->CreateLoad(i64_ty, gc_borrow_count_ptr);
+            // we get the borrow count
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(reinterpret_cast<StructNativeTy*>(irgen->toNativeType(src)), 1));
+            irgen->builder->write_1b_inst(OpCode::Dup); // keep a copy of the pointer to the count to update it
+            irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::i64);
             std::string type_name = "__gc_refcell_borrow";
-            auto fn = irgen->builder->GetInsertBlock()->getParent();
-            llvm::Value* new_count;
             //borrow count must be zero to borrow mutably
-            auto invalid_borrow = llvm::BasicBlock::Create(irgen->context, "borrow_check_fail", fn, irgen->returnBlock);
-            auto valid_borrow = llvm::BasicBlock::Create(irgen->context, "borrow_check_pass", fn, irgen->returnBlock);
+            auto valid_borrow = irgen->builder->unq_label_name("valid borrow");
             if (dst.is_mutable_reference()) {
                 type_name += "_mut";
-                irgen->builder->CreateCondBr(irgen->builder->CreateICmpNE(const_zero, gc_borrow_count), invalid_borrow, valid_borrow);
-                new_count = const_min_1;
+                irgen->builder->write_const(int64_t{ 0 });
+                irgen->builder->write_1b_inst(OpCode::CmpNe);
+                irgen->builder->create_jump(OpCode::JumpIfFalse, valid_borrow);
+                irgen->builder->write_1b_inst(OpCode::Panic);
+                irgen->builder->create_label(valid_borrow);
+                irgen->builder->write_const(int64_t{ -1 });
+                // store requires the pointer to be at the top of the stack
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::i64);
             }
             else {
-                new_count = irgen->builder->CreateAdd(gc_borrow_count, llvm::ConstantInt::get(i64_ty, 1));
-                irgen->builder->CreateCondBr(irgen->builder->CreateICmpEQ(const_min_1, gc_borrow_count), invalid_borrow, valid_borrow);
+                // since we're going to add one to the borrow value we can just duplicate it rather than load again
+                irgen->builder->write_1b_inst(OpCode::Dup);
+                irgen->builder->write_const(int64_t{ -1 });
+                irgen->builder->write_1b_inst(OpCode::CmpEq);
+                irgen->builder->create_jump(OpCode::JumpIfFalse, valid_borrow);
+                irgen->builder->write_1b_inst(OpCode::Panic);
+                irgen->builder->create_label(valid_borrow);
+                irgen->builder->write_const(int64_t{ 1 });
+                irgen->builder->write_1b_inst(OpCode::Add64);
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::i64);
             }
-            irgen->builder->SetInsertPoint(invalid_borrow);
-            irgen->builder->CreateBr(irgen->returnBlock);
-            irgen->builder->SetInsertPoint(valid_borrow);
-            irgen->builder->CreateStore(new_count, gc_borrow_count_ptr);
-            irgen->builder->CreateStore(gc_object_ptr, out);
-            auto lf = new ExtendedLifetimes;
-            lf->objects.emplace_back(Type{type_name}, gc_borrow_count_ptr);
-            std::string name = "__del_parents___aaaaaaaa";
-            memcpy(name.data() + 16, &lf, sizeof(void*));
-            gc_object_ptr->setName(name);
-            return gc_object_ptr;
+            // todo extended lifetimes
+            return;
         }
         if(dst.is_reference())
         {
-            //other is a mutable reference
-            irgen->builder->CreateStore(val, out);
-            return val;
+            if (do_load && on_stack) {
+                irgen->error(Error(xp, "Internal, error do_load and on_stack set"));
+            }
+            else if (on_stack) irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+            else if (!do_load && !on_stack) {
+                irgen->builder->write_alloca(sizeof(void*));
+                irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
+            }
+            else if (do_load && !on_stack);
         }
+        // from here on out we require a pointer to our out data
+        auto native = irgen->toNativeType(dst);
+        auto struct_native = reinterpret_cast<StructNativeTy*>(native);
+        if (!on_stack) irgen->builder->write_alloca(NativeType::get_size(native));
         if(dst.is_optional())
         {
             //opt is {data, bool}
             //TODO destroy data if exists
-            if(src.name == "__null")
-            {
-                irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context),
-                    irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
-                return out;
-            }
+            bool is_null = src.name == "__null";
+            irgen->builder->write_1b_inst(OpCode::Dup);
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
+            irgen->builder->write_const(uint8_t{ is_null });
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u8);
+            if(is_null) return;
 
-            //subtype implicit conversion
-            implicitConvert(xp, val, src, dst.subtypes[0], irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
-            irgen->builder->CreateStore(llvm::ConstantInt::getTrue(irgen->context), irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
+            //place a pointer to the data on the stack top and do implicit conversion
+            irgen->builder->write_1b_inst(OpCode::Dup);
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
+            implicitConvert(xp, src, dst.subtypes[0], true, false);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            return;
         }
         if(dst.is_variant())
         {
             const std::set subtypes(dst.subtypes.begin(), dst.subtypes.end());
-            const auto type_idx_ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 1);
             uint32_t i = 0;
 
+            // TODO: I should reall use `find` and `std::distance`, and do so in the llvm backend
             for(auto& sub : subtypes)
             {
                 if(!sub.is_assignable_from(src, irgen)) { i++; continue; }
-                implicitConvert(xp, val, src, sub, irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
-                irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i),
-                    type_idx_ptr);
-                break;
+                irgen->builder->write_1b_inst(OpCode::Dup);
+                irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
+                implicitConvert(xp, src, sub, true, false);
+                irgen->builder->write_1b_inst(OpCode::Pop);
+                irgen->builder->write_1b_inst(OpCode::Dup);
+                irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
+                irgen->builder->write_const(i);
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u32);
+                return;
             }
         }
         if (dst.is_slice())
         {
             if (src.is_reference())
             {
-                auto ptr = irgen->builder->CreateStructGEP(dst_as_llvm, out, 0);
-                auto size = irgen->builder->CreateStructGEP(dst_as_llvm, out, 1);
                 if (src.deref().is_static_array())
                 {
-                    irgen->builder->CreateStore(val, ptr);
-                    auto sz = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), src.deref().static_array_size());
-                    irgen->builder->CreateStore(sz, size);
+                    // currently the stack looks like 
+                    // [array, slice pointer]
+                    // we can get the slice data pointer pointer and store array into it with reverse stack addressing
+                    // dup, ptr_off => [array, slice pointer, slice data pointer pointer]
+                    // rev_stack_addr 2 => [array, slice pointer, slice data pointer pointer, array]
+                    // switch => [array, slice pointer, array, slice data pointer pointer]
+                    // store ptr => [array, slice pointer]
+                    // constant => [array, slice pointer, array size]
+                    // dup, ptr_off => [array, slice pointer, array size, slice size pointer] 
+                    // store u64 => [array, slice pointer]
+                    // top_consume => [slice pointer]
+                    irgen->builder->write_1b_inst(OpCode::Dup);
+                    irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
+                    irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
+                    irgen->builder->write_1b_inst(OpCode::Switch);
+                    irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::ptr);
+                    irgen->builder->write_const<uint64_t>(src.deref().static_array_size());
+                    irgen->builder->write_1b_inst(OpCode::Dup);
+                    irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
+                    irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
+                    irgen->builder->write_1b_inst(OpCode::TopConsume);
+                    return;
                 }
                 
-                if (!src.is_lvalue)
-                {
-                    auto arr = std::array{ val };
-                    stealUsages(arr, out);
-                }
             }
         }
         if (dst.name == "__called_fn")
         {
             if (src.is_function())
             {
-                irgen->builder->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(irgen->context, 0)),
+                /*irgen->builder->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(irgen->context, 0)),
                     irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
                 irgen->builder->CreateStore(val,
                     irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
-                return out;
+                return out;*/
             }
             if (src.is_lambda())
             {
-                irgen->builder->CreateStore(val,
+                /*irgen->builder->CreateStore(val,
                     irgen->builder->CreateStructGEP(dst_as_llvm, out, 0));
                 irgen->builder->CreateStore(irgen->code->getFunction(src.module->module_hash + src.name),
                     irgen->builder->CreateStructGEP(dst_as_llvm, out, 1));
-                return out;
+                return out;*/
             }
         }
         if (dst.is_view())
         {
-            if (src.is_view())
+            /*if (src.is_view())
             {
                 auto& layout = irgen->code->getDataLayout();
                 size_t size = layout.getTypeAllocSize(dst_as_llvm);
@@ -394,16 +426,11 @@ namespace Yoyo
                     irgen->builder->CreateStore(fn, fn_ptr);
                 }
                 return out;
-            }
+            }*/
         }
-        return out;
     }
 
-    /// user defined types can create a @c clone function.\n
-    /// The @c clone function's signature looks like @code clone: (&this) -> This @endcode \n
-    /// Without it the type is cannot be copied
-    /// I think it should be implicit for union types
-    llvm::Value* LLVMExpressionEvaluator::clone(Expression* xp, llvm::Value* value, const Type& left_type, llvm::Value* into) const
+    void YVMExpressionEvaluator::clone(Expression* xp, const Type& left_type, bool, bool) const
     {
         if(!left_type.should_sret())
         {
@@ -548,113 +575,12 @@ namespace Yoyo
         }
         return into;
     }
-    void destroyNonOwningParents(const LLVMExpressionEvaluator& eval, llvm::Value* value, const Type& tp)
+    void YVMExpressionEvaluator::destroy(const Type& type) const
     {
-        if(value->getName().starts_with("__del_parents___"))
-        {
-            auto nm = value->getName();
-            auto& lifetimes = **reinterpret_cast<ExtendedLifetimes* const*>(nm.data() + 16);
-            for(auto& [type, obj] : lifetimes.objects)
-                eval.destroy(obj, type);
-            delete &lifetimes;
-        }
-    }
-    extern "C" void string_destroy_debug()
-    {
-        printf("string destroyed\n");
-    }
-    llvm::Function* getStringDestroy(LLVMIRGenerator* irgen)
-    {
-        auto fn = irgen->code->getFunction("string_destroy_debug");
-        if(fn) return fn;
-        auto ty = llvm::FunctionType::get(llvm::Type::getVoidTy(irgen->context), false);
-        return llvm::Function::Create(ty, llvm::GlobalValue::ExternalLinkage, "string_destroy_debug", irgen->code);
-    }
-    void LLVMExpressionEvaluator::destroy(llvm::Value* value, const Type& type) const
-    {
-        if(type.is_trivially_destructible(irgen)) return;
-
-        auto as_llvm = irgen->ToLLVMType(type, false);
-        auto parent = irgen->builder->GetInsertBlock()->getParent();
-        if(type.is_optional())
-        {
-            auto is_valid = irgen->builder->CreateStructGEP(as_llvm, value, 1);
-            auto should_destroy = llvm::BasicBlock::Create(irgen->context, "destroy_opt", parent, irgen->returnBlock);
-            auto destroy_cont = llvm::BasicBlock::Create(irgen->context, "destroy_cont", parent, should_destroy);
-            irgen->builder->CreateCondBr(
-                irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context), is_valid), should_destroy, destroy_cont);
-            irgen->builder->SetInsertPoint(should_destroy);
-            destroy(value, type.subtypes[0]);
-            irgen->builder->CreateBr(destroy_cont);
-            irgen->builder->SetInsertPoint(destroy_cont);
-        }
-        else if (type.name == "__gc_refcell_borrow") {
-            auto i64_ty = llvm::Type::getInt64Ty(irgen->context);
-            auto new_val = irgen->builder->CreateLoad(i64_ty, value);
-            irgen->builder->CreateStore(irgen->builder->CreateSub(new_val, llvm::ConstantInt::get(i64_ty, 1)), value);
-        }
-        else if (type.name == "__gc_refcell_borrow_mut") {
-            irgen->builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0), value);
-        }
-        else if(type.is_tuple())
-        {
-            for(auto idx : std::views::iota(0u, type.subtypes.size()))
-            {
-                auto sub = irgen->builder->CreateStructGEP(as_llvm, value, idx);
-                destroy(sub, type.subtypes[idx]);
-            }
-        }
-        else if(type.is_variant())
-        {
-            std::set subtypes(type.subtypes.begin(), type.subtypes.end());
-            auto fn = irgen->builder->GetInsertBlock()->getParent();
-            auto type_idx_ptr = irgen->builder->CreateStructGEP(as_llvm, value, 1);
-
-            auto type_idx = irgen->builder->CreateLoad(
-                    llvm::Type::getInt32Ty(irgen->context),
-                    irgen->builder->CreateStructGEP(as_llvm, value, 1));
-            llvm::BasicBlock* def = llvm::BasicBlock::Create(irgen->context, "variant_default", fn, irgen->returnBlock);
-            auto sw = irgen->builder->CreateSwitch(type_idx, def, type.subtypes.size());
-            uint32_t idx = 0;
-            for(auto& sub : subtypes)
-            {
-                llvm::BasicBlock* blk = llvm::BasicBlock::Create(irgen->context, sub.name, fn, def);
-                sw->addCase(llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx), blk);
-
-                irgen->builder->SetInsertPoint(blk);
-                auto sub_value = irgen->builder->CreateStructGEP(as_llvm, value, 0);
-                destroy(sub_value, type.subtypes[idx]);
-                irgen->builder->CreateBr(def);
-                idx++;
-            }
-            irgen->builder->SetInsertPoint(def);
-        }
-        else if(type.is_str())
-        {
-            auto mem_ptr = irgen->builder->CreateStructGEP(as_llvm, value, 0);
-            irgen->Free(irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context,0), mem_ptr));
-            //irgen->builder->CreateCall(getStringDestroy(irgen));
-        }
-        else if(auto dets = type.module->findClass(type.block_hash, type.name).second)
-        {
-            auto decl = std::get<2>(*dets).get();
-            if(!decl->destructor_name.empty())
-            {
-                auto fn = irgen->code->getFunction(std::get<0>(*dets) + decl->destructor_name);
-                irgen->builder->CreateCall(fn, {value});
-            }
-            //even after calling the destructor, we still do member wise destruction
-            size_t idx = 0;
-            for(auto& var : decl->vars)
-            {
-                auto sub = irgen->builder->CreateStructGEP(as_llvm, value, idx);
-                destroy(sub, var.type);
-                idx++;
-            }
-        }
-
-        if(type.is_non_owning(irgen))
-            destroyNonOwningParents(*this, value, type);
+        if(type.is_trivially_destructible(irgen, false)) return;
+        irgen->builder->write_fn_addr("__destructor_for" + type.full_name());
+        irgen->builder->write_2b_inst(OpCode::Call, 2);
+        irgen->builder->write_1b_inst(OpCode::Pop);
     }
 
     llvm::Value* LLVMExpressionEvaluator::doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_primitive)
@@ -1908,8 +1834,8 @@ namespace Yoyo
         return nullptr;
     }
 
-    llvm::Value* LLVMExpressionEvaluator::operator()(CharLiteral* lit)
+    std::vector<Type> LLVMExpressionEvaluator::operator()(CharLiteral* lit)
     {
-        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), lit->value);
+        return {};
     }
 }

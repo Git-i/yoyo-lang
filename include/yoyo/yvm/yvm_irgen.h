@@ -55,7 +55,7 @@ namespace Yoyo {
 	};
     class YVMExpressionEvaluator
     {
-        LLVMIRGenerator* irgen;
+        YVMIRGenerator* irgen;
         std::optional<Type> target;
     public:
         Type lastDeducedType;
@@ -72,6 +72,10 @@ namespace Yoyo {
         /// either ways the value is the resulting value is pushed on the stack top
         /// 
         /// perform_load controls if we should output a value for non-sret type (ints)
+        /// for non-sret types perform_load used with on_stack effectively duplicates the value
+        /// perform_load set and on_stack not set does not allocate
+        /// perform_load not set and on_stack set does not allocate
+        /// perform_load not set and on_stack not set will allocate
         void implicitConvert(Expression* xp, const Type&, const Type&, bool on_stack, bool perform_load) const;
         void clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load) const;
         
@@ -102,28 +106,28 @@ namespace Yoyo {
             llvm::Value* operator()(PrefixOperation*);
             llvm::Value* operator()(GroupingExpression*);
         };
-        void operator()(IntegerLiteral*);
-        void operator()(BooleanLiteral*);
-        void operator()(TupleLiteral*);
-        void operator()(ArrayLiteral*);
-        void operator()(RealLiteral*);
-        void operator()(StringLiteral*);
-        void operator()(NameExpression*);
-        void operator()(GenericNameExpression*);
-        void operator()(PrefixOperation*);
-        void operator()(BinaryOperation*);
-        void operator()(GroupingExpression*);
-        void operator()(LogicalOperation*);
-        void operator()(PostfixOperation*);
-        void operator()(CallOperation*);
-        void operator()(SubscriptOperation*);
-        void operator()(LambdaExpression*);
-        void operator()(ScopeOperation*);
-        void operator()(ObjectLiteral*);
-        void operator()(NullLiteral*);
-        void operator()(AsExpression*);
-        void operator()(CharLiteral*);
-        void operator()(GCNewExpression*);
-        void operator()(MacroInvocation*);
+        std::vector<Type> operator()(IntegerLiteral*);
+        std::vector<Type> operator()(BooleanLiteral*);
+        std::vector<Type> operator()(TupleLiteral*);
+        std::vector<Type> operator()(ArrayLiteral*);
+        std::vector<Type> operator()(RealLiteral*);
+        std::vector<Type> operator()(StringLiteral*);
+        std::vector<Type> operator()(NameExpression*);
+        std::vector<Type> operator()(GenericNameExpression*);
+        std::vector<Type> operator()(PrefixOperation*);
+        std::vector<Type> operator()(BinaryOperation*);
+        std::vector<Type> operator()(GroupingExpression*);
+        std::vector<Type> operator()(LogicalOperation*);
+        std::vector<Type> operator()(PostfixOperation*);
+        std::vector<Type> operator()(CallOperation*);
+        std::vector<Type> operator()(SubscriptOperation*);
+        std::vector<Type> operator()(LambdaExpression*);
+        std::vector<Type> operator()(ScopeOperation*);
+        std::vector<Type> operator()(ObjectLiteral*);
+        std::vector<Type> operator()(NullLiteral*);
+        std::vector<Type> operator()(AsExpression*);
+        std::vector<Type> operator()(CharLiteral*);
+        std::vector<Type> operator()(GCNewExpression*);
+        std::vector<Type> operator()(MacroInvocation*);
     };
 }
