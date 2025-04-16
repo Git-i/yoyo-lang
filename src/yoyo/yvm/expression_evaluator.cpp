@@ -430,75 +430,80 @@ namespace Yoyo
         }
     }
 
-    void YVMExpressionEvaluator::clone(Expression* xp, const Type& left_type, bool, bool) const
+    void YVMExpressionEvaluator::clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load) const
     {
         if(!left_type.should_sret())
         {
-            if(into) irgen->builder->CreateStore(value, into);
-            return value;
+            if (on_stack)
+            {
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
+            }
         }
-        auto as_llvm = irgen->ToLLVMType(left_type, false);
+        auto native = irgen->toNativeType(left_type);
+        auto struct_native = reinterpret_cast<StructNativeTy*>(native);
         if(!left_type.is_lvalue)
         {
             //move
-            if(!into) return value;
-            auto& layout = irgen->code->getDataLayout();
-            size_t size = layout.getTypeAllocSize(as_llvm);
-            irgen->builder->CreateMemCpy(into, std::nullopt, value, std::nullopt, size);
-            return into;
+            if(!on_stack) return;
+            // TODO: memcpy and instrinsic system
         }
-        if(!into) into = irgen->Alloca("clone", as_llvm);
+        if(!on_stack) irgen->builder->write_alloca(NativeType::get_size(native));
         if(left_type.is_tuple())
         {
+            // for each element we:
+            // [
+            //      rev_stack_addr 1 => [src, dest, src]
+            //      ptr_off i => [src, dest, src elem ptr]
+            //      if(!should sret) load <type> => [src, dest, src elem]
+            //      rev_stack_addr 1 => [src, dest, src elem, dest elem ptr]
+            //      clone()
+            // ]
+            // top_consume
             size_t idx = 0;
             for(auto& sub : left_type.subtypes)
             {
-                auto sub_as_llvm = irgen->ToLLVMType(sub, false);
-                auto ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
-                auto val = irgen->builder->CreateStructGEP(as_llvm, value, idx);
-                if(!sub.should_sret()) val = irgen->builder->CreateLoad(sub_as_llvm, val);
-                clone(xp, val, sub, ptr);
+                auto sub_yvm = irgen->toTypeEnum(sub);
+                auto elem_off = NativeType::getElementOffset(struct_native, idx);
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+                irgen->builder->write_ptr_off(elem_off);
+                if(!sub.should_sret()) val = irgen->builder->write_2b_inst(OpCode::Load, sub_yvm);
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+                clone(xp, sub, true, false);
                 idx++;
             }
+            irgen->builder->write_1b_inst(OpCode::TopConsume);
         }
         else if(left_type.is_optional())
         {
-            auto opt_ty = irgen->ToLLVMType(left_type, false);
-            //opt is {data, bool}
-            auto has_value = irgen->builder->CreateLoad(llvm::Type::getInt1Ty(irgen->context),
-                irgen->builder->CreateStructGEP(opt_ty, value, 1));
-            auto fn = irgen->builder->GetInsertBlock()->getParent();
-            auto is_valid = llvm::BasicBlock::Create(irgen->context, "opt_valid_assign", fn, irgen->returnBlock);
-            auto opt_assign_cont = llvm::BasicBlock::Create(irgen->context, "opt_assign_cont", fn, irgen->returnBlock);
-            irgen->builder->CreateCondBr(has_value, is_valid, opt_assign_cont);
+            //---------check if the optional has a value----------------------
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Dup);
 
-            irgen->builder->SetInsertPoint(is_valid);
-            auto sub_value = irgen->builder->CreateStructGEP(opt_ty, value, 0);
-            if(!left_type.subtypes[0].should_sret())
-            {
-                auto subtype = llvm::dyn_cast<llvm::StructType>(opt_ty)->getElementType(0);
-                sub_value = irgen->builder->CreateLoad(subtype, sub_value);
-            }
-            clone(xp, sub_value, left_type.subtypes[0], irgen->builder->CreateStructGEP(opt_ty, into, 0));
-            irgen->builder->CreateBr(opt_assign_cont);
-
-            irgen->builder->SetInsertPoint(opt_assign_cont);
-            irgen->builder->CreateStore(has_value, irgen->builder->CreateStructGEP(opt_ty, into , 1));
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
+            irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::u8);
+            irgen->builder->write_const(uint8_t{ 0 });
+            irgen->builder->write_1b_inst(OpCode::CmpNe);
+            auto assign_cont = irgen->builder->unq_label_name("opt_assign_cont");
+            // if its not valid we skip the copy
+            irgen->builder->create_jump(OpCode::JumpIfFalse, assign_cont);
+            irgen->builder->write_1b_inst(OpCode::Dup);
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
+            if (!left_type.subtypes[0].should_sret()) 
+                irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(left_type.subtypes[0]));
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
+            clone(xp, left_type.subtypes[0], true, false);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            irgen->builder->create_label(assign_cont);
+            // duplicate the validity flag
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
+            irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::u8);
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+            irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u8);
         }
         else if (left_type.is_str())
         {
-            auto size = irgen->builder->CreateStructGEP(as_llvm, value, 1);
-            size = irgen->builder->CreateLoad(llvm::Type::getInt64Ty(irgen->context), size);
-            auto mem = irgen->builder->CreateStructGEP(as_llvm, value, 0);
-            mem = irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context, 0), mem);
-            auto dst_ptr_ptr = irgen->builder->CreateStructGEP(as_llvm, into, 0);
-            auto dst_size_ptr = irgen->builder->CreateStructGEP(as_llvm, into, 1);
-            auto dst_cap_ptr = irgen->builder->CreateStructGEP(as_llvm, into, 2);
-            auto ptr = irgen->Malloc("", size);
-            irgen->builder->CreateStore(size, dst_size_ptr);
-            irgen->builder->CreateStore(size, dst_cap_ptr);
-            irgen->builder->CreateStore(ptr, dst_ptr_ptr);
-            irgen->builder->CreateMemCpy(ptr, std::nullopt, mem, std::nullopt, size);
+            /*  No memory operations yet */
         }
         else if(left_type.is_variant())
         {
@@ -531,16 +536,14 @@ namespace Yoyo
             irgen->builder->SetInsertPoint(def);
             irgen->builder->CreateStore(type_idx, type_idx_ptr);
         }
-        else if(left_type.is_reference())
-        {
-            irgen->builder->CreateStore(value, into);
-        }
         //class types can define custom clone
         else if(auto decl_tup = left_type.module->findClass(left_type.block_hash, left_type.name).second)
         {
-            constexpr auto asdf = std::is_same_v<decltype(std::get<1>(*decl_tup)), decltype(std::get<10>(*decl_tup))>;
-            auto decl = std::get<2>(*decl_tup).get();
-            if(!decl->has_clone) { irgen->error(Error(xp, "Expression cannot be cloned")); return nullptr; }
+            auto decl = decl_tup->second.get();
+            if(!decl->has_clone) {
+                irgen->error(Error(xp, "Expression of type " + left_type.pretty_name(irgen->block_hash) + " cannot be cloned")); 
+                return;
+            }
             auto candidate = std::ranges::find_if(decl->stats, [](auto& meth)
             {
                 auto end = meth->attributes.end();
@@ -553,9 +556,12 @@ namespace Yoyo
                 auto decl = reinterpret_cast<FunctionDeclaration*>(candidate->get());
                 auto& sig = decl->signature;
                 std::string fn_name = std::get<0>(*decl_tup) + decl->name;
-                auto fn = irgen->code->getFunction(fn_name);
-                if(!fn) fn = declareFunction(fn_name, irgen, sig);
-                irgen->builder->CreateCall(fn, {into, value});
+                irgen->builder->write_1b_inst(OpCode::Dup); // dest for sret
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // src
+                irgen->builder->write_fn_addr(fn_name);
+                irgen->builder->write_2b_inst(OpCode::Call, 2);
+                irgen->builder->write_1b_inst(OpCode::Pop); // Pop the zero call returns
+                irgen->builder->write_1b_inst(OpCode::TopConsume);
             }
             else
             {
@@ -563,17 +569,18 @@ namespace Yoyo
                 size_t idx = 0;
                 for(auto& var : decl->vars)
                 {
-                    auto sub_val_ptr = irgen->builder->CreateStructGEP(as_llvm, value, idx);
-                    auto sub_into_ptr = irgen->builder->CreateStructGEP(as_llvm, into, idx);
-                    if(!var.type.should_sret())
-                        sub_val_ptr = irgen->builder->CreateLoad(irgen->ToLLVMType(var.type, false), sub_val_ptr);
-                    clone(xp, sub_val_ptr, var.type, sub_into_ptr);
+                    auto sub_yvm = irgen->toTypeEnum(var.type);
+                    auto elem_off = NativeType::getElementOffset(struct_native, idx);
+                    irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+                    irgen->builder->write_ptr_off(elem_off);
+                    if (!var.type.should_sret()) val = irgen->builder->write_2b_inst(OpCode::Load, sub_yvm);
+                    irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+                    clone(xp, var.type, true, false);
                     idx++;
                 }
             }
 
         }
-        return into;
     }
     void YVMExpressionEvaluator::destroy(const Type& type) const
     {
