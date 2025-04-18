@@ -96,7 +96,6 @@ namespace Yoyo {
         void doInvoke(CallOperation* op, const Type&);
         void doUnionVar(CallOperation* op, Type&);
         //the malloc and the size
-        std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator
         {
             YVMIRGenerator* irgen;

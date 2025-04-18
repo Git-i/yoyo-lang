@@ -1205,47 +1205,47 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(NameExpression* nm)
     {
-        std::string name(nm->text);
         auto ret_type = ExpressionTypeChecker{irgen}(nm);
-        if (!ret_type) { irgen->error(ret_type.error()); return nullptr; }
+        if (!ret_type) { irgen->error(ret_type.error()); return {}; }
         for(size_t i = irgen->variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;
-            if(auto var = irgen->variables[idx].find(name); var != irgen->variables[idx].end())
+            for(auto& var : irgen->variables[idx])
             {
-                if(!std::get<1>(var->second).should_sret())
+                if (var.first != nm->text) continue;
+                irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first);
+                if(!var.second.second.should_sret())
                 {
-                    return irgen->builder->CreateLoad(
-                        irgen->ToLLVMType(std::get<1>(var->second), false), std::get<0>(var->second), name);
+                    irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(var.second.second));
                 }
                 if(!ret_type->is_lvalue)
                 {
-                    //mark the drop flag
-                    auto drop_flag = std::get<2>(var->second);
-                    if(drop_flag) irgen->builder->CreateStore(llvm::ConstantInt::getFalse(irgen->context), drop_flag);
+                    irgen->builder->write_1b_inst(OpCode::PopReg);
                 }
-                return std::get<0>(var->second);
+                return {};
             }
         }
-        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, name); fn)
+        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, nm->text); fn)
         {
-            auto llvm_fn = irgen->code->getFunction(name_prefix + name);
-            if(!llvm_fn)
-                llvm_fn = declareFunction(name_prefix + name, irgen, fn->sig);
-            return llvm_fn;
+            irgen->builder->write_fn_addr(name_prefix + nm->text);
+            return {};
         }
-        if (ret_type->is_error_ty()) return nullptr;
+        if (ret_type->is_error_ty()) return {};
         auto cnst = ConstantEvaluator{ irgen }(nm);
-        auto as_llvm = irgen->ToLLVMType(*ret_type, false);
-        if (ret_type->is_integral() || ret_type->is_char() || ret_type->is_boolean() || ret_type->get_decl_if_enum())
-            return std::visit([as_llvm]<typename T>(T & val) {
-            if constexpr (std::is_integral_v<T>) return llvm::ConstantInt::get(as_llvm, val);
-            else return static_cast<llvm::ConstantInt*>(nullptr);
-        }, cnst.internal_repr);
-        else return reinterpret_cast<llvm::Constant*>(std::get<void*>(cnst.internal_repr));
+        if (ret_type->is_integral() || ret_type->is_char() || ret_type->is_boolean() || ret_type->get_decl_if_enum());
+        //    return std::visit([as_llvm]<typename T>(T & val) {
+        //    if constexpr (std::is_integral_v<T>) {
+        //        return llvm::ConstantInt::get(as_llvm, val);
+        //    }
+        //    else return std::vector<Type>{};
+        //}, cnst.internal_repr);
+        else {
+            irgen->builder->write_const(std::get<void*>(cnst.internal_repr));
+            return {};
+        }
     }
 
-    llvm::Value* LLVMExpressionEvaluator::operator()(GenericNameExpression* nm)
+    std::vector<Type> YVMExpressionEvaluator::operator()(GenericNameExpression* nm)
     {
         if(auto[hash, fn] = irgen->module->findGenericFn(irgen->block_hash, nm->text); fn)
         {
@@ -1253,14 +1253,15 @@ namespace Yoyo
             //it has not already been instantiated
             if(auto[name_prefx, ifn] = irgen->module->findFunction(irgen->block_hash, mangled_name_suffix); !ifn)
                 irgen->generateGenericFunction(irgen->module, hash, fn, nm->arguments);
-            return irgen->code->getFunction(hash + mangled_name_suffix);
+            irgen->builder->write_fn_addr(hash + mangled_name_suffix);
+            return {};
         }
     }
 
-    llvm::Value* LLVMExpressionEvaluator::operator()(PrefixOperation* op)
+    std::vector<Type> YVMExpressionEvaluator::operator()(PrefixOperation* op)
     {
         auto target = ExpressionTypeChecker{irgen}(op);
-        if(!target) {irgen->error(target.error()); return nullptr;}
+        if (!target) { irgen->error(target.error()); return {}; }
 
         switch(op->op.type)
         {
@@ -1303,11 +1304,11 @@ namespace Yoyo
         }
         }
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(BinaryOperation* op)
+    std::vector<Type> YVMExpressionEvaluator::operator()(BinaryOperation* op)
     {
         auto type_checker = ExpressionTypeChecker{irgen};
         auto res =  type_checker(op);
-        if(!res) {irgen->error(res.error()); return nullptr;}
+        if (!res) { irgen->error(res.error()); return {}; }
 
         auto l_as_var = op->lhs->toVariant();
         auto r_as_var = op->rhs->toVariant();
@@ -1315,9 +1316,9 @@ namespace Yoyo
         auto left_t = std::visit(type_checker, l_as_var);
         auto right_t = std::visit(type_checker, r_as_var);
 
-        if (!left_t) { irgen->error(left_t.error()); return nullptr; }
+        if (!left_t) { irgen->error(left_t.error()); return {}; }
         if(op->op.type != TokenType::Dot)
-            if (!right_t) { irgen->error(right_t.error()); return nullptr; }
+            if (!right_t) { irgen->error(right_t.error()); return {}; }
 
         auto lhs = op->lhs.get(); auto rhs = op->rhs.get();
         switch(op->op.type)
@@ -1338,15 +1339,20 @@ namespace Yoyo
         case DoubleEqual: return doCmp(EQ, lhs, rhs, *left_t, *right_t, *res);
         case Spaceship: return doCmp(SPACE, lhs, rhs, *left_t, *right_t, *res);
         case Dot: return doDot(op->lhs.get(), op->rhs.get(), *left_t);
-        case DoubleDotEqual: irgen->error(Error(op, "Not implemented yet")); return nullptr;
+        case DoubleDotEqual: irgen->error(Error(op, "Not implemented yet")); return {};
         case DoubleDot: return doRange(lhs, rhs, *left_t, *right_t, *res);
         case Equal:
-            return implicitConvert(rhs, std::visit(*this, r_as_var), *right_t, *left_t, std::visit(LValueEvaluator{ irgen }, l_as_var));
+        {
+            std::visit(*this, r_as_var);
+            std::visit(LValueEvaluator{ irgen }, l_as_var);
+            implicitConvert(rhs, *right_t, *left_t, true, false);
+            return {};
+        }
         default:; //TODO
         }
-        return nullptr;
+        return {};
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(GroupingExpression* op)
+    std::vector<Type> YVMExpressionEvaluator::operator()(GroupingExpression* op)
     {
         return std::visit(*this, op->expr->toVariant());
     }
@@ -1401,7 +1407,7 @@ namespace Yoyo
         }
         return nullptr;
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(PostfixOperation*) { return nullptr; }
+    std::vector<Type> YVMExpressionEvaluator::operator()(PostfixOperation*) { return nullptr; }
     llvm::Value* LLVMExpressionEvaluator::fillArgs(bool uses_sret,
         const FunctionSignature& sig,
         std::vector<llvm::Value*>& args, llvm::Value* first, std::vector<std::unique_ptr<Expression>>& exprs)
