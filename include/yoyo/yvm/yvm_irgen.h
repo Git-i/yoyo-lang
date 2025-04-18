@@ -91,7 +91,7 @@ namespace Yoyo {
         std::vector<Type> doRange(Expression*, Expression*, const Type&, const Type&, const Type&);
         std::vector<Type> doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
             const Type& right_type, const Type&);
-        void fillArgs(bool, const FunctionSignature&, std::unique_ptr<Expression>&,
+        void fillArgs(bool, const FunctionSignature&, const std::unique_ptr<Expression>&,
             std::vector<std::unique_ptr<Expression>>& exprs);
         std::vector<Type> doInvoke(CallOperation* op, const Type&);
         std::vector<Type> doUnionVar(CallOperation* op, Type&);

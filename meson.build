@@ -23,11 +23,6 @@ sources = [
     'src/yoyo/constexpr_eval.cpp',
     'src/yoyo/macro_eval.cpp',
 
-    # llvm specific
-    
-
-    
-
     # headers
     'include/yoyo/app_module.h',
     'include/yoyo/ast_node.h',
@@ -88,12 +83,14 @@ if backend == 'yvm' or backend == 'both'
         'include/yoyo/yvm/yvm_engine.h',
         'include/yoyo/yvm/yvm_module.h',
         'include/yoyo/yvm/native_type.h',
+        'include/yoyo/yvm/unique_type_selector.h',
 
         'src/yoyo/yvm/ir_gen.cpp',
         'src/yoyo/yvm/expression_evaluator.cpp',
         'src/yoyo/yvm/engine.cpp',
         'src/yoyo/yvm/module.cpp',
         'src/yoyo/yvm/native_type.cpp',
+        'src/yoyo/yvm/unique_type_selector.cpp',
     ]
 endif
 yoyo_args = ['-DYOYO_DLL']

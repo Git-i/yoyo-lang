@@ -15,7 +15,7 @@ namespace Yoyo
 #endif
     }
     
-    void IRGenerator::saturateSignature(FunctionSignature& sig, Module* module)
+    void IRGenerator::saturateSignature(FunctionSignature& sig, ModuleBase* module)
     {
         sig.returnType.saturate(module, this);
         for(auto& param: sig.parameters)
@@ -26,8 +26,8 @@ namespace Yoyo
     
     bool IRGenerator::isShadowing(const std::string& name) const
     {
-        for(auto& map : variables)
-            if(map.contains(name)) return true;
+        //for(auto& map : variables)
+        //    if(map.contains(name)) return true;
         return false;
     }
     bool isValidCloneMethod(const Type& tp, const FunctionSignature& sig)
@@ -86,7 +86,7 @@ namespace Yoyo
             if (!impl.impl_for.subtypes.empty())
             {
                 auto [hash, generic] = impl.impl_for.module->findGenericInterface(impl.impl_for.block_hash, impl.impl_for.name);
-                ExpressionEvaluator{ this }.generateGenericInterface(impl.impl_for.module, hash, generic, impl.impl_for.subtypes);
+                generateGenericInterface(impl.impl_for.module, hash, generic, impl.impl_for.subtypes);
                 decl = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name + mangleGenericArgs(impl.impl_for.subtypes)).second;
             }
             else decl = impl.impl_for.module->findInterface(impl.impl_for.block_hash, impl.impl_for.name).second;
@@ -241,7 +241,7 @@ namespace Yoyo
         return std::nullopt;
     }
 
-    void IRGenerator::generateGenericFunction(Module* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
+    void IRGenerator::generateGenericFunction(ModuleBase* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
     {
         for (auto& type : types) type.saturate(mod, this);
         std::string name = fn->name + IRGenerator::mangleGenericArgs(types);
@@ -265,15 +265,15 @@ namespace Yoyo
         this->block_hash = std::move(old_hash);
         this->module = module;
     }
-    void IRGenerator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types)
+    void IRGenerator::generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types)
     {
         for (auto& type : types) type.saturate(mod, this);
         generateGenericClass(mod, hash, decl, std::span<const Type>{types});
     }
-    void IRGenerator::generateGenericClass(Module* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types)
+    void IRGenerator::generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types)
     {
         std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
-        if (auto exists = mod->findType(hash, name); exists) return;
+        if (auto exists = mod->findClass(hash, name); exists.second) return;
         auto module = this->module;
         this->module = mod;
 
@@ -291,7 +291,7 @@ namespace Yoyo
         this->block_hash = std::move(old_hash);
         this->module = module;
     }
-    void IRGenerator::generateGenericAlias(Module* mod, const std::string& block, GenericAliasDeclaration* decl,
+    void IRGenerator::generateGenericAlias(ModuleBase* mod, const std::string& block, GenericAliasDeclaration* decl,
         std::span<Type> types)
     {
         for (auto& type : types) type.saturate(mod, this);
@@ -310,7 +310,7 @@ namespace Yoyo
         this->block_hash = std::move(old_hash);
         this->module = module;
     }
-    void IRGenerator::generateGenericInterface(Module* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types)
+    void IRGenerator::generateGenericInterface(ModuleBase* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types)
     {
         for (auto& type : types) type.saturate(md, this);
         std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
@@ -333,21 +333,6 @@ namespace Yoyo
         md->interfaces[block].emplace_back(itf);
     }
 
-    bool IRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, Module* md, Engine* eng)
-    {
-        block_hash = md->module_hash;
-        md->code = llvm::orc::ThreadSafeModule(std::make_unique<llvm::Module>(name, context), eng->llvm_context);
-        module = md;
-        code = md->code.getModuleUnlocked();
-        builder = std::make_unique<llvm::IRBuilder<>>(context);
-        pushScope();
-        for (auto& stat : statements) {
-            current_Statement = &stat;
-            std::visit(*this, stat->toVariant());
-        }
-        builder = nullptr;
-        return !has_error;
-    }
 
     
 }

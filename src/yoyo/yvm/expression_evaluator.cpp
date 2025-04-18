@@ -8,6 +8,7 @@
 #include "yvm/yvm_irgen.h"
 #include "fn_type.h"
 #include <format>
+#include <yvm/yvm_module.h>
 using Yvm::OpCode;
 namespace Yoyo
 {
@@ -1315,7 +1316,7 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(PostfixOperation*) { return {}; }
     void YVMExpressionEvaluator::fillArgs(bool uses_sret,
-        const FunctionSignature& sig, std::unique_ptr<Expression>& first_expr,
+        const FunctionSignature& sig, const std::unique_ptr<Expression>& first_expr,
         std::vector<std::unique_ptr<Expression>>& exprs)
     {
         if(uses_sret)
@@ -1394,8 +1395,9 @@ namespace Yoyo
 
                     auto first = std::visit(*this, expr->lhs->toVariant());
                     fillArgs(uses_sret, fn->sig, expr->lhs, op->arguments);
+                    irgen->builder->write_fn_addr(function_name);
                     irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + 1 + uses_sret);
-                    if (!uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+                    if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
                     if (return_t->is_non_owning(irgen));
                     //stealUsages(args, return_value);
                     else;
@@ -1412,27 +1414,23 @@ namespace Yoyo
                     auto it = std::ranges::find_if(interface->methods, [name_expr](auto& mth) {
                         return mth->name == name_expr->text;
                         });
-                    auto fty = irgen->ToLLVMSignature((*it)->signature);
                     bool uses_sret = (*it)->signature.returnType.should_sret();
-                    std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
-                    auto as_llvm_type = irgen->ToLLVMType(left_ty->deref(), false);
                     auto value = std::visit(*this, expr->lhs->toVariant());
 
-                    auto pointer_type = llvm::PointerType::get(irgen->context, 0);
+                    //auto pointer_type = llvm::PointerType::get(irgen->context, 0);
 
-                    auto param = irgen->builder->CreateLoad(pointer_type,
-                        irgen->builder->CreateStructGEP(as_llvm_type, value, 0));
-                    auto callee = irgen->builder->CreateLoad(pointer_type, 
-                        irgen->builder->CreateStructGEP(as_llvm_type, value, 1 + std::distance(interface->methods.begin(), it)));
+                    //auto param = irgen->builder->CreateLoad(pointer_type,
+                    //    irgen->builder->CreateStructGEP(as_llvm_type, value, 0));
+                    //auto callee = irgen->builder->CreateLoad(pointer_type, 
+                    //    irgen->builder->CreateStructGEP(as_llvm_type, value, 1 + std::distance(interface->methods.begin(), it)));
 
-                    llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, param, op->arguments);
-                    auto call_val = irgen->builder->CreateCall(fty, callee, args);
-                    if (!uses_sret) return_value = call_val;
-                    if (return_t->is_non_owning(irgen))
-                        stealUsages(args, return_value);
-                    else
-                        clearUsages(args, *this);
-                    return return_value;
+                    //llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, param, op->arguments);
+                    irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + 1);
+                    if (return_t->is_non_owning(irgen));
+                    //stealUsages(args, return_value);
+                    else;
+                        //clearUsages(args, *this);
+                    return {};
                 }
             }
             auto right_t = std::visit(ExpressionTypeChecker{ irgen }, expr->rhs->toVariant());
@@ -1444,64 +1442,55 @@ namespace Yoyo
                 std::string fn_name = right_t->name.substr(pos + 1);
                 auto dets = irgen->module->findClass(left_t->deref().block_hash, left_t->deref().full_name_no_block()).second;
                 fn_name = std::get<0>(*dets) + name + "::" + fn_name;
-                auto callee = irgen->code->getFunction(fn_name);
-                bool uses_sret = callee->hasStructRetAttr();
-                std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
+                
+                bool uses_sret = t->sig.returnType.should_sret();
 
-                llvm::Value* return_value = fillArgs(uses_sret, t->sig, args, std::visit(*this, expr->lhs->toVariant()), op->arguments);
-                auto call_val = irgen->builder->CreateCall(callee, args);
-                if (!uses_sret) return_value = call_val;
-                if (return_t->is_non_owning(irgen))
-                    stealUsages(args, return_value);
-                else
-                    clearUsages(args, *this);
-                return return_value;
+                fillArgs(uses_sret, t->sig, expr->lhs, op->arguments);
+                irgen->builder->write_fn_addr(fn_name);
+                irgen->builder->write_2b_inst(OpCode::Call, 2);
+                if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+                if (return_t->is_non_owning(irgen));
+                //stealUsages(args, return_value);
+                else;
+                    //clearUsages(args, *this);
+                return {};
                 
             }
-            auto* callee = is_lambda ?
-                irgen->code->getFunction(irgen->block_hash + right_t->name) :
-                llvm::dyn_cast_or_null<llvm::Function>(std::visit(*this, expr->rhs->toVariant()));
-            if(!callee) { /* return an llvm invalid value*/ return nullptr; }
-            const auto* sig = is_lambda ? &reinterpret_cast<LLModule*>(right_t->module)->lambdas[right_t->name].second->sig
+            
+
+            const auto* sig = is_lambda ? &reinterpret_cast<YVMModule*>(right_t->module)->lambdas[right_t->name].second->sig
                 : &right_t->sig;
-            bool uses_sret = callee->hasStructRetAttr();
-            std::vector<llvm::Value*> args(op->arguments.size() + 1 + uses_sret);
-            auto first = std::visit(*this, expr->lhs->toVariant());
-            if (left_t->deref() != sig->parameters[0].type.deref())
-            {
-                first = implicitConvert(expr->lhs.get(), first, *left_t, sig->parameters[0].type, nullptr);
-            }
-            llvm::Value* return_value = fillArgs(uses_sret, fn.sig, args, first, op->arguments);
-            if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
-            auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
-            if(!uses_sret) return_value = call_val;
-            if(return_t->is_non_owning(irgen))
-                stealUsages(args, return_value);
-            else
-                clearUsages(args, *this);
-            return return_value;
+            bool uses_sret = sig->returnType.should_sret();
+
+            fillArgs(uses_sret, fn.sig, expr->lhs, op->arguments);
+            if (is_lambda) irgen->builder->write_fn_addr(irgen->block_hash + right_t->name);
+            else std::visit(*this, expr->rhs->toVariant());
+            //if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
+            irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + uses_sret);
+            if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+            if (return_t->is_non_owning(irgen));
+            //stealUsages(args, return_value);
+            else;
+              //  clearUsages(args, *this);
+            return {};
         }
 
-        auto callee_val = std::visit(*this, op->callee->toVariant());
-        auto* callee = is_lambda ?
-            irgen->code->getFunction(irgen->block_hash + t->name) :
-            llvm::dyn_cast_or_null<llvm::Function>(callee_val);
-        if(!callee) { return nullptr; }
-        bool uses_sret = callee->hasStructRetAttr();
-        std::vector<llvm::Value*> args(op->arguments.size() + uses_sret);
-        llvm::Value* return_value = fillArgs(uses_sret, fn.sig, args, nullptr, op->arguments);
-        if(is_lambda) args.push_back(callee_val);
-        auto call_val = irgen->builder->CreateCall(callee->getFunctionType(), callee, args);
-        if(!uses_sret) return_value = call_val;
-        if(return_t->is_non_owning(irgen))
-            stealUsages(args, return_value);
-        else
-            clearUsages(args, *this);
-        return return_value;
+        
+        bool uses_sret = return_t->should_sret();
+        fillArgs(uses_sret, fn.sig, {}, op->arguments);
+        irgen->builder->write_fn_addr(irgen->block_hash + t->name);
+
+        irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size());
+        if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (return_t->is_non_owning(irgen));
+        //stealUsages(args, return_value);
+        else;
+            //clearUsages(args, *this);
+        return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(SubscriptOperation* op)
     {
-        auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
+        /*auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
         if (!obj_ty) { irgen->error(obj_ty.error()); return {}; }
         auto llvm_t = irgen->ToLLVMType(obj_ty->deref(), false);
         auto obj = std::visit(*this, op->object->toVariant());
@@ -1517,7 +1506,7 @@ namespace Yoyo
             data_ptr = irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context, 0), data_ptr);
             auto sub_ty = irgen->ToLLVMType(obj_ty->subtypes[0], false);
             return irgen->builder->CreateGEP(sub_ty, data_ptr, { idx });
-        }
+        }*/
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(GCNewExpression* expr)
     {
@@ -1530,118 +1519,57 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(LambdaExpression* expr)
     {
-        auto t = ExpressionTypeChecker{ irgen }(expr);
-        if (!t) { irgen->error(t.error()); return nullptr; }
-        auto context = reinterpret_cast<LLModule*>(t->module)->lambdas.at(t->name).first;
-        auto ctx_object = irgen->Alloca("lambda_context", context);
-        //copy types into the context
-        size_t idx = 0;
-        if (!reinterpret_cast<LLModule*>(irgen->module)->lambdas.contains(t->name))
-        {
-            std::vector<llvm::Type*> context_types;
-            context_types.reserve(expr->captures.size());
-            irgen->saturateSignature(expr->sig, irgen->module);
-            for (auto& capture : expr->captures)
-            {
-                NameExpression name(capture.name);
-                auto type = ExpressionTypeChecker{ irgen }(&name);
-                if (!type) irgen->error(type.error());
-                llvm::Type* tp = capture.cp_type == Ownership::Owning ? irgen->ToLLVMType(*type, false) :
-                    llvm::PointerType::get(irgen->context, 0);
-                context_types.push_back(tp);
-            }
-            //was considering stealing the unique ptr, but cloning is much more convenient also we can choose not to store the body
-            //and free memory
-            auto context = llvm::StructType::get(irgen->context, context_types);
-            decltype(expr->body) body = nullptr;
-            expr->body.swap(body);
-            auto new_expr_generic = ExpressionTreeCloner::copy_expr(expr);
-            expr->body.swap(body);
-            std::unique_ptr<LambdaExpression> new_expr(reinterpret_cast<LambdaExpression*>(new_expr_generic.get()));
-            new_expr_generic.release();
-            reinterpret_cast<LLModule*>(irgen->module)->lambdas[t->name] = { context, std::move(new_expr) };
-        }
-        for(auto& capture : expr->captures)
-        {
-            NameExpression name(capture.name);
-            auto type = ExpressionTypeChecker{irgen}(&name);
-            bool is_last_use = irgen->function_cfgs.back().last_uses.at(name.text).contains(expr);
-            type->is_lvalue = !is_last_use;
-            llvm::Value* lhs = irgen->builder->CreateStructGEP(context, ctx_object, idx);
-            if (capture.cp_type != Ownership::Owning)
-            {
-                llvm::Value* val = LValueEvaluator{ irgen }(&name);
-                irgen->builder->CreateStore(val, lhs);
-            }
-            else
-            {
-                llvm::Value* val = (*this)(&name);
-                clone(&name, val, *type, lhs);
-            }
-            idx++;
-        }
-        std::string name = "__lambda" + expr->hash;
-        
-        FunctionSignature sig = expr->sig;
-        //insert a pointer to the context at the end of the signature
-        sig.parameters.push_back(FunctionParameter{.type = Type{.name = name, .module = irgen->module}});
-        FunctionDeclaration decl(name,std::move(sig), std::move(expr->body));
-        auto old_hash = irgen->reset_hash();
-        (*irgen)(&decl);
-        irgen->block_hash.swap(old_hash);
-        return ctx_object;
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::operator()(ScopeOperation* op)
     {
         auto ty = ExpressionTypeChecker{irgen}(op);
-        if (!ty) { irgen->error(ty.error()); return nullptr; }
+        if (!ty) { irgen->error(ty.error()); return {}; }
         if(ty->is_function())
         {
             std::string mangled_name = ty->block_hash + UnsaturatedTypeIterator(op->type).last().name;
-            auto fn = irgen->code->getFunction(mangled_name);
-            if(!fn) fn = declareFunction(mangled_name, irgen, ty->sig);
-            return fn;
+            irgen->builder->write_fn_addr(mangled_name);
+            return {};
         }
         if (auto enm = ty->get_decl_if_enum())
         {
             auto name = UnsaturatedTypeIterator(op->type).last().name;
-            return llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), enm->values[name]);
+            irgen->builder->write_const(enm->values[name]);
         }
-        if (ty->is_error_ty()) return nullptr;
+        if (ty->is_error_ty()) return {};
         // try to eval as const
         auto cnst = ConstantEvaluator{ irgen }(op);
         
-        auto as_llvm = irgen->ToLLVMType(*ty, false);
-        if (ty->is_integral() || ty->is_char() || ty->is_boolean() || ty->get_decl_if_enum())
-            return std::visit([as_llvm]<typename T>(T & val) {
-            if constexpr (std::is_integral_v<T>) return llvm::ConstantInt::get(as_llvm, val);
-            else return static_cast<llvm::ConstantInt*>(nullptr);
-        }, cnst.internal_repr);
-        else return reinterpret_cast<llvm::Constant*>(std::get<void*>(cnst.internal_repr));
+        //auto as_llvm = irgen->ToLLVMType(*ty, false);
+        //if (ty->is_integral() || ty->is_char() || ty->is_boolean() || ty->get_decl_if_enum())
+        //    return std::visit([as_llvm]<typename T>(T & val) {
+        //    if constexpr (std::is_integral_v<T>) return llvm::ConstantInt::get(as_llvm, val);
+        //    else return static_cast<llvm::ConstantInt*>(nullptr);
+        //}, cnst.internal_repr);
+        //else return reinterpret_cast<llvm::Constant*>(std::get<void*>(cnst.internal_repr));
     }
 
-    llvm::Value* LLVMExpressionEvaluator::operator()(ObjectLiteral* lit)
+    std::vector<Type> YVMExpressionEvaluator::operator()(ObjectLiteral* lit)
     {
         auto t = ExpressionTypeChecker{irgen}(lit);
-        if(!t) {irgen->error(t.error());return nullptr;}
-        auto as_llvm_type = irgen->ToLLVMType(*t, false);
+        if (!t) { irgen->error(t.error());return {}; }
+        auto as_native_type = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*t));
         auto decl = t->get_decl_if_class(irgen);
-        auto value = irgen->Alloca("obj_lit",as_llvm_type);
+        irgen->builder->write_alloca(NativeType::get_size(as_native_type));
 
-        auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
         for(size_t i = 0; i < decl->vars.size(); i++)
         {
-            auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), i);
             auto& var = decl->vars[i];
             auto val_ty = std::visit(ExpressionTypeChecker{irgen, var.type}, lit->values[var.name]->toVariant());
             if (!val_ty) { irgen->error(val_ty.error()); continue; }
-            auto val = std::visit(LLVMExpressionEvaluator{irgen, var.type}, lit->values[var.name]->toVariant());
-
-            auto mem_ptr = irgen->builder->CreateGEP(as_llvm_type, value, {zero_const, idx_const});
-            implicitConvert(lit->values[var.name].get(), val, *val_ty, var.type, mem_ptr);
+            std::visit(YVMExpressionEvaluator{irgen, var.type}, lit->values[var.name]->toVariant());
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native_type, i));
+            implicitConvert(lit->values[var.name].get(), *val_ty, var.type, true, false);
+            irgen->builder->write_1b_inst(OpCode::Pop);
         }
-        return value;
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::operator()(NullLiteral*)
@@ -1651,17 +1579,17 @@ namespace Yoyo
 
     std::vector<Type> YVMExpressionEvaluator::operator()(AsExpression* expr)
     {
-        auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
+        /*auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
         auto final_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
         if (!final_ty) { irgen->error(final_ty.error()); return {}; }
         if (!ty) { irgen->error(ty.error()); return {}; }
-        auto as_llvm = irgen->ToLLVMType(*final_ty, false);
-        auto internal_as_llvm = irgen->ToLLVMType(*ty, true);
+        auto as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*final_ty));
+        auto internal_as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*ty));
         std::visit(*this, expr->expr->toVariant());
         if(ty->is_variant())
         {
             const std::set subtypes(ty->subtypes.begin(), ty->subtypes.end());
-            auto val = irgen->Alloca("variant_conv", as_llvm);
+            irgen->builder->write_alloca(NativeType::get_size(as_native));
             auto ptr = irgen->builder->CreateStructGEP(as_llvm, val, 0);
             auto internal_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 0);
             irgen->builder->CreateStore(internal_ptr, ptr);
@@ -1739,7 +1667,8 @@ namespace Yoyo
             }
             return val;
         }
-        return nullptr;
+        return nullptr;*/
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::operator()(CharLiteral* lit)

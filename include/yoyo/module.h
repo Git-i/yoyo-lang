@@ -5,11 +5,7 @@
 #include <unordered_map>
 #include "overload_details.h"
 #include "constant.h"
-namespace llvm
-{
-    class StructType;
-    class Type;
-}
+
 namespace Yoyo
 {
     class Engine;
