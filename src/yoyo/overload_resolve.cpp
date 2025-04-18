@@ -10,15 +10,15 @@ namespace Yoyo
     {
         constexpr size_t max_freq = std::numeric_limits<size_t>::max();
         std::vector<std::pair<size_t, OverloadDetailsBinary*>> overloads;
-        std::array<Module*, 4> modules{ lhs.module, lhs.deref().module, rhs.module, rhs.module };
-        std::array<Module*, 4> encountered{};
+        std::array<ModuleBase*, 4> modules{ lhs.module, lhs.deref().module, rhs.module, rhs.module };
+        std::array<ModuleBase*, 4> encountered{};
         size_t enc_idx = 0;
         auto md = modules | std::views::transform([&encountered, &enc_idx](auto& module) {
             auto it = std::ranges::find(encountered, module);
             if (it == encountered.end()) {
                 encountered[enc_idx++] = module; return module;
             }
-            return static_cast<Module*>(nullptr);
+            return static_cast<ModuleBase*>(nullptr);
             });
         for(auto module : md)
         {

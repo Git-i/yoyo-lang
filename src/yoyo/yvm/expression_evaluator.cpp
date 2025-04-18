@@ -38,19 +38,12 @@ namespace Yoyo
             out->setName(name);
         }
     }
-    void clearUsages(std::vector<llvm::Value*>& args, const LLVMExpressionEvaluator& eval)
+    void clearUsages(std::vector<Type>& args, const YVMExpressionEvaluator& eval)
     {
-        for(auto value: args)
+        for(auto& value: args)
         {
-            if (!value) continue;
-            if(value->getName().starts_with("__del_parents___"))
-            {
-                auto nm = value->getName();
-                auto& lifetimes = **reinterpret_cast<ExtendedLifetimes* const*>(nm.data() + 16);
-                for(auto&[type, obj]: lifetimes.objects)
-                    eval.destroy(obj, type);
-                delete &lifetimes;
-            }
+            eval.irgen->builder->write_1b_inst(OpCode::Switch);
+            eval.destroy(value);
         }
     }
     int64_t getIntMinOf(const Type& type)
@@ -652,72 +645,11 @@ namespace Yoyo
         }
         return nullptr;
     }
-
-
-    /*
-     * Implicit conversion is not done in expression except literals
-     * ilit op ilit = ilit
-     * ilit op flit = flit
-     * ilit op int = int
-     * ilit op float = float
-     *
-     * flit op float = float
-     * flit op flit = flit
-     */
-    void convertLiterals(llvm::Value** lhs,
-        llvm::Value** rhs,
-        const Type& left_type,
-        const Type& right_type, LLVMIRGenerator* irgen, const LLVMExpressionEvaluator* eval)
+    std::string getOperatorFunction(TokenType t, YVMIRGenerator* irgen, OverloadDetailsBinary* target)
     {
-        if(left_type.name == "ilit")
-        {
-            auto as_int = llvm::dyn_cast<llvm::ConstantInt>(*lhs);
-            if(right_type.name == "ilit") return;
-            if(right_type.name == "filt")
-            {
-                if(as_int->isNegative()) *lhs = irgen->builder->CreateSIToFP(*lhs, llvm::Type::getDoubleTy(irgen->context));
-                else *lhs = irgen->builder->CreateUIToFP(*lhs, llvm::Type::getDoubleTy(irgen->context));
-                return;
-            }
-            *lhs = eval->implicitConvert(nullptr, *lhs, left_type, right_type);
-            return;
-        }
-        if(left_type.name == "flit")
-        {
-            if(right_type.name == "flit") return;
-            *lhs = eval->implicitConvert(nullptr, *lhs, left_type, right_type);
-            return;
-        }
-        if(right_type.name == "ilit" || right_type.name == "flit")
-            convertLiterals(rhs, lhs, right_type, left_type, irgen, eval);
+        return target->mangled_name(t);
     }
-    llvm::FunctionType* BinOverloadToLLVMSig(LLVMIRGenerator* irgen, OverloadDetailsBinary* bin)
-    {
-        bool should_sret = bin->result.should_sret();
-        auto ptr_ty = llvm::PointerType::get(irgen->context, 0);
-        llvm::Type* res = should_sret ? llvm::Type::getVoidTy(irgen->context)
-            : irgen->ToLLVMType(bin->result, false);
-        std::vector<llvm::Type*> args;
-        args.reserve(2 + should_sret);
-        if(should_sret) args.push_back(ptr_ty);
-        args.push_back(bin->left.should_sret() ? ptr_ty: irgen->ToLLVMType(bin->left, false));
-        args.push_back(bin->right.should_sret() ? ptr_ty: irgen->ToLLVMType(bin->right, false));
-        return llvm::FunctionType::get(res, args, false);
-    }
-    llvm::Function* getOperatorFunction(TokenType t, LLVMIRGenerator* irgen, OverloadDetailsBinary* target)
-    {
-        auto fn_name = target->mangled_name(t);
-        auto fn = irgen->code->getFunction(fn_name);
-        if(!fn)
-        {
-            fn = llvm::Function::Create(BinOverloadToLLVMSig(irgen, target), llvm::GlobalValue::ExternalLinkage,
-                fn_name, irgen->code);
-            if(target->result.should_sret()) fn->addAttributeAtIndex(1,
-                llvm::Attribute::get(irgen->context,llvm::Attribute::StructRet, irgen->ToLLVMType(target->result, false)));
-        }
-        return fn;
-    }
-    llvm::Value* LLVMExpressionEvaluator::doAddition(
+    std::vector<Type> YVMExpressionEvaluator::doAddition(
         Expression* lhs,
         Expression* rhs,
         const Type& left_type,
@@ -725,23 +657,46 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateAdd(lhs_e, rhs_e);
+        if (left_type.name == "ilit" && right_type.name == "ilit") {
+            irgen->builder->write_1b_inst(OpCode::Add64);
+            return {};
+        }
         auto target = resolveAdd(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Plus, irgen, target);
-        std::vector<llvm::Value*> args;
-        if(target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+        
+        if (target->result.should_sret())
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target->result.is_non_owning(irgen))
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doMinus(
+    std::vector<Type> YVMExpressionEvaluator::doMinus(
         Expression* lhs,
         Expression* rhs,
         const Type& left_type,
@@ -749,23 +704,46 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSub(lhs_e, rhs_e);
-        auto target = resolveSub(left_type, right_type, irgen);
+        if (left_type.name == "ilit" && right_type.name == "ilit") {
+            irgen->builder->write_1b_inst(OpCode::Sub64);
+            return {};
+        }
+        auto target = resolveAdd(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Minus, irgen, target);
-        std::vector<llvm::Value*> args;
-        if(target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+
+        if (target->result.should_sret())
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target->result.is_non_owning(irgen))
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doMult(
+    std::vector<Type> YVMExpressionEvaluator::doMult(
         Expression* lhs,
         Expression* rhs,
         const Type& left_type,
@@ -773,23 +751,46 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateMul(lhs_e, rhs_e);
-        auto target = resolveMul(left_type, right_type, irgen);
+        if (left_type.name == "ilit" && right_type.name == "ilit") {
+            irgen->builder->write_1b_inst(OpCode::Mul64);
+            return {};
+        }
+        auto target = resolveAdd(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Star, irgen, target);
-        std::vector<llvm::Value*> args;
-        if(target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+
+        if (target->result.should_sret())
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target->result.is_non_owning(irgen))
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doRange(
+    std::vector<Type> YVMExpressionEvaluator::doRange(
         Expression* lhs,
         Expression* rhs,
         const Type& left_type,
@@ -798,15 +799,22 @@ namespace Yoyo
     {
         using namespace std::string_view_literals;
         auto subtype = Type{ .name = std::string(result.name.begin() + "range_"sv.size(), result.name.end()) };
-        auto type = irgen->ToLLVMType(result, false);
-        auto ptr = irgen->Alloca("range_literal", type);
-        implicitConvert(lhs, std::visit(*this, lhs->toVariant()), left_type, subtype,
-            irgen->builder->CreateStructGEP(type, ptr, 0));
-        implicitConvert(lhs, std::visit(*this, rhs->toVariant()), right_type, subtype,
-            irgen->builder->CreateStructGEP(type, ptr, 1));
-        return ptr;
+        auto type = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(subtype));
+        irgen->builder->write_alloca(NativeType::get_size(type));
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(type, 0));
+        std::visit(*this, lhs->toVariant());
+        irgen->builder->write_1b_inst(OpCode::Switch);
+        implicitConvert(lhs, left_type, subtype, true, false);
+        irgen->builder->write_1b_inst(OpCode::Pop);
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(type, 1));
+        std::visit(*this, rhs->toVariant());
+        irgen->builder->write_1b_inst(OpCode::Switch);
+        implicitConvert(rhs, right_type, subtype, true, false);
+        return {};
     }
-    llvm::Value* LLVMExpressionEvaluator::doDiv(
+    std::vector<Type> YVMExpressionEvaluator::doDiv(
         Expression* lhs,
         Expression* rhs,
         const Type& left_type,
@@ -814,23 +822,42 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSDiv(lhs_e, rhs_e);
+        //if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSDiv(lhs_e, rhs_e);
         auto target = resolveDiv(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Slash, irgen, target);
-        std::vector<llvm::Value*> args;
-        if(target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+        if (target->result.should_sret())
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target->result.is_non_owning(irgen))
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doRem(
+    std::vector<Type> YVMExpressionEvaluator::doRem(
         Expression* lhs,
         Expression* rhs,
         const Type& left_type,
@@ -838,63 +865,126 @@ namespace Yoyo
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSRem(lhs_e, rhs_e);
+        //if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSRem(lhs_e, rhs_e);
         auto target = resolveRem(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Percent, irgen, target);
-        std::vector<llvm::Value*> args;
-        if(target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final  =target->result.should_sret() ? args[0] : ret;
-        if(target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+        if (target->result.should_sret())
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target->result.is_non_owning(irgen))
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doShl(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
+    std::vector<Type> YVMExpressionEvaluator::doShl(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateShl(lhs_e, rhs_e);
+        if (left_type.name == "ilit" && right_type.name == "ilit") { 
+            irgen->builder->write_2b_inst(OpCode::Shl, 64); 
+            return;
+        }
         auto target = resolveShl(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::DoubleLess, irgen, target);
-        std::vector<llvm::Value*> args;
         if (target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final = target->result.should_sret() ? args[0] : ret;
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
         if (target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doShr(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
+    std::vector<Type> YVMExpressionEvaluator::doShr(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
     {
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateLShr(lhs_e, rhs_e);
-        auto target = resolveShr(left_type, right_type, irgen);
+        if (left_type.name == "ilit" && right_type.name == "ilit") {
+            irgen->builder->write_2b_inst(OpCode::Shr, 64);
+            return;
+        }
+        auto target = resolveShl(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::DoubleGreater, irgen, target);
-        std::vector<llvm::Value*> args;
         if (target->result.should_sret())
-            args.push_back(irgen->Alloca("ret_temp", irgen->ToLLVMType(target->result, false)));
-        args.push_back(implicitConvert(lhs, lhs_e, left_type, target->left));
-        args.push_back(implicitConvert(rhs, rhs_e, right_type, target->right));
-        auto ret = irgen->builder->CreateCall(fn, args);
-        auto final = target->result.should_sret() ? args[0] : ret;
+        {
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
+        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
         if (target->result.is_non_owning(irgen))
-            stealUsages(args, final);
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
         else
-            clearUsages(args, *this);
-        return final;
+        {
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(rhs_e, *this);
+
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            clearUsages(lhs_e, *this);
+            return {};
+        }
     }
-    llvm::Value* LLVMExpressionEvaluator::doCmp(
+    std::vector<Type> YVMExpressionEvaluator::doCmp(
         ComparisonPredicate p,
         Expression* lhs,
         Expression* rhs,
@@ -907,42 +997,57 @@ namespace Yoyo
         constexpr int32_t less = 2;
         constexpr int32_t greater = 3;
         constexpr int32_t unord = 4;
-        auto i32 = llvm::Type::getInt32Ty(irgen->context);
         auto lhs_e = std::visit(*this, lhs->toVariant());
         auto rhs_e = std::visit(*this, rhs->toVariant());
+        // enum comparisons
         if ((p == EQ || p == NE) && left_type.is_equal(right_type)) {
             if (left_type.get_decl_if_enum()) {
-                return
-                    (p == EQ) ? irgen->builder->CreateICmpEQ(lhs_e, rhs_e, "enum_cmp")
-                    : irgen->builder->CreateICmpNE(lhs_e, rhs_e, "enum_cmp");
+                if (p == EQ) irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
+                else irgen->builder->write_2b_inst(OpCode::CmpNe, 32);
+                return {};
             }
         }
         auto target = resolveCmp(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::Spaceship, irgen, target);
-        std::array<llvm::Value*, 2> args;
-        args[0] = implicitConvert(lhs, lhs_e, left_type, target->left);
-        args[1] = implicitConvert(rhs, rhs_e, right_type, target->right);
-        auto ret = irgen->builder->CreateCall(fn, args);
-        if (p == SPACE) return ret;
-        if (p == EQ) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq));
-        if (p == GT) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, greater));
-        if (p == LT) return irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, less));
-        if (p == NE)
-        {
-            return irgen->builder->CreateICmpNE(ret, llvm::ConstantInt::get(i32, eq));
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+        implicitConvert(lhs, left_type, target->left, false, true);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        implicitConvert(rhs, right_type, target->right, false, true);
+        irgen->builder->write_fn_addr(fn);
+        irgen->builder->write_2b_inst(OpCode::Call, 2);
+        if (p == EQ) {
+            irgen->builder->write_const(eq); irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
         }
-        if (p == EQ_GT)
-        {
-            return irgen->builder->CreateOr(
-                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, greater)),
-                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq)));
+        else if (p == GT) {
+            irgen->builder->write_const(greater); irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
         }
-        if (p == EQ_LT)
-        {
-            return irgen->builder->CreateOr(
-                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, less)),
-                irgen->builder->CreateICmpEQ(ret, llvm::ConstantInt::get(i32, eq)));
+        else if (p == LT) {
+            irgen->builder->write_const(less); irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
         }
+        else if (p == NE) {
+            irgen->builder->write_const(eq); irgen->builder->write_2b_inst(OpCode::CmpNe, 32);
+        }
+        else if (p == EQ_GT)
+        {
+            irgen->builder->write_1b_inst(OpCode::Dup);
+            irgen->builder->write_const(greater);
+            irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_const(eq);
+            irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
+            irgen->builder->write_1b_inst(OpCode::Or);
+        }
+        else if (p == EQ_LT)
+        {
+            irgen->builder->write_1b_inst(OpCode::Dup);
+            irgen->builder->write_const(less);
+            irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            irgen->builder->write_const(eq);
+            irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
+            irgen->builder->write_1b_inst(OpCode::Or);
+        }
+        return {};
     }
     llvm::Value* LLVMExpressionEvaluator::doUnionVar(CallOperation* op, Type& t)
     {
@@ -962,7 +1067,7 @@ namespace Yoyo
         return ret;
     }
 
-    llvm::Value* LLVMExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
+    std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
     {
         std::string name(nm->text);
         for(size_t i = irgen->variables.size(); i > 0; --i)
@@ -976,66 +1081,78 @@ namespace Yoyo
         }
     }
 
-    llvm::Value* LLVMExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation* bop)
+    std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation* bop)
     {
         //Dot operations can also be lvalue'd
-        if(bop->op.type != TokenType::Dot) return nullptr;
+        if (bop->op.type != TokenType::Dot) {
+            irgen->error(Error(bop, "Expression cannot evaluate to lvalue"));
+            return {};
+        }
         auto left_t = std::visit(ExpressionTypeChecker{irgen}, bop->lhs->toVariant());
-        if(!left_t) return nullptr;
-        if(!left_t->is_mutable && !left_t->is_reference()) return nullptr;
-        return LLVMExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
+        if (!left_t) {
+            irgen->error(left_t.error());
+            return {};
+        }
+        if (!left_t->is_mutable && !left_t->is_reference()) {
+            irgen->error(Error(bop, "Expression cannot evaluate to lvalue"));
+            return {};
+        }
+        return YVMExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(), *left_t, false);
+
     }
 
-    llvm::Value* LLVMExpressionEvaluator::LValueEvaluator::operator()(PrefixOperation* op)
+    std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(PrefixOperation* op)
     {
         if(op->op.type == TokenType::Star)
         {
-            return std::visit(LLVMExpressionEvaluator{irgen}, op->operand->toVariant());
+            return std::visit(YVMExpressionEvaluator{irgen}, op->operand->toVariant());
         }
     }
 
-    llvm::Value* LLVMExpressionEvaluator::LValueEvaluator::operator()(Expression* expr)
+    std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(Expression* expr)
     {
         //TODO
-        return nullptr;
+        return {};
     }
 
-    llvm::Value* LLVMExpressionEvaluator::LValueEvaluator::operator()(GroupingExpression* gre)
+    std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(GroupingExpression* gre)
     {
         return std::visit(*this, gre->expr->toVariant());
     }
 
 
-    llvm::Value* LLVMExpressionEvaluator::operator()(IntegerLiteral* lit) {
+    std::vector<Type> YVMExpressionEvaluator::operator()(IntegerLiteral* lit) {
         const auto ul = std::stoull(std::string{lit->text});
-        llvm::Type* llvm_ty = llvm::Type::getInt64Ty(irgen->context);
-        if (target && target->is_integral()) llvm_ty = irgen->ToLLVMType(*target, false);
-        return llvm::ConstantInt::get(llvm_ty, ul);
+        irgen->builder->write_const(ul);
+        return {};
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(BooleanLiteral* lit)
+    std::vector<Type> YVMExpressionEvaluator::operator()(BooleanLiteral* lit)
     {
-        if(lit->token.text == "true") return llvm::ConstantInt::getTrue(irgen->context);
-        return llvm::ConstantInt::getFalse(irgen->context);
+        if (lit->token.text == "true") irgen->builder->write_const(uint8_t{ 1 });
+        else irgen->builder->write_const(uint8_t{ 0 });
+        return {};
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(TupleLiteral* tup)
+    std::vector<Type> YVMExpressionEvaluator::operator()(TupleLiteral* tup)
     {
         auto tuple_t = ExpressionTypeChecker{irgen, target}(tup);
-        if(!tuple_t) { irgen->error(tuple_t.error()); return nullptr; }
-        auto llvm_t = irgen->ToLLVMType(*tuple_t, false);
-        auto tuple_tmp = irgen->Alloca("tuple_lit", llvm_t);
-        auto zero_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), 0);
+        if (!tuple_t) { irgen->error(tuple_t.error()); return {}; }
+        auto llvm_t = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*tuple_t));
+        irgen->builder->write_alloca(NativeType::get_size(llvm_t));
         size_t idx = 0;
         for(auto& expr: tup->elements)
         {
-            auto idx_const = llvm::ConstantInt::get(llvm::Type::getInt32Ty(irgen->context), idx);
-            auto idx_ptr = irgen->builder->CreateGEP(llvm_t, tuple_tmp, {zero_const, idx_const}, "tuple_elem");
+            irgen->builder->write_1b_inst(OpCode::Dup);
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(llvm_t, idx));
             auto type = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
-            implicitConvert(expr.get(), std::visit(*this, expr->toVariant()), *type, tuple_t->subtypes[idx], idx_ptr);
+            std::visit(*this, expr->toVariant());
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            implicitConvert(expr.get(), *type, tuple_t->subtypes[idx], true, false);
+            irgen->builder->write_1b_inst(OpCode::Pop);
             idx++;
         }
-        return tuple_tmp;
+        return {};
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(ArrayLiteral* lit)
+    std::vector<Type> YVMExpressionEvaluator::operator()(ArrayLiteral* lit)
     {
         using repeat_notation = std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>;
         using list_notation = std::vector<std::unique_ptr<Expression>>;
@@ -1075,70 +1192,18 @@ namespace Yoyo
         }
         return val;
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(RealLiteral* lit)
+    std::vector<Type> YVMExpressionEvaluator::operator()(RealLiteral* lit)
     {
-        return llvm::ConstantFP::get(llvm::Type::getDoubleTy(irgen->context), lit->token.text);
+        double val = std::strtod(lit->token.text.data(), nullptr);
+        irgen->builder->write_const(val);
+        return {};
     }
     //str is of type {ptr, int64, int64} for buffer, size, capacity
-    llvm::Value* LLVMExpressionEvaluator::operator()(StringLiteral* lit)
+    std::vector<Type> YVMExpressionEvaluator::operator()(StringLiteral* lit)
     {
-        ExpressionTypeChecker type_checker{irgen};
-        if (auto tp = type_checker(lit); !tp) { irgen->error(tp.error()); return nullptr; }
-        std::vector<std::pair<llvm::Value*, llvm::Value*>> substrings;
-        for(auto& substr: lit->literal)
-        {
-            if(std::holds_alternative<std::string>(substr))
-            {
-                auto& as_str = std::get<std::string>(substr);
-                auto gvar = irgen->builder->CreateGlobalString(as_str);
-
-                auto str_size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context) ,as_str.size());
-                substrings.emplace_back(gvar, str_size);
-
-            }
-            else //if(std::holds_alternative<std::unique_ptr<Expression>>)
-            {
-                auto& as_expr = std::get<1>(substr);
-                auto type = std::visit(type_checker, as_expr->toVariant());
-                auto value = std::visit(*this, as_expr->toVariant());
-                substrings.push_back(doToStr(value, *type));
-            }
-        }
-        llvm::Value* final_len = substrings.front().second;
-        //combine all the strings into one buffer
-        for(auto& pair : std::ranges::subrange(substrings.begin() + 1, substrings.end()))
-            final_len = irgen->builder->CreateAdd(final_len, pair.second);
-        //add 1 for null termination
-        llvm::Value* final_buffer = irgen->Malloc("string_buffer", irgen->builder->CreateAdd(
-            final_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 1)
-            ));
-        llvm::Value* offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(irgen->context), 0);
-        auto i8_ty = llvm::Type::getInt8Ty(irgen->context);
-        for(auto& pair : substrings)
-        {
-            auto current_pointer = irgen->builder->CreateGEP(i8_ty, final_buffer, {offset});
-            irgen->builder->CreateMemCpy(current_pointer, std::nullopt, pair.first, std::nullopt, pair.second);
-            if(!llvm::isa<llvm::GlobalVariable>(pair.first)) irgen->Free(pair.first);
-            offset = irgen->builder->CreateAdd(offset, pair.second);
-        }
-        irgen->builder->CreateStore(llvm::ConstantInt::get(i8_ty, 0),
-            irgen->builder->CreateGEP(i8_ty, final_buffer, { offset }));
-
-        auto llvm_t = irgen->ToLLVMType(Type{"str"}, false);
-        auto string = irgen->Alloca("str_obj", llvm_t);
-
-        auto buffer_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 0);
-        auto size_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 1);
-        auto cap_ptr = irgen->builder->CreateStructGEP(llvm_t, string, 2);
-
-        irgen->builder->CreateStore(final_buffer, buffer_ptr);
-        irgen->builder->CreateStore(final_len, size_ptr);
-        irgen->builder->CreateStore(final_len, cap_ptr);
-
-        return string;
-
+        /* strings don't exist yet sadly */
     }
-    llvm::Value* LLVMExpressionEvaluator::operator()(NameExpression* nm)
+    std::vector<Type> YVMExpressionEvaluator::operator()(NameExpression* nm)
     {
         std::string name(nm->text);
         auto ret_type = ExpressionTypeChecker{irgen}(nm);

@@ -55,9 +55,9 @@ namespace Yoyo {
 	};
     class YVMExpressionEvaluator
     {
-        YVMIRGenerator* irgen;
         std::optional<Type> target;
     public:
+        YVMIRGenerator* irgen;
         Type lastDeducedType;
         enum ComparisonPredicate
         {
@@ -81,15 +81,15 @@ namespace Yoyo {
         
         void destroy(const Type& type) const;
         void doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
-        void doAddition(Expression*, Expression*, const Type&, const Type&);
-        void doShl(Expression*, Expression*, const Type&, const Type&);
-        void doShr(Expression*, Expression*, const Type&, const Type&);
-        void doMinus(Expression*, Expression*, const Type&, const Type&);
-        void doMult(Expression*, Expression*, const Type&, const Type&);
-        void doDiv(Expression*, Expression*, const Type&, const Type&);
-        void doRem(Expression*, Expression*, const Type&, const Type&);
-        void doRange(Expression*, Expression*, const Type&, const Type&, const Type&);
-        void doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
+        std::vector<Type> doAddition(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doShl(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doShr(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doMinus(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doMult(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doDiv(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doRem(Expression*, Expression*, const Type&, const Type&);
+        std::vector<Type> doRange(Expression*, Expression*, const Type&, const Type&, const Type&);
+        std::vector<Type> doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
             const Type& right_type, const Type&);
         void fillArgs(bool, const FunctionSignature&, std::vector<llvm::Value*>&, llvm::Value*,
             std::vector<std::unique_ptr<Expression>>& exprs);
@@ -99,12 +99,12 @@ namespace Yoyo {
         std::pair<llvm::Value*, llvm::Value*> doToStr(llvm::Value*, const Type&);
         struct LValueEvaluator
         {
-            LLVMIRGenerator* irgen;
-            llvm::Value* operator()(NameExpression*);
-            llvm::Value* operator()(BinaryOperation*);
-            llvm::Value* operator()(Expression*);
-            llvm::Value* operator()(PrefixOperation*);
-            llvm::Value* operator()(GroupingExpression*);
+            YVMIRGenerator* irgen;
+            std::vector<Type> operator()(NameExpression*);
+            std::vector<Type> operator()(BinaryOperation*);
+            std::vector<Type> operator()(Expression*);
+            std::vector<Type> operator()(PrefixOperation*);
+            std::vector<Type> operator()(GroupingExpression*);
         };
         std::vector<Type> operator()(IntegerLiteral*);
         std::vector<Type> operator()(BooleanLiteral*);
