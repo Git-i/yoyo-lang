@@ -93,8 +93,8 @@ namespace Yoyo {
             const Type& right_type, const Type&);
         void fillArgs(bool, const FunctionSignature&, std::unique_ptr<Expression>&,
             std::vector<std::unique_ptr<Expression>>& exprs);
-        void doInvoke(CallOperation* op, const Type&);
-        void doUnionVar(CallOperation* op, Type&);
+        std::vector<Type> doInvoke(CallOperation* op, const Type&);
+        std::vector<Type> doUnionVar(CallOperation* op, Type&);
         //the malloc and the size
         struct LValueEvaluator
         {
