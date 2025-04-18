@@ -80,7 +80,7 @@ namespace Yoyo {
         void clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load) const;
         
         void destroy(const Type& type) const;
-        void doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
+        std::vector<Type> doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
         std::vector<Type> doAddition(Expression*, Expression*, const Type&, const Type&);
         std::vector<Type> doShl(Expression*, Expression*, const Type&, const Type&);
         std::vector<Type> doShr(Expression*, Expression*, const Type&, const Type&);
@@ -91,7 +91,7 @@ namespace Yoyo {
         std::vector<Type> doRange(Expression*, Expression*, const Type&, const Type&, const Type&);
         std::vector<Type> doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
             const Type& right_type, const Type&);
-        void fillArgs(bool, const FunctionSignature&, std::vector<llvm::Value*>&, llvm::Value*,
+        void fillArgs(bool, const FunctionSignature&, std::unique_ptr<Expression>&,
             std::vector<std::unique_ptr<Expression>>& exprs);
         void doInvoke(CallOperation* op, const Type&);
         void doUnionVar(CallOperation* op, Type&);
