@@ -4,6 +4,7 @@
 #include "tree_cloner.h"
 #include "ir_gen.h"
 #include "fn_type.h"
+#include <format>
 namespace Yoyo
 {
     ExpressionTypeChecker::Result peerResolve(std::ranges::forward_range auto types, IRGenerator* irgen)

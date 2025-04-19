@@ -5,9 +5,8 @@
 #include <statement.h>
 #include "engine.h"
 #include <utility>
+#include <functional>
 #include "error.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/IRBuilder.h"
 #include "module.h"
 #include "cfg_node.h"
 #include "token.h"
@@ -101,6 +100,7 @@ namespace Yoyo
         virtual void doFunction(FunctionDeclaration*) = 0;
         virtual void doClass(ClassDeclaration*) = 0;
         virtual void doAlias(AliasDeclaration*) = 0;
+        virtual void doConst(ConstantDeclaration*) = 0;
         void generateGenericFunction(ModuleBase* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types);
         void generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<Type> types);
         void generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types);
@@ -114,7 +114,7 @@ namespace Yoyo
         IRGenerator* irgen;
         std::optional<Type> target;
     public:
-        std::optional<FunctionType> checkNameWithinClassOrModule(Module*, ClassDeclaration* type, std::string_view name);
+        std::optional<FunctionType> checkNameWithinClassOrModule(ModuleBase*, ClassDeclaration* type, std::string_view name);
         std::optional<FunctionType> checkNameWithinEnum(EnumDeclaration* type, std::string_view name);
         explicit ExpressionTypeChecker(IRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
             target(std::move(target)) {}

@@ -7,6 +7,7 @@
 #include "ir_gen.h"
 #include "statement.h"
 #include "fn_type.h"
+#include <cassert>
 namespace Yoyo
 {
     std::string Type::full_name_no_block() const
@@ -123,7 +124,7 @@ namespace Yoyo
         {
             const FunctionSignature* as_fn;
             if(other.is_function()); as_fn = &reinterpret_cast<const FunctionType&>(other).sig;
-            if (other.is_lambda()) as_fn = &other.module->lambdas[other.name].second->sig;
+            //if (other.is_lambda()) as_fn = &other.module->lambdas[other.name].second->sig;
             if(signature->parameters.size() != as_fn->parameters.size()) return false;
             for(size_t i = 0; i < signature->parameters.size(); ++i)
             {
@@ -316,14 +317,14 @@ namespace Yoyo
         if (name.starts_with("__gc_refcell_borrow")) 
             return false;
         if(is_str()) return false;
-        if(auto dets = module->findType(block_hash, name))
+        if(auto dets = module->findClass(block_hash, name); dets.second)
         {
-            auto decl = std::get<2>(*dets).get();
+            auto decl = dets.second->second.get();
             if(decl->is_trivially_destructible) return *decl->is_trivially_destructible;
             //declaration is probably not properly saturated here
-            irgen->block_hash.swap(std::get<0>(*dets));
+            irgen->block_hash.swap(dets.second->first);
             for (auto& var : decl->vars) var.type.saturate(module, irgen);
-            irgen->block_hash.swap(std::get<0>(*dets));
+            irgen->block_hash.swap(dets.second->first);
             evaluateDestructability(decl, irgen);
             return *decl->is_trivially_destructible;
         }
@@ -358,7 +359,7 @@ namespace Yoyo
         return *this;
     }
 
-    Type Type::saturated(Module* src, IRGenerator* irgen) const
+    Type Type::saturated(ModuleBase* src, IRGenerator* irgen) const
     {
         Type tp = *this;
         tp.saturate(src, irgen);
@@ -395,7 +396,7 @@ namespace Yoyo
             tp.is_slice() ||
             tp.is_view());
     }
-    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool);
+    bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool);
     void Type::saturate(ModuleBase* src, IRGenerator* irgen)
     {
         if(module) return; //avoid double saturation
@@ -423,7 +424,7 @@ namespace Yoyo
             subtypes[0].is_lvalue = true;
         if(!it.is_end())
         {
-            Module* md = src;
+            ModuleBase* md = src;
             std::string hash = irgen ? irgen->block_hash : src->module_hash;
             bool first = true;
             while(!it.is_end())
@@ -460,8 +461,9 @@ namespace Yoyo
         if (name == "__arr_s_uneval") {
             auto size_expr = reinterpret_cast<Expression*>(signature.get());
             auto size = std::visit(ConstantEvaluator{ irgen }, size_expr->toVariant());
-            if (!size || !llvm::isa<llvm::ConstantInt>(size)) debugbreak();
-            size_t val = reinterpret_cast<llvm::ConstantInt*>(size)->getZExtValue();
+            if (!std::holds_alternative<uint64_t>(size.internal_repr) && !std::holds_alternative<int64_t>(size.internal_repr)) debugbreak();
+            size_t val = std::holds_alternative<uint64_t>(size.internal_repr) ? std::get<uint64_t>(size.internal_repr)
+                : std::get<int64_t>(size.internal_repr);
             name = "__arr_s" + std::to_string(val);
             signature = nullptr;
             
@@ -558,14 +560,14 @@ namespace Yoyo
     {
         if(module)
         {
-            if(auto decl = module->findType(block_hash, full_name_no_block()))
-                return std::get<2>(*decl).get();
+            if (auto decl = module->findClass(block_hash, full_name_no_block()); decl.second)
+                return decl.second->second.get();
             if (auto [hsh, decl] = module->findGenericClass(block_hash, name); decl)
             {
                 if (subtypes.size() != decl->clause.types.size()) { debugbreak(); return nullptr; }
                 irgen->generateGenericClass(module, hsh, decl, subtypes);
-                if (auto decl = module->findType(block_hash, full_name_no_block()))
-                    return std::get<2>(*decl).get();
+                if (auto decl = module->findClass(block_hash, full_name_no_block()); decl.second)
+                    return decl.second->second.get();
             }
             return nullptr;
         }

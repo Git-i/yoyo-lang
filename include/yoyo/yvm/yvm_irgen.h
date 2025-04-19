@@ -3,6 +3,7 @@
 #include "yoyo_vm/vm.h"
 #include "yvm/native_type.h"
 #include "yoyo_vm/emitter.h"
+#include "yvm/yvm_module.h"
 namespace Yoyo {
 	class YVMIRGenerator : public IRGenerator {
     public:
@@ -18,6 +19,7 @@ namespace Yoyo {
         virtual void doFunction(FunctionDeclaration* decl) override { (*this)(decl); };
         virtual void doClass(ClassDeclaration* decl) override { (*this)(decl); };
         virtual void doAlias(AliasDeclaration* decl) override { (*this)(decl); };
+        virtual void doConst(ConstantDeclaration* decl) override { (*this)(decl); };
         NativeTy* toNativeType(const Type& type);
         Yvm::Type toTypeEnum(const Type& type);
         void operator()(FunctionDeclaration*);
@@ -48,10 +50,10 @@ namespace Yoyo {
         void callDestructors(size_t depth = 0);
         void pushScope();
         void popScope();
-        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, LLModule* md, Engine* eng);
+        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng);
         size_t nextKnownAddr();
         std::optional<Type> getVariableType(const std::string& name, Expression*) override;
-        llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
+        //llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
 	};
     class YVMExpressionEvaluator
     {

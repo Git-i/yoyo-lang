@@ -6,15 +6,12 @@
 #include <parser.h>
 #include "error.h"
 #include <catch2/catch_test_macros.hpp>
-#include "llvm/Support/InitLLVM.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/ExecutionEngine/Orc/LLJIT.h"
+
 #ifdef USE_GRAPHVIZ
 #include "graphviz/gvc.h"
 #endif
+#include <yvm/yvm_engine.h>
 
-Yoyo::AppModule* md;
 
 int32_t func(void* arg)
 {
@@ -49,12 +46,12 @@ TEST_CASE("Test IR")
     oss2 << raylib_file.rdbuf();
     std::string raylib_src = oss2.str();
 
-    Yoyo::Engine engine;
-    md = engine.addAppModule("test");
-    md->addFunction("(x: &str) -> i32", func, "print");
-    md->addFunction("() -> u32", read_int, "read_uint");
-    md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
-    md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");
+    Yoyo::YVMEngine engine;
+    //md = engine.addAppModule("test");
+    //md->addFunction("(x: &str) -> i32", func, "print");
+    //md->addFunction("() -> u32", read_int, "read_uint");
+    //md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
+    //md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");
     engine.addModule("source.yoyo", src2);
     engine.addModule("rl", raylib_src);
     engine.compile();
@@ -66,18 +63,13 @@ TEST_CASE("Test IR")
         idx %= 8;
         auto str = "\033[1;3" + std::to_string(idx) + "m";
         std::cout <<  str << std::flush;
-        mod.second->dumpIR();
+        //mod.second->dumpIR();
         std::cout << "\033[0m" << std::flush;
-        if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
+        //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
     }
     engine.prepareForExecution();
     std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "main";
-    auto addr = engine.jit->lookup(unmangled_name);
-    if (!addr) Yoyo::debugbreak();
-    auto fn = addr.get().toPtr<void(void*)>();
-    jmp_buf bff;
-    fn(bff);
-    std::cout << "Left fn" << std::endl;
+    
 }
 
 TEST_CASE("Error formatting", "[errors]")

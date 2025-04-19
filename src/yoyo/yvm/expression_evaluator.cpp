@@ -855,7 +855,7 @@ namespace Yoyo
         auto rhs_e = std::visit(*this, rhs->toVariant());
         if (left_type.name == "ilit" && right_type.name == "ilit") { 
             irgen->builder->write_2b_inst(OpCode::Shl, 64); 
-            return;
+            return {};
         }
         auto target = resolveShl(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::DoubleLess, irgen, target);
@@ -897,7 +897,7 @@ namespace Yoyo
         auto rhs_e = std::visit(*this, rhs->toVariant());
         if (left_type.name == "ilit" && right_type.name == "ilit") {
             irgen->builder->write_2b_inst(OpCode::Shr, 64);
-            return;
+            return {};
         }
         auto target = resolveShl(left_type, right_type, irgen);
         auto fn = getOperatorFunction(TokenType::DoubleGreater, irgen, target);
@@ -1159,6 +1159,7 @@ namespace Yoyo
     std::vector<Type> YVMExpressionEvaluator::operator()(StringLiteral* lit)
     {
         /* strings don't exist yet sadly */
+        return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(NameExpression* nm)
     {
@@ -1312,7 +1313,7 @@ namespace Yoyo
     }
 
     std::vector<Type> YVMExpressionEvaluator::operator()(LogicalOperation* op) { 
-        
+        return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(PostfixOperation*) { return {}; }
     void YVMExpressionEvaluator::fillArgs(bool uses_sret,
@@ -1490,6 +1491,7 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(SubscriptOperation* op)
     {
+        return {};
         /*auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
         if (!obj_ty) { irgen->error(obj_ty.error()); return {}; }
         auto llvm_t = irgen->ToLLVMType(obj_ty->deref(), false);
@@ -1510,6 +1512,7 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(GCNewExpression* expr)
     {
+        return {};
         // TODO
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(MacroInvocation* invc)

@@ -4,13 +4,15 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include "app_module.h"
+#include "common.h"
 
 
 namespace Yoyo {
     class ModuleBase;
     class Statement;
     class Type;
+    struct Constant;
+    class IRGenerator;
     class YOYO_API Engine
     {
     protected:

@@ -30,16 +30,21 @@ namespace Yoyo
         if (std::holds_alternative<Constant>(val)) return std::get<Constant>(val);
         
         irgen->block_hash.swap(blk);
-        (*irgen)(std::get<ConstantDeclaration*>(val));
+        
+        irgen->doConst(std::get<ConstantDeclaration*>(val));
         irgen->block_hash.swap(blk);
         return std::get<Constant>(val);
     }
     Constant ConstantEvaluator::constConvert(const Constant& src, const Type& source, const Type& destination) {
         if (source.is_integral() && destination.is_integral()) {
             if (destination.is_signed_integral())
-                return int64_t{ source.is_unsigned_integral() ? src.internal_repr.u64 : src.internal_repr.i64 };
+                return int64_t{ source.is_unsigned_integral() ? 
+                    static_cast<int64_t>(std::get<uint64_t>(src.internal_repr)) : 
+                    std::get<int64_t>(src.internal_repr) };
             else
-                return uint64_t{ source.is_unsigned_integral() ? src.internal_repr.u64 : src.internal_repr.i64 };
+                return uint64_t{ source.is_unsigned_integral() ?
+                    std::get<uint64_t>(src.internal_repr) :
+                    std::get<int64_t>(src.internal_repr) };
         }
         return nullptr;
     }
@@ -59,7 +64,7 @@ namespace Yoyo
 
             args.push_back(constConvert(val, val_ty.value(), var.type));
         }
-        return irgen->module->engine->createGlobalConstant(*t, args, irgen->module);
+        return irgen->module->engine->createGlobalConstant(*t, args, irgen);
     }
     Constant ConstantEvaluator::operator()(StringLiteral* lit) {
         if (lit->literal.size() != 1) {
@@ -69,7 +74,7 @@ namespace Yoyo
         if (std::holds_alternative<std::string>(lit->literal[0]))
         {
             auto& as_str = std::get<std::string>(lit->literal[0]);
-            return irgen->module->engine->createGlobalConstant(Type{ "str" }, { as_str.c_str() }, irgen->module);
+            return irgen->module->engine->createGlobalConstant(Type{ "str" }, { as_str.c_str() }, irgen);
         }
         else {
             irgen->error(Error(lit, "String interpolation is not supported in constant strings"));
@@ -101,22 +106,24 @@ namespace Yoyo
         {
             using enum TokenType;
             //Implicit requirement for the machine / compiler to use twos complement
-        case Plus: return is_float ? Constant{ left_repr.f64 + right_repr.f64 } : Constant{ left_repr.u64 + right_repr.u64 };
-        case Star: return is_float ? Constant{ left_repr.f64 * right_repr.f64 } : Constant{ left_repr.u64 * right_repr.u64 };
-        case Minus: return is_float ? Constant{ left_repr.f64 - right_repr.f64 } : Constant{ left_repr.u64 - right_repr.u64 };
+        case Plus: return is_float ? 
+            Constant{ std::get<double>(left_repr) + std::get<double>(right_repr) } : 
+            Constant{ std::get<uint64_t>(left_repr) + std::get<uint64_t>(right_repr) };
+        case Star: return is_float ? Constant{ std::get<double>(left_repr) * std::get<double>(right_repr) } : Constant{ std::get<uint64_t>(left_repr) * std::get<uint64_t>(right_repr) };
+        case Minus: return is_float ? Constant{ std::get<double>(left_repr) - std::get<double>(right_repr) } : Constant{ std::get<uint64_t>(left_repr) - std::get<uint64_t>(right_repr) };
         case Slash: 
         {
-            if (is_float) return left_repr.f64 / right_repr.f64;
-            else if (type->is_signed_integral()) return left_repr.i64 / right_repr.i64;
-            else return left_repr.u64 / right_repr.u64;
+            if (is_float) return std::get<double>(left_repr) / std::get<double>(right_repr);
+            else if (type->is_signed_integral()) return std::get<int64_t>(left_repr) / std::get<int64_t>(right_repr);
+            else return std::get<uint64_t>(left_repr) / std::get<uint64_t>(right_repr);
         }
         case Percent: 
         {
-            if (type->is_signed_integral()) return left_repr.i64 % right_repr.i64;
-            else return left_repr.u64 % right_repr.u64;
+            if (type->is_signed_integral()) return std::get<int64_t>(left_repr) % std::get<int64_t>(right_repr);
+            else return std::get<uint64_t>(left_repr) % std::get<uint64_t>(right_repr);
         }
-        case DoubleGreater: return left_repr.u64 >> right_repr.u64;
-        case DoubleLess: return left_repr.u64 << right_repr.u64;
+        case DoubleGreater: return std::get<uint64_t>(left_repr) >> std::get<uint64_t>(right_repr);
+        case DoubleLess: return std::get<uint64_t>(left_repr) << std::get<uint64_t>(right_repr);
         /*
         case DoubleEqual: 
         case GreaterEqual:
@@ -141,10 +148,10 @@ namespace Yoyo
     {
         return nullptr;
     }
-    bool advanceScope(Type& type, Module*& md, std::string& hash, IRGenerator* irgen, bool first);
+    bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first);
     Constant ConstantEvaluator::operator()(ScopeOperation* scp)
     {
-        Module* md = irgen->module;
+        ModuleBase* md = irgen->module;
         std::string hash = irgen->block_hash;
         auto iterator = UnsaturatedTypeIterator(scp->type);
         bool first = true;
@@ -178,7 +185,7 @@ namespace Yoyo
 
         irgen->block_hash.swap(blk);
         std::swap(md, irgen->module);
-        (*irgen)(std::get<ConstantDeclaration*>(val));
+        irgen->doConst(std::get<ConstantDeclaration*>(val));
         std::swap(md, irgen->module);
         irgen->block_hash.swap(blk);
         return std::get<Constant>(val);

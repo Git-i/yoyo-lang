@@ -100,16 +100,10 @@ namespace Yoyo
     BorrowResult::borrow_result_t BorrowResult::LValueBorrowResult::operator()(NameExpression* expr)
     {
         bool should_const = false;
-        for(auto& i : irgen->variables | std::views::reverse)
+        if (auto var = irgen->getVariableType(expr->text, expr))
         {
-            if (i.contains(expr->text) &&
-                !(
-                    std::get<1>(i.at(expr->text)).is_mutable ||
-                    std::get<1>(i.at(expr->text)).is_mutable_reference() ||
-                    std::get<1>(i.at(expr->text)).is_gc_reference()
-                    ))
-            {
-                should_const = std::get<1>(i.at(expr->text)).is_gc_reference();
+            should_const = var->is_gc_reference();
+            if (!(var->is_mutable || var->is_mutable_reference() || var->is_gc_reference())) {
                 irgen->error(Error(expr, "'" + expr->text + "' cannot be mutably borrowed"));
             }
         }

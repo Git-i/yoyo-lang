@@ -7,9 +7,10 @@
 #include <vector>
 #include "common.h"
 
+
 namespace Yoyo
 {
-    struct Module;
+    class ModuleBase;
     struct FunctionSignature;
     class ClassDeclaration;
     class IRGenerator;
@@ -54,7 +55,7 @@ namespace Yoyo
         /// returns a dereferenced version of a reference type or itself if not a reference
         [[nodiscard]] const Type& deref() const;
         //reduce a type to a pure string and a Module*(also resolves aliases)
-        [[nodiscard]] Type saturated(Module* src, IRGenerator* irgen) const;
+        [[nodiscard]] Type saturated(ModuleBase* src, IRGenerator* irgen) const;
         [[nodiscard]] Type reference_to() const;
         [[nodiscard]] Type mutable_reference_to() const;
         void saturate(ModuleBase* src, IRGenerator* irgen);

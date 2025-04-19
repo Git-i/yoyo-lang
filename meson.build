@@ -13,8 +13,8 @@ sources = [
     'src/yoyo/parselets/prefix_parselets.cpp',
     'src/yoyo/engine.cpp',
     'src/yoyo/module.cpp',
-    'src/yoyo/app_module.cpp',
-    'src/yoyo/to_string.cpp',
+    
+    
     'src/yoyo/lifetime.cpp',
     'src/yoyo/cfg_node.cpp',
     'src/yoyo/overload_resolve.cpp',
@@ -68,6 +68,8 @@ if backend == 'llvm' or backend == 'both'
         'src/yoyo/llvm/expression_evaluator.cpp',
         'src/yoyo/llvm/engine.cpp',
         'src/yoyo/llvm/module.cpp',
+        'src/yoyo/to_string.cpp',
+        'src/yoyo/app_module.cpp',
 
         'include/yoyo/llvm/llvm_irgen.h',
         'include/yoyo/llvm/llvm_engine.h',

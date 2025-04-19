@@ -1,5 +1,6 @@
 #include "ir_gen.h"
 #include <ranges>
+#include <parser.h>
 
 
 namespace Yoyo
@@ -71,14 +72,11 @@ namespace Yoyo
 						}
 						if (!this_expr) irgen->error(Error(nullptr, "Parameter is not an expression"));
 						auto answer = std::visit(ConstantEvaluator{ irgen }, this_expr->toVariant());
-						if (!answer) irgen->error(Error(nullptr, "Expression cannot be constant evaluated"));
-						if (auto as_num = llvm::dyn_cast_or_null<llvm::ConstantInt>(answer)) {
-							if (as_num->getIntegerType()->getBitWidth() == 1) {
-								return as_num->isOneValue();
-							}
-							if (as_num->isNegative()) return as_num->getSExtValue();
-							return static_cast<int64_t>(as_num->getZExtValue());
+						if (!std::holds_alternative<uint64_t>(answer.internal_repr) && std::holds_alternative<int64_t>(answer.internal_repr)) {
+							irgen->error(Error(nullptr, "Cannot convert constant to valid macro type"));
+							return std::monostate{};
 						}
+						//TODO
 						irgen->error(Error(nullptr, "Cannot convert constant to valid macro type"));
 					} };
 			}

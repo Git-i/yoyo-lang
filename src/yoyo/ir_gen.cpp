@@ -147,7 +147,7 @@ namespace Yoyo
     template <std::input_iterator It>
     void IRGenerator::pushScopeWithConstLock(It begin, It end)
     {
-        pushScope();
+        /*pushScope();
         for(const std::string& str: std::ranges::subrange(begin, end))
         {
             for(auto& i : variables | std::views::reverse)
@@ -158,7 +158,7 @@ namespace Yoyo
                 variables.back()[str] = {std::get<0>(i.at(str)), std::move(new_tp), nullptr};
                 break;
             }
-        }
+        }*/
     }
    
     void IRGenerator::error(const Error& e)

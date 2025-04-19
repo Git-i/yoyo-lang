@@ -3,6 +3,8 @@
 #include <ranges>
 
 #include "engine.h"
+#include <token.h>
+#include "module.h"
 
 namespace Yoyo
 {

@@ -15,60 +15,8 @@ namespace Yoyo
         //type is not required not have a module (built-ins)
         if (type.name.starts_with("__gc_refcell_borrow")) return nullptr;
         auto t = type.module ?
-            reinterpret_cast<LLModule*>(type.module)->ToLLVMType(type, block_hash, this, {}):
-            reinterpret_cast<LLModule*>(module)->ToLLVMType(type, block_hash, this, {});
-        if(t) return t;
-        if(type.is_tuple())
-        {
-            std::vector<llvm::Type*> args;
-            for(auto& subtype : type.subtypes)
-            {
-                args.push_back(ToLLVMType(subtype, false));
-            }
-            return llvm::StructType::get(context, args);
-        }
-        if(type.is_optional())
-        {
-            std::array<llvm::Type*, 2> args{};
-            args[0] = ToLLVMType(type.subtypes[0], false);
-            args[1] = llvm::Type::getInt1Ty(context);
-            return llvm::StructType::get(context, args);
-        }
-        if(type.is_variant())
-        {
-            std::array<llvm::Type*, 2> args{};
-            size_t size = 0;
-            auto& layout = code->getDataLayout();
-            for(auto& subtype : type.subtypes)
-            {
-                auto sub_t = ToLLVMType(subtype, false);
-                auto as_struct = llvm::dyn_cast_or_null<llvm::StructType>(sub_t);
-                size_t sz = 0;
-                if(!as_struct) sz = sub_t->getPrimitiveSizeInBits() / 8;
-                else sz = layout.getStructLayout(as_struct)->getSizeInBytes();
-                if(sz > size) size = sz;
-            }
-            args[0] = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), size);
-            args[1] = llvm::Type::getInt32Ty(context); // 2^32 is a reasonable amount of variant subtypes
-            return llvm::StructType::get(context, args);
-        }
-        //this may be a generic instantiation that doesn't exist yet
-        if (type.module)
-        {
-            if (auto [_, exists] = type.module->findGenericClass(type.block_hash, type.name); exists)
-            {
-                generateGenericClass(
-                    type.module,
-                    type.block_hash,
-                    exists,
-                    type.subtypes); //this should generally be safe(hopefully)
-                std::string name = type.name + mangleGenericArgs(type.subtypes);
-                if (auto det = std::get<1>(reinterpret_cast<LLModule*>(type.module)->findClassWithType(type.block_hash, name).second))
-                    return det;
-            }
-                
-        }
-        if(in_class && type.name == "This") return ToLLVMType(this_t, is_ref);
+            reinterpret_cast<YVMModule*>(type.module)->toNativeType(type, block_hash, this, {}):
+            reinterpret_cast<YVMModule*>(module)->toNativeType(type, block_hash, this, {});
         error(Error({1, 1}, {1, 1}, "Encountered unexpected type", ""));
         return nullptr;
     }
@@ -207,17 +155,9 @@ namespace Yoyo
         block_hash = unn_hash;
         for (auto& var : decl->fields | std::views::values) var.saturate(module, this);
         size_t biggest_size = 0;
-        auto& layout = code->getDataLayout();
-        for (auto& var : decl->fields | std::views::values) {
-            auto as_llvm = ToLLVMType(var, false);
-            size_t this_size = layout.getTypeAllocSize(as_llvm);
-            biggest_size = this_size > biggest_size ? this_size : biggest_size;
-        }
-        auto llvm_t = llvm::StructType::get(context, { 
-            llvm::ArrayType::get(llvm::Type::getInt8Ty(context), biggest_size),
-            llvm::Type::getInt32Ty(context)
-        });
-        module->unions[curr_hash].emplace_back(std::unique_ptr<UnionDeclaration>{decl}, llvm_t);
+        
+        
+        //module->unions[curr_hash].emplace_back(std::unique_ptr<UnionDeclaration>{decl}, llvm_t);
         auto old_in_class = in_class;
         in_class = true;
         auto old_this = std::move(this_t);
@@ -269,7 +209,7 @@ namespace Yoyo
         block_hash = class_hash;
         auto cls = module->findClass(curr_hash, decl->name);
         for(auto& var : decl->vars) var.type.saturate(module, this);
-        reinterpret_cast<LLModule*>(module)->classes_types[cls.second->second.get()] = hanldeClassDeclaration(decl->vars, decl->ownership, "");
+        //reinterpret_cast<YVMModule*>(module)->classes_types[cls.second->second.get()] = hanldeClassDeclaration(decl->vars, decl->ownership, "");
         auto old_in_class = in_class;
         in_class = true;
         auto old_this = std::move(this_t);
@@ -497,146 +437,10 @@ namespace Yoyo
 
     void YVMIRGenerator::operator()(ConditionalExtraction* stat)
     {
-        auto tp_e = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant());
-        auto expression = std::visit(LLVMExpressionEvaluator{ this }, stat->condition->toVariant());
-        auto tp = tp_e.value_or_error();
-        if(!tp.is_optional() && !tp.is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
-        if (!stat->else_capture.empty()) { debugbreak(); return; }
-        if (stat->is_ref && tp.is_value_conversion_result()) { error(Error({}, {}, "Expanded expression cannot be borrowed", "")); return; }
-        std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
-        borrow_res[0].first = stat->condition.get();
-        borrow_res[0].second = tp.is_mutable ?
-            std::visit(BorrowResult::LValueBorrowResult{this}, stat->condition->toVariant()):
-            std::visit(BorrowResult{this}, stat->condition->toVariant());
-        validate_borrows(borrow_res, this);
-
-        if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
-
-        auto llvm_t = ToLLVMType(tp, false);
-
-        auto is_valid = builder->CreateLoad(llvm::Type::getInt1Ty(context), builder->CreateStructGEP(llvm_t, expression, 1));
-
-        auto fn = builder->GetInsertBlock()->getParent();
-        auto then_bb = llvm::BasicBlock::Create(context, "then", fn, returnBlock);
-        llvm::BasicBlock* else_bb = nullptr;
-        if(stat->else_body) else_bb = llvm::BasicBlock::Create(context, "else", fn, returnBlock);
-        auto merge_bb = llvm::BasicBlock::Create(context, "ifcont", fn, returnBlock);
-        builder->CreateCondBr(
-            is_valid, then_bb,
-            else_bb ? else_bb : merge_bb);
-        builder->SetInsertPoint(then_bb);
-
-        auto names = borrow_res[0].second | std::views::keys;
-        if(stat->is_ref)
-        {
-            pushScopeWithConstLock(names.begin(), names.end());
-            lifetimeExtensions[stat->captured_name] = std::move(borrow_res[0].second);
-        }
-        else pushScope();
-
-        auto ptr = builder->CreateStructGEP(llvm_t, expression, 0, stat->captured_name);
-        if(!tp.is_value_conversion_result())
-        {
-            //if it's not a `ref` we clone the value
-            if(!stat->is_ref)
-            {
-                if (tp.is_ref_conversion_result())
-                    ptr = builder->CreateLoad(llvm::PointerType::get(context, 0), ptr);
-                llvm::Value* into = nullptr;
-                if(!tp.subtypes[0].should_sret())
-                {
-                    auto as_llvm = ToLLVMType(tp.subtypes[0], false);
-                    into = Alloca("", as_llvm);
-                    ptr = builder->CreateLoad(as_llvm, ptr);
-                }
-                ptr = LLVMExpressionEvaluator{this}.clone(stat->condition.get(), ptr, tp.subtypes[0], into);
-                if(into) ptr = into;
-            }
-        }
-        Type variable_type = stat->is_ref ?
-            Type{tp.is_mutable ? "__ref_mut" : "__ref", {tp.subtypes[0]}} :
-            tp.subtypes[0];
-        variable_type.saturate(module, this);
-        auto flg = prepareValidDropFlagFor(this, variable_type);
-        variables.back()[stat->captured_name] = {ptr,
-            std::move(variable_type),
-            flg
-        };
-        current_Statement = &stat->body;
-        std::visit(*this, stat->body->toVariant());
-
-        lifetimeExtensions.erase(stat->captured_name);
-        popScope();
-
-        if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
-
-        if(stat->else_body)
-        {
-            builder->SetInsertPoint(else_bb);
-            pushScope();
-            current_Statement = &stat->else_body;
-            std::visit(*this, stat->else_body->toVariant());
-            popScope();
-            if(builder->GetInsertBlock()->back().getOpcode() != llvm::Instruction::Br) builder->CreateBr(merge_bb);
-        }
-        builder->SetInsertPoint(merge_bb);
-        LLVMExpressionEvaluator{this}.destroy(expression, tp);
-    }
-    template <std::input_iterator It>
-    void IRGenerator::pushScopeWithConstLock(It begin, It end)
-    {
-        pushScope();
-        for(const std::string& str: std::ranges::subrange(begin, end))
-        {
-            for(auto& i : variables | std::views::reverse)
-            {
-                if(!i.contains(str)) continue;
-                Type new_tp = std::get<1>(i.at(str));
-                new_tp.is_mutable = false;
-                variables.back()[str] = {std::get<0>(i.at(str)), std::move(new_tp), nullptr};
-                break;
-            }
-        }
     }
     void YVMIRGenerator::operator()(WithStatement* stat)
     {
-        auto ty = std::visit(ExpressionTypeChecker{this}, stat->expression->toVariant()).value_or_error();
-        if (!ty.is_non_owning(this)) { error(Error(stat->expression.get(), "'with' statement can only capture non-owning types")); return; }
-        if (isShadowing(stat->name)) { error(Error({}, {}, "Name is already in use")); return; }
-
-        ty.is_mutable = ty.is_non_owning_mut(this);
-
-        std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
-        borrow_res[0].first = stat->expression.get();
-        borrow_res[0].second = ty.is_mutable ?
-            std::visit(BorrowResult::LValueBorrowResult{this}, stat->expression->toVariant()):
-            std::visit(BorrowResult{this}, stat->expression->toVariant());
-        validate_borrows(borrow_res, this);
-
-        auto expr = std::visit(LLVMExpressionEvaluator{this}, stat->expression->toVariant());
-        llvm::Value* val;
-        auto names = borrow_res[0].second | std::views::keys;
-        pushScopeWithConstLock(names.begin(), names.end());
-        lifetimeExtensions[stat->name] = std::move(borrow_res[0].second);
-
-        if(!ty.should_sret())
-        {
-            val = Alloca(stat->name, ToLLVMType(ty, false));
-            LLVMExpressionEvaluator{this}.clone(stat->expression.get(), expr, ty, val);
-        } else val = LLVMExpressionEvaluator{this}.clone(stat->expression.get(), expr, ty);
-
-        if(!ty.is_lvalue && expr->getName().starts_with("__del_parents"))
-        {
-            std::string name(16 + sizeof(void*), 'c');
-            memcpy(name.data(), expr->getName().data(), 16 + sizeof(void*));
-            val->setName(name);
-        }
-        ty.is_lvalue = true;
-        variables.back()[stat->name] = {val, std::move(ty), prepareValidDropFlagFor(this, ty)}; //TODO: capture parents
-        current_Statement = &stat->body;
-        std::visit(*this, stat->body->toVariant());
-        lifetimeExtensions.erase(stat->name);
-        popScope();
+       
     }
 
     void YVMIRGenerator::operator()(OperatorOverload*)
@@ -744,50 +548,15 @@ namespace Yoyo
     }
     void YVMIRGenerator::callDestructors(size_t depth)
     {
-        //if there's a `br` dont steal it and assume destructors have already been called
-        llvm::Instruction* term = nullptr;
-        if (builder->GetInsertBlock()->back().getOpcode() == llvm::Instruction::Br)
-        {
-            return;
-            term = &builder->GetInsertBlock()->back();
-            term->removeFromParent();
-        }
-        //call destructors
-        auto fn = builder->GetInsertBlock()->getParent();
-        for (auto& [name, var] : *(variables.end() - depth - 1))
-        {
-            auto drop_flag = std::get<2>(var);
-            auto& type = std::get<1>(var);
-            if (!drop_flag) continue;
-            auto drop = llvm::BasicBlock::Create(context, "drop_var" + name, fn, returnBlock);
-            auto drop_cont = llvm::BasicBlock::Create(context, "drop_cont" + name, fn, returnBlock);
-            builder->CreateCondBr(
-                builder->CreateLoad(llvm::Type::getInt1Ty(context), drop_flag),
-                drop, drop_cont);
-            builder->SetInsertPoint(drop);
-            auto to_drop = std::get<0>(var);
-            if (!type.should_sret())
-            {
-                std::string name(16 + sizeof(void*), 'c');
-                if (to_drop->getName().starts_with("__del_parents"))
-                    memcpy(name.data(), to_drop->getName().data(), 16 + sizeof(void*));
-                to_drop = builder->CreateLoad(ToLLVMType(type, false), to_drop, name);
-            }
-            LLVMExpressionEvaluator{ this }.destroy(to_drop, std::get<1>(var));
-            builder->CreateBr(drop_cont);
-            builder->SetInsertPoint(drop_cont);
-        }
-        if (term)
-            term->insertInto(builder->GetInsertBlock(), builder->GetInsertPoint());
+        
     }
 
 
 
-    bool YVMIRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, LLModule* md, Engine* eng)
+    bool YVMIRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng)
     {
         block_hash = md->module_hash;
         module = md;
-        code = md->code.getModuleUnlocked();
         builder = std::make_unique<Yvm::Emitter>();
         pushScope();
         for (auto& stat : statements) {

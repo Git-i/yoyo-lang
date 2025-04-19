@@ -1,7 +1,6 @@
 #include "parselets/infix_parselets.h"
 
 #include <parser.h>
-#include <llvm/ExecutionEngine/JITLink/JITLink.h>
 
 namespace Yoyo
 {

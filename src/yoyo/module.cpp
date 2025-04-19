@@ -119,7 +119,7 @@ namespace Yoyo
         {
             if(!block.starts_with(hash)) continue;
             for(auto& details : details_list)
-                if (std::get<2>(details)->name == name) return { hash, &details };
+                if (details.second->name == name) return { hash, &details };
         }
         return { "",nullptr };
     }
@@ -141,7 +141,7 @@ namespace Yoyo
             if(!block.starts_with(hash)) continue;
             auto it = std::ranges::find_if(details_list, [&name](auto& det)
             {
-                return std::get<2>(det)->name == name;
+                return det.second->name == name;
             });
             if(it != details_list.end()) return hash;
         }
