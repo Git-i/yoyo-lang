@@ -80,10 +80,11 @@ namespace Yoyo
             delete[] type->elements;
             delete type;
         }
+        size_t getElementOffset(const StructNativeTy* obj, size_t idx)
+        {
+            return obj->offsets[idx];
+        }
     }
-    size_t getElementOffset(const StructNativeTy* obj, size_t idx)
-    {
-        return obj->offsets[idx];
-    }
+    
 }
 

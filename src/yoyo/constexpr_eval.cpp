@@ -48,6 +48,7 @@ namespace Yoyo
         }
         return nullptr;
     }
+    
     Constant ConstantEvaluator::operator()(ObjectLiteral* lit)
     {
         auto t = ExpressionTypeChecker{ irgen }(lit);
@@ -85,6 +86,11 @@ namespace Yoyo
     {
         ExpressionTypeChecker{ irgen }(invc);
         return std::visit(*this, invc->result->toVariant());
+    }
+    Constant ConstantEvaluator::operator()(Expression* expr)
+    {
+        irgen->error(Error(expr, "Expression cannot be constant evaluated"));
+        return Constant();
     }
     Constant ConstantEvaluator::operator()(PrefixOperation*)
     {

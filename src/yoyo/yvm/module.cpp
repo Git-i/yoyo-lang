@@ -6,6 +6,20 @@
 #include <yvm/yvm_engine.h>
 namespace Yoyo
 {
+    std::pair<std::string, std::tuple<std::string, StructNativeTy*, ClassDeclaration*>> YVMModule::findClassWithType(const std::string& block, const std::string& name)
+    {
+        if (auto cls = findClass(block, name); cls.second) {
+            return { cls.first, {cls.second->first, classes_types[cls.second->second.get()], cls.second->second.get() } };
+        }
+        return { "", {"", nullptr, nullptr}};
+    }
+    std::pair<std::string, std::pair<UnionDeclaration*, StructNativeTy*>> YVMModule::findUnionWithType(const std::string& block, const std::string& name)
+    {
+        if (auto unn = findUnion(block, name); unn.second) {
+            return { unn.first, {unn.second, union_types[unn.second]}};
+        }
+        return { "", { nullptr, nullptr} };
+    }
     NativeTy* YVMModule::toNativeType(const Type& type, const std::string& hash, IRGenerator* irgen, const std::vector<Type>& disallowed_types)
     {
         auto& eng = *reinterpret_cast<YVMEngine*>(engine);

@@ -32,7 +32,7 @@ namespace Yoyo {
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(EnumDeclaration*);
-        void operator()(ModuleImport*);
+        void operator()(ModuleImport*) {}
         void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);
         void operator()(OperatorOverload*);
@@ -44,7 +44,7 @@ namespace Yoyo {
         void operator()(BreakStatement*);
         void operator()(ContinueStatement*);
         void operator()(ConstantDeclaration*);
-        void operator()(CImportDeclaration*);
+        void operator()(CImportDeclaration*) {}
         void operator()(UnionDeclaration*);
         void operator()(MacroDeclaration*);
         void callDestructors(size_t depth = 0);
@@ -53,7 +53,6 @@ namespace Yoyo {
         bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng);
         size_t nextKnownAddr();
         std::optional<Type> getVariableType(const std::string& name, Expression*) override;
-        //llvm::StructType* hanldeClassDeclaration(std::span<const ClassVariable> vars, Ownership own, std::string_view name);
 	};
     class YVMExpressionEvaluator
     {

@@ -10,7 +10,7 @@ namespace Yoyo
     //Given a declaration, forward declare it and all the other sustatements
     struct ForwardDeclaratorPass1
     {
-        ModuleBase* md;
+        YVMModule* md;
         std::unique_ptr<Statement>& stmt;
         std::string block;
         bool operator()(FunctionDeclaration* decl) const
@@ -48,9 +48,9 @@ namespace Yoyo
             };
             md->classes[block].emplace_back(
                 mangled_name_prefix,
-                nullptr,
                 std::unique_ptr<ClassDeclaration>{decl}
             );
+            md->classes_types[decl] = nullptr;
 
             return true;
         }
@@ -116,10 +116,8 @@ namespace Yoyo
                 .module = md,
                 .block_hash = block,
             };
-            md->unions[block].emplace_back(
-                std::unique_ptr<UnionDeclaration>{decl},
-                nullptr
-            );
+            md->unions[block].emplace_back(decl);
+            md->union_types[decl] = nullptr;
 
             return true;
         }
@@ -137,17 +135,7 @@ namespace Yoyo
     };
 
 
-    extern "C"
-        const char* __asan_default_options() {
-        // Clang reports ODR Violation errors in mbedtls/library/certs.c.
-        // NEED TO REPORT THIS ISSUE
-        return "detect_container_overflow=0";
-    }
     
-    Engine::~Engine()
-    {
-
-    }
 
     YVMAppModule* YVMEngine::addAppModule(const std::string& name)
     {
@@ -167,7 +155,7 @@ namespace Yoyo
         md->modules["core"] = modules.at("core").get();
         for (auto& stat : prog)
         {
-            if (!std::visit(ForwardDeclaratorPass1{ md.get(), stat, md->module_hash }, stat->toVariant()))
+            if (!std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(md.get()), stat, md->module_hash }, stat->toVariant()))
             {
                 modules.erase(module_name);
                 break;
@@ -198,17 +186,10 @@ namespace Yoyo
     }
     void YVMEngine::addDynamicLibrary(std::string_view path)
     {
-        
     }
     void* YVMEngine::createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator* irgen_g)
     {
         return nullptr;
-    }
-    std::string_view Engine::viewString(void* str)
-    {
-        struct String { char* data; uint64_t len; uint64_t cap; };
-        auto arg_as_str = static_cast<String*>(str);
-        return std::string_view{ arg_as_str->data, arg_as_str->len };
     }
     void YVMEngine::prepareForExecution()
     {

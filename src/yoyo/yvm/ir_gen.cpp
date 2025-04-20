@@ -20,6 +20,21 @@ namespace Yoyo
         error(Error({1, 1}, {1, 1}, "Encountered unexpected type", ""));
         return nullptr;
     }
+    Yvm::Type YVMIRGenerator::toTypeEnum(const Type& type) {
+        auto nt = toNativeType(type);
+        if (nt == NativeType::getI8()) return Yvm::Type::i8;
+        else if (nt == NativeType::getI16()) return Yvm::Type::i16;
+        else if (nt == NativeType::getI32()) return Yvm::Type::i32;
+        else if (nt == NativeType::getI64()) return Yvm::Type::i64;
+        else if (nt == NativeType::getU8()) return Yvm::Type::u8;
+        else if (nt == NativeType::getU16()) return Yvm::Type::u16;
+        else if (nt == NativeType::getU32()) return Yvm::Type::u32;
+        else if (nt == NativeType::getU64()) return Yvm::Type::u64;
+        else if (nt == NativeType::getF32()) return Yvm::Type::f32;
+        else if (nt == NativeType::getF64()) return Yvm::Type::f64;
+        else if (nt == NativeType::getPtrTy()) return Yvm::Type::ptr;
+        return static_cast<Yvm::Type>(-1);
+    }
     extern "C"
     {
         YOYO_API  void* Yoyo_malloc_wrapper_dont_use_name(size_t size);
@@ -104,19 +119,7 @@ namespace Yoyo
     {
         __debugbreak();
     }
-    bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface)
-    {
-        if (cls.parameters.size() != interface.parameters.size()) return false;
-        if (!cls.returnType.is_equal(interface.returnType)) return false;
-        for (size_t i = 0; i < cls.parameters.size(); i++)
-        {
-            auto& cls_param = cls.parameters[i];
-            auto& intf_param = interface.parameters[i];
-            if (!cls_param.type.is_equal(intf_param.type))
-                if (cls_param.name != "this" || intf_param.name != "this") return false;
-        }
-        return true;
-    }
+    bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface);
     void YVMIRGenerator::operator()(EnumDeclaration* decl)
     {
         auto ptr = current_Statement->release();
@@ -521,25 +524,7 @@ namespace Yoyo
         builder->create_label(cont_block);
     }
 
-    bool canReturn(Statement* stat)
-    {
-        if(dynamic_cast<ReturnStatement*>(stat))
-            return true;
-        if(auto res = dynamic_cast<IfStatement*>(stat))
-            return canReturn(res->then_stat.get()) || (res->else_stat && canReturn(res->else_stat.get()));
-        if(auto res = dynamic_cast<WhileStatement*>(stat))
-            return canReturn(res->body.get());
-        if(auto res = dynamic_cast<ForStatement*>(stat))
-            return canReturn(res->body.get());
-        if(auto res = dynamic_cast<BlockStatement*>(stat))
-        {
-            for(auto& sub_stat : res->statements)
-            {
-                if(canReturn(sub_stat.get())) return true;
-            }
-        }
-        return false;
-    }
+    bool canReturn(Statement* stat);
 
     void YVMIRGenerator::popScope()
     {
@@ -549,6 +534,11 @@ namespace Yoyo
     void YVMIRGenerator::callDestructors(size_t depth)
     {
         
+    }
+
+    void YVMIRGenerator::pushScope()
+    {
+        variables.emplace_back();
     }
 
 
@@ -565,6 +555,11 @@ namespace Yoyo
         }
         builder = nullptr;
         return !has_error;
+    }
+
+    size_t YVMIRGenerator::nextKnownAddr()
+    {
+        return std::ranges::max(variables.back() | std::views::values | std::views::keys);
     }
 
     
