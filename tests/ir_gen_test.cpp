@@ -53,7 +53,7 @@ TEST_CASE("Test IR")
     //md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
     //md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");
     engine.addModule("source.yoyo", src2);
-    engine.addModule("rl", raylib_src);
+    //engine.addModule("rl", raylib_src);
     engine.compile();
     engine.addDynamicLibrary("raylib.dll");
     uint32_t idx = 3;

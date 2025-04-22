@@ -4,8 +4,10 @@
 #include <ranges>
 #include <numbers>
 #include <yvm/yvm_engine.h>
+#include <yvm/yvm_irgen.h>
 namespace Yoyo
 {
+    
     std::pair<std::string, std::tuple<std::string, StructNativeTy*, ClassDeclaration*>> YVMModule::findClassWithType(const std::string& block, const std::string& name)
     {
         if (auto cls = findClass(block, name); cls.second) {
@@ -178,6 +180,8 @@ namespace Yoyo
         return nullptr;
     }
     void YVMModule::makeBuiltinModule(YVMEngine* eng) {
-
+        auto module = std::make_unique<YVMModule>();
+        auto mod = module.get();
+        eng->modules["core"] = std::move(module);
     }
 }

@@ -18,7 +18,7 @@ namespace Yoyo {
     protected:
     public:
         Engine();
-        ~Engine();
+        virtual ~Engine() = default;
         Engine(Engine&&) noexcept = default;
         virtual void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) = 0;
         std::unordered_map<std::string, std::unique_ptr<ModuleBase>> modules;

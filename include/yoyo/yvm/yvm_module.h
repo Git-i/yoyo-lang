@@ -11,6 +11,7 @@ namespace Yoyo
         YVMModule& operator=(const YVMModule& other) = delete;
         YVMModule(const YVMModule&) = delete;
         YVMModule() = default;
+        Yvm::Module code;
         std::unordered_map<ClassDeclaration*, StructNativeTy*> classes_types;
         std::unordered_map<UnionDeclaration*, StructNativeTy*> union_types;
         std::unordered_map<std::string, std::pair<StructNativeTy*, std::unique_ptr<LambdaExpression>>> lambdas;

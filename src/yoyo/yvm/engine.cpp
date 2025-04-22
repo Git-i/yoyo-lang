@@ -137,6 +137,11 @@ namespace Yoyo
 
     
 
+    YVMEngine::YVMEngine()
+    {
+        YVMModule::makeBuiltinModule(this);
+    }
+
     YVMAppModule* YVMEngine::addAppModule(const std::string& name)
     {
         return nullptr;
@@ -174,22 +179,15 @@ namespace Yoyo
         for (auto& mod : modules)
         {
             auto yvm_mod = reinterpret_cast<YVMModule*>(mod.second.get());
-            //if (!yvm_mod->code)
-            //{
-            //    auto src = sources.extract(mod.first);
-            //    SourceView vw(src.mapped().first, mod.first);
-            //    irgen.view = &vw;
-            //    if (!irgen.GenerateIR(mod.first, std::move(src.mapped().second), llvm_mod, this))
-            //        llvm_mod->code.~ThreadSafeModule();
-            //}
+            if (!sources.contains(mod.first)) continue;
+            auto src = sources.extract(mod.first);
+            SourceView vw(src.mapped().first, mod.first);
+            irgen.view = &vw;
+            irgen.GenerateIR(mod.first, std::move(src.mapped().second), yvm_mod, this);
         }
     }
     void YVMEngine::addDynamicLibrary(std::string_view path)
     {
-    }
-    void* YVMEngine::createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator* irgen_g)
-    {
-        return nullptr;
     }
     void YVMEngine::prepareForExecution()
     {

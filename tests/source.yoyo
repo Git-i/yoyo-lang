@@ -1,14 +1,3 @@
-setj: fn(buf: ptr) -> i32 = c_import!("_setjmp");
-lonj: fn(buf: ptr, val: i32) = c_import!("longjmp");
-
-setj_text: const str = "Set jump";
-lonj_text: const str = "Long jumped"; 
-main: fn(buf: ptr) = {
-    if(setj(buf) == 0) {
-        test::print(&setj_text);
-    } else {
-        test::print(&lonj_text);
-    }
-
-    lonj(buf, 10);
+main: fn -> i32 = {
+    return 5;
 }

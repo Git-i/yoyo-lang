@@ -5,15 +5,18 @@
 
 namespace Yoyo
 {
-    struct YVMAppModule;
+    struct YVMAppModule {};
 	class YOYO_API YVMEngine : public Engine {
     public:
+        YVMEngine();
         YVMAppModule* addAppModule(const std::string& name);
         void addModule(const std::string& module_name, std::string source);
         void compile();
         void prepareForExecution();
         void addDynamicLibrary(std::string_view path);
-        void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) override;
+        void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) override {
+            return nullptr;
+        }
         Yvm::VM vm;
         StructTypeSelector struct_manager;
 	};

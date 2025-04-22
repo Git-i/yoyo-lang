@@ -18,11 +18,6 @@ namespace Yoyo
     {
     }
 
-    Engine::~Engine()
-    {
-
-        //delete static_cast<llvm::LLVMContext*>(llvm_context);
-    }
 
     std::string_view Engine::viewString(void* str)
     {
