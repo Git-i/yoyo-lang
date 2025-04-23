@@ -22,6 +22,7 @@ namespace Yoyo
                     == std::ranges::find_if(attributes, [](const auto& attr) { return attr.name == "public"; });
             }
         };
+        virtual ~ModuleBase() = default;
         ModuleOverloadDetails overloads;
         Engine* engine;
         std::unordered_map<std::string, ModuleBase*> modules;

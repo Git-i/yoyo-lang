@@ -21,6 +21,6 @@ namespace Yoyo
 
         NativeTy* toNativeType(const Type& type, const std::string& hash, IRGenerator*, const std::vector<Type>& disallowed_types);
         static void makeBuiltinModule(YVMEngine* eng);
-        void dumpIR();
+        std::string dumpIR();
     };
 }

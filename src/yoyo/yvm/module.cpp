@@ -5,6 +5,7 @@
 #include <numbers>
 #include <yvm/yvm_engine.h>
 #include <yvm/yvm_irgen.h>
+#include "yoyo_vm/disassembler.h"
 namespace Yoyo
 {
     
@@ -183,5 +184,14 @@ namespace Yoyo
         auto module = std::make_unique<YVMModule>();
         auto mod = module.get();
         eng->modules["core"] = std::move(module);
+    }
+    std::string YVMModule::dumpIR()
+    {
+        std::string final;
+        for (auto& [name, body] : code.code) {
+            final += name + ":\n\n";
+            final += Yvm::Disassembler::disassemble(body);
+        }
+        return final;
     }
 }

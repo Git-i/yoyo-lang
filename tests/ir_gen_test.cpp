@@ -11,6 +11,7 @@
 #include "graphviz/gvc.h"
 #endif
 #include <yvm/yvm_engine.h>
+#include <yvm/yvm_module.h>
 
 
 int32_t func(void* arg)
@@ -63,7 +64,7 @@ TEST_CASE("Test IR")
         idx %= 8;
         auto str = "\033[1;3" + std::to_string(idx) + "m";
         std::cout <<  str << std::flush;
-        //mod.second->dumpIR();
+        std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod.second.get())->dumpIR() << std::endl;
         std::cout << "\033[0m" << std::flush;
         //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
     }

@@ -17,6 +17,7 @@ namespace Yoyo
         auto t = type.module ?
             reinterpret_cast<YVMModule*>(type.module)->toNativeType(type, block_hash, this, {}):
             reinterpret_cast<YVMModule*>(module)->toNativeType(type, block_hash, this, {});
+        if (t) return t;
         error(Error({1, 1}, {1, 1}, "Encountered unexpected type", ""));
         return nullptr;
     }
@@ -51,7 +52,6 @@ namespace Yoyo
         builder.swap(new_builder);
 
         auto fn_name = block_hash + decl->name;
-        builder->create_function(fn_name);
         
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(), decl);
         function_cfgs.back().annotate();
@@ -62,6 +62,10 @@ namespace Yoyo
         saturateSignature(this_entry->sig, module);
         size_t idx = 0;
         uint8_t uses_sret = this_entry->sig.returnType.should_sret();
+
+        auto old_return = return_t;
+        return_t = this_entry->sig.returnType;
+
         size_t highest_param = this_entry->sig.parameters.size();
         for (auto& param : this_entry->sig.parameters) {
             if (!param.name.empty()) {
@@ -94,7 +98,8 @@ namespace Yoyo
         std::visit(*this, decl->body->toVariant());
         variables.swap(new_fn_vars);
         function_cfgs.pop_back();
-        builder->close_function();
+        builder->close_function(&reinterpret_cast<YVMModule*>(module)->code, fn_name);
+        std::swap(return_t, old_return);
         builder.swap(new_builder);
     }
     void YVMIRGenerator::operator()(ExpressionStatement* stat)
