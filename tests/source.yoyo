@@ -1,3 +1,4 @@
 main: fn -> i32 = {
-    return 5;
+    var: i32 = 100;
+    return var + 100;
 }

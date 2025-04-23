@@ -184,6 +184,84 @@ namespace Yoyo
         auto module = std::make_unique<YVMModule>();
         auto mod = module.get();
         eng->modules["core"] = std::move(module);
+
+        //-----------Comparison enum---------------------
+        constexpr int32_t eq = 1;
+        constexpr int32_t ne = 0;
+        constexpr int32_t less = 2;
+        constexpr int32_t greater = 3;
+        constexpr int32_t unord = 4;
+        auto cmp_eq = std::make_unique<EnumDeclaration>("CmpEq", decltype(EnumDeclaration::values){
+            {"Eq", eq}, { "Ne", ne }
+        }, decltype(EnumDeclaration::stats){});
+        auto cmp_ord = std::make_unique<EnumDeclaration>("CmpOrd", decltype(EnumDeclaration::values){
+            {"Eq", eq}, { "Less", less }, { "Greater", greater }
+        }, decltype(EnumDeclaration::stats){});
+        auto cmp_pord = std::make_unique<EnumDeclaration>("CmpPartOrd", decltype(EnumDeclaration::values){
+            {"Eq", eq}, { "Less", less }, { "Greater", greater }, { "Unord", unord }
+        }, decltype(EnumDeclaration::stats){});
+        mod->enums[mod->module_hash].emplace_back(std::move(cmp_eq));
+        mod->enums[mod->module_hash].emplace_back(std::move(cmp_ord));
+        mod->enums[mod->module_hash].emplace_back(std::move(cmp_pord));
+        //---------------------------------------------------
+        auto& operators = mod->overloads;
+        std::array types = {
+            Type{"f64", {}, nullptr, mod},
+            Type{"f32", {}, nullptr, mod},
+            Type{"i64", {}, nullptr, mod},
+            Type{"i32", {}, nullptr, mod},
+            Type{"i16", {}, nullptr, mod},
+            Type{"i8", {}, nullptr, mod},
+            Type{"u64", {}, nullptr, mod},
+            Type{"u32", {}, nullptr, mod},
+            Type{"u16", {}, nullptr, mod},
+            Type{"u8", {}, nullptr, mod},
+        };
+        const auto add_for = std::unordered_map<std::string, Yvm::OpCode>{
+            { "f64", Yvm::OpCode::FAdd64 },
+            { "f32", Yvm::OpCode::FAdd32 },
+            { "i64", Yvm::OpCode::Add64 },
+            { "i32", Yvm::OpCode::Add32 },
+            { "i16", Yvm::OpCode::Add16 },
+            { "i8",  Yvm::OpCode::Add8 },
+            { "u64", Yvm::OpCode::Add64 },
+            { "u32", Yvm::OpCode::Add32 },
+            { "u16", Yvm::OpCode::Add16 },
+            { "u8",  Yvm::OpCode::Add8 },
+        };
+        const auto sub_for = std::unordered_map<std::string, Yvm::OpCode>{
+            { "f64", Yvm::OpCode::FSub64 },
+            { "f32", Yvm::OpCode::FSub32 },
+            { "i64", Yvm::OpCode::Sub64 },
+            { "i32", Yvm::OpCode::Sub32 },
+            { "i16", Yvm::OpCode::Sub16 },
+            { "i8",  Yvm::OpCode::Sub8 },
+            { "u64", Yvm::OpCode::Sub64 },
+            { "u32", Yvm::OpCode::Sub32 },
+            { "u16", Yvm::OpCode::Sub16 },
+            { "u8",  Yvm::OpCode::Sub8 },
+        };
+        for (auto& t : types) {
+            auto mangled_name_for = [&t](const std::string& op_name)
+                {
+                    // __operator_<name>__<type_lhs>__<type_rhs>
+                    return "__operator__" + op_name + "__" + t.name + "__" + t.name;
+                };
+            operators.add_binary_detail_for(TokenType::Plus, t, t, t);
+            operators.add_binary_detail_for(TokenType::Minus, t, t, t);
+            operators.add_binary_detail_for(TokenType::Star, t, t, t);
+            operators.add_binary_detail_for(TokenType::Slash, t, t, t);
+            Yvm::Emitter em;
+
+            em.write_1b_inst(add_for.at(t.name));
+            em.write_1b_inst(Yvm::OpCode::Ret);
+            em.close_function(&mod->code, mangled_name_for("plus"));
+
+            em.write_1b_inst(sub_for.at(t.name));
+            em.write_1b_inst(Yvm::OpCode::Ret);
+            em.close_function(&mod->code, mangled_name_for("minus"));
+
+        }
     }
     std::string YVMModule::dumpIR()
     {

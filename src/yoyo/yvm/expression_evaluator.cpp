@@ -402,8 +402,8 @@ namespace Yoyo
         {
             if (on_stack)
             {
-                irgen->builder->write_1b_inst(OpCode::Switch);
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
+                return;
             }
         }
         auto native = irgen->toNativeType(left_type);
@@ -1078,6 +1078,15 @@ namespace Yoyo
 
     std::vector<Type> YVMExpressionEvaluator::operator()(IntegerLiteral* lit) {
         const auto ul = std::stoull(std::string{lit->text});
+        if (target && target->is_integral()) {
+            switch (*target->integer_width()) {
+            case 8: irgen->builder->write_const(static_cast<uint8_t>(ul)); break;
+            case 16: irgen->builder->write_const(static_cast<uint16_t>(ul)); break;
+            case 32: irgen->builder->write_const(static_cast<uint32_t>(ul)); break;
+            case 64: irgen->builder->write_const(static_cast<uint64_t>(ul)); break;
+            }
+            return {};
+        }
         irgen->builder->write_const(ul);
         return {};
     }
@@ -1176,7 +1185,7 @@ namespace Yoyo
                 {
                     irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(var.second.second));
                 }
-                if(!ret_type->is_lvalue)
+                if(!ret_type->is_lvalue && !ret_type->is_trivially_destructible(irgen))
                 {
                     irgen->builder->write_1b_inst(OpCode::PopReg);
                 }

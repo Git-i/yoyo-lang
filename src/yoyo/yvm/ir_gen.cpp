@@ -298,7 +298,7 @@ namespace Yoyo
             {
                 builder->write_alloca(type_size);
                 eval.implicitConvert(decl->initializer.get(), expr_type, type, true, false);
-            } eval.implicitConvert(decl->initializer.get(), expr_type, type, false, false);
+            } else eval.implicitConvert(decl->initializer.get(), expr_type, type, false, false);
             if (!type.is_trivially_destructible(this))
             {
                 // register the object for destruction on ret/panic
