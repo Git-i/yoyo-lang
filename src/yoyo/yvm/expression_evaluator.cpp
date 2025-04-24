@@ -1514,9 +1514,9 @@ namespace Yoyo
         
         bool uses_sret = return_t->should_sret();
         fillArgs(uses_sret, fn.sig, {}, op->arguments);
-        irgen->builder->write_fn_addr(irgen->block_hash + t->name);
+        std::visit(*this, op->callee->toVariant());
 
-        irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size());
+        irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + uses_sret);
         if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
         if (return_t->is_non_owning(irgen));
         //stealUsages(args, return_value);
