@@ -1,7 +1,10 @@
+Vec2: struct = {
+    x: i32, y: i32
+}
 main: fn -> i32 = {
-    var: i32 = 100;
-    if (var == 100)
-        return var + 100;
+    var := Vec2{ .x = 100, .y = 100 };
+    if (var.x == 100)
+        return var.x + 100;
     else
-        return var + 50;
+        return var.y + 50;
 }

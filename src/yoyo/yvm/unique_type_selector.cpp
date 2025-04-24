@@ -11,11 +11,14 @@ namespace Yoyo
 
 		std::vector<NativeTy*> types(child_depth);
 		auto curr_par = parent;
+		types[child_depth - 1] = node_type;
+		--child_depth;
 		for (; child_depth >= 1; child_depth--) {
 			types[child_depth - 1] = curr_par->node_type;
 			curr_par = curr_par->parent;
 		}
 		struct_type = NativeType::makeForStruct(types);
+		return struct_type;
 	}
 	NativeTy* StructTypeSelector::get_struct_type(std::span<NativeTy* const> data)
 	{
