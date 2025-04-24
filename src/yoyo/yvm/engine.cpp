@@ -158,6 +158,7 @@ namespace Yoyo
         md->engine = this;
         md->module_hash = module_name + "::";
         md->modules["core"] = modules.at("core").get();
+        vm.add_module(&reinterpret_cast<YVMModule*>(md.get())->code);
         for (auto& stat : prog)
         {
             if (!std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(md.get()), stat, md->module_hash }, stat->toVariant()))
@@ -191,5 +192,6 @@ namespace Yoyo
     }
     void YVMEngine::prepareForExecution()
     {
+        vm.link();
     }
 }

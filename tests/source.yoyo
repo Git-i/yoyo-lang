@@ -1,4 +1,7 @@
 main: fn -> i32 = {
     var: i32 = 100;
-    return var + 100;
+    if (var == 100)
+        return var + 100;
+    else
+        return var + 50;
 }

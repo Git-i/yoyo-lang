@@ -58,6 +58,7 @@ TEST_CASE("Test IR")
     engine.compile();
     engine.addDynamicLibrary("raylib.dll");
     uint32_t idx = 3;
+    engine.prepareForExecution();
     for(auto& mod: engine.modules)
     {
         idx += 1;
@@ -68,9 +69,11 @@ TEST_CASE("Test IR")
         std::cout << "\033[0m" << std::flush;
         //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
     }
-    engine.prepareForExecution();
     std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "main";
-    
+    auto mod = reinterpret_cast<Yoyo::YVMModule*>(engine.modules["source.yoyo"].get());
+    auto rn = engine.vm.new_runner();
+    auto result = rn.run_code(mod->code.code[unmangled_name].data(), nullptr, 0);
+    std::cout << result.i32 << std::endl;
 }
 
 TEST_CASE("Error formatting", "[errors]")

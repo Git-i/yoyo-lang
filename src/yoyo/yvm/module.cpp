@@ -184,7 +184,7 @@ namespace Yoyo
         auto module = std::make_unique<YVMModule>();
         auto mod = module.get();
         eng->modules["core"] = std::move(module);
-
+        eng->vm.add_module(&mod->code);
         //-----------Comparison enum---------------------
         constexpr int32_t eq = 1;
         constexpr int32_t ne = 0;
@@ -241,6 +241,31 @@ namespace Yoyo
             { "u16", Yvm::OpCode::Sub16 },
             { "u8",  Yvm::OpCode::Sub8 },
         };
+        const auto mul_for = std::unordered_map<std::string, Yvm::OpCode>{
+            { "f64", Yvm::OpCode::FMul64 },
+            { "f32", Yvm::OpCode::FMul32 },
+            { "i64", Yvm::OpCode::Mul64 },
+            { "i32", Yvm::OpCode::Mul32 },
+            { "i16", Yvm::OpCode::Mul16 },
+            { "i8",  Yvm::OpCode::Mul8 },
+            { "u64", Yvm::OpCode::Mul64 },
+            { "u32", Yvm::OpCode::Mul32 },
+            { "u16", Yvm::OpCode::Mul16 },
+            { "u8",  Yvm::OpCode::Mul8 },
+        };
+        const auto div_for = std::unordered_map<std::string, Yvm::OpCode>{
+            { "f64", Yvm::OpCode::FDiv64 },
+            { "f32", Yvm::OpCode::FDiv32 },
+            { "i64", Yvm::OpCode::IDiv64 },
+            { "i32", Yvm::OpCode::IDiv32 },
+            { "i16", Yvm::OpCode::IDiv16 },
+            { "i8",  Yvm::OpCode::IDiv8 },
+            { "u64", Yvm::OpCode::UDiv64 },
+            { "u32", Yvm::OpCode::UDiv32 },
+            { "u16", Yvm::OpCode::UDiv16 },
+            { "u8",  Yvm::OpCode::UDiv8 },
+        };
+        Yvm::Emitter em;
         for (auto& t : types) {
             auto mangled_name_for = [&t](const std::string& op_name)
                 {
@@ -251,7 +276,6 @@ namespace Yoyo
             operators.add_binary_detail_for(TokenType::Minus, t, t, t);
             operators.add_binary_detail_for(TokenType::Star, t, t, t);
             operators.add_binary_detail_for(TokenType::Slash, t, t, t);
-            Yvm::Emitter em;
 
             em.write_1b_inst(add_for.at(t.name));
             em.write_1b_inst(Yvm::OpCode::Ret);
@@ -261,6 +285,39 @@ namespace Yoyo
             em.write_1b_inst(Yvm::OpCode::Ret);
             em.close_function(&mod->code, mangled_name_for("minus"));
 
+            em.write_1b_inst(mul_for.at(t.name));
+            em.write_1b_inst(Yvm::OpCode::Ret);
+            em.close_function(&mod->code, mangled_name_for("mul"));
+
+            em.write_1b_inst(div_for.at(t.name));
+            em.write_1b_inst(Yvm::OpCode::Ret);
+            em.close_function(&mod->code, mangled_name_for("div"));
+        }
+        // all the integral types
+        for (auto& t : std::ranges::subrange(types.begin() + 2, types.end())) {
+            Type result{ .name = "CmpOrd", .module = mod, .block_hash = mod->module_hash };
+            std::string mangled_name = "__operator__cmp__" + t.name + "__" + t.name;
+
+            em.write_2b_inst(Yvm::OpCode::StackAddr, 0);
+            em.write_2b_inst(Yvm::OpCode::StackAddr, 1);
+            em.write_2b_inst(Yvm::OpCode::CmpEq, *t.integer_width());
+            auto ne_bb = em.unq_label_name("not equal");
+            em.create_jump(Yvm::OpCode::JumpIfFalse, ne_bb);
+            em.write_const(eq);
+            em.write_1b_inst(Yvm::OpCode::Ret);
+
+            em.create_label(ne_bb);
+            em.write_2b_inst(t.is_signed_integral() ? Yvm::OpCode::ICmpGt : Yvm::OpCode::UCmpGt, *t.integer_width());
+            auto ngt_bb = em.unq_label_name("not greater");
+            em.create_jump(Yvm::OpCode::JumpIfFalse, ngt_bb);
+            em.write_const(greater);
+            em.write_1b_inst(Yvm::OpCode::Ret);
+
+            em.create_label(ngt_bb);
+            em.write_const(less);
+            em.write_1b_inst(Yvm::OpCode::Ret);
+            em.close_function(&mod->code, mangled_name);
+            operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
         }
     }
     std::string YVMModule::dumpIR()
@@ -268,7 +325,7 @@ namespace Yoyo
         std::string final;
         for (auto& [name, body] : code.code) {
             final += name + ":\n\n";
-            final += Yvm::Disassembler::disassemble(body);
+            final += Yvm::Disassembler::disassemble(body, &reinterpret_cast<YVMEngine*>(engine)->vm);
         }
         return final;
     }

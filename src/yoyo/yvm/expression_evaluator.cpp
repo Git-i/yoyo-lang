@@ -402,9 +402,12 @@ namespace Yoyo
         {
             if (on_stack)
             {
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
                 return;
             }
+            return;
         }
         auto native = irgen->toNativeType(left_type);
         auto struct_native = reinterpret_cast<StructNativeTy*>(native);
@@ -601,31 +604,41 @@ namespace Yoyo
     std::vector<Type> YVMExpressionEvaluator::doAddition(
         Expression* lhs,
         Expression* rhs,
-        const Type& left_type,
-        const Type& right_type)
+        const Type& left_type_og,
+        const Type& right_type_og)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
-        if (left_type.name == "ilit" && right_type.name == "ilit") {
+        if (left_type_og.name == "ilit" && right_type_og.name == "ilit") {
             irgen->builder->write_1b_inst(OpCode::Add64);
             return {};
         }
-        auto target = resolveAdd(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::Plus, irgen, target);
+        auto target_ovl = resolveAdd(left_type_og, right_type_og, irgen);
+
+        auto left_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->left }, lhs->toVariant());
+        target = target_ovl->left;
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        implicitConvert(lhs, left_type, target_ovl->left, false, true);
+
+        auto right_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->right }, lhs->toVariant());
+        target = target_ovl->right;
+        auto rhs_e = std::visit(*this, rhs->toVariant());
+        implicitConvert(rhs, right_type, target_ovl->right, false, true);
+
+        auto fn = getOperatorFunction(TokenType::Plus, irgen, target_ovl);
         
-        if (target->result.should_sret())
+        if (target_ovl->result.should_sret())
         {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
+            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target_ovl->result)));
             irgen->builder->write_1b_inst(OpCode::Dup);
         }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
+        if (!rhs_e.empty()) {
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        }
+        
         irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
+        irgen->builder->write_2b_inst(OpCode::Call, 2 + target_ovl->result.should_sret());
+        if (target_ovl->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target_ovl->result.is_non_owning(irgen))
         {
             // You can't extend lifetimes if you're an rvalue, I believe
             irgen->builder->write_1b_inst(OpCode::Switch);
@@ -636,12 +649,13 @@ namespace Yoyo
         }
         else
         {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
+            if (!rhs_e.empty()) {
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_1b_inst(OpCode::Pop);
+                clearUsages(rhs_e, *this);
+                irgen->builder->write_1b_inst(OpCode::Pop);
+                clearUsages(lhs_e, *this);
+            }
             return {};
         }
     }
@@ -937,8 +951,8 @@ namespace Yoyo
         ComparisonPredicate p,
         Expression* lhs,
         Expression* rhs,
-        const Type& left_type,
-        const Type& right_type,
+        const Type& left_type_og,
+        const Type& right_type_og,
         const Type& result_type)
     {
         constexpr int32_t eq = 1;
@@ -946,22 +960,32 @@ namespace Yoyo
         constexpr int32_t less = 2;
         constexpr int32_t greater = 3;
         constexpr int32_t unord = 4;
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
         // enum comparisons
-        if ((p == EQ || p == NE) && left_type.is_equal(right_type)) {
-            if (left_type.get_decl_if_enum()) {
+        if ((p == EQ || p == NE) && left_type_og.is_equal(right_type_og)) {
+            if (left_type_og.get_decl_if_enum()) {
+                std::visit(*this, lhs->toVariant());
+                std::visit(*this, rhs->toVariant());
                 if (p == EQ) irgen->builder->write_2b_inst(OpCode::CmpEq, 32);
                 else irgen->builder->write_2b_inst(OpCode::CmpNe, 32);
                 return {};
             }
         }
-        auto target = resolveCmp(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::Spaceship, irgen, target);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
+        auto target_ovl = resolveCmp(left_type_og, right_type_og, irgen);
+        auto left_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->left }, lhs->toVariant());
+        target = target_ovl->left;
+        auto lhs_e = std::visit(*this, lhs->toVariant());
+        implicitConvert(lhs, left_type, target_ovl->left, false, true);
+
+        auto right_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->right }, rhs->toVariant());
+        target = target_ovl->right;
+        auto rhs_e = std::visit(*this, rhs->toVariant());
+        implicitConvert(rhs, right_type, target_ovl->right, false, true);
+        
+        auto fn = getOperatorFunction(TokenType::Spaceship, irgen, target_ovl);
+        if (!rhs_e.empty()) {
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        }
         irgen->builder->write_fn_addr(fn);
         irgen->builder->write_2b_inst(OpCode::Call, 2);
         if (p == EQ) {
@@ -1079,7 +1103,9 @@ namespace Yoyo
     std::vector<Type> YVMExpressionEvaluator::operator()(IntegerLiteral* lit) {
         const auto ul = std::stoull(std::string{lit->text});
         if (target && target->is_integral()) {
-            switch (*target->integer_width()) {
+            auto width = *target->integer_width();
+            target = std::nullopt;
+            switch (width) {
             case 8: irgen->builder->write_const(static_cast<uint8_t>(ul)); break;
             case 16: irgen->builder->write_const(static_cast<uint16_t>(ul)); break;
             case 32: irgen->builder->write_const(static_cast<uint32_t>(ul)); break;
