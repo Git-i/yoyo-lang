@@ -5,6 +5,7 @@
 namespace Yoyo
 {
 	using NativeTy = ffi_type;
+	using NativeProto = ffi_cif;
 	struct StructNativeTy : public NativeTy {
 		std::vector<size_t> offsets;
 	};
@@ -24,6 +25,9 @@ namespace Yoyo
 		NativeTy* getF64();
 
 		NativeTy* getPtrTy();
+
+		NativeProto* get_proto_for(std::span<NativeTy*>, NativeTy*);
+		void destroy_proto(NativeProto*);
 
 		StructNativeTy* makeForStruct(std::span<NativeTy* const>);
 		size_t getElementOffset(const StructNativeTy* type, size_t idx);

@@ -56,6 +56,16 @@ namespace Yoyo
         {
             return &ffi_type_pointer;
         }
+        NativeProto* get_proto_for(std::span<NativeTy*> args, NativeTy* ret_ty)
+        {
+            auto ret = new NativeProto;
+            ffi_prep_cif(ret, FFI_DEFAULT_ABI, args.size(), ret_ty, args.data());
+            return ret;
+        }
+        void destroy_proto(NativeProto* arg)
+        {
+            delete arg;
+        }
         StructNativeTy* makeForStruct(std::span<NativeTy* const> types)
         {
             auto ret_val = new StructNativeTy;

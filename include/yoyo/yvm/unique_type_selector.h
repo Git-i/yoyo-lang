@@ -2,9 +2,17 @@
 #include <vector>
 #include <memory>
 #include "native_type.h"
+#include <unordered_map>
 namespace Yoyo {
 	struct UniqueFISelector {
-
+	private:
+		NativeProto* initialize_proto(NativeTy* ret);
+	public:
+		std::vector<std::unique_ptr<UniqueFISelector>> children;
+		UniqueFISelector* parent = nullptr;
+		NativeTy* node_type = nullptr;
+		std::unordered_map<NativeTy*, NativeProto*> protos; //the key is for the return type
+		NativeProto* get_proto(std::span<NativeTy*>, NativeTy* ret);
 	};
 
 	struct StructTypeSelector {

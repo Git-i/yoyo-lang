@@ -19,5 +19,6 @@ namespace Yoyo
         }
         Yvm::VM vm;
         StructTypeSelector struct_manager;
+        UniqueFISelector fi_manager;
 	};
 }
