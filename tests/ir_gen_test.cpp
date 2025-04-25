@@ -11,7 +11,7 @@
 #include "graphviz/gvc.h"
 #endif
 #include <yvm/yvm_engine.h>
-#include <yvm/yvm_module.h>
+#include <yvm/app_module.h>
 
 
 int32_t func(void* arg)
@@ -48,7 +48,8 @@ TEST_CASE("Test IR")
     std::string raylib_src = oss2.str();
 
     Yoyo::YVMEngine engine;
-    //md = engine.addAppModule("test");
+    auto md = engine.addAppModule("test");
+    md->addFunction("() -> i32", static_cast<int32_t(*)()>([]() -> int32_t { return -50; }), "get_int");
     //md->addFunction("(x: &str) -> i32", func, "print");
     //md->addFunction("() -> u32", read_int, "read_uint");
     //md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");

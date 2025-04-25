@@ -5,7 +5,7 @@
 
 namespace Yoyo
 {
-    struct YVMAppModule {};
+    struct YVMAppModule;
 	class YOYO_API YVMEngine : public Engine {
     public:
         YVMEngine();

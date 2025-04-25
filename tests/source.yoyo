@@ -1,11 +1,3 @@
-Vec2: struct = {
-    x: i32, y: i32,
-    new: fn -> Vec2 = return Vec2{.x = 0, .y = 0};
-}
 main: fn -> i32 = {
-    var := Vec2::new();
-    if (var.x == 100)
-        return var.x + 100;
-    else
-        return var.y + 50;
+    return test::get_int();
 }

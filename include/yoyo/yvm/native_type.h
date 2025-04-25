@@ -2,6 +2,7 @@
 #include "ffi.h"
 #include <span>
 #include <vector>
+#include "yoyo_vm/vm.h"
 namespace Yoyo
 {
 	using NativeTy = ffi_type;
@@ -25,6 +26,9 @@ namespace Yoyo
 		NativeTy* getF64();
 
 		NativeTy* getPtrTy();
+		NativeTy* getVoid();
+
+		Yvm::VM::Type doCall(NativeProto* proto, size_t nargs, Yvm::VM::Type* args, void* function);
 
 		NativeProto* get_proto_for(std::span<NativeTy*>, NativeTy*);
 		void destroy_proto(NativeProto*);

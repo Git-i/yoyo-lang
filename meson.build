@@ -8,13 +8,10 @@ sources = [
     'src/yoyo/expression_type_checker.cpp',
     'src/yoyo/expression.cpp',
     'src/yoyo/type.cpp',
-    
     'src/yoyo/parselets/infix_parselets.cpp',
     'src/yoyo/parselets/prefix_parselets.cpp',
     'src/yoyo/engine.cpp',
     'src/yoyo/module.cpp',
-    
-    
     'src/yoyo/lifetime.cpp',
     'src/yoyo/cfg_node.cpp',
     'src/yoyo/overload_resolve.cpp',
@@ -23,8 +20,7 @@ sources = [
     'src/yoyo/constexpr_eval.cpp',
     'src/yoyo/macro_eval.cpp',
 
-    # headers
-    'include/yoyo/app_module.h',
+    
     'include/yoyo/ast_node.h',
     'include/yoyo/cfg_node.h',
     'include/yoyo/class_entry.h',
@@ -69,11 +65,12 @@ if backend == 'llvm' or backend == 'both'
         'src/yoyo/llvm/engine.cpp',
         'src/yoyo/llvm/module.cpp',
         'src/yoyo/to_string.cpp',
-        'src/yoyo/app_module.cpp',
+        'src/yoyo/llvm/app_module.cpp',
 
         'include/yoyo/llvm/llvm_irgen.h',
         'include/yoyo/llvm/llvm_engine.h',
         'include/yoyo/llvm/llvm_module.h',
+        'include/yoyo/llvm/app_module.h',
     ]
 endif
 
@@ -86,6 +83,7 @@ if backend == 'yvm' or backend == 'both'
         'include/yoyo/yvm/yvm_module.h',
         'include/yoyo/yvm/native_type.h',
         'include/yoyo/yvm/unique_type_selector.h',
+        'include/yoyo/yvm/app_module.h',
 
         'src/yoyo/yvm/ir_gen.cpp',
         'src/yoyo/yvm/expression_evaluator.cpp',
@@ -93,6 +91,7 @@ if backend == 'yvm' or backend == 'both'
         'src/yoyo/yvm/module.cpp',
         'src/yoyo/yvm/native_type.cpp',
         'src/yoyo/yvm/unique_type_selector.cpp',
+        'src/yoyo/yvm/app_module.cpp',
     ]
 endif
 yoyo_args = ['-DYOYO_DLL']

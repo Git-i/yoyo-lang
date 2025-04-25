@@ -1,5 +1,6 @@
 #include "yvm/native_type.h"
 #include <ranges>
+
 namespace Yoyo
 {
     namespace NativeType
@@ -55,6 +56,62 @@ namespace Yoyo
         NativeTy* getPtrTy()
         {
             return &ffi_type_pointer;
+        }
+        NativeTy* getVoid()
+        {
+            return &ffi_type_void;
+        }
+        Yvm::VM::Type doCall(NativeProto* proto, size_t nargs, Yvm::VM::Type* args, void* function)
+        {
+            using namespace Yvm;
+            std::vector<void*> fn_args;
+            for (auto i : std::views::iota(0u, proto->nargs)) {
+                //
+                if (proto->arg_types[i] == &ffi_type_sint8) fn_args[i] = &args[i].i8;
+                else if (proto->arg_types[i] == &ffi_type_uint8) fn_args[i] = &args[i].u8;
+                else if (proto->arg_types[i] == &ffi_type_uint16) fn_args[i] = &args[i].u16;
+                else if (proto->arg_types[i] == &ffi_type_sint16) fn_args[i] = &args[i].i16;
+                else if (proto->arg_types[i] == &ffi_type_uint32) fn_args[i] = &args[i].u32;
+                else if (proto->arg_types[i] == &ffi_type_sint32) fn_args[i] = &args[i].i32;
+                else if (proto->arg_types[i] == &ffi_type_sint64) fn_args[i] = &args[i].i64;
+                else if (proto->arg_types[i] == &ffi_type_uint64) fn_args[i] = &args[i].u64;
+                else if (proto->arg_types[i] == &ffi_type_float) fn_args[i] = &args[i].f32;
+                else if (proto->arg_types[i] == &ffi_type_double) fn_args[i] = &args[i].f64;
+                else if (proto->arg_types[i] == &ffi_type_pointer) fn_args[i] = &args[i].ptr;
+                else fn_args[i] = args[i].ptr;
+            }
+            ffi_arg ret_val;
+            VM::Type ret_obj{ .u64 = 0 };
+            void* ret_ptr = &ret_val;
+            //----------libffi is wierd with integer return types------------
+            if (proto->rtype == &ffi_type_sint8) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_uint8) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_uint16) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_sint16) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_uint32) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_sint32) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_sint64) ret_ptr = &ret_val;
+            else if (proto->rtype == &ffi_type_uint64) ret_ptr = &ret_val;
+            //--------------------------------------------------------------------
+            else if (proto->rtype == &ffi_type_float) ret_ptr = &ret_obj.f32;
+            else if (proto->rtype == &ffi_type_double) ret_ptr = &ret_obj.f64;
+            else if (proto->rtype == &ffi_type_pointer) ret_ptr = &ret_obj.ptr;
+            // for structural types yoyo supplies us a pointer to memory of sufficent size as the last arg
+            else {
+                ret_obj.ptr = args[proto->nargs].ptr;
+                ret_ptr = ret_obj.ptr;
+            }
+            ffi_call(proto, reinterpret_cast<void(*)()>(function), ret_ptr, fn_args.data());
+            if (proto->rtype == &ffi_type_sint8) ret_obj.i8 = reinterpret_cast<int8_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_uint8) ret_obj.u8 = reinterpret_cast<uint8_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_uint16) ret_obj.u16 = reinterpret_cast<uint16_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_sint16) ret_obj.i16 = reinterpret_cast<int16_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_uint32) ret_obj.u32 = reinterpret_cast<uint32_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_sint32) ret_obj.i32 = reinterpret_cast<int32_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_sint64) ret_obj.i64 = reinterpret_cast<int64_t&>(ret_val);
+            else if (proto->rtype == &ffi_type_uint64) ret_obj.u64 = reinterpret_cast<uint64_t&>(ret_val);
+            return ret_obj;
+            
         }
         NativeProto* get_proto_for(std::span<NativeTy*> args, NativeTy* ret_ty)
         {

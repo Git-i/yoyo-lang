@@ -5,6 +5,7 @@
 #include <statement.h>
 #include <yvm/yvm_engine.h>
 #include <yvm/yvm_irgen.h>
+#include <yvm/app_module.h>
 namespace Yoyo
 {
     //Given a declaration, forward declare it and all the other sustatements
@@ -139,12 +140,22 @@ namespace Yoyo
 
     YVMEngine::YVMEngine()
     {
+        vm.do_native_call = [](void* function, Yvm::VM::Type* begin, size_t arg_size, void* proto) {
+            return NativeType::doCall(static_cast<NativeProto*>(proto), arg_size, begin, function);
+            };
         YVMModule::makeBuiltinModule(this);
     }
 
     YVMAppModule* YVMEngine::addAppModule(const std::string& name)
     {
-        return nullptr;
+        if (modules.contains(name)) return nullptr;
+        auto& md = modules[name];
+        md = std::make_unique<YVMAppModule>();
+        md->module_hash = name + "::";
+        md->engine = this;
+        auto app_md = reinterpret_cast<YVMAppModule*>(md.get());
+        vm.add_module(&app_md->code);
+        return app_md;
     }
 
     void YVMEngine::addModule(const std::string& module_name, std::string source)
