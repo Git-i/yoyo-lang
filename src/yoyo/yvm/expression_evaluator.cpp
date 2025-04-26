@@ -1022,6 +1022,32 @@ namespace Yoyo
         }
         return {};
     }
+    std::vector<Type> YVMExpressionEvaluator::doSingleStringLiteral(const std::string& text, StructNativeTy* str_type)
+    {
+        irgen->builder->write_alloca(NativeType::get_size(str_type));
+        irgen->builder->write_const<uint64_t>(text.size()); // capacity to store in the string
+        irgen->builder->write_1b_inst(OpCode::Dup); // size to store in the string
+        irgen->builder->write_1b_inst(OpCode::Dup); // size for the memcpy
+        irgen->builder->write_1b_inst(OpCode::Dup); // size for the malloc
+        irgen->builder->write_1b_inst(OpCode::Malloc);
+        irgen->builder->write_1b_inst(OpCode::Switch);
+        irgen->builder->write_const_string(irgen->builder->create_const_string(text, &reinterpret_cast<YVMEngine*>(irgen->module->engine)->vm));
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
+        irgen->builder->write_1b_inst(OpCode::MemCpy);
+        // bring the obj and write the values into it, its at addr 3 because we have the pointer and 2 numbers on stack
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 3); 
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(str_type, 0));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::ptr);
+
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(str_type, 1));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
+
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(str_type, 2));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
+        return {};
+    }
     std::vector<Type> YVMExpressionEvaluator::doUnionVar(CallOperation* op, Type& t)
     {
         using namespace std::string_view_literals;
@@ -1197,6 +1223,11 @@ namespace Yoyo
         auto tp = type_checker(lit);
         if (!tp) { irgen->error(tp.error()); return {}; }
         auto str_type = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*tp));
+        // creating a string is way too many instructions for a fairly common task
+        // so we have this special optimized path for the common case of a string without interpolation
+        if (lit->literal.size() == 1 && std::holds_alternative<std::string>(lit->literal[0]))
+            return doSingleStringLiteral(std::get<std::string>(lit->literal[0]), str_type);
+
         irgen->builder->write_alloca(NativeType::get_size(str_type));
         // for each string segment we write:
         // - the pointer
