@@ -23,6 +23,7 @@ namespace Yoyo
 		em.write_const(proto);
 		em.write_const(func);
 		em.write_2b_inst(Yvm::OpCode::NativeCall, sig.parameters.size());
+		if (!sig.returnType.should_sret()) em.write_1b_inst(Yvm::OpCode::Ret);
 		em.close_function(&code, module_hash + name);
 		
 		functions[module_hash].emplace_back(name, std::move(sig), std::vector{ Attribute{"public"} });

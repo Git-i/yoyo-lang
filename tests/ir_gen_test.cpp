@@ -18,7 +18,7 @@ int32_t func(void* arg)
 {
     std::string_view sv =  Yoyo::Engine::viewString(arg);
     std::cout << sv << std::endl;
-    return 0;
+    return -76;
 }
 uint32_t read_int()
 {

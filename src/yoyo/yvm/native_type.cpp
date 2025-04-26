@@ -64,7 +64,7 @@ namespace Yoyo
         Yvm::VM::Type doCall(NativeProto* proto, size_t nargs, Yvm::VM::Type* args, void* function)
         {
             using namespace Yvm;
-            std::vector<void*> fn_args;
+            std::vector<void*> fn_args(proto->nargs);
             for (auto i : std::views::iota(0u, proto->nargs)) {
                 //
                 if (proto->arg_types[i] == &ffi_type_sint8) fn_args[i] = &args[i].i8;
@@ -113,10 +113,11 @@ namespace Yoyo
             return ret_obj;
             
         }
-        NativeProto* get_proto_for(std::span<NativeTy*> args, NativeTy* ret_ty)
+        NativeProto* get_proto_for(std::vector<NativeTy*> args, NativeTy* ret_ty)
         {
             auto ret = new NativeProto;
-            ffi_prep_cif(ret, FFI_DEFAULT_ABI, args.size(), ret_ty, args.data());
+            ret->args = std::move(args);
+            ffi_prep_cif(ret, FFI_DEFAULT_ABI, ret->args.size(), ret_ty, ret->args.data());
             return ret;
         }
         void destroy_proto(NativeProto* arg)

@@ -1456,18 +1456,30 @@ namespace Yoyo
             irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(sig.returnType)));
             irgen->builder->write_1b_inst(OpCode::Dup);
         }
-        //if(first) args[uses_sret] = first;
-        //bool is_bound = first != nullptr;
-        //for(size_t i = 0; i < exprs.size(); i++)
-        //{
-        //    auto arg = std::visit(*this, exprs[i]->toVariant());
-        //    auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
-        //    if (!tp) continue;
-        //    
-        //    args[i + is_bound + uses_sret] = implicitConvert(exprs[i].get(), arg, *tp, sig.parameters[i + is_bound].type);
-        //    
-        //}
-        //return return_value;
+        // assume there is no lifetime extension
+        
+        bool is_bound = first_expr != nullptr;
+        if (first_expr) {
+            auto tp = std::visit(ExpressionTypeChecker{ irgen }, first_expr->toVariant());
+            if (!tp) {
+                irgen->error(tp.error());
+            }
+            else {
+                std::visit(*this, first_expr->toVariant());
+                implicitConvert(first_expr.get(), *tp, sig.parameters[0].type, false, true);
+            }   
+        }
+        for(size_t i = 0; i < exprs.size(); i++)
+        {
+            auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
+            auto arg = std::visit(*this, exprs[i]->toVariant());
+            if (!tp) {
+                irgen->error(tp.error()); continue;
+            }
+            
+            implicitConvert(exprs[i].get(), *tp, sig.parameters[i + is_bound].type, false, true);
+            
+        }
     }
 
     std::vector<Type> YVMExpressionEvaluator::doInvoke(CallOperation* op, const Type& left_t)

@@ -6,7 +6,9 @@
 namespace Yoyo
 {
 	using NativeTy = ffi_type;
-	using NativeProto = ffi_cif;
+	struct NativeProto : public ffi_cif {
+		std::vector<NativeTy*> args;
+	};
 	struct StructNativeTy : public NativeTy {
 		std::vector<size_t> offsets;
 	};
@@ -30,7 +32,7 @@ namespace Yoyo
 
 		Yvm::VM::Type doCall(NativeProto* proto, size_t nargs, Yvm::VM::Type* args, void* function);
 
-		NativeProto* get_proto_for(std::span<NativeTy*>, NativeTy*);
+		NativeProto* get_proto_for(std::vector<NativeTy*>, NativeTy*);
 		void destroy_proto(NativeProto*);
 
 		StructNativeTy* makeForStruct(std::span<NativeTy* const>);
