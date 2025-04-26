@@ -22,7 +22,7 @@ namespace Yoyo
 		Yvm::Emitter em(false);
 		em.write_const(proto);
 		em.write_const(func);
-		em.write_2b_inst(Yvm::OpCode::NativeCall, sig.parameters.size());
+		em.write_2b_inst(Yvm::OpCode::NativeCall, sig.parameters.size() + sig.returnType.should_sret());
 		if (!sig.returnType.should_sret()) em.write_1b_inst(Yvm::OpCode::Ret);
 		em.close_function(&code, module_hash + name);
 		

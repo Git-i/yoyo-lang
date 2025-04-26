@@ -13,12 +13,26 @@
 #include <yvm/yvm_engine.h>
 #include <yvm/app_module.h>
 
-
+struct YoyoString {
+    char* text;
+    uint64_t size;
+    uint64_t capacity;
+};
 int32_t func(void* arg)
 {
     std::string_view sv =  Yoyo::Engine::viewString(arg);
     std::cout << sv << std::endl;
     return -76;
+}
+
+void get_string(void* out) {
+    
+
+    auto as_str = reinterpret_cast<YoyoString*>(out);
+    as_str->text = static_cast<char*>(malloc(15));
+    as_str->size = 15;
+    as_str->capacity = 15;
+    strcpy(as_str->text, "Hello from c++");
 }
 uint32_t read_int()
 {
@@ -50,7 +64,8 @@ TEST_CASE("Test IR")
     Yoyo::YVMEngine engine;
     auto md = engine.addAppModule("test");
     md->addFunction("() -> i32", static_cast<int32_t(*)()>([]() -> int32_t { return -50; }), "get_int");
-    md->addFunction("(x: str) -> i32", func, "print");
+    md->addFunction("(x: &str) -> i32", func, "print");
+    md->addFunction("() -> str", get_string, "get_string");
     //md->addFunction("() -> u32", read_int, "read_uint");
     //md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
     //md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");

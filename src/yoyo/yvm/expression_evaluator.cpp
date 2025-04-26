@@ -526,7 +526,10 @@ namespace Yoyo
     }
     void YVMExpressionEvaluator::destroy(const Type& type) const
     {
-        if(type.is_trivially_destructible(irgen, false)) return;
+        if (type.is_trivially_destructible(irgen, false)) {
+            irgen->builder->write_1b_inst(OpCode::Pop);
+            return;
+        }
         irgen->builder->write_fn_addr("__destructor_for_" + type.full_name());
         irgen->builder->write_2b_inst(OpCode::Call, 1);
         irgen->builder->write_1b_inst(OpCode::Pop);
@@ -1376,6 +1379,10 @@ namespace Yoyo
                 //taking the address of the rvalue causes the lifetime to be extended till the ref dies
                 if(!target->deref().is_trivially_destructible(irgen) && !target->deref().is_lvalue)
                 {
+                    // we use a dup because lifetime extensions expect on the stack top
+                    // and one object below that for each element in the extension vector
+                    irgen->builder->write_1b_inst(OpCode::Dup);
+                    return { target->deref() };
                 }
                 return operand;
             }
@@ -1447,7 +1454,7 @@ namespace Yoyo
         return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(PostfixOperation*) { return {}; }
-    void YVMExpressionEvaluator::fillArgs(bool uses_sret,
+    std::vector<Type> YVMExpressionEvaluator::fillArgs(bool uses_sret,
         const FunctionSignature& sig, const std::unique_ptr<Expression>& first_expr,
         std::vector<std::unique_ptr<Expression>>& exprs)
     {
@@ -1459,20 +1466,23 @@ namespace Yoyo
         // assume there is no lifetime extension
         
         bool is_bound = first_expr != nullptr;
+        std::vector<std::vector<Type>> extended_lifetimes;
+        extended_lifetimes.reserve(exprs.size() + is_bound);
+        bool using_elf = false;
         if (first_expr) {
             auto tp = std::visit(ExpressionTypeChecker{ irgen }, first_expr->toVariant());
             if (!tp) {
                 irgen->error(tp.error());
             }
             else {
-                std::visit(*this, first_expr->toVariant());
+                using_elf = using_elf ? true : !extended_lifetimes.emplace_back(std::visit(*this, first_expr->toVariant())).empty();
                 implicitConvert(first_expr.get(), *tp, sig.parameters[0].type, false, true);
             }   
         }
         for(size_t i = 0; i < exprs.size(); i++)
         {
             auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
-            auto arg = std::visit(*this, exprs[i]->toVariant());
+            using_elf = using_elf ? true : !extended_lifetimes.emplace_back(std::visit(*this, exprs[i]->toVariant())).empty();
             if (!tp) {
                 irgen->error(tp.error()); continue;
             }
@@ -1480,6 +1490,31 @@ namespace Yoyo
             implicitConvert(exprs[i].get(), *tp, sig.parameters[i + is_bound].type, false, true);
             
         }
+        if (!using_elf) {
+            return {};
+        }
+        // at least one function argument is performing temporary lifetime extension
+        // so there's gaps in the stack and we need to bring all args together
+        // we also need to return all the extended lifetimes in order
+        // ex ex ex p ex ex p ex p ex ex p
+        for (size_t i = extended_lifetimes.size(); i > 0; i--) {
+            auto idx = i - 1;
+            auto rev_view = extended_lifetimes | std::views::reverse;
+            // we add idx for the amount of parameters on the stack
+            // we add extended_lifetimes.size() - i for the amount of new values we added via this process
+            // i.e the rev stack addr
+            auto s_addr = idx + extended_lifetimes.size() - i;
+            for (const auto& elf : std::ranges::subrange(rev_view.begin(), rev_view.begin() + idx)) {
+                s_addr += elf.size();
+            }
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, s_addr);
+        }
+        std::vector<Type> final_types;
+        for (auto& elf : extended_lifetimes | std::views::reverse) {
+            final_types.push_back(Type{ "void" });
+            final_types.insert(final_types.end(), elf.begin(), elf.end());
+        }
+        return final_types;
     }
 
     std::vector<Type> YVMExpressionEvaluator::doInvoke(CallOperation* op, const Type& left_t)
@@ -1606,31 +1641,43 @@ namespace Yoyo
                 : &right_t->sig;
             bool uses_sret = sig->returnType.should_sret();
 
-            fillArgs(uses_sret, fn.sig, expr->lhs, op->arguments);
+            auto extensions = fillArgs(uses_sret, fn.sig, expr->lhs, op->arguments);
             if (is_lambda) irgen->builder->write_fn_addr(irgen->block_hash + right_t->name);
             else std::visit(*this, expr->rhs->toVariant());
             //if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
             irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + uses_sret);
             if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
-            if (return_t->is_non_owning(irgen));
-            //stealUsages(args, return_value);
-            else;
-              //  clearUsages(args, *this);
-            return {};
+            if (return_t->is_non_owning(irgen))
+            {
+                return extensions;                
+            }
+            else
+            {
+                for (auto& ext : extensions) {
+                    irgen->builder->write_1b_inst(OpCode::Switch);
+                    destroy(ext);
+                }
+                return {};
+            }
         }
 
         
         bool uses_sret = return_t->should_sret();
-        fillArgs(uses_sret, fn.sig, {}, op->arguments);
+        auto extensions = fillArgs(uses_sret, fn.sig, {}, op->arguments);
         std::visit(*this, op->callee->toVariant());
 
         irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + uses_sret);
         if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (return_t->is_non_owning(irgen));
-        //stealUsages(args, return_value);
-        else;
-            //clearUsages(args, *this);
-        return {};
+        if (return_t->is_non_owning(irgen))
+            return extensions;
+        else
+        {
+            for (auto& ext : extensions) {
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                destroy(ext);
+            }
+            return {};
+        }
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(SubscriptOperation* op)
     {

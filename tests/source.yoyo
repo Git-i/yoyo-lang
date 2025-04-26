@@ -1,3 +1,3 @@
 main: fn -> i32 = {
-    return test::print("Hello World");
+    return test::print(&test::get_string());
 }
