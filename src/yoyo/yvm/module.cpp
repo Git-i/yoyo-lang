@@ -185,6 +185,7 @@ namespace Yoyo
         auto mod = module.get();
         eng->modules["core"] = std::move(module);
         eng->vm.add_module(&mod->code);
+        mod->engine = eng;
         //-----------Comparison enum---------------------
         constexpr int32_t eq = 1;
         constexpr int32_t ne = 0;

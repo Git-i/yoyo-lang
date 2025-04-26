@@ -527,7 +527,7 @@ namespace Yoyo
     void YVMExpressionEvaluator::destroy(const Type& type) const
     {
         if(type.is_trivially_destructible(irgen, false)) return;
-        irgen->builder->write_fn_addr("__destructor_for" + type.full_name());
+        irgen->builder->write_fn_addr("__destructor_for_" + type.full_name());
         irgen->builder->write_2b_inst(OpCode::Call, 2);
         irgen->builder->write_1b_inst(OpCode::Pop);
     }
@@ -1193,7 +1193,72 @@ namespace Yoyo
     //str is of type {ptr, int64, int64} for buffer, size, capacity
     std::vector<Type> YVMExpressionEvaluator::operator()(StringLiteral* lit)
     {
-        /* strings don't exist yet sadly */
+        ExpressionTypeChecker type_checker{ irgen };
+        auto tp = type_checker(lit);
+        if (!tp) { irgen->error(tp.error()); return {}; }
+        auto str_type = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*tp));
+        irgen->builder->write_alloca(NativeType::get_size(str_type));
+        // for each string segment we write:
+        // - the pointer
+        // - the size
+        // - the offsets which they must be copied to
+        // we can get the final allocation size by adding the values at the stack top
+        // we can get the offset by adding the previous offset to the previous size
+        irgen->builder->write_const(uint64_t{ 0 });
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        std::vector<bool> should_free_vec;
+        for (auto& substr : lit->literal) {
+            if (std::holds_alternative<std::string>(substr)) {
+                auto str = irgen->builder->create_const_string(std::get<std::string>(substr), &reinterpret_cast<YVMEngine*>(irgen->module->engine)->vm);
+                irgen->builder->write_const_string(str);
+                irgen->builder->write_const(std::get<std::string>(substr).size());
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 4);
+                irgen->builder->write_1b_inst(OpCode::Add64);
+                should_free_vec.push_back(false);
+            }
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 0); // offset of last string
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // size of last string
+        irgen->builder->write_1b_inst(OpCode::Add64);
+        //here we write the size and offset into the string object-------------
+        // bring the string object to the stack top
+        // each element in the should_free_vec has 3 stack items associated, 
+        // and +2 for the total size on the stack and its duplicate
+        // and another +2 for the 2 zeros we pushed on the stack earlier
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, should_free_vec.size() * 3 + 2 + 2);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(str_type, 1));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, should_free_vec.size() * 3 + 2 + 2);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(str_type, 2));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
+        //---------------------------------------------------------------------
+        irgen->builder->write_1b_inst(OpCode::Malloc);
+        for (auto should_free : should_free_vec) {
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // size
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 4); // pointer
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // destinations
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 4); // the offset of the current string
+            irgen->builder->write_1b_inst(OpCode::PtrOff);
+            irgen->builder->write_1b_inst(OpCode::MemCpy);
+
+            // remove the offset, size and pointer of the current string
+            irgen->builder->write_1b_inst(OpCode::Switch); // bring offset forward
+            irgen->builder->write_1b_inst(OpCode::Pop); // pop offset
+            irgen->builder->write_1b_inst(OpCode::Switch); // bring size forward
+            irgen->builder->write_1b_inst(OpCode::Pop); // pop size
+            irgen->builder->write_1b_inst(OpCode::Switch); // bring the pointer forward
+            if (should_free)
+                irgen->builder->write_1b_inst(OpCode::Free);
+            else
+                irgen->builder->write_1b_inst(OpCode::Pop);
+        }
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 3);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(str_type, 0));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::ptr);
+        irgen->builder->write_1b_inst(OpCode::Pop); irgen->builder->write_1b_inst(OpCode::Pop);
         return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(NameExpression* nm)

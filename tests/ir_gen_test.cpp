@@ -50,7 +50,7 @@ TEST_CASE("Test IR")
     Yoyo::YVMEngine engine;
     auto md = engine.addAppModule("test");
     md->addFunction("() -> i32", static_cast<int32_t(*)()>([]() -> int32_t { return -50; }), "get_int");
-    //md->addFunction("(x: &str) -> i32", func, "print");
+    md->addFunction("(x: str) -> i32", func, "print");
     //md->addFunction("() -> u32", read_int, "read_uint");
     //md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
     //md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");
