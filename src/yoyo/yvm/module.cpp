@@ -267,7 +267,7 @@ namespace Yoyo
             { "u16", Yvm::OpCode::UDiv16 },
             { "u8",  Yvm::OpCode::UDiv8 },
         };
-        Yvm::Emitter em;
+        Yvm::Emitter em(false);
         for (auto& t : types) {
             auto mangled_name_for = [&t](const std::string& op_name)
                 {
@@ -334,7 +334,7 @@ namespace Yoyo
     }
     void YVMModule::registerStringDestructor(YVMModule* mod)
     {
-        Yvm::Emitter em;
+        Yvm::Emitter em(false);
         auto str_ty = reinterpret_cast<StructNativeTy*>(mod->toNativeType(Type{ "str" }, "", nullptr, {}));
         em.write_ptr_off(NativeType::getElementOffset(str_ty, 0));
         em.write_2b_inst(Yvm::OpCode::Load, Yvm::Type::ptr);

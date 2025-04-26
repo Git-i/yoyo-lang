@@ -19,7 +19,7 @@ namespace Yoyo
 			args[i] = sig.parameters[i].type.should_sret() ? NativeType::getPtrTy() : toNativeType(sig.parameters[i].type, module_hash, nullptr, {});
 		auto proto = eng->fi_manager.get_proto(args, ret_ty);
 
-		Yvm::Emitter em;
+		Yvm::Emitter em(false);
 		em.write_const(proto);
 		em.write_const(func);
 		em.write_2b_inst(Yvm::OpCode::NativeCall, sig.parameters.size());
