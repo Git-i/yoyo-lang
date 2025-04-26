@@ -528,7 +528,7 @@ namespace Yoyo
     {
         if(type.is_trivially_destructible(irgen, false)) return;
         irgen->builder->write_fn_addr("__destructor_for_" + type.full_name());
-        irgen->builder->write_2b_inst(OpCode::Call, 2);
+        irgen->builder->write_2b_inst(OpCode::Call, 1);
         irgen->builder->write_1b_inst(OpCode::Pop);
     }
 

@@ -180,6 +180,7 @@ namespace Yoyo
         }
         return nullptr;
     }
+    
     void YVMModule::makeBuiltinModule(YVMEngine* eng) {
         auto module = std::make_unique<YVMModule>();
         auto mod = module.get();
@@ -320,6 +321,7 @@ namespace Yoyo
             em.close_function(&mod->code, mangled_name);
             operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
         }
+        registerStringDestructor(mod);
     }
     std::string YVMModule::dumpIR()
     {
@@ -329,5 +331,14 @@ namespace Yoyo
             final += Yvm::Disassembler::disassemble(body, &reinterpret_cast<YVMEngine*>(engine)->vm);
         }
         return final;
+    }
+    void YVMModule::registerStringDestructor(YVMModule* mod)
+    {
+        Yvm::Emitter em;
+        auto str_ty = reinterpret_cast<StructNativeTy*>(mod->toNativeType(Type{ "str" }, "", nullptr, {}));
+        em.write_ptr_off(NativeType::getElementOffset(str_ty, 0));
+        em.write_2b_inst(Yvm::OpCode::Load, Yvm::Type::ptr);
+        em.write_1b_inst(Yvm::OpCode::Free);
+        em.close_function(&mod->code, "__destructor_for_str");
     }
 }
