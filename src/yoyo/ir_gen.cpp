@@ -6,6 +6,7 @@
 #include <set>
 #include <iostream>
 #include "tree_cloner.h"
+#include "yvm/fwd_decl.h"
 namespace Yoyo
 {
     void debugbreak()
@@ -286,6 +287,7 @@ namespace Yoyo
         auto old_hash = this->reset_hash();
 
         this->current_Statement = &ptr;
+        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), ptr, block_hash }, new_decl->toVariant());
         doClass(new_decl);
 
         this->block_hash = std::move(old_hash);

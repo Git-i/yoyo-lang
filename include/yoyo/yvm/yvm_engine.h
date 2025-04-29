@@ -9,6 +9,7 @@ namespace Yoyo
 	class YOYO_API YVMEngine : public Engine {
     public:
         YVMEngine();
+        ~YVMEngine() override;
         YVMAppModule* addAppModule(const std::string& name);
         void addModule(const std::string& module_name, std::string source);
         void compile();
@@ -17,8 +18,10 @@ namespace Yoyo
         void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) override {
             return nullptr;
         }
+        void* findNativeFunction(const std::string& name);
         Yvm::VM vm;
         StructTypeSelector struct_manager;
         UniqueFISelector fi_manager;
+        std::vector<NativeModule*> external_dlls;
 	};
 }

@@ -763,7 +763,7 @@ namespace Yoyo
                 }
                 if(update_pos)pos += 1; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
             }
-            auto ret_val = std::string_view{from_pos.begin(), from_pos.begin() + next_at_at - pos};
+            auto ret_val = std::string_view{from_pos.begin(), from_pos.begin() + (next_at_at - pos)};
             if(update_pos) pos = next_at_at;
             return Token{Name, ret_val};
         }
@@ -847,8 +847,9 @@ namespace Yoyo
             assert(scanner.next()->type == MangleScanner::SubClose);
         }
         else scanner.buffer.push_back(next.value());
-        while (scanner.next(false)->type == MangleScanner::Scope)
+        while (auto next = scanner.next(false))
         {
+            if (next->type != MangleScanner::Scope) break;
             scanner.next();
             auto tp = parseType(scanner);
             tp.name = output.full_name() + "::" + tp.name;

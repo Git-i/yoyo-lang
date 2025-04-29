@@ -6,6 +6,7 @@
 namespace Yoyo
 {
 	using NativeTy = ffi_type;
+	struct NativeModule;
 	struct NativeProto : public ffi_cif {
 		std::vector<NativeTy*> args;
 	};
@@ -39,5 +40,9 @@ namespace Yoyo
 		size_t getElementOffset(const StructNativeTy* type, size_t idx);
 		uint32_t get_size(NativeTy*);
 		void freeForStruct(StructNativeTy*);
+
+		NativeModule* load_native_library(const std::string& lib_name);
+		void* get_library_fn(NativeModule* module, const std::string& fn_name);
+		void free_native_library(NativeModule*);
 	}
 }

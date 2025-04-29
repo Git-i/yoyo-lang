@@ -146,7 +146,7 @@ namespace Yoyo
             return nullptr;
         }
         if (type.is_lambda()) return nullptr;
-        if (auto t = findClassWithType(type.block_hash, type.name); std::get<2>(t.second))
+        if (auto t = findClassWithType(type.block_hash, type.full_name_no_block()); std::get<2>(t.second))
         {
             auto ptr = std::get<1>(t.second);
             if (ptr) return ptr;

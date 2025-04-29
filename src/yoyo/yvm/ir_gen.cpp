@@ -67,13 +67,13 @@ namespace Yoyo
         return_t = this_entry->sig.returnType;
 
         size_t highest_param = this_entry->sig.parameters.size();
+        builder->add_function_params(this_entry->sig.parameters.size() + uses_sret);
         for (auto& param : this_entry->sig.parameters) {
             if (!param.name.empty()) {
                 size_t stack_addr;
                 // param is passed by value
                 if (!param.type.should_sret()) {
-                    stack_addr = uses_sret + highest_param++;
-                    builder->write_alloca(NativeType::get_size(toNativeType(param.type)));
+                    stack_addr = builder->write_alloca(NativeType::get_size(toNativeType(param.type)));
                     builder->write_2b_inst(StackAddr, uses_sret + idx);
                     builder->write_2b_inst(StackAddr, stack_addr);
                     builder->write_2b_inst(Store, toTypeEnum(param.type));
@@ -83,7 +83,7 @@ namespace Yoyo
                     if (!param.type.is_trivially_destructible(this))
                     {
                         builder->write_2b_inst(StackAddr, uses_sret + idx);
-                        builder->write_fn_addr("__destructor_for" + param.type.full_name());
+                        builder->write_fn_addr("__destructor_for_" + param.type.full_name());
                         builder->write_1b_inst(RegObj);
                         builder->write_1b_inst(Pop);
                     }
@@ -201,6 +201,7 @@ namespace Yoyo
                 return { type };
             }
         }
+        return std::nullopt;
     }
     void YVMIRGenerator::operator()(ClassDeclaration* decl)
     {
@@ -305,13 +306,14 @@ namespace Yoyo
                 builder->write_fn_addr("__destructor_for" + type.full_name());
                 builder->write_1b_inst(RegObj);
             }
+            builder->write_1b_inst(Pop); //alloca does a stack addr automatically
         }
         else
         {
             builder->write_alloca(type_size);
         }
         // TODO: stack addr of variables
-        variables.back().emplace_back(name, std::pair{0, type});
+        variables.back().emplace_back(name, std::pair{builder->last_alloc_addr(), type});
     }
     void YVMIRGenerator::operator()(BlockStatement* stat)
     {
@@ -445,6 +447,75 @@ namespace Yoyo
 
     void YVMIRGenerator::operator()(ConditionalExtraction* stat)
     {
+        // since we're in a statement the current stack offset is guaranteed to be
+        // number of fn params + number of allocas
+        auto tp_e = std::visit(ExpressionTypeChecker{ this }, stat->condition->toVariant());
+        if (!tp_e) {
+            error(tp_e.error()); return;
+        }
+        if (!tp_e->is_optional() && !tp_e->is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
+        if (!stat->else_capture.empty()) { debugbreak(); return; }
+        if (stat->is_ref && tp_e->is_value_conversion_result()) { error(Error(stat->condition.get(), "Expanded expression cannot be borrowed", "")); return; }
+
+        std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
+        borrow_res[0].first = stat->condition.get();
+        borrow_res[0].second = tp_e->is_mutable ?
+            std::visit(BorrowResult::LValueBorrowResult{ this }, stat->condition->toVariant()) :
+            std::visit(BorrowResult{ this }, stat->condition->toVariant());
+        validate_borrows(borrow_res, this);
+
+        if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
+
+        // all conditional extracntion types (optional types) all have a valid flag as thier second field
+        auto as_native = reinterpret_cast<StructNativeTy*>(toNativeType(*tp_e));
+        auto expr_eval = YVMExpressionEvaluator{ this };
+        
+        auto extensions = std::visit(expr_eval, stat->condition->toVariant());
+        builder->write_1b_inst(Dup);
+        builder->write_ptr_off(NativeType::getElementOffset(as_native, 1));
+        builder->write_2b_inst(Load, Yvm::Type::u8);
+
+
+        auto cont_block = builder->unq_label_name("cond_extract_cont");
+        std::string else_block;
+        if (stat->else_body) {
+            else_block = builder->unq_label_name("cond_extract_else");
+            builder->create_jump(JumpIfFalse, else_block);
+        }
+        else {
+            builder->create_jump(JumpIfFalse, cont_block);
+        }
+
+        pushScope();
+
+        builder->write_ptr_off(NativeType::getElementOffset(as_native, 0));
+        // if its not a ref we have to clone it
+        if (!tp_e->is_value_conversion_result() && !stat->is_ref) {
+            if (tp_e->is_ref_conversion_result())
+                builder->write_2b_inst(Load, Yvm::Type::ptr);
+            if (!tp_e->subtypes[0].should_sret())
+                builder->write_2b_inst(Load, toTypeEnum(tp_e->subtypes[0]));
+            expr_eval.clone(stat->condition.get(), tp_e->subtypes[0], false, false);
+        }
+        Type variable_type = stat->is_ref ?
+            Type{ tp_e->is_mutable ? "__ref_mut" : "__ref", {tp_e->subtypes[0]} } :
+            tp_e->subtypes[0];
+        variable_type.saturate(module, this);
+        variables.back().emplace_back(stat->captured_name, std::pair{ builder->last_alloc_addr() + 1, std::move(variable_type) });
+        current_Statement = &stat->body;
+        std::visit(*this, stat->body->toVariant());
+
+        popScope();
+        if (stat->else_body) {
+            builder->create_jump(Jump, cont_block);
+            builder->create_label(else_block);
+            current_Statement = &stat->else_body;
+            std::visit(*this, stat->else_body->toVariant());
+        }
+
+        builder->create_label(cont_block);
+        
+
     }
     void YVMIRGenerator::operator()(WithStatement* stat)
     {
@@ -490,7 +561,7 @@ namespace Yoyo
                 builder->write_1b_inst(Ret);
             }
             else {
-                // push return address
+                builder->write_2b_inst(StackAddr, 0);
                 YVMExpressionEvaluator{ this }.implicitConvert(stat->expression.get(), t, return_t, true, false);
                 builder->write_1b_inst(RetVoid);
             }

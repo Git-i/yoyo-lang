@@ -47,12 +47,6 @@ sources = [
     'include/yoyo/parselets/infix_parselets.h',
     'include/yoyo/parselets/prefix_parselets.h',
     'include/yoyo/constant.h',
-
-    #llvm
-    
-
-    #yvm
-    
 ]
 backend = get_option('executor')
 deps =  [dependency('bdw-gc')]
@@ -84,6 +78,7 @@ if backend == 'yvm' or backend == 'both'
         'include/yoyo/yvm/native_type.h',
         'include/yoyo/yvm/unique_type_selector.h',
         'include/yoyo/yvm/app_module.h',
+        'include/yoyo/yvm/fwd_decl.h',
 
         'src/yoyo/yvm/ir_gen.cpp',
         'src/yoyo/yvm/expression_evaluator.cpp',
@@ -92,7 +87,12 @@ if backend == 'yvm' or backend == 'both'
         'src/yoyo/yvm/native_type.cpp',
         'src/yoyo/yvm/unique_type_selector.cpp',
         'src/yoyo/yvm/app_module.cpp',
+
+        
     ]
+    if target_machine.system() == 'windows'
+        sources += ['src/yoyo/yvm/windows_native_module.cpp']
+    endif
 endif
 yoyo_args = ['-DYOYO_DLL']
 yoyo_lib = library('yoyo', sources, include_directories: 'include/yoyo',

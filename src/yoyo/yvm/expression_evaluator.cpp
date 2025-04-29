@@ -219,7 +219,7 @@ namespace Yoyo
         }
         //gc borrows are checked at runtime
         //so gc -> ref conversion increments a counter
-        if (src.is_gc_reference())
+        if (src.is_gc_reference() && dst.is_reference())
         {
             std::string error_str = std::format("Borrow check failed at {}:{}:{}", irgen->view->filename, xp->beg.line, xp->beg.column);
             //the borrow count is -1 if theres a living mutable borrow
@@ -281,16 +281,22 @@ namespace Yoyo
             bool is_null = src.name == "__null";
             irgen->builder->write_1b_inst(OpCode::Dup);
             irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
-            irgen->builder->write_const(uint8_t{ is_null });
+            irgen->builder->write_const(uint8_t{ !is_null });
             irgen->builder->write_1b_inst(OpCode::Switch);
             irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u8);
-            if(is_null) return;
+            if (is_null) {
+                // null literals push a rubbish value onto the stack
+                irgen->builder->write_1b_inst(OpCode::TopConsume);
+                return;
+            }
 
             //place a pointer to the data on the stack top and do implicit conversion
-            irgen->builder->write_1b_inst(OpCode::Dup);
-            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
-            implicitConvert(xp, src, dst.subtypes[0], true, false);
-            irgen->builder->write_1b_inst(OpCode::Pop);
+            auto data_off = NativeType::getElementOffset(struct_native, 0);
+            if (data_off == 0) {
+                implicitConvert(xp, src, dst.subtypes[0], true, false);
+                return;
+            }
+            debugbreak();
             return;
         }
         if(dst.is_variant())
@@ -407,6 +413,11 @@ namespace Yoyo
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
                 return;
             }
+            else {
+                auto as_native = irgen->toNativeType(left_type);
+                irgen->builder->write_alloca(NativeType::get_size(as_native));
+                irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
+            }
             return;
         }
         auto native = irgen->toNativeType(left_type);
@@ -414,8 +425,16 @@ namespace Yoyo
         if(!left_type.is_lvalue)
         {
             //move
-            if(!on_stack) return;
-            // TODO: memcpy and instrinsic system
+            if(!on_stack) 
+                return;
+            // [ rvalue, memory ]
+            
+            irgen->builder->write_const<uint64_t>(NativeType::get_size(native));
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // get the source object
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // get the memory pointer
+            irgen->builder->write_1b_inst(OpCode::MemCpy);
+            irgen->builder->write_1b_inst(OpCode::TopConsume);
+            return;
         }
         if(!on_stack) irgen->builder->write_alloca(NativeType::get_size(native));
         if(left_type.is_tuple())
@@ -472,6 +491,7 @@ namespace Yoyo
         }
         else if (left_type.is_str())
         {
+            irgen->builder->write_1b_inst(OpCode::TopConsume);
             /*  No memory operations yet */
         }
         else if(left_type.is_variant())
@@ -585,9 +605,9 @@ namespace Yoyo
                         irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(var->type));
                         return {};
                     }
-                    if (!left_type.is_lvalue)
+                    if (!left_type.deref().is_lvalue)
                     {
-                        if(!left_type.is_trivially_destructible(irgen))
+                        if(!left_type.deref().is_trivially_destructible(irgen))
                         {
                             clone(lhs, var->type, false, true);
                             destroy(left_type);
@@ -1312,7 +1332,8 @@ namespace Yoyo
                 }
                 if(!ret_type->is_lvalue && !ret_type->is_trivially_destructible(irgen))
                 {
-                    irgen->builder->write_1b_inst(OpCode::PopReg);
+                    // todo
+                    // irgen->builder->write_1b_inst(OpCode::PopReg);
                 }
                 return {};
             }
@@ -1476,7 +1497,13 @@ namespace Yoyo
             }
             else {
                 using_elf = using_elf ? true : !extended_lifetimes.emplace_back(std::visit(*this, first_expr->toVariant())).empty();
-                implicitConvert(first_expr.get(), *tp, sig.parameters[0].type, false, true);
+                // if we are targeting a reference as the first argument, we don't need to implicit convert
+                if(!
+                    (sig.parameters[0].type.is_reference() && 
+                        !sig.parameters[0].type.is_gc_reference() && 
+                        tp->is_equal(sig.parameters[0].type.deref())
+                    ))
+                    implicitConvert(first_expr.get(), *tp, sig.parameters[0].type, false, true);
             }   
         }
         for(size_t i = 0; i < exprs.size(); i++)
@@ -1572,7 +1599,6 @@ namespace Yoyo
                     
                     bool uses_sret = fn->sig.returnType.should_sret();
 
-                    auto first = std::visit(*this, expr->lhs->toVariant());
                     fillArgs(uses_sret, fn->sig, expr->lhs, op->arguments);
                     irgen->builder->write_fn_addr(function_name);
                     irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + 1 + uses_sret);
@@ -1702,8 +1728,26 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(GCNewExpression* expr)
     {
+        auto gc_tp = std::visit(ExpressionTypeChecker{ irgen }, expr->toVariant());
+        if (!gc_tp) { irgen->error(gc_tp.error()); return {}; }
+        
+        auto gc_native = reinterpret_cast<StructNativeTy*>(reinterpret_cast<YVMEngine*>(irgen->module->engine)->struct_manager.get_struct_type({ {
+                irgen->toNativeType(gc_tp->deref()),
+                NativeType::getI64()
+            } }));
+        irgen->builder->write_const(NativeType::get_size(gc_native));
+        irgen->builder->write_2b_inst(OpCode::ExternalIntrinsic, 0); //gcmalloc instrinsic
+        std::visit(*this, expr->target_expression->toVariant());
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(gc_native, 0));
+        auto internal_ty = *std::visit(ExpressionTypeChecker{ irgen }, expr->target_expression->toVariant());
+        implicitConvert(expr->target_expression.get(), internal_ty, gc_tp->subtypes[0], true, false); // write the object into the gc memory
+        irgen->builder->write_1b_inst(OpCode::Pop);
+        irgen->builder->write_const<uint64_t>(0);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(gc_native, 1));
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::i64);
         return {};
-        // TODO
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(MacroInvocation* invc)
     {
@@ -1767,6 +1811,7 @@ namespace Yoyo
 
     std::vector<Type> YVMExpressionEvaluator::operator()(NullLiteral*)
     {
+        irgen->builder->write_const(uint8_t{ 0 });
         return {};
     }
 

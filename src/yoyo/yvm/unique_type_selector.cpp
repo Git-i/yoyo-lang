@@ -24,8 +24,10 @@ namespace Yoyo
 	{
 		for (auto& child : children) {
 			if (child->node_type == data[0])
+			{
 				if (data.size() == 1) return child->initialize_struct_type();
 				return child->get_struct_type(std::span{ data.begin() + 1, data.end() });
+			}	
 		}
 		size_t child_depth = 0;
 		auto parent_iter = parent;
@@ -68,8 +70,10 @@ namespace Yoyo
 		if (data.empty()) return initialize_proto(ret);
 		for (auto& child : children) {
 			if (child->node_type == data[0])
+			{
 				if (data.size() == 1) return child->initialize_proto(ret);
-			return child->get_proto(std::span{ data.begin() + 1, data.end() }, ret);
+				return child->get_proto(std::span{ data.begin() + 1, data.end() }, ret);
+			}
 		}
 		size_t child_depth = 0;
 		auto parent_iter = parent;
