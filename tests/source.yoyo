@@ -79,6 +79,10 @@ main: fn = {
 	b.append("Second List");
 	b.append("Second List Again");
 	for (lol in a.iter().chain(b.iter()).enumerate()) {
-		test::print(&"${lol.0}: ${*lol.1}");
+		test::print(&"-----------");
+		// no string interpolation yet
+		test::print_int(lol.0);
+		test::print(lol.1);
 	}
+	test::print(&"-----------");
 }

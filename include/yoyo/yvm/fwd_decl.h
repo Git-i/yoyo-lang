@@ -38,10 +38,12 @@ namespace Yoyo
                 std::visit(ForwardDeclaratorPass1{ md, stt, mangled_name_prefix }, stt->toVariant());
             }
             md->aliases[mangled_name_prefix]["This"] = Type{
-                .name = decl->name,
-                .module = md,
-                .block_hash = block,
+                .name = decl->name
             };
+            auto old_hash = std::move(md->module_hash);
+            md->module_hash = block;
+            md->aliases[mangled_name_prefix]["This"].saturate(md, nullptr);
+            md->module_hash = std::move(old_hash);
             md->classes[block].emplace_back(
                 mangled_name_prefix,
                 std::unique_ptr<ClassDeclaration>{decl}
@@ -92,6 +94,15 @@ namespace Yoyo
         {
             std::ignore = stmt.release();
             md->interfaces[block].emplace_back(decl);
+            auto mangled_name_prefix = block + decl->name + "::";
+            md->aliases[mangled_name_prefix]["This"] = Type{
+                .name = "impl",
+                .subtypes = { Type{ .name = decl->name } }
+            };
+            auto old_hash = std::move(md->module_hash);
+            md->module_hash = block;
+            md->aliases[mangled_name_prefix]["This"].saturate(md, nullptr);
+            md->module_hash = std::move(old_hash);
             return true;
         }
         bool operator()(GenericInterfaceDeclaration* decl)

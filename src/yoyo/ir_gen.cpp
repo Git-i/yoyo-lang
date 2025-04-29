@@ -261,6 +261,7 @@ namespace Yoyo
         this->saturateSignature(new_decl->signature, mod);
         this->block_hash = hash;
 
+        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), ptr, block_hash }, new_decl->toVariant());
         doFunction(new_decl);
 
         this->block_hash = std::move(old_hash);
@@ -318,21 +319,21 @@ namespace Yoyo
         std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
         if (auto [_, exists] = md->findInterface(block, name); exists) return;
         auto new_interface = StatementTreeCloner::copy_stat_specific(static_cast<InterfaceDeclaration*>(decl));
-        auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.release());
+        auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.get());
         itf->name = name;
         //TODO interface visitors to automatically saturate signatures
         for (size_t i = 0; i < types.size(); i++)
-            md->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
+            md->aliases[block + name + "::"].emplace(decl->clause.types[i], types[i]);
         auto old_mod = this->module;
         auto old_hash = this->reset_hash();
 
         this->module = md;
-        this->block_hash = block + name + "__";
+        this->block_hash = block + name + "::";
+        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), new_interface, block }, itf->toVariant());
         for (auto& fn : itf->methods)
             this->saturateSignature(fn->signature, md);
         this->block_hash.swap(old_hash);
         this->module = old_mod;
-        md->interfaces[block].emplace_back(itf);
     }
 
 

@@ -7,6 +7,7 @@
 #include <iostream>
 #include "gc/gc.h"
 #include <cassert>
+#include <yvm/fwd_decl.h>
 using enum Yvm::OpCode;
 namespace Yoyo
 {
@@ -66,6 +67,9 @@ namespace Yoyo
         auto old_return = return_t;
         return_t = this_entry->sig.returnType;
 
+        auto old_hash = block_hash;
+        block_hash = fn_name + "::";
+
         size_t highest_param = this_entry->sig.parameters.size();
         builder->add_function_params(this_entry->sig.parameters.size() + uses_sret);
         for (auto& param : this_entry->sig.parameters) {
@@ -99,6 +103,7 @@ namespace Yoyo
         variables.swap(new_fn_vars);
         function_cfgs.pop_back();
         builder->close_function(&reinterpret_cast<YVMModule*>(module)->code, fn_name);
+        block_hash = old_hash;
         std::swap(return_t, old_return);
         builder.swap(new_builder);
     }
@@ -265,6 +270,9 @@ namespace Yoyo
                     if (!implementsInterfaceMethod(mth->signature, (*it)->signature))
                         error(Error(mth.get(), "Provided function is not a valid implementation of the interface"));
                 }
+                std::unique_ptr<Statement> stat_ptr(mth.release());
+                std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), stat_ptr, block_hash }, stat_ptr->toVariant());
+                mth.reset(reinterpret_cast<FunctionDeclaration*>(stat_ptr.release()));
                 (*this)(mth.get());
             }
             block_hash = std::move(curr_hash);
@@ -362,33 +370,31 @@ namespace Yoyo
             std::visit(YVMExpressionEvaluator{ this }, stat->iterable->toVariant());
             if (!ty.is_lvalue)
             {
-                builder->write_fn_addr("__destructor_for" + ty.full_name());
+                builder->write_fn_addr("__destructor_for_" + ty.full_name());
                 builder->write_1b_inst(RegObj);
             }
             builder->write_alloca(NativeType::get_size(memory_ty));
             //------------- Iterator::next() args
-            builder->write_2b_inst(StackAddr, nextKnownAddr() + 1); //< return addr
-            builder->write_2b_inst(StackAddr, nextKnownAddr()); //< iterable object
+            auto for_bb = builder->create_label("for_begin");
+            builder->write_1b_inst(Dup); //< return addr
+            builder->write_2b_inst(RevStackAddr, 2); //< iterable object
             //--------------------------------------------
             pushScope();
-            auto for_bb = builder->create_label("for_begin");
             auto for_cont = builder->unq_label_name("for_cont");
-            //auto then_bb = llvm::BasicBlock::Create(context, "forthen", fn, returnBlock);
-            //auto cont_bb = llvm::BasicBlock::Create(context, "forcont", fn, returnBlock);
             builder->write_fn_addr(fn_name);
             builder->write_2b_inst(Call, 2);
             builder->write_1b_inst(Pop); // discard the return value
             // bring the return value to the top of the stack
-            builder->write_2b_inst(StackAddr, nextKnownAddr() + 1);
+            builder->write_1b_inst(Dup);
             // register this for destruction
-            builder->write_fn_addr("__destructor_for" + impl->methods[0]->signature.returnType.full_name());
+            builder->write_fn_addr("__destructor_for_" + impl->methods[0]->signature.returnType.full_name());
             builder->write_1b_inst(RegObj);
             builder->write_ptr_off(NativeType::getElementOffset(memory_ty, 1));
             builder->write_2b_inst(Load, Yvm::Type::u8);
 
             builder->create_jump(JumpIfFalse, for_cont);
             //for loop body
-            variables.back().emplace_back(stat->names[0].text, std::pair{nextKnownAddr() + 1, impl->impl_for.subtypes[0]});
+            variables.back().emplace_back(stat->names[0].text, std::pair{builder->last_alloc_addr(), impl->impl_for.subtypes[0]});
             current_Statement = &stat->body;
             auto old_break_to = break_to; auto old_cont_to = continue_to;
             break_to = for_cont; continue_to = for_bb;

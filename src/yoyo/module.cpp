@@ -146,6 +146,7 @@ namespace Yoyo
             if(it != details_list.end()) return hash;
         }
         if (auto [hash, intf] = findInterface(block, name); intf) return hash;
+        if (auto [hash, intf] = findGenericInterface(block, name); intf) return hash;
         if (auto [hash, _] = findFunction(block, name); _) return hash;
         if (auto [hash, _] = findGenericFn(block, name); _) return hash;
         if (auto [hash, _] = findGenericClass(block, name); _) return hash;

@@ -414,6 +414,7 @@ namespace Yoyo
                 return;
             }
             else {
+                if (perform_load) return;
                 auto as_native = irgen->toNativeType(left_type);
                 irgen->builder->write_alloca(NativeType::get_size(as_native));
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
@@ -471,7 +472,7 @@ namespace Yoyo
             irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
             irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::u8);
             irgen->builder->write_const(uint8_t{ 0 });
-            irgen->builder->write_1b_inst(OpCode::CmpNe);
+            irgen->builder->write_2b_inst(OpCode::CmpNe, 8);
             auto assign_cont = irgen->builder->unq_label_name("opt_assign_cont");
             // if its not valid we skip the copy
             irgen->builder->create_jump(OpCode::JumpIfFalse, assign_cont);
@@ -484,9 +485,10 @@ namespace Yoyo
             irgen->builder->write_1b_inst(OpCode::Pop);
             irgen->builder->create_label(assign_cont);
             // duplicate the validity flag
-            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 0));
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
             irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::u8);
             irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
             irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u8);
         }
         else if (left_type.is_str())
@@ -1671,7 +1673,7 @@ namespace Yoyo
             if (is_lambda) irgen->builder->write_fn_addr(irgen->block_hash + right_t->name);
             else std::visit(*this, expr->rhs->toVariant());
             //if(is_lambda) args.push_back(std::visit(*this, expr->rhs->toVariant()));
-            irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + uses_sret);
+            irgen->builder->write_2b_inst(OpCode::Call, op->arguments.size() + 1 + uses_sret);
             if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
             if (return_t->is_non_owning(irgen))
             {

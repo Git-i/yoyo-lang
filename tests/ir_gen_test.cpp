@@ -24,7 +24,9 @@ int32_t func(void* arg)
     std::cout << sv << std::endl;
     return -76;
 }
-
+void print_int(uint64_t arg) {
+    std::cout << arg << std::endl;
+}
 void get_string(void* out) {
     
 
@@ -64,6 +66,7 @@ TEST_CASE("Test IR")
     Yoyo::YVMEngine engine;
     auto md = engine.addAppModule("test");
     md->addFunction("() -> i32", static_cast<int32_t(*)()>([]() -> int32_t { return -50; }), "get_int");
+    md->addFunction("(x: u64) -> void", print_int, "print_int");
     md->addFunction("(x: &str) -> i32", func, "print");
     md->addFunction("() -> str", get_string, "get_string");
     //md->addFunction("() -> u32", read_int, "read_uint");

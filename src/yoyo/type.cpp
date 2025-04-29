@@ -389,6 +389,7 @@ namespace Yoyo
             tp.is_tuple() ||
             tp.is_str() ||
             tp.name == "__called_fn" ||
+            tp.name == "impl" ||
             tp.is_opaque_pointer() ||
             tp.is_optional() ||
             tp.is_variant() ||
@@ -397,7 +398,7 @@ namespace Yoyo
             tp.is_view());
     }
     bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool);
-    void Type::saturate(ModuleBase* src, IRGenerator* irgen)
+    void Type::saturate(ModuleBase* src, IRGenerator* irgen, bool do_verify)
     {
         if(module) return; //avoid double saturation
         auto module_path = split(name, "::");
@@ -438,12 +439,23 @@ namespace Yoyo
             module = md;
             block_hash = std::move(hash);
         }
-        if(auto alias = module->findAlias(block_hash, name))
-            *this = *alias;
-        else if(auto [blk, alias] = module->findGenericAlias(block_hash, name); alias)
+        if (auto alias = module->findAlias(block_hash, name))
         {
-            irgen->generateGenericAlias(module, blk, alias, subtypes);
-            *this = *module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
+            auto old_is_lvalue = is_lvalue;
+            auto old_is_mutable = is_mutable;
+            *this = *alias;
+            this->is_lvalue = old_is_lvalue;
+            this->is_mutable = old_is_mutable;
+        }
+        else if(auto [blk, galias] = module->findGenericAlias(block_hash, name); galias)
+        {
+            irgen->generateGenericAlias(module, blk, galias, subtypes);
+            auto alias = module->findAlias(blk, name + IRGenerator::mangleGenericArgs(subtypes));
+            auto old_is_lvalue = is_lvalue;
+            auto old_is_mutable = is_mutable;
+            *this = *alias;
+            this->is_lvalue = old_is_lvalue;
+            this->is_mutable = old_is_mutable;
         }
         // since "This" is one word it tends to skip through the right modules
         // so we resaturate with the new block hash
@@ -455,9 +467,9 @@ namespace Yoyo
             saturate(src, irgen);
         }
         
-        if (!verify()) debugbreak();
+        if (do_verify && !verify()) debugbreak();
 
-        for(auto& sub: subtypes) sub.saturate(src, irgen);
+        for(auto& sub: subtypes) sub.saturate(src, irgen, do_verify);
         if (name == "__arr_s_uneval") {
             auto size_expr = reinterpret_cast<Expression*>(signature.get());
             auto size = std::visit(ConstantEvaluator{ irgen }, size_expr->toVariant());
@@ -470,8 +482,8 @@ namespace Yoyo
         }
         if (signature)
         {
-            signature->returnType.saturate(src, irgen);
-            for (auto& tp : signature->parameters) tp.type.saturate(src, irgen);
+            signature->returnType.saturate(src, irgen, do_verify);
+            for (auto& tp : signature->parameters) tp.type.saturate(src, irgen, do_verify);
         }
     }
     bool Type::verify() const {

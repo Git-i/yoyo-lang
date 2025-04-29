@@ -58,7 +58,7 @@ namespace Yoyo
         [[nodiscard]] Type saturated(ModuleBase* src, IRGenerator* irgen) const;
         [[nodiscard]] Type reference_to() const;
         [[nodiscard]] Type mutable_reference_to() const;
-        void saturate(ModuleBase* src, IRGenerator* irgen);
+        void saturate(ModuleBase* src, IRGenerator* irgen, bool do_verify = true);
         [[nodiscard]] bool verify() const;
         [[nodiscard]] bool is_shallow_equal(const Type& other) const
         {

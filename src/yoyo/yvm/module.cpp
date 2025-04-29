@@ -42,7 +42,7 @@ namespace Yoyo
         if (type.is_boolean())
             return NativeType::getU8();
         if (type.name == "void")
-            return nullptr;
+            return NativeType::getVoid();
         if (type.is_opaque_pointer() || type.is_reference())
             return NativeType::getPtrTy();
         if (type.is_char())
@@ -185,6 +185,7 @@ namespace Yoyo
         auto module = std::make_unique<YVMModule>();
         auto mod = module.get();
         eng->modules["core"] = std::move(module);
+        mod->module_hash = "core::";
         eng->vm.add_module(&mod->code);
         mod->engine = eng;
         //-----------Comparison enum---------------------
@@ -322,6 +323,14 @@ namespace Yoyo
             operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
         }
         registerStringDestructor(mod);
+        auto iterator = std::make_unique<GenericInterfaceDeclaration>();
+        FunctionSignature sig;
+        sig.returnType = Type{ "__opt", { Type{"OutputTy"} } };
+        sig.parameters.emplace_back(FunctionParameter{ .type = Type {"__ref_mut", {Type{"This"}}}, .name = "this" });
+        iterator->clause = GenericClause{ {"OutputTy"} };
+        iterator->name = "Iterator";
+        iterator->methods.emplace_back(std::make_unique<FunctionDeclaration>("next", std::move(sig), nullptr));
+        mod->generic_interfaces[mod->module_hash].emplace_back(std::move(iterator));
     }
     std::string YVMModule::dumpIR()
     {

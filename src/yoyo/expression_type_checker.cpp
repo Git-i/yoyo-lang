@@ -945,11 +945,13 @@ namespace Yoyo
         std::string type;
         std::span<std::string> generics;
         IRGenerator* irgen;
-        bool operator()(const ImplConstraint& impl_con) {
+        bool operator()(ImplConstraint& impl_con) {
             //If the type hasn't been resolved yet we skip it, this does mean that we may require more passes
             if (!results.contains(type)) return true;
             auto cls = results.at(type).get_decl_if_class(irgen);
             if (!cls) return true;
+            // the saturation should not result to a correct/complete type (yet)
+            impl_con.other.saturate(irgen->module, irgen, false);
             for (auto& intf : cls->impls)
             {
                 auto match = genericMatch(impl_con.other, intf.impl_for, generics, irgen);
@@ -965,7 +967,7 @@ namespace Yoyo
             }
             return true;
         }
-        bool operator()(const SatisfyConstraint&) {
+        bool operator()(SatisfyConstraint&) {
             Yoyo::debugbreak();
             return true;
         }
