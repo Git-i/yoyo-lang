@@ -329,9 +329,14 @@ namespace Yoyo
     }
     void YVMIRGenerator::operator()(ForStatement* stat)
     {
-        auto ty = std::visit(ExpressionTypeChecker{ this }, stat->iterable->toVariant()).value_or_error();
+        auto tye = std::visit(ExpressionTypeChecker{ this }, stat->iterable->toVariant());
+        if (!tye) {
+            error(tye.error()); return;
+        }
+        auto& ty = *tye;
         if (!ty.is_mutable && ty.is_lvalue) error(Error(stat->iterable.get(), "Iterator object must be mutable or a temporary"));
         //check if it implements iterator interface
+        if (ty.is_error_ty()) std::visit(YVMExpressionEvaluator{ this }, stat->iterable->toVariant());
         if (auto cls = ty.get_decl_if_class(this))
         {
             auto decl = cls;
@@ -501,7 +506,7 @@ namespace Yoyo
             Type{ tp_e->is_mutable ? "__ref_mut" : "__ref", {tp_e->subtypes[0]} } :
             tp_e->subtypes[0];
         variable_type.saturate(module, this);
-        variables.back().emplace_back(stat->captured_name, std::pair{ builder->last_alloc_addr() + 1, std::move(variable_type) });
+        variables.back().emplace_back(stat->captured_name, std::pair{ builder->last_alloc_addr(), std::move(variable_type) });
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
 
