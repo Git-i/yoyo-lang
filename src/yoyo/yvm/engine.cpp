@@ -8,6 +8,7 @@
 #include <gc/gc.h>
 #include <yvm/app_module.h>
 #include "yvm/fwd_decl.h"
+#include <format>
 namespace Yoyo
 {
     YVMEngine::YVMEngine()
@@ -17,9 +18,42 @@ namespace Yoyo
             };
         //instrinsic zero is gcnew
         vm.intrinsic_handler = [](Yvm::Stack& stack, uint8_t intrinsic) {
+            /*
+            * gc malloc -> 0
+            * i8 to str -> 1
+            * i16 to str -> 2
+            * i32 to str -> 3
+            * i64 to str -> 4
+            * 
+            * u8 to str -> 5
+            * u16 to str -> 6
+            * u32 to str -> 7
+            * u64 to str -> 8
+            * 
+            * f32 to str -> 9
+            * f64 to str -> 10
+            */
+            auto to_str_primitive = [&stack](auto value) {
+                auto length = std::formatted_size("{}", value);
+                auto buffer = static_cast<char*>(malloc(length));
+                std::format_to(buffer, "{}", value);
+                stack.push(buffer); stack.push<uint64_t>(length);
+                };
             switch (intrinsic)
             {
             case 0: stack.push(GC_MALLOC(stack.pop<32>())); break;
+            case 1: to_str_primitive(stack.pops<8>()); break;
+            case 2: to_str_primitive(stack.pops<16>()); break;
+            case 3: to_str_primitive(stack.pops<32>()); break;
+            case 4: to_str_primitive(stack.pops<64>()); break;
+
+            case 5: to_str_primitive(stack.pop<8>()); break;
+            case 6: to_str_primitive(stack.pop<16>()); break;
+            case 7: to_str_primitive(stack.pop<32>()); break;
+            case 8: to_str_primitive(stack.pop<64>()); break;
+
+            case 9: to_str_primitive(stack.popf<32>()); break;
+            case 10: to_str_primitive(stack.popf<64>()); break;
             }
             };
         YVMModule::makeBuiltinModule(this);

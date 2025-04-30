@@ -1273,6 +1273,33 @@ namespace Yoyo
                 irgen->builder->write_1b_inst(OpCode::Add64);
                 should_free_vec.push_back(false);
             }
+            else {
+                auto& expr = std::get<std::unique_ptr<Expression>>(substr);
+                auto expr_tp = std::visit(ExpressionTypeChecker{ irgen }, expr->toVariant());
+                if (!expr_tp) { irgen->error(expr_tp.error()); return {}; }
+                if (expr_tp->is_integral() || expr_tp->is_floating_point()) {
+                    std::visit(*this, expr->toVariant());
+                    uint8_t intrinsic_idx = 0;
+                    // we can probably do something fancy like
+                    // checking the first character for i u or f and then using adding
+                    // log2 of integer width - 3, we could even use countl_zero over log
+                    if (expr_tp->name == "i8") intrinsic_idx = 1;
+                    else if (expr_tp->name == "i16") intrinsic_idx = 2;
+                    else if (expr_tp->name == "i32") intrinsic_idx = 3;
+                    else if (expr_tp->name == "i64") intrinsic_idx = 4;
+                    else if (expr_tp->name == "u8") intrinsic_idx = 5;
+                    else if (expr_tp->name == "u16") intrinsic_idx = 6;
+                    else if (expr_tp->name == "u32") intrinsic_idx = 7;
+                    else if (expr_tp->name == "u64") intrinsic_idx = 8;
+                    else if (expr_tp->name == "f32") intrinsic_idx = 9;
+                    else if (expr_tp->name == "f64") intrinsic_idx = 10;
+                    irgen->builder->write_2b_inst(OpCode::ExternalIntrinsic, intrinsic_idx);
+                    irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
+                    irgen->builder->write_2b_inst(OpCode::RevStackAddr, 4);
+                    irgen->builder->write_1b_inst(OpCode::Add64);
+                    should_free_vec.push_back(true);
+                }
+            }
         }
         irgen->builder->write_2b_inst(OpCode::RevStackAddr, 0); // offset of last string
         irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // size of last string
@@ -1292,7 +1319,7 @@ namespace Yoyo
         irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
         //---------------------------------------------------------------------
         irgen->builder->write_1b_inst(OpCode::Malloc);
-        for (auto should_free : should_free_vec) {
+        for (auto should_free : should_free_vec | std::views::reverse) {
             irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // size
             irgen->builder->write_2b_inst(OpCode::RevStackAddr, 4); // pointer
             irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // destinations
@@ -1334,8 +1361,8 @@ namespace Yoyo
                 }
                 if(!ret_type->is_lvalue && !ret_type->is_trivially_destructible(irgen))
                 {
-                    // todo
-                    // irgen->builder->write_1b_inst(OpCode::PopReg);
+                    irgen->builder->write_1b_inst(OpCode::PopReg);
+                    irgen->builder->write_1b_inst(OpCode::Pop);
                 }
                 return {};
             }

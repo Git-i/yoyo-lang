@@ -81,7 +81,7 @@ main: fn = {
 	for (lol in a.iter().chain(b.iter()).enumerate()) {
 		test::print(&"-----------");
 		// no string interpolation yet
-		test::print_int(lol.0);
+		test::print(&"idx + 1: ${lol.0}");
 		test::print(lol.1);
 	}
 	test::print(&"-----------");
