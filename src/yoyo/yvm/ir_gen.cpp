@@ -37,32 +37,40 @@ namespace Yoyo
         else if (nt == NativeType::getPtrTy()) return Yvm::Type::ptr;
         return static_cast<Yvm::Type>(-1);
     }
-    extern "C"
-    {
-        YOYO_API  void* Yoyo_malloc_wrapper_dont_use_name(size_t size);
-        YOYO_API  void Yoyo_compiler_print(const char* string);
-        void* Yoyo_malloc_wrapper_dont_use_name(size_t size)
-        {
-            return GC_malloc(size);
+    void handleCImport(YVMIRGenerator* irgen, ModuleBase::FunctionDetails* dets, CImportDeclaration* body, const std::string& fn_name) {
+        auto mod = reinterpret_cast<YVMModule*>(irgen->module);
+        auto eng = reinterpret_cast<YVMEngine*>(mod->engine);
+        Yvm::Emitter em(false);
+        std::vector<NativeTy*> args;
+        for (auto& param : dets->sig.parameters) {
+            args.push_back(irgen->toNativeType(param.type));
         }
+        auto proto = eng->fi_manager.get_proto(args, irgen->toNativeType(dets->sig.returnType));
+        auto uses_sret = dets->sig.returnType.should_sret();
+        //if we use sret we supply a pointer at the stack top for the native function handler
+        if (uses_sret) em.write_2b_inst(RevStackAddr, dets->sig.parameters.size());
+        auto func_ptr = eng->findNativeFunction(body->function_name);
+        if (!func_ptr) {
+            irgen->error(Error(body, "Unable to find native function: " + body->function_name));
+        }
+        em.write_const(proto);
+        em.write_const(func_ptr);
+        em.write_2b_inst(NativeCall, dets->sig.parameters.size() + uses_sret);
+        em.write_1b_inst(Yvm::OpCode::Ret);
+        em.close_function(&mod->code, fn_name);
     }
     
     void YVMIRGenerator::operator()(FunctionDeclaration* decl)
     {
-        auto new_builder = std::make_unique<Yvm::Emitter>();
-        builder.swap(new_builder);
-
         auto fn_name = block_hash + decl->name;
-        
-        CFGNode::prepareFromFunction(function_cfgs.emplace_back(), decl);
-        function_cfgs.back().annotate();
-        decltype(this->variables) new_fn_vars;
-        new_fn_vars.emplace_back();
 
         auto this_entry = module->findFunction(block_hash, decl->name).second;
         saturateSignature(this_entry->sig, module);
-        size_t idx = 0;
-        uint8_t uses_sret = this_entry->sig.returnType.should_sret();
+
+        if (auto cimport = dynamic_cast<CImportDeclaration*>(decl->body.get())) {
+            handleCImport(this, this_entry, cimport, fn_name);
+            return;
+        }
 
         auto old_return = return_t;
         return_t = this_entry->sig.returnType;
@@ -70,7 +78,16 @@ namespace Yoyo
         auto old_hash = block_hash;
         block_hash = fn_name + "::";
 
-        size_t highest_param = this_entry->sig.parameters.size();
+        auto new_builder = std::make_unique<Yvm::Emitter>();
+        builder.swap(new_builder);
+
+        CFGNode::prepareFromFunction(function_cfgs.emplace_back(), decl);
+        function_cfgs.back().annotate();
+        decltype(this->variables) new_fn_vars;
+        new_fn_vars.emplace_back();
+
+        size_t idx = 0;
+        uint8_t uses_sret = this_entry->sig.returnType.should_sret();
         builder->add_function_params(this_entry->sig.parameters.size() + uses_sret);
         for (auto& param : this_entry->sig.parameters) {
             if (!param.name.empty()) {

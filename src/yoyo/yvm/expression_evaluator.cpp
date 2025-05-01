@@ -1535,10 +1535,15 @@ namespace Yoyo
                     implicitConvert(first_expr.get(), *tp, sig.parameters[0].type, false, true);
             }   
         }
+        decltype(this->target) old_tgt = std::nullopt;
+        this->target.swap(old_tgt);
         for(size_t i = 0; i < exprs.size(); i++)
         {
-            auto tp = std::visit(ExpressionTypeChecker{irgen}, exprs[i]->toVariant());
-            using_elf = using_elf ? true : !extended_lifetimes.emplace_back(std::visit(*this, exprs[i]->toVariant())).empty();
+            auto tp = std::visit(ExpressionTypeChecker{irgen, sig.parameters[i + is_bound].type }, exprs[i]->toVariant());
+            this->target = sig.parameters[i + is_bound].type;
+            using_elf = using_elf ? 
+                true : 
+                !extended_lifetimes.emplace_back(std::visit(*this, exprs[i]->toVariant())).empty();
             if (!tp) {
                 irgen->error(tp.error()); continue;
             }
@@ -1546,6 +1551,7 @@ namespace Yoyo
             implicitConvert(exprs[i].get(), *tp, sig.parameters[i + is_bound].type, false, true);
             
         }
+        this->target.swap(old_tgt);
         if (!using_elf) {
             return {};
         }

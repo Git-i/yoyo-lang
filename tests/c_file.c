@@ -1,4 +1,3 @@
-#include <math.h>
 struct BigStruct {
     int a;
     int b;
@@ -9,9 +8,14 @@ struct SmallStruct {
     int a;
     int b;
 };
-__declspec(dllexport) struct BigStruct get_big_struct(float val) {
-    return (struct BigStruct){10, 20, 55, 40};
+__declspec(dllexport) struct BigStruct get_big_struct(int val) {
+    return (struct BigStruct){val, val * 30, 55, 40};
 }
-__declspec(dllexport) struct SmallStruct get_small_struct(float val) {
-    return (struct SmallStruct){100, 40};
+__declspec(dllexport) struct SmallStruct get_small_struct(int val) {
+    return (struct SmallStruct){val, val * 40};
 }
+
+__declspec(dllexport) int get_int(int val) {
+    return val * 5;
+}
+

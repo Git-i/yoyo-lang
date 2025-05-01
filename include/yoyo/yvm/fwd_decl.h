@@ -42,12 +42,12 @@ namespace Yoyo
             };
             auto old_hash = std::move(md->module_hash);
             md->module_hash = block;
-            md->aliases[mangled_name_prefix]["This"].saturate(md, nullptr);
             md->module_hash = std::move(old_hash);
             md->classes[block].emplace_back(
                 mangled_name_prefix,
                 std::unique_ptr<ClassDeclaration>{decl}
             );
+            md->aliases[mangled_name_prefix]["This"].saturate(md, nullptr);
             md->classes_types[decl] = nullptr;
 
             return true;

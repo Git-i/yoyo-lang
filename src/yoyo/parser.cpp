@@ -284,6 +284,7 @@ namespace Yoyo
         auto tk = p.Get();
         std::string text;
         if (!tk) return nullptr;
+        auto beg = tk->loc;
         if (tk->type != TokenType::Directive || tk->text != "c_import") return nullptr;
         if (!p.discard(TokenType::LParen)) p.error("Expected '('", p.Peek());
         tk = p.Get();
@@ -292,7 +293,7 @@ namespace Yoyo
         text = tk->text;
         if (!p.discard(TokenType::RParen)) p.error("Expected ')'", p.Peek());
         if (!p.discard(TokenType::SemiColon)) p.error("Expected ';'", p.Peek());
-        return std::make_unique<CImportDeclaration>(std::move(text));
+        return Statement::attachSLAndParent(std::make_unique<CImportDeclaration>(std::move(text)), beg, p.discardLocation);
     }
     std::unique_ptr<Statement> Parser::parseFunctionDeclaration(Token identifier)
     {

@@ -1,88 +1,21 @@
-app: module = APP
-
-Node: struct::<T> = {
-	data: T,
-	next: (^Node::<T>)?
-}
-LinkedList: struct::<T> = {
-	first: (^Node::<T>)?,
-	new: fn -> This = return This{ .first = null };
-	append: fn (&mut this, value: T) = {
-		if |val| (this.first) {
-			last: mut = val;
-			//implement options as truthy values and break
-			should_loop: mut = true;
-			while (should_loop) {
-				if |nxt| (last.next) last = nxt;
-				else should_loop = false;
-			}
-			last.next = gcnew Node::<T>{ .data = value, .next = null };
-		} else {
-			this.first = gcnew Node::<T>{ .data = value, .next = null };
-		}
-	}
-}
-LinkedListIterator: struct:&::<T> = {
-	curr: (^Node::<T>)?,
-	impl core::Iterator::<&T>
-	{
-		next: fn (&mut this) -> (&T)? = {
-			if |node| (this.curr) {
-				this.curr = node.next;
-				return &node.data;
-			}
-			else return null;
-		}
-	}
+BigStruct: struct = {
+	a: i32, b: i32, c: i32, d: i32
 }
 
-EnumerateIter: struct:&::<T, O> = {
-	actual_iter: T,
-	idx: u64,
-	impl core::Iterator::<(u64, O)> {
-		next: fn (&mut this) -> (u64, O)? = {
-			if |nxt| (this.actual_iter.core::Iterator::<O>::next()) {
-				this.idx = this.idx + 1;
-				return (this.idx, nxt);
-			}
-			else return null;
-		}
-	}
+SmallStruct: struct = {
+	a: i32, b: i32
 }
 
-ChainIter: struct:&::<A, B, O> = 
-{
-	first_iter: A,
-	second_iter: B,
-	impl core::Iterator::<O> {
-		next: fn (&mut this) -> O? = {
-			if |nxt| (this.first_iter.core::Iterator::<O>::next()) return nxt;
-			else return this.second_iter.core::Iterator::<O>::next();
-		}
-	}		
-}
-iter: fn::<T> (list: &LinkedList::<T>) -> LinkedListIterator::<T>
-	= return LinkedListIterator::<T> { .curr = list.first };
+get_big_struct: fn(val: i32) -> BigStruct = c_import!("get_big_struct");
+get_small_struct: fn(val: i32) -> SmallStruct = c_import!("get_small_struct");
+get_int: fn(val: i32) -> i32 = c_import!("get_int");
+main: fn -> i32 = {
+	bs := get_big_struct(10);
+	ss := get_small_struct(10);
+	int := get_int(10);
 
-enumerate: fn::<T: impl core::Iterator::<O>, O> (iter: T) ->
-	EnumerateIter::<T, O> = return EnumerateIter::<T, O>{.actual_iter = iter, .idx = 0};
-
-chain: fn::<A: impl core::Iterator::<O>, B: impl core::Iterator::<O>, O> 
-	(first: A, snd: B) -> ChainIter::<A, B, O> = return ChainIter::<A, B, O>{.first_iter = first, .second_iter = snd};
-main: fn = {
-	a: mut = LinkedList::<str>::new();
-	a.append("Hello");
-	a.append("World");
-	a.append("Stuff");
-	a.append("Others");
-	b: mut = LinkedList::<str>::new();
-	b.append("Second List");
-	b.append("Second List Again");
-	for (lol in a.iter().chain(b.iter()).enumerate()) {
-		test::print(&"-----------");
-		// no string interpolation yet
-		test::print(&"idx + 1: ${lol.0}");
-		test::print(lol.1);
-	}
-	test::print(&"-----------");
+	test::print(&"int: ${int}");
+	test::print(&"small struct: ${ss.a}, ${ss.b}");
+	test::print(&"big struct: ${bs.a}, ${bs.b}, ${bs.c}, ${bs.d}");
+	return int;
 }
