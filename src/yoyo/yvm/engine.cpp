@@ -11,6 +11,11 @@
 #include <format>
 namespace Yoyo
 {
+    struct YoyoString {
+        char* data;
+        uint64_t size;
+        uint64_t capacity;
+    };
     YVMEngine::YVMEngine()
     {
         vm.do_native_call = [](void* function, Yvm::VM::Type* begin, size_t arg_size, void* proto) {
@@ -120,6 +125,46 @@ namespace Yoyo
     {
         auto mod = NativeType::load_native_library(std::string(path));
         if (mod) external_dlls.push_back(mod);
+    }
+    void* YVMEngine::createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator* irgen_g)
+    {
+        auto irgen = reinterpret_cast<YVMIRGenerator*>(irgen_g);
+        auto native_t = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(type));
+        if (type.name == "str") {
+            auto str_ptr = static_cast<char*>(std::get<void*>(args[0].internal_repr));
+            auto str_sz = strlen(str_ptr);
+            auto ret_val = static_cast<YoyoString*>(malloc(sizeof(YoyoString)));
+            ret_val->size = str_sz;
+            ret_val->capacity = str_sz;
+            ret_val->data = static_cast<char*>(malloc(str_sz + 1));
+            strcpy(ret_val->data, str_ptr);
+
+            return ret_val;
+        }
+        size_t n = 0;
+        auto cls = type.get_decl_if_class(irgen_g);
+        if (!cls) return nullptr;
+
+        auto memory = static_cast<std::byte*>(malloc(NativeType::get_size(native_t)));
+        for (auto& constant : args) {
+            auto off = NativeType::getElementOffset(native_t, n);
+            auto elem = memory + off;
+            auto& elem_type = cls->vars[n].type;
+            if (elem_type.name == "i8") *reinterpret_cast<int8_t*>(elem) = std::get<int64_t>(constant.internal_repr);
+            else if (elem_type.name == "i16") *reinterpret_cast<int16_t*>(elem) = std::get<int64_t>(constant.internal_repr);
+            else if (elem_type.name == "i32") *reinterpret_cast<int32_t*>(elem) = std::get<int64_t>(constant.internal_repr);
+            else if (elem_type.name == "i64") *reinterpret_cast<int64_t*>(elem) = std::get<int64_t>(constant.internal_repr);
+
+            else if (elem_type.name == "u8") *reinterpret_cast<uint8_t*>(elem) = std::get<uint64_t>(constant.internal_repr);
+            else if (elem_type.name == "u16") *reinterpret_cast<uint16_t*>(elem) = std::get<uint64_t>(constant.internal_repr);
+            else if (elem_type.name == "u32") *reinterpret_cast<uint32_t*>(elem) = std::get<uint64_t>(constant.internal_repr);
+            else if (elem_type.name == "u64") *reinterpret_cast<uint64_t*>(elem) = std::get<uint64_t>(constant.internal_repr);
+
+            else if (elem_type.name == "f32") *reinterpret_cast<float*>(elem) = std::get<double>(constant.internal_repr);
+            else if (elem_type.name == "f64") *reinterpret_cast<double*>(elem) = std::get<double>(constant.internal_repr);
+            n++;
+        }
+        return memory;
     }
     void* YVMEngine::findNativeFunction(const std::string& name)
     {

@@ -4,6 +4,7 @@ namespace Yoyo
 {
     Constant ConstantEvaluator::operator()(IntegerLiteral* lit)
     {
+        if (target && target->is_signed_integral()) return std::stoll(lit->text);
         return std::stoull(lit->text);
     }
     Constant ConstantEvaluator::operator()(BooleanLiteral* lit)
@@ -61,6 +62,7 @@ namespace Yoyo
             auto& var = decl->vars[i];
             auto val_ty = std::visit(ExpressionTypeChecker{ irgen, var.type }, lit->values[var.name]->toVariant());
             if (!val_ty) { irgen->error(val_ty.error()); continue; }
+            target = &val_ty.value();
             auto val = std::visit(*this, lit->values[var.name]->toVariant());
 
             args.push_back(constConvert(val, val_ty.value(), var.type));

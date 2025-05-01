@@ -5,13 +5,13 @@ BigStruct: struct = {
 SmallStruct: struct = {
 	a: i32, b: i32
 }
-
+ss: const SmallStruct = SmallStruct{ .a = 10, .b = 40 };
 get_big_struct: fn(val: i32) -> BigStruct = c_import!("get_big_struct");
 get_small_struct: fn(val: i32) -> SmallStruct = c_import!("get_small_struct");
 get_int: fn(val: i32) -> i32 = c_import!("get_int");
 main: fn -> i32 = {
 	bs := get_big_struct(10);
-	ss := get_small_struct(10);
+	ssa := get_small_struct(10);
 	int := get_int(10);
 
 	test::print(&"int: ${int}");

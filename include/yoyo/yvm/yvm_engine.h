@@ -15,9 +15,7 @@ namespace Yoyo
         void compile();
         void prepareForExecution();
         void addDynamicLibrary(std::string_view path);
-        void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) override {
-            return nullptr;
-        }
+        void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) override;
         void* findNativeFunction(const std::string& name);
         Yvm::VM vm;
         StructTypeSelector struct_manager;

@@ -18,6 +18,8 @@ namespace Yoyo
     public:
         IRGenerator* irgen;
         std::vector<std::pair<std::string, std::string>> disallowed_consts;
+        bool is_initial;
+        Type* target = nullptr;
         Constant operator()(IntegerLiteral*);
         Constant operator()(BooleanLiteral*);
         Constant operator()(RealLiteral*);
