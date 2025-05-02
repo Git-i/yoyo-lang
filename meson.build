@@ -95,7 +95,10 @@ if backend == 'yvm' or backend == 'both'
     endif
 endif
 yoyo_args = ['-DYOYO_DLL']
-yoyo_lib = library('yoyo', sources, include_directories: 'include/yoyo',
+yoyo_lib = library(
+    'yoyo', 
+    sources, 
+    include_directories: ['include/yoyo', 'subprojects/minicoro'],
     dependencies: deps,
     cpp_args: yoyo_args)
 yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)

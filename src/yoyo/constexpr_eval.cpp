@@ -52,6 +52,8 @@ namespace Yoyo
     
     Constant ConstantEvaluator::operator()(ObjectLiteral* lit)
     {
+        if (!is_initial) irgen->error(Error(lit, "Structural constants are only allowed as top level constants"));
+        is_initial = false;
         auto t = ExpressionTypeChecker{ irgen }(lit);
         if (!t) { irgen->error(t.error());return nullptr; }
         auto decl = t->get_decl_if_class(irgen);

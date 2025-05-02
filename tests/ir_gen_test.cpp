@@ -72,7 +72,7 @@ TEST_CASE("Test IR")
     //md->addFunction("() -> u32", read_int, "read_uint");
     //md->addFunction("(:i32, :i32) -> i32", random_int, "random_int");
     //md->addFunction("(:u64) -> i32", cast_integer, "unsafe_int_cast");
-    engine.addModule("source.yoyo", src2);
+    auto src_md = engine.addModule("source.yoyo", src2);
     //engine.addModule("rl", raylib_src);
     engine.addDynamicLibrary("c_file.dll");
     engine.compile();
@@ -88,11 +88,20 @@ TEST_CASE("Test IR")
         std::cout << "\033[0m" << std::flush;
         //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
     }
-    std::string unmangled_name = engine.modules["source.yoyo"]->module_hash + "main";
-    auto mod = reinterpret_cast<Yoyo::YVMModule*>(engine.modules["source.yoyo"].get());
-    auto rn = engine.vm.new_runner();
-    auto result = rn.run_code(mod->code.code[unmangled_name].data(), nullptr, 0);
-    std::cout << result.i32 << std::endl;
+    std::string unmangled_name = src_md->module_hash + "main";
+    auto fn = engine.findFunction(src_md, unmangled_name).value();
+    struct ParamStruct {
+        struct BigStruct {
+            int a; int b; int c; int d;
+        } data;
+    };
+    void* coro;
+    auto fn_args = static_cast<ParamStruct*>(engine.createFiber(fn, &coro));
+    fn_args->data.a = 100;
+    fn_args->data.b = 130;
+    fn_args->data.c = 150;
+    fn_args->data.d = 70;
+    engine.runFiber(coro);
 }
 
 TEST_CASE("Error formatting", "[errors]")

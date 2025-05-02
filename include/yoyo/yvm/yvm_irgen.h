@@ -56,8 +56,8 @@ namespace Yoyo {
 	};
     class YVMExpressionEvaluator
     {
-        std::optional<Type> target;
     public:
+        std::optional<Type> target;
         YVMIRGenerator* irgen;
         Type lastDeducedType;
         enum ComparisonPredicate

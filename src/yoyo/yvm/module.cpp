@@ -167,9 +167,9 @@ namespace Yoyo
             {
                 auto& subtype = subvar.type;
 
-                std::get<0>(t.second).swap(irgen->block_hash);
+                if(irgen) std::get<0>(t.second).swap(irgen->block_hash);
                 subtype.saturate(this, irgen);
-                std::get<0>(t.second).swap(irgen->block_hash);
+                if(irgen) std::get<0>(t.second).swap(irgen->block_hash);
 
                 auto ty = reinterpret_cast<YVMModule*>(subtype.module)->toNativeType(subtype, hash, irgen, not_allowed);
                 if (!ty) return nullptr;

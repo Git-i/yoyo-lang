@@ -626,6 +626,61 @@ namespace Yoyo
     {
         return target->mangled_name(t);
     }
+    std::vector<Type> doBasicBinaryOp(
+        YVMExpressionEvaluator* eval,
+        OverloadDetailsBinary* target_ovl,
+        TokenType toktp,
+        Expression* lhs,
+        Expression* rhs,
+        const Type& left_type_og,
+        const Type& right_type_og)
+    {
+        auto left_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->left }, lhs->toVariant());
+        eval->target = target_ovl->left;
+        auto lhs_e = std::visit(*eval, lhs->toVariant());
+        eval->implicitConvert(lhs, left_type, target_ovl->left, false, true);
+
+        auto right_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->right }, lhs->toVariant());
+        eval->target = target_ovl->right;
+        auto rhs_e = std::visit(*eval, rhs->toVariant());
+        eval->implicitConvert(rhs, right_type, target_ovl->right, false, true);
+
+        auto fn = getOperatorFunction(toktp, eval->irgen, target_ovl);
+
+        if (target_ovl->result.should_sret())
+        {
+            eval->irgen->builder->write_alloca(NativeType::get_size(eval->irgen->toNativeType(target_ovl->result)));
+            eval->irgen->builder->write_1b_inst(OpCode::Dup);
+        }
+        if (!rhs_e.empty()) {
+            eval->irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
+            eval->irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        }
+
+        eval->irgen->builder->write_fn_addr(fn);
+        eval->irgen->builder->write_2b_inst(OpCode::Call, 2 + target_ovl->result.should_sret());
+        if (target_ovl->result.should_sret()) eval->irgen->builder->write_1b_inst(OpCode::Pop);
+        if (target_ovl->result.is_non_owning(eval->irgen))
+        {
+            // You can't extend lifetimes if you're an rvalue, I believe
+            eval->irgen->builder->write_1b_inst(OpCode::Switch);
+            eval->irgen->builder->write_1b_inst(OpCode::Pop);
+            rhs_e.push_back(Type{ .name = "void" });
+            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
+            return rhs_e;
+        }
+        else
+        {
+            if (!rhs_e.empty()) {
+                eval->irgen->builder->write_1b_inst(OpCode::Switch);
+                eval->irgen->builder->write_1b_inst(OpCode::Pop);
+                clearUsages(rhs_e, *eval);
+                eval->irgen->builder->write_1b_inst(OpCode::Pop);
+                clearUsages(lhs_e, *eval);
+            }
+            return {};
+        }
+    }
     std::vector<Type> YVMExpressionEvaluator::doAddition(
         Expression* lhs,
         Expression* rhs,
@@ -637,52 +692,8 @@ namespace Yoyo
             return {};
         }
         auto target_ovl = resolveAdd(left_type_og, right_type_og, irgen);
-
-        auto left_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->left }, lhs->toVariant());
-        target = target_ovl->left;
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        implicitConvert(lhs, left_type, target_ovl->left, false, true);
-
-        auto right_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->right }, lhs->toVariant());
-        target = target_ovl->right;
-        auto rhs_e = std::visit(*this, rhs->toVariant());
-        implicitConvert(rhs, right_type, target_ovl->right, false, true);
-
-        auto fn = getOperatorFunction(TokenType::Plus, irgen, target_ovl);
+        return doBasicBinaryOp(this, target_ovl, TokenType::Plus, lhs, rhs, left_type_og, right_type_og);
         
-        if (target_ovl->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target_ovl->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        if (!rhs_e.empty()) {
-            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        }
-        
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target_ovl->result.should_sret());
-        if (target_ovl->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target_ovl->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            if (!rhs_e.empty()) {
-                irgen->builder->write_1b_inst(OpCode::Switch);
-                irgen->builder->write_1b_inst(OpCode::Pop);
-                clearUsages(rhs_e, *this);
-                irgen->builder->write_1b_inst(OpCode::Pop);
-                clearUsages(lhs_e, *this);
-            }
-            return {};
-        }
     }
     std::vector<Type> YVMExpressionEvaluator::doMinus(
         Expression* lhs,
@@ -690,46 +701,12 @@ namespace Yoyo
         const Type& left_type,
         const Type& right_type)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
         if (left_type.name == "ilit" && right_type.name == "ilit") {
             irgen->builder->write_1b_inst(OpCode::Sub64);
             return {};
         }
-        auto target = resolveAdd(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::Minus, irgen, target);
-
-        if (target->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
-            return {};
-        }
+        auto target = resolveSub(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::Minus, lhs, rhs, left_type, right_type);
     }
     std::vector<Type> YVMExpressionEvaluator::doMult(
         Expression* lhs,
@@ -737,46 +714,12 @@ namespace Yoyo
         const Type& left_type,
         const Type& right_type)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
         if (left_type.name == "ilit" && right_type.name == "ilit") {
             irgen->builder->write_1b_inst(OpCode::Mul64);
             return {};
         }
-        auto target = resolveAdd(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::Star, irgen, target);
-
-        if (target->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
-            return {};
-        }
+        auto target = resolveMul(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::Star, lhs, rhs, left_type, right_type);
     }
     std::vector<Type> YVMExpressionEvaluator::doRange(
         Expression* lhs,
@@ -808,42 +751,8 @@ namespace Yoyo
         const Type& left_type,
         const Type& right_type)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
-        //if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSDiv(lhs_e, rhs_e);
         auto target = resolveDiv(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::Slash, irgen, target);
-        if (target->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
-            return {};
-        }
+        return doBasicBinaryOp(this, target, TokenType::Slash, lhs, rhs, left_type, right_type);
     }
     std::vector<Type> YVMExpressionEvaluator::doRem(
         Expression* lhs,
@@ -890,87 +799,21 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::doShl(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
         if (left_type.name == "ilit" && right_type.name == "ilit") { 
             irgen->builder->write_2b_inst(OpCode::Shl, 64); 
             return {};
         }
         auto target = resolveShl(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::DoubleLess, irgen, target);
-        if (target->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
-            return {};
-        }
+        return doBasicBinaryOp(this, target, TokenType::DoubleLess, lhs, rhs, left_type, right_type);
     }
     std::vector<Type> YVMExpressionEvaluator::doShr(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
         if (left_type.name == "ilit" && right_type.name == "ilit") {
             irgen->builder->write_2b_inst(OpCode::Shr, 64);
             return {};
         }
-        auto target = resolveShl(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::DoubleGreater, irgen, target);
-        if (target->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
-            return {};
-        }
+        auto target = resolveShr(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::DoubleGreater, lhs, rhs, left_type, right_type);
     }
     std::vector<Type> YVMExpressionEvaluator::doCmp(
         ComparisonPredicate p,

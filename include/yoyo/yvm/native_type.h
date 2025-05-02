@@ -38,6 +38,8 @@ namespace Yoyo
 
 		StructNativeTy* makeForStruct(std::span<NativeTy* const>);
 		size_t getElementOffset(const StructNativeTy* type, size_t idx);
+		NativeTy* getStructElementType(StructNativeTy* type, size_t idx);
+		size_t getNumElements(const StructNativeTy* type);
 		uint32_t get_size(NativeTy*);
 		void freeForStruct(StructNativeTy*);
 

@@ -152,6 +152,14 @@ namespace Yoyo
         {
             return obj->offsets[idx];
         }
+        NativeTy* getStructElementType(StructNativeTy* type, size_t idx)
+        {
+            return type->elements[idx];
+        }
+        size_t getNumElements(const StructNativeTy* type)
+        {
+            return type->offsets.size();
+        }
     }
     
 }
