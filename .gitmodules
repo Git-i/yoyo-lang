@@ -1,3 +1,6 @@
 [submodule "subprojects/yoyo-vm"]
 	path = subprojects/yoyo-vm
 	url = https://github.com/Git-i/yoyo-vm.git
+[submodule "subprojects/minicoro"]
+	path = subprojects/minicoro
+	url = https://github.com/edubart/minicoro
