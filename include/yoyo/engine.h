@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include "common.h"
 
-
+#include "runtime.h"
 namespace Yoyo {
     class ModuleBase;
     class Statement;
@@ -16,6 +16,7 @@ namespace Yoyo {
     class YOYO_API Engine
     {
     protected:
+        Runtime rt;
     public:
         Engine();
         virtual ~Engine() = default;
@@ -24,6 +25,11 @@ namespace Yoyo {
         std::unordered_map<std::string, std::unique_ptr<ModuleBase>> modules;
         std::unordered_map<std::string, std::pair<std::string, std::vector<std::unique_ptr<Statement>>>> sources;
         static std::string_view viewString(void* str);
-        
+        void execute();
+        template<class Rep, class Period>
+        void sleep(const std::chrono::duration<Rep, Period>& sleep_duration) { 
+            sleep(std::chrono::duration_cast<std::chrono::milliseconds>(sleep_duration).count());
+        }
+        void sleep(uint64_t milliseconds);
     };
 }

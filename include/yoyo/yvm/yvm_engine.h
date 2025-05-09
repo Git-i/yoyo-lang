@@ -9,6 +9,8 @@ namespace Yoyo
     struct FunctionTy {
         uint64_t* code;
         StructNativeTy* params;
+        NativeTy* ret;
+        bool should_sret;
     };
     struct FiberData {
 
@@ -23,10 +25,9 @@ namespace Yoyo
         void compile();
         void prepareForExecution();
         void addDynamicLibrary(std::string_view path);
-        void* createFiber(const FunctionTy& fn, void** coro_out);
-        void runFiber(void* coro);
+        Fiber createFiber(const FunctionTy& fn);
         std::optional<FunctionTy> findFunction(ModuleBase* mod, const std::string& function_name);
-        void execute();
+        
         void* createGlobalConstant(const Type& type, const std::vector<Constant>& args, IRGenerator*) override;
         void* findNativeFunction(const std::string& name);
         size_t getTypeSpawnIdx(const Type& tp);

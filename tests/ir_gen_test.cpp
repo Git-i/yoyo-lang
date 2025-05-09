@@ -88,20 +88,17 @@ TEST_CASE("Test IR")
         std::cout << "\033[0m" << std::flush;
         //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
     }
-    std::string unmangled_name = src_md->module_hash + "main";
-    auto fn = engine.findFunction(src_md, unmangled_name).value();
-    struct ParamStruct {
-        struct BigStruct {
-            int a; int b; int c; int d;
-        } data;
-    };
-    void* coro;
-    auto fn_args = static_cast<ParamStruct*>(engine.createFiber(fn, &coro));
-    fn_args->data.a = 100;
-    fn_args->data.b = 130;
-    fn_args->data.c = 150;
-    fn_args->data.d = 70;
-    engine.runFiber(coro);
+    std::string func_1_name = src_md->module_hash + "func_1";
+    std::string func_2_name = src_md->module_hash + "func_2";
+    auto fn1 = engine.findFunction(src_md, func_1_name).value();
+    auto fn2 = engine.findFunction(src_md, func_2_name).value();
+    auto fib1 = engine.createFiber(fn1);
+    auto fib2 = engine.createFiber(fn2);
+
+    struct SmallStruct { int a; int b; };
+    engine.execute();
+    auto fib_1_res = std::move(fib1).get_return_value<SmallStruct>();
+    int a = 0;
 }
 
 TEST_CASE("Error formatting", "[errors]")

@@ -10,7 +10,6 @@
 #include "yvm/fwd_decl.h"
 #include <format>
 
-#define MINICORO_IMPL
 #include "minicoro.h"
 namespace Yoyo
 {
@@ -25,7 +24,7 @@ namespace Yoyo
             return NativeType::doCall(static_cast<NativeProto*>(proto), arg_size, begin, function);
             };
         //instrinsic zero is gcnew
-        vm.intrinsic_handler = [](Yvm::Stack& stack, uint8_t intrinsic) {
+        vm.intrinsic_handler = [](Yvm::Stack& stack, uint8_t intrinsic, void* ex_data) {
             /*
             * gc malloc -> 0
             * i8 to str -> 1
@@ -40,6 +39,8 @@ namespace Yoyo
             * 
             * f32 to str -> 9
             * f64 to str -> 10
+            * 
+            * sleep fiber -> 11
             */
             auto to_str_primitive = [&stack](auto value) {
                 auto length = std::formatted_size("{}", value);
@@ -62,8 +63,10 @@ namespace Yoyo
 
             case 9: to_str_primitive(stack.popf<32>()); break;
             case 10: to_str_primitive(stack.popf<64>()); break;
+            case 11: reinterpret_cast<decltype(this)>(ex_data)->sleep(stack.pop<64>()); break;
             }
             };
+        vm.ex_data = this;
         YVMModule::makeBuiltinModule(this);
     }
 
@@ -129,24 +132,31 @@ namespace Yoyo
         auto mod = NativeType::load_native_library(std::string(path));
         if (mod) external_dlls.push_back(mod);
     }
-    void* YVMEngine::createFiber(const FunctionTy& fn, void** coro_out)
+    Fiber YVMEngine::createFiber(const FunctionTy& fn)
     {
         struct CoroData {
             Yvm::VM* vm;
             uint64_t* code;
             StructNativeTy* param_type;
+            NativeTy* ret_ty;
+            bool should_sret;
         };
-
+        struct ParamReturnPtrs {
+            void* params; void* ret;
+        };
         mco_desc desc = mco_desc_init([](mco_coro* co) {
             auto data = reinterpret_cast<CoroData*>(mco_get_user_data(co));
-            auto ptr = alloca(NativeType::get_size(data->param_type));
-            mco_push(co, &ptr, sizeof(void*));
+            auto param_data = ParamReturnPtrs{
+                .params = data->param_type == nullptr ? nullptr : alloca(NativeType::get_size(data->param_type)),
+                .ret = data->ret_ty == nullptr ? nullptr : alloca(NativeType::get_size(data->ret_ty)) };
+            mco_push(co, &param_data, sizeof(ParamReturnPtrs));
             mco_yield(co);
             
             auto rn = data->vm->new_runner();
-            auto n_elems = NativeType::getNumElements(data->param_type);
-            for (auto i : std::views::iota(0u, n_elems)) {
-                auto elem_ptr = static_cast<std::byte*>(ptr) + NativeType::getElementOffset(data->param_type, i);
+            auto n_elems = data->param_type == nullptr ? 0 : NativeType::getNumElements(data->param_type);
+            if (data->should_sret) rn.stack_data[0].ptr = param_data.ret;
+            for (auto i : std::views::iota(0u + data->should_sret, n_elems + data->should_sret)) {
+                auto elem_ptr = static_cast<std::byte*>(param_data.params) + NativeType::getElementOffset(data->param_type, i);
                 auto this_t = NativeType::getStructElementType(data->param_type, i);
                 
                 if (this_t == NativeType::getI8()) rn.stack_data[i].i8 = *reinterpret_cast<int8_t*>(elem_ptr);
@@ -167,23 +177,19 @@ namespace Yoyo
             //if (setjmp(panic_buf)) {
             //    // panic
             //}
-            rn.run_code(data->code, nullptr, n_elems);
+            rn.run_code(data->code, nullptr, n_elems + data->should_sret);
             delete data;
             }, 0);
-        desc.user_data = new CoroData{ .vm = &vm, .code = fn.code, .param_type = fn.params };
-        desc.storage_size = sizeof(void*);
+        desc.user_data = new CoroData{ .vm = &vm, .code = fn.code, .param_type = fn.params, .ret_ty = fn.ret, .should_sret = fn.should_sret };
+        desc.storage_size = sizeof(ParamReturnPtrs);
 
         mco_coro* co;
         auto res = mco_create(&co, &desc);
         mco_resume(co);
-        void* out_ptr;
-        mco_pop(co, &out_ptr, sizeof(void*));
-        *coro_out = co;
-        return out_ptr;
-    }
-    void YVMEngine::runFiber(void* coro)
-    {
-        mco_resume(static_cast<mco_coro*>(coro));
+        ParamReturnPtrs param_ret;
+        mco_pop(co, &param_ret, sizeof(ParamReturnPtrs));
+        rt.add_job(co);
+        return Fiber{ param_ret.params, param_ret.ret, co, &rt };
     }
     std::optional<FunctionTy> YVMEngine::findFunction(ModuleBase* mod, const std::string& function_name)
     {
@@ -199,7 +205,12 @@ namespace Yoyo
             }
             return FunctionTy{
                 .code = reinterpret_cast<YVMModule*>(mod)->code.code[blk + fn->name].data(),
-                .params = reinterpret_cast<StructNativeTy*>(struct_manager.get_struct_type(types))
+                .params = types.empty() ? nullptr : reinterpret_cast<StructNativeTy*>(struct_manager.get_struct_type(types)),
+                .ret = fn->sig.returnType.is_void() ? nullptr :
+                    reinterpret_cast<YVMModule*>(fn->sig.returnType.module)->toNativeType(
+                        fn->sig.returnType,
+                        fn->sig.returnType.block_hash, nullptr, {}),
+                .should_sret = fn->sig.returnType.should_sret()
             };
         }
         return std::nullopt;

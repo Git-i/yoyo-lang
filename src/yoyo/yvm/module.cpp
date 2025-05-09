@@ -331,6 +331,19 @@ namespace Yoyo
         iterator->name = "Iterator";
         iterator->methods.emplace_back(std::make_unique<FunctionDeclaration>("next", std::move(sig), nullptr));
         mod->generic_interfaces[mod->module_hash].emplace_back(std::move(iterator));
+        //------------------core::sleep---------------------------------------
+        mod->functions[mod->module_hash].emplace_back(FunctionDetails{
+            .name = "sleep",
+            .sig = FunctionSignature {
+                .returnType = Type{ .name = "void", .module = mod },
+                .return_is_ref = false,
+                .parameters = { FunctionParameter{.type = Type{.name = "u64", .module = mod }, .name = "duration" } },
+            },
+            .attributes = { Attribute{"public"} }
+        });
+        em.write_2b_inst(Yvm::OpCode::ExternalIntrinsic, 11);
+        em.close_function(&mod->code, "core::sleep");
+        //-----------------------------------------------------------------------
     }
     std::string YVMModule::dumpIR()
     {

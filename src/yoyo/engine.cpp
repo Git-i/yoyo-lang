@@ -5,6 +5,7 @@
 #include <parser.h>
 #include <ranges>
 #include <statement.h>
+#include "minicoro.h"
 namespace Yoyo
 {
 
@@ -24,6 +25,21 @@ namespace Yoyo
         struct String{char* data; uint64_t len; uint64_t cap;};
         auto arg_as_str = static_cast<String*>(str);
         return std::string_view{arg_as_str->data, arg_as_str->len};
+    }
+
+    void Engine::execute()
+    {
+        rt.run();
+    }
+
+    void Engine::sleep(uint64_t milliseconds)
+    {
+        auto cor = mco_running();
+        rt.waiting.emplace_back(
+            cor,
+            Runtime::TimePoint::clock::now() + std::chrono::milliseconds(milliseconds)
+        );
+        mco_yield(cor);
     }
 
 }

@@ -19,6 +19,7 @@ sources = [
     'src/yoyo/error.cpp',
     'src/yoyo/constexpr_eval.cpp',
     'src/yoyo/macro_eval.cpp',
+    'src/yoyo/runtime.cpp',
 
     
     'include/yoyo/ast_node.h',
@@ -47,6 +48,7 @@ sources = [
     'include/yoyo/parselets/infix_parselets.h',
     'include/yoyo/parselets/prefix_parselets.h',
     'include/yoyo/constant.h',
+    'include/yoyo/runtime.h',
 ]
 backend = get_option('executor')
 deps =  [dependency('bdw-gc')]
