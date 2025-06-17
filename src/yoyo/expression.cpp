@@ -114,4 +114,9 @@ namespace Yoyo
         return this;
     }
 
+    ExpressionVariant SpawnExpression::toVariant()
+    {
+        return this;
+    }
+
 }

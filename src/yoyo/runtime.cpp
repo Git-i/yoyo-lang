@@ -51,6 +51,7 @@ namespace Yoyo {
                         waiting.erase(find_it);
                     }
                     routs.erase(routs.begin() + i);
+                    i--;
                     if (is_externally_owned[rou] == false) {
                         mco_destroy(rou);
                         is_externally_owned.erase(rou);

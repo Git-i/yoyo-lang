@@ -1,16 +1,13 @@
 SmallStruct: struct = {
 	a: i32,
-	b: i32
+	b: i32,
+	add_values: fn(this) -> i32 = {
+		test::print(&"${this.a} + ${this.b} = ${this.a + this.b}");
+		return this.a + this.b;
+	}
 }
-func_1: fn -> SmallStruct = {
-	test::print(&"Function 1 begin");
-	core::sleep(100);
-	test::print(&"Function 1 end");
-	return SmallStruct { .a = 230, .b = 890 };
-}
-
 func_2: fn = {
 	test::print(&"Function 2 begin");
-	core::sleep(100);
+	hdl: core::Fiber::<i32> = spawn SmallStruct{.a = 1, .b = 3}.add_values();
 	test::print(&"Function 2 end");
 }

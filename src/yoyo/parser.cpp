@@ -32,6 +32,7 @@ namespace Yoyo
         prefixParselets[TokenType::DoublePipe] = lambda_parselet;
         prefixParselets[TokenType::Null] = std::make_shared<NullLiteralParselet>();
         prefixParselets[TokenType::GCNew] = std::make_shared<GCNewParselet>();
+        prefixParselets[TokenType::Spawn] = std::make_shared<SpawnParselet>();
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);

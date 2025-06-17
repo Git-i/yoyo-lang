@@ -43,7 +43,8 @@ namespace Yoyo {
         {"break", TokenType::Break},
         {"continue", TokenType::Continue},
         {"const", TokenType::Const},
-        {"macro", TokenType::Macro}
+        {"macro", TokenType::Macro},
+        {"spawn", TokenType::Spawn}
     })
     {
 

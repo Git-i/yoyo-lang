@@ -1122,4 +1122,16 @@ namespace Yoyo
         MacroEvaluator{ irgen }.eval(mcr);
         return std::visit(*this, mcr->result->toVariant());
     }
+    ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(SpawnExpression* sxr)
+    {
+        auto inner_type = std::visit(*this, sxr->call_expr->toVariant()).value_or_error();
+        return { Type{
+            .name = "Fiber",
+            .subtypes = {
+                std::move(inner_type)
+            },
+            .module = irgen->module->engine->modules.at("core").get(),
+            .block_hash = "core::",
+        } };
+    }
 }

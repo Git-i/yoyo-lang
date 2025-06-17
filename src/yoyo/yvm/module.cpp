@@ -83,6 +83,10 @@ namespace Yoyo
             args[2] = NativeType::getU64();
             return eng.struct_manager.get_struct_type(args);
         }
+        if (type.block_hash == "core::" && type.name == "Fiber") {
+            auto ptr_ty = NativeType::getPtrTy();
+            return eng.struct_manager.get_struct_type({ { ptr_ty, ptr_ty, ptr_ty, ptr_ty } });
+        }
         if (type.is_variant())
         {
             //TODO: add array native type and union native type

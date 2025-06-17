@@ -307,4 +307,16 @@ namespace Yoyo
         self->target_expression = std::move(expr);
         return Expression::attachSLAndParent(std::move(self), tk.loc, end, parser.parent);
     }
+    std::unique_ptr<Expression> SpawnParselet::parse(Parser& parser, Token tk)
+    {
+        auto self = std::make_unique<SpawnExpression>(nullptr);
+        auto expr = parser.parseExpression(0);
+        if (!dynamic_cast<CallOperation*>(expr.get())) {
+            parser.error("Spawn can only be used for function invocations", tk);
+        }
+        auto end = expr->end;
+        expr->parent = self.get();
+        self->call_expr = std::move(expr);
+        return Expression::attachSLAndParent(std::move(self), tk.loc, end, parser.parent);
+    }
 }

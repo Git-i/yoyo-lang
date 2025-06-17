@@ -304,6 +304,14 @@ namespace Yoyo
         return {};
     }
 
+    BorrowResult::borrow_result_t BorrowResult::operator()(SpawnExpression* exr)
+    {
+        // arguments passed into spawn must be fully owning (i.e fibers don't borrow)
+        auto res = doCall(reinterpret_cast<CallOperation*>(exr->call_expr.get()));
+        if (!res.empty()) irgen->error(Error(exr, "Spawn expression must be fully owning"));
+        return borrow_result_t();
+    }
+
     void validate_expression_borrows(Expression* expr, IRGenerator* irgen)
     {
         validate_borrows({{{expr, std::visit(BorrowResult{irgen}, expr->toVariant())}}}, irgen);

@@ -41,6 +41,7 @@ namespace Yoyo
     class AsExpression;
     class GCNewExpression;
     class MacroInvocation;
+    class SpawnExpression;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -64,7 +65,8 @@ namespace Yoyo
         GenericNameExpression*,
         GCNewExpression*,
         AsExpression*,
-        MacroInvocation*>;
+        MacroInvocation*,
+        SpawnExpression*>;
     enum class Ownership { Owning = 0, NonOwning, NonOwningMut };
     class YOYO_API Expression : public ASTNode {
     public:
@@ -266,6 +268,14 @@ namespace Yoyo
         MacroInvocation(std::unique_ptr<Expression> name, std::unique_ptr<Expression> left, std::unique_ptr<Expression> right)
             : macro_name(std::move(name)), left(std::move(left)), right(std::move(right)) {}
 
+        ExpressionVariant toVariant() override;
+    };
+    class YOYO_API SpawnExpression : public Expression
+    {
+    public:
+        std::unique_ptr<Expression> call_expr;
+        SpawnExpression(std::unique_ptr<Expression> call_expr)
+            : call_expr(std::move(call_expr)) {}
         ExpressionVariant toVariant() override;
     };
 }

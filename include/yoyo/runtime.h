@@ -30,7 +30,7 @@ namespace Yoyo {
             : parameters(param), return_val(ret_val), coro(coro), rt(rt) {}
         Fiber(const Fiber&) = delete;
         template<typename T>
-        T get_return_value()&& {
+        T get() {
             auto val = std::move(*reinterpret_cast<T*>(return_val));
             forget();
             return val;

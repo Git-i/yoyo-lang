@@ -693,7 +693,6 @@ namespace Yoyo
         }
         auto target_ovl = resolveAdd(left_type_og, right_type_og, irgen);
         return doBasicBinaryOp(this, target_ovl, TokenType::Plus, lhs, rhs, left_type_og, right_type_og);
-        
     }
     std::vector<Type> YVMExpressionEvaluator::doMinus(
         Expression* lhs,
@@ -1631,6 +1630,88 @@ namespace Yoyo
     {
         ExpressionTypeChecker{ irgen }(invc);
         return std::visit(*this, invc->result->toVariant());
+    }
+    std::vector<Type> YVMExpressionEvaluator::operator()(SpawnExpression* expr)
+    {
+        auto call_op = reinterpret_cast<CallOperation*>(expr->call_expr.get());
+        ExpressionTypeChecker type_checker{ irgen };
+        auto return_t = type_checker(expr);
+        auto t = std::visit(type_checker, call_op->callee->toVariant());
+        if (!return_t) { irgen->error(return_t.error()); return {}; }
+        if (t && t->is_error_ty())
+        {
+            std::visit(*this, call_op->callee->toVariant());
+            debugbreak();
+        }
+        if (!t || !(t->is_function() || t->is_lambda())) { irgen->error(t.error()); return {}; }
+        
+        bool is_lambda = t->is_lambda();
+        auto fn = reinterpret_cast<FunctionType&>(*t);
+        auto bexpr = dynamic_cast<BinaryOperation*>(call_op->callee.get()); 
+        StructNativeTy* params_ty;
+        std::vector<NativeTy*> types;
+        for (auto& param : fn.sig.parameters) {
+            types.push_back(irgen->toNativeType(param.type));
+        }
+        params_ty = reinterpret_cast<StructNativeTy*>(reinterpret_cast<YVMEngine*>(irgen->module->engine)->struct_manager.get_struct_type(types));
+        NativeTy* ret_ty = irgen->toNativeType(fn.sig.returnType);
+        bool uses_sret = fn.sig.returnType.should_sret();
+
+        auto fiber_ty = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*return_t));
+
+        irgen->builder->write_alloca(NativeType::get_size(fiber_ty));
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        irgen->builder->write_const<uint8_t>(uses_sret);
+        irgen->builder->write_const(ret_ty);
+        irgen->builder->write_const(params_ty);
+        irgen->builder->write_fn_addr("");
+        irgen->builder->write_2b_inst(OpCode::ExternalIntrinsic, 12);
+
+        auto& function_name = irgen->builder->get_last_inserted_function();
+        if (fn.is_bound)
+        {
+            // TODO: called and stored fns
+            //bexpr is guaranteed to be valid if the function is bound as
+            //callee is a binary dot expr
+            auto left_t = std::visit(type_checker, bexpr->lhs->toVariant());
+            auto cls = left_t->deref().get_decl_if_class(irgen);
+            // method call
+            if (auto rhs = dynamic_cast<NameExpression*>(bexpr->rhs.get()))
+            {
+                auto this_block = left_t->deref().full_name() + "::";
+                auto [block, fn] =
+                    left_t->deref().module->findFunction(this_block, rhs->text);
+                if (block == this_block && fn->sig.parameters[0].name == "this")
+                {
+                    function_name = block + rhs->text;
+
+                    irgen->builder->write_1b_inst(OpCode::Dup); // the fiber ptr
+                    irgen->builder->write_ptr_off(NativeType::getElementOffset(fiber_ty, 0)); // get the parameters pointer
+                    irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::ptr);
+
+                    // the "this" parameter
+                    irgen->builder->write_1b_inst(OpCode::Dup);
+                    NativeType::getElementOffset(params_ty, 0);
+                    std::visit(*this, bexpr->lhs->toVariant()); // no need to remove lifetime extensions because borrow is not allowed
+                    irgen->builder->write_1b_inst(OpCode::Switch);
+                    implicitConvert(bexpr->lhs.get(), *left_t, fn->sig.parameters[0].type, true, false);
+                    irgen->builder->write_1b_inst(OpCode::Pop);
+
+                    for (auto i : std::views::iota(1u, fn->sig.parameters.size())) {
+                        if (i != fn->sig.parameters.size() - 1) irgen->builder->write_1b_inst(OpCode::Dup);
+                        NativeType::getElementOffset(params_ty, i);
+                        std::visit(*this, call_op->arguments[i - 1]->toVariant());
+                        irgen->builder->write_1b_inst(OpCode::Switch);
+                        implicitConvert(
+                            call_op->arguments[i - 1].get(),
+                            *std::visit(type_checker, call_op->arguments[i - 1]->toVariant()),
+                            fn->sig.parameters[i].type, true, false);
+                        irgen->builder->write_1b_inst(OpCode::Pop);
+                    }
+                }
+            }
+        }
+        return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(LambdaExpression* expr)
     {

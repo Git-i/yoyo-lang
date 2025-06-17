@@ -41,7 +41,9 @@ namespace Yoyo
             * f64 to str -> 10
             * 
             * sleep fiber -> 11
+            * create fiber -> 12 [pops: code*, param_struct_type*, return_type*, bool should_sret, return fiber*]
             */
+            auto self = reinterpret_cast<decltype(this)>(ex_data);
             auto to_str_primitive = [&stack](auto value) {
                 auto length = std::formatted_size("{}", value);
                 auto buffer = static_cast<char*>(malloc(length));
@@ -63,7 +65,16 @@ namespace Yoyo
 
             case 9: to_str_primitive(stack.popf<32>()); break;
             case 10: to_str_primitive(stack.popf<64>()); break;
-            case 11: reinterpret_cast<decltype(this)>(ex_data)->sleep(stack.pop<64>()); break;
+            case 11: self->sleep(stack.pop<64>()); break;
+            case 12: {
+                auto code = stack.pop_ptr<uint64_t>();
+                auto param_ty = stack.pop_ptr<StructNativeTy>();
+                auto ret_ty = stack.pop_ptr<NativeTy>();
+                bool should_sret = stack.pop<8>();
+                auto ret_fiber = stack.pop_ptr<Fiber>();
+                *ret_fiber = self->createFiber(FunctionTy{ code, param_ty, ret_ty, should_sret });
+                break;
+            }
             }
             };
         vm.ex_data = this;

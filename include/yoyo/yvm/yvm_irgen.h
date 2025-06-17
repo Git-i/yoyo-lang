@@ -130,5 +130,6 @@ namespace Yoyo {
         std::vector<Type> operator()(CharLiteral*);
         std::vector<Type> operator()(GCNewExpression*);
         std::vector<Type> operator()(MacroInvocation*);
+        std::vector<Type> operator()(SpawnExpression*);
     };
 }

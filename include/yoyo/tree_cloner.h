@@ -28,6 +28,7 @@ namespace Yoyo
         std::unique_ptr<Expression> operator()(CharLiteral*);
         std::unique_ptr<Expression> operator()(GCNewExpression*);
         std::unique_ptr<Expression> operator()(MacroInvocation*);
+        std::unique_ptr<Expression> operator()(SpawnExpression*);
 
         static std::unique_ptr<Expression> copy_expr(Expression*);
         static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);

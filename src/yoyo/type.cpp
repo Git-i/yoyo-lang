@@ -395,7 +395,8 @@ namespace Yoyo
             tp.is_variant() ||
             tp.is_reference() ||
             tp.is_slice() ||
-            tp.is_view());
+            tp.is_view() ||
+            (tp.block_hash == "core::" && tp.name == "Fiber"));
     }
     bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool);
     void Type::saturate(ModuleBase* src, IRGenerator* irgen, bool do_verify)

@@ -65,6 +65,7 @@ namespace Yoyo
         borrow_result_t operator()(ScopeOperation*){ return {}; }
         borrow_result_t operator()(GCNewExpression*){ return {}; }
         borrow_result_t operator()(AsExpression*);
+        borrow_result_t operator()(SpawnExpression*);
     };
     class IRGenerator
     {
@@ -168,6 +169,7 @@ namespace Yoyo
         Result operator()(CharLiteral*);
         Result operator()(GCNewExpression*);
         Result operator()(MacroInvocation*);
+        Result operator()(SpawnExpression*);
     };
     
     
