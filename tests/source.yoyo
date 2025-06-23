@@ -8,6 +8,7 @@ SmallStruct: struct = {
 }
 func_2: fn = {
 	test::print(&"Function 2 begin");
-	hdl: core::Fiber::<i32> = spawn SmallStruct{.a = 1, .b = 3}.add_values();
+	hdl: core::Fiber::<i32> = spawn SmallStruct::add_values(SmallStruct{.a = 1, .b = 3});
+	core::sleep(10);
 	test::print(&"Function 2 end");
 }

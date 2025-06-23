@@ -1664,12 +1664,12 @@ namespace Yoyo
         irgen->builder->write_const<uint8_t>(uses_sret);
         irgen->builder->write_const(ret_ty);
         irgen->builder->write_const(params_ty);
-        irgen->builder->write_fn_addr("");
-        irgen->builder->write_2b_inst(OpCode::ExternalIntrinsic, 12);
-
-        auto& function_name = irgen->builder->get_last_inserted_function();
+        
         if (fn.is_bound)
         {
+            irgen->builder->write_fn_addr("");
+            irgen->builder->write_2b_inst(OpCode::ExternalIntrinsic, 12);
+            auto& function_name = irgen->builder->get_last_inserted_function();
             // TODO: called and stored fns
             //bexpr is guaranteed to be valid if the function is bound as
             //callee is a binary dot expr
@@ -1708,9 +1708,30 @@ namespace Yoyo
                             fn->sig.parameters[i].type, true, false);
                         irgen->builder->write_1b_inst(OpCode::Pop);
                     }
+                    
                 }
+                return {};
             }
         }
+        std::visit(*this, call_op->callee->toVariant());
+        irgen->builder->write_2b_inst(OpCode::ExternalIntrinsic, 12);
+
+        irgen->builder->write_1b_inst(OpCode::Dup); // the fiber ptr
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(fiber_ty, 0));
+        irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::ptr);
+
+        for (auto i : std::views::iota(0u, fn.sig.parameters.size())) {
+            if (i != fn.sig.parameters.size() - 1) irgen->builder->write_1b_inst(OpCode::Dup);
+            NativeType::getElementOffset(params_ty, i);
+            std::visit(*this, call_op->arguments[i]->toVariant());
+            irgen->builder->write_1b_inst(OpCode::Switch);
+            implicitConvert(
+                call_op->arguments[i].get(),
+                *std::visit(type_checker, call_op->arguments[i]->toVariant()),
+                fn.sig.parameters[i].type, true, false);
+            irgen->builder->write_1b_inst(OpCode::Pop);
+        }
+
         return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(LambdaExpression* expr)
