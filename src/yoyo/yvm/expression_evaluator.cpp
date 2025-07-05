@@ -633,19 +633,20 @@ namespace Yoyo
         Expression* lhs,
         Expression* rhs,
         const Type& left_type_og,
-        const Type& right_type_og)
+        const Type& right_type_og,
+        std::string block_hash)
     {
         auto left_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->left }, lhs->toVariant());
         eval->target = target_ovl->left;
         auto lhs_e = std::visit(*eval, lhs->toVariant());
         eval->implicitConvert(lhs, left_type, target_ovl->left, false, true);
 
-        auto right_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->right }, lhs->toVariant());
+        auto right_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->right }, rhs->toVariant());
         eval->target = target_ovl->right;
         auto rhs_e = std::visit(*eval, rhs->toVariant());
         eval->implicitConvert(rhs, right_type, target_ovl->right, false, true);
 
-        auto fn = getOperatorFunction(toktp, eval->irgen, target_ovl);
+        auto fn = block_hash + getOperatorFunction(toktp, eval->irgen, target_ovl);
 
         if (target_ovl->result.should_sret())
         {
@@ -691,8 +692,8 @@ namespace Yoyo
             irgen->builder->write_1b_inst(OpCode::Add64);
             return {};
         }
-        auto target_ovl = resolveAdd(left_type_og, right_type_og, irgen);
-        return doBasicBinaryOp(this, target_ovl, TokenType::Plus, lhs, rhs, left_type_og, right_type_og);
+        auto [block, target_ovl] = resolveAdd(left_type_og, right_type_og, irgen);
+        return doBasicBinaryOp(this, target_ovl, TokenType::Plus, lhs, rhs, left_type_og, right_type_og, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doMinus(
         Expression* lhs,
@@ -704,8 +705,8 @@ namespace Yoyo
             irgen->builder->write_1b_inst(OpCode::Sub64);
             return {};
         }
-        auto target = resolveSub(left_type, right_type, irgen);
-        return doBasicBinaryOp(this, target, TokenType::Minus, lhs, rhs, left_type, right_type);
+        auto [block,target] = resolveSub(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::Minus, lhs, rhs, left_type, right_type, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doMult(
         Expression* lhs,
@@ -717,8 +718,8 @@ namespace Yoyo
             irgen->builder->write_1b_inst(OpCode::Mul64);
             return {};
         }
-        auto target = resolveMul(left_type, right_type, irgen);
-        return doBasicBinaryOp(this, target, TokenType::Star, lhs, rhs, left_type, right_type);
+        auto [block, target] = resolveMul(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::Star, lhs, rhs, left_type, right_type, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doRange(
         Expression* lhs,
@@ -750,8 +751,8 @@ namespace Yoyo
         const Type& left_type,
         const Type& right_type)
     {
-        auto target = resolveDiv(left_type, right_type, irgen);
-        return doBasicBinaryOp(this, target, TokenType::Slash, lhs, rhs, left_type, right_type);
+        auto [block, target] = resolveDiv(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::Slash, lhs, rhs, left_type, right_type, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doRem(
         Expression* lhs,
@@ -759,42 +760,8 @@ namespace Yoyo
         const Type& left_type,
         const Type& right_type)
     {
-        auto lhs_e = std::visit(*this, lhs->toVariant());
-        auto rhs_e = std::visit(*this, rhs->toVariant());
-        //if (left_type.name == "ilit" && right_type.name == "ilit") return irgen->builder->CreateSRem(lhs_e, rhs_e);
-        auto target = resolveRem(left_type, right_type, irgen);
-        auto fn = getOperatorFunction(TokenType::Percent, irgen, target);
-        if (target->result.should_sret())
-        {
-            irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(target->result)));
-            irgen->builder->write_1b_inst(OpCode::Dup);
-        }
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
-        implicitConvert(lhs, left_type, target->left, false, true);
-        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
-        implicitConvert(rhs, right_type, target->right, false, true);
-        irgen->builder->write_fn_addr(fn);
-        irgen->builder->write_2b_inst(OpCode::Call, 2 + target->result.should_sret());
-        if (target->result.should_sret()) irgen->builder->write_1b_inst(OpCode::Pop);
-        if (target->result.is_non_owning(irgen))
-        {
-            // You can't extend lifetimes if you're an rvalue, I believe
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            rhs_e.push_back(Type{ .name = "void" });
-            rhs_e.insert(rhs_e.end(), lhs_e.begin(), lhs_e.end());
-            return rhs_e;
-        }
-        else
-        {
-            irgen->builder->write_1b_inst(OpCode::Switch);
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(rhs_e, *this);
-
-            irgen->builder->write_1b_inst(OpCode::Pop);
-            clearUsages(lhs_e, *this);
-            return {};
-        }
+        auto [block, target] = resolveRem(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::Percent, lhs, rhs, left_type, right_type, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doShl(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
     {
@@ -802,8 +769,8 @@ namespace Yoyo
             irgen->builder->write_2b_inst(OpCode::Shl, 64); 
             return {};
         }
-        auto target = resolveShl(left_type, right_type, irgen);
-        return doBasicBinaryOp(this, target, TokenType::DoubleLess, lhs, rhs, left_type, right_type);
+        auto [block, target] = resolveShl(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::DoubleLess, lhs, rhs, left_type, right_type, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doShr(Expression* lhs, Expression* rhs, const Type& left_type, const Type& right_type)
     {
@@ -811,8 +778,8 @@ namespace Yoyo
             irgen->builder->write_2b_inst(OpCode::Shr, 64);
             return {};
         }
-        auto target = resolveShr(left_type, right_type, irgen);
-        return doBasicBinaryOp(this, target, TokenType::DoubleGreater, lhs, rhs, left_type, right_type);
+        auto [block, target] = resolveShr(left_type, right_type, irgen);
+        return doBasicBinaryOp(this, target, TokenType::DoubleGreater, lhs, rhs, left_type, right_type, block);
     }
     std::vector<Type> YVMExpressionEvaluator::doCmp(
         ComparisonPredicate p,
@@ -837,7 +804,7 @@ namespace Yoyo
                 return {};
             }
         }
-        auto target_ovl = resolveCmp(left_type_og, right_type_og, irgen);
+        auto [block, target_ovl] = resolveCmp(left_type_og, right_type_og, irgen);
         auto left_type = *std::visit(ExpressionTypeChecker{ irgen, target_ovl->left }, lhs->toVariant());
         target = target_ovl->left;
         auto lhs_e = std::visit(*this, lhs->toVariant());
@@ -1584,24 +1551,27 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(SubscriptOperation* op)
     {
-        return {};
-        /*auto obj_ty = std::visit(ExpressionTypeChecker{irgen}, op->object->toVariant());
-        if (!obj_ty) { irgen->error(obj_ty.error()); return {}; }
-        auto llvm_t = irgen->ToLLVMType(obj_ty->deref(), false);
-        auto obj = std::visit(*this, op->object->toVariant());
-        auto idx = std::visit(*this, op->index->toVariant());
-        if(obj_ty->deref().is_static_array())
-        {
-            auto const_zero = llvm::ConstantInt::get(idx->getType(), 0);
-            return irgen->builder->CreateGEP(llvm_t, obj, {const_zero, idx});
+        ExpressionTypeChecker tp{ irgen };
+        auto final_type = std::visit(tp, op->toVariant());
+        if (!final_type) irgen->error(final_type.error());
+
+        auto expr_ty = std::visit(tp, op->object->toVariant());
+        if (!expr_ty) irgen->error(expr_ty.error());
+
+        auto idx_ty = std::visit(tp, op->index->toVariant());
+        if (!idx_ty) irgen->error(idx_ty.error());
+
+        OverloadDetailsBinary* ovl = nullptr;
+        std::string block = "";
+        TokenType tok = TokenType::SquarePair;
+        if (expr_ty->is_mutable || expr_ty->is_mutable_reference()) {
+            tok = TokenType::SquarePairMut;
+            std::tie(block, ovl) = resolveIdxMut(*expr_ty, *idx_ty, irgen);
         }
-        if (obj_ty->is_slice())
-        {
-            auto data_ptr = irgen->builder->CreateStructGEP(llvm_t, obj, 0);
-            data_ptr = irgen->builder->CreateLoad(llvm::PointerType::get(irgen->context, 0), data_ptr);
-            auto sub_ty = irgen->ToLLVMType(obj_ty->subtypes[0], false);
-            return irgen->builder->CreateGEP(sub_ty, data_ptr, { idx });
-        }*/
+
+        // if there is no mutable overload still default to the non mutable overload
+        if (!ovl) std::tie(block, ovl) = resolveIdx(*expr_ty, *idx_ty, irgen);
+        return doBasicBinaryOp(this, ovl, tok, op->object.get(), op->index.get(), *expr_ty, *idx_ty, block);
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(GCNewExpression* expr)
     {

@@ -25,7 +25,10 @@ namespace Yoyo {
         AttrOpen, /// #(
         Spaceship, // <=>
         Spawn,
-        Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const
+        Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const,
+        // Only used my operator overloads
+        SquarePair, // []
+        SquarePairMut, //mut []
     };
     struct Token
     {

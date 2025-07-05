@@ -41,7 +41,7 @@ namespace Yoyo
     static std::optional<Type> checkAddition(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveAdd(a, b, irgen);
+        auto ty = resolveAdd(a, b, irgen).second;
         if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkRange(const Type& a, const Type& b, Expression* left, Expression* right, IRGenerator* irgen)
@@ -71,37 +71,37 @@ namespace Yoyo
     static std::optional<Type> checkMinus(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveSub(a, b, irgen);
+        auto ty = resolveSub(a, b, irgen).second;
         if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkStar(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveMul(a, b, irgen);
+        auto ty = resolveMul(a, b, irgen).second;
         if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkDivide(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveDiv(a, b, irgen);
+        auto ty = resolveDiv(a, b, irgen).second;
         if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkPercent(const Type &a, const Type &b, IRGenerator* irgen)
     {
         if(a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveRem(a, b, irgen);
+        auto ty = resolveRem(a, b, irgen).second;
         if(ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkShr(const Type& a, const Type& b, IRGenerator* irgen)
     {
         if (a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveShr(a, b, irgen);
+        auto ty = resolveShr(a, b, irgen).second;
         if (ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkShl(const Type& a, const Type& b, IRGenerator* irgen)
     {
         if (a.name == "ilit" && b.name == "ilit") return a;
-        auto ty = resolveShl(a, b, irgen);
+        auto ty = resolveShl(a, b, irgen).second;
         if (ty) return ty->result; return std::nullopt;
     }
     static std::optional<Type> checkCmp(const Type& a, const Type& b, IRGenerator* irgen, TokenType tk)
@@ -111,7 +111,7 @@ namespace Yoyo
         if (a.is_equal(b) && tk == TokenType::DoubleEqual || tk == TokenType::BangEqual) {
             if (a.get_decl_if_enum()) return bool_ty;
         }
-        auto ty = resolveCmp(a, b, irgen);
+        auto ty = resolveCmp(a, b, irgen).second;
         if (!ty) return std::nullopt;
         if (tk == TokenType::DoubleEqual || tk == TokenType::BangEqual) return bool_ty; //all cmps support equality checks
         if (tk == TokenType::Spaceship) return ty->result;
@@ -483,7 +483,17 @@ namespace Yoyo
             return { tp.subtypes[0].reference_to() };
         if (tp.is_error_ty())
             return { tp };
-        return { Error(op, "Operator [] is not defined for type tp") };
+
+        OverloadDetailsBinary* ovl = nullptr;
+        auto expr_ty = std::visit(*this, op->object->toVariant()).value_or_error();
+        auto idx_ty = std::visit(*this, op->index->toVariant()).value_or_error();
+        if (expr_ty.is_mutable || expr_ty.is_mutable_reference()) {
+            ovl = resolveIdxMut(expr_ty, idx_ty, irgen).second;
+        }
+        if (!ovl) ovl = resolveIdx(expr_ty, idx_ty, irgen).second;
+
+        if (ovl) return { ovl->result };
+        return { Error(op, "Operator [] is not defined for type " + tp.pretty_name(irgen->block_hash)) };
     }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LambdaExpression* expr)
     {

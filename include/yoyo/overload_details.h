@@ -30,6 +30,8 @@ namespace Yoyo
             case TokenType::Percent: middle = "mod__"; break;
             case TokenType::DoubleGreater: middle = "shr__"; break;
             case TokenType::DoubleLess: middle = "shl__"; break;
+            case TokenType::SquarePair: middle = "idx__"; break;
+            case TokenType::SquarePairMut: middle = "idx_mut__"; break;
             default: debugbreak();
             }
             return "__operator__" + middle + left.full_name() + "__" + right.full_name();
@@ -43,7 +45,7 @@ namespace Yoyo
 
     struct ModuleOverloadDetails
     {
-        std::vector<OverloadDetailsBinary> bin_overloads;
+        std::vector<std::pair<std::string, OverloadDetailsBinary>> bin_overloads;
         std::vector<OverloadDetailsUnary> un_overloads;
         // offset order
         //minus;
@@ -53,16 +55,16 @@ namespace Yoyo
         //cmp;
         //shl;
         //shr;
+        //idx;
+        //idx_mut;
         //bit_and;
         //bit_or;
         //bit_xor;
-        //idx;
-        //idx_mut;
         //spaceship;
         //equal;
         std::array<size_t, 12> offsets;
         std::array<size_t, 1> un_offsets;
-        void add_binary_detail_for(TokenType t, OverloadDetailsBinary bin)
+        void add_binary_detail_for(TokenType t, OverloadDetailsBinary bin, std::string block_hash)
         {
             size_t off = 0;
             switch (t)
@@ -75,12 +77,14 @@ namespace Yoyo
             case TokenType::Spaceship: off = 5; break;
             case TokenType::DoubleLess: off = 6; break; //shl <<
             case TokenType::DoubleGreater: off = 7; break; //shr >>
+            case TokenType::SquarePair: off = 8; break;
+            case TokenType::SquarePairMut: off = 9; break;
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
-            bin_overloads.insert(bin_overloads.begin() + actual_off, std::move(bin));
+            bin_overloads.insert(bin_overloads.begin() + actual_off, { std::move(block_hash), std::move(bin) });
             for (auto& elem : std::ranges::subrange(offsets.begin() + off, offsets.end())) elem++;
         }
-        void add_binary_detail_for(TokenType t, Type l, Type r, Type res)
+        void add_binary_detail_for(TokenType t, Type l, Type r, Type res, std::string block_hash)
         {
             size_t off = 0;
             switch (t)
@@ -93,12 +97,14 @@ namespace Yoyo
             case TokenType::Spaceship: off = 5; break;
             case TokenType::DoubleLess: off = 6; break; 
             case TokenType::DoubleGreater: off = 7; break;
+            case TokenType::SquarePair: off = 8; break;
+            case TokenType::SquarePairMut: off = 9; break;
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
-            bin_overloads.emplace(bin_overloads.begin() + actual_off, std::move(l), std::move(r), std::move(res));
+            bin_overloads.emplace(bin_overloads.begin() + actual_off, std::move(block_hash), OverloadDetailsBinary{ std::move(l), std::move(r), std::move(res) });
             for (auto& elem : std::ranges::subrange(offsets.begin() + off, offsets.end())) elem++;
         }
-        std::span<OverloadDetailsBinary> binary_details_for(TokenType t)
+        std::span<std::pair<std::string, OverloadDetailsBinary>> binary_details_for(TokenType t)
         {
             switch (t)
             {
@@ -110,6 +116,8 @@ namespace Yoyo
             case TokenType::Spaceship: return std::span{ bin_overloads.begin() + offsets[4], bin_overloads.begin() + offsets[5] };
             case TokenType::DoubleLess: return std::span{ bin_overloads.begin() + offsets[5], bin_overloads.begin() + offsets[6]};
             case TokenType::DoubleGreater: return std::span{ bin_overloads.begin() + offsets[6], bin_overloads.begin() + offsets[7] };
+            case TokenType::SquarePair: return std::span{ bin_overloads.begin() + offsets[7], bin_overloads.begin() + offsets[8] };
+            case TokenType::SquarePairMut: return std::span{ bin_overloads.begin() + offsets[8], bin_overloads.begin() + offsets[9] };
             default: return {};
             }
         }

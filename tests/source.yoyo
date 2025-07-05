@@ -1,14 +1,16 @@
-SmallStruct: struct = {
-	a: i32,
-	b: i32,
-	add_values: fn(this) -> i32 = {
-		test::print(&"${this.a} + ${this.b} = ${this.a + this.b}");
-		return this.a + this.b;
-	}
-}
 func_2: fn = {
-	test::print(&"Function 2 begin");
-	hdl: core::Fiber::<i32> = spawn SmallStruct::add_values(SmallStruct{.a = 1, .b = 3});
-	core::sleep(10);
-	test::print(&"Function 2 end");
+	a: mut = Vector2{.x = 10, .y = 20};
+	test::print(&"${(&a)[0]}, ${(&a)[1]}");
+	test::print(&"${(&mut a)[0]}, ${(&mut a)[1]}");
+}
+
+Vector2: struct = {
+	x: u32, y: u32
+}
+
+operator: [](x: &Vector2, y: u32) -> u32 = {
+	if (y == 0) return x.x; else return x.y;
+}
+operator: mut [](x: &mut Vector2, y: u32) -> u32 = {
+	return 100;
 }

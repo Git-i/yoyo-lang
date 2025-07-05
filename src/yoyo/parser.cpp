@@ -150,7 +150,21 @@ namespace Yoyo
     {
         if(!discard(TokenType::Colon)) error("Expected ':'", Peek());
         auto op = Get();
-        if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());
+        if(!op) error("Invalid Token", op);
+        // in the case of [] and mut [] they require more than one token
+        if (op->type == TokenType::LSquare) {
+            if (auto next = Get(); (!next || next->type != TokenType::RSquare)) 
+                error("Operator cannot be overloaded", op);
+            op->type = TokenType::SquarePair;
+        }
+        else if (op->type == TokenType::Mut) {
+            auto lbrace = Get();
+            auto rbrace = Get();
+            if (!lbrace || lbrace->type != TokenType::LSquare) error("Operator cannot be overloaded", op);
+            if (!rbrace || rbrace->type != TokenType::RSquare) error("Operator cannot be overloaded", op);
+            op->type = TokenType::SquarePairMut;
+        }
+        else if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());
         auto sig = parseFunctionSignature();
         if(sig->returnType.name == "__inferred") sig->returnType.name = "void";
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());

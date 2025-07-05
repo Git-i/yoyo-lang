@@ -79,7 +79,15 @@ namespace Yoyo
             md->enums[block].emplace_back(decl);
             return true;
         }
-        bool operator()(OperatorOverload*) { return true; }
+        bool operator()(OperatorOverload* op) {
+            if(op->signature.parameters.size() == 2)
+                md->overloads.add_binary_detail_for(op->tok, OverloadDetailsBinary{
+                    op->signature.parameters[0].type,
+                    op->signature.parameters[1].type,
+                    op->signature.returnType
+                }, block);
+            return true;
+        }
         bool operator()(AliasDeclaration* decl)
         {
             md->aliases[block].emplace(decl->name, decl->type);

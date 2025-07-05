@@ -22,6 +22,9 @@ namespace Yoyo {
         virtual void doConst(ConstantDeclaration* decl) override { (*this)(decl); };
         NativeTy* toNativeType(const Type& type);
         Yvm::Type toTypeEnum(const Type& type);
+
+        void doFunctionInternal(std::string fn_name, const FunctionSignature& sig, FunctionDeclaration*);
+
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
         void operator()(VariableDeclaration*);

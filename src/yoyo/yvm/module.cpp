@@ -279,10 +279,10 @@ namespace Yoyo
                     // __operator_<name>__<type_lhs>__<type_rhs>
                     return "__operator__" + op_name + "__" + t.name + "__" + t.name;
                 };
-            operators.add_binary_detail_for(TokenType::Plus, t, t, t);
-            operators.add_binary_detail_for(TokenType::Minus, t, t, t);
-            operators.add_binary_detail_for(TokenType::Star, t, t, t);
-            operators.add_binary_detail_for(TokenType::Slash, t, t, t);
+            operators.add_binary_detail_for(TokenType::Plus, t, t, t, "");
+            operators.add_binary_detail_for(TokenType::Minus, t, t, t, "");
+            operators.add_binary_detail_for(TokenType::Star, t, t, t, "");
+            operators.add_binary_detail_for(TokenType::Slash, t, t, t, "");
 
             em.write_1b_inst(add_for.at(t.name));
             em.write_1b_inst(Yvm::OpCode::Ret);
@@ -324,7 +324,7 @@ namespace Yoyo
             em.write_const(less);
             em.write_1b_inst(Yvm::OpCode::Ret);
             em.close_function(&mod->code, mangled_name);
-            operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result));
+            operators.add_binary_detail_for(TokenType::Spaceship, t, t, std::move(result), "");
         }
         registerStringDestructor(mod);
         auto iterator = std::make_unique<GenericInterfaceDeclaration>();

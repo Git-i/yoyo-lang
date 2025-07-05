@@ -59,21 +59,9 @@ namespace Yoyo
         em.write_1b_inst(Yvm::OpCode::Ret);
         em.close_function(&mod->code, fn_name);
     }
-    
-    void YVMIRGenerator::operator()(FunctionDeclaration* decl)
-    {
-        auto fn_name = block_hash + decl->name;
-
-        auto this_entry = module->findFunction(block_hash, decl->name).second;
-        saturateSignature(this_entry->sig, module);
-
-        if (auto cimport = dynamic_cast<CImportDeclaration*>(decl->body.get())) {
-            handleCImport(this, this_entry, cimport, fn_name);
-            return;
-        }
-
+    void YVMIRGenerator::doFunctionInternal(std::string fn_name, const FunctionSignature& sig, FunctionDeclaration* decl) {
         auto old_return = return_t;
-        return_t = this_entry->sig.returnType;
+        return_t = sig.returnType;
 
         auto old_hash = block_hash;
         block_hash = fn_name + "::";
@@ -87,9 +75,9 @@ namespace Yoyo
         new_fn_vars.emplace_back();
 
         size_t idx = 0;
-        uint8_t uses_sret = this_entry->sig.returnType.should_sret();
-        builder->add_function_params(this_entry->sig.parameters.size() + uses_sret);
-        for (auto& param : this_entry->sig.parameters) {
+        uint8_t uses_sret = sig.returnType.should_sret();
+        builder->add_function_params(sig.parameters.size() + uses_sret);
+        for (auto& param :  sig.parameters) {
             if (!param.name.empty()) {
                 size_t stack_addr;
                 // param is passed by value
@@ -109,7 +97,7 @@ namespace Yoyo
                         builder->write_1b_inst(Pop);
                     }
                 }
-                new_fn_vars.back().emplace_back(param.name, std::pair{stack_addr, param.type});
+                new_fn_vars.back().emplace_back(param.name, std::pair{ stack_addr, param.type });
             }
             idx++;
         }
@@ -123,6 +111,19 @@ namespace Yoyo
         block_hash = old_hash;
         std::swap(return_t, old_return);
         builder.swap(new_builder);
+    }
+    void YVMIRGenerator::operator()(FunctionDeclaration* decl)
+    {
+        auto fn_name = block_hash + decl->name;
+
+        auto this_entry = module->findFunction(block_hash, decl->name).second;
+        saturateSignature(this_entry->sig, module);
+
+        if (auto cimport = dynamic_cast<CImportDeclaration*>(decl->body.get())) {
+            handleCImport(this, this_entry, cimport, fn_name);
+            return;
+        }
+        doFunctionInternal(fn_name, this_entry->sig, decl);
     }
     void YVMIRGenerator::operator()(ExpressionStatement* stat)
     {
@@ -550,9 +551,27 @@ namespace Yoyo
        
     }
 
-    void YVMIRGenerator::operator()(OperatorOverload*)
+    void YVMIRGenerator::operator()(OperatorOverload* ovl)
     {
-        debugbreak();
+        if (ovl->signature.parameters.size() == 2)
+        {
+            ovl->signature.parameters[0].type.saturate(module, this);
+            ovl->signature.parameters[1].type.saturate(module, this);
+            for (auto& det : module->overloads.binary_details_for(ovl->tok) | std::views::filter([this](auto& arg) {
+                return arg.first == block_hash;
+               })) {
+                det.second.left.saturate(module, this);
+                det.second.right.saturate(module, this);
+                // generate the underlying function
+                if (det.second.left.is_equal(ovl->signature.parameters[0].type) &&
+                    det.second.right.is_equal(ovl->signature.parameters[1].type))
+                {
+                    FunctionDeclaration decl{ "", {}, std::move(ovl->body)};
+                    doFunctionInternal(block_hash + det.second.mangled_name(ovl->tok), ovl->signature, &decl);
+                    break;
+                }
+            }
+        }
     }
 
     void YVMIRGenerator::operator()(GenericFunctionDeclaration*)
