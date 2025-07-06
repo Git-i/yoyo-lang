@@ -12,7 +12,7 @@ namespace Yoyo
     {
         constexpr size_t max_freq = std::numeric_limits<size_t>::max();
         std::vector<std::pair<size_t, std::pair<std::string, OverloadDetailsBinary*>>> overloads;
-        std::array<ModuleBase*, 4> modules{ lhs.module, lhs.deref().module, rhs.module, rhs.module };
+        std::array<ModuleBase*, 4> modules{ lhs.module, lhs.deref().module, rhs.module, rhs.deref().module };
         std::array<ModuleBase*, 4> encountered{};
         size_t enc_idx = 0;
         auto md = modules | std::views::transform([&encountered, &enc_idx](auto& module) {

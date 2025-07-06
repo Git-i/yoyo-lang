@@ -100,6 +100,8 @@ namespace Yoyo {
             std::vector<std::unique_ptr<Expression>>& exprs);
         std::vector<Type> doInvoke(CallOperation* op, const Type&);
         std::vector<Type> doUnionVar(CallOperation* op, Type&);
+        // Convert the object at stack top of type "type" to reference
+        void to_reference(const Type&);
         //the malloc and the size
         struct LValueEvaluator
         {

@@ -488,9 +488,9 @@ namespace Yoyo
         auto expr_ty = std::visit(*this, op->object->toVariant()).value_or_error();
         auto idx_ty = std::visit(*this, op->index->toVariant()).value_or_error();
         if (expr_ty.is_mutable || expr_ty.is_mutable_reference()) {
-            ovl = resolveIdxMut(expr_ty, idx_ty, irgen).second;
+            ovl = resolveIdxMut(expr_ty.mutable_reference_to(), idx_ty, irgen).second;
         }
-        if (!ovl) ovl = resolveIdx(expr_ty, idx_ty, irgen).second;
+        if (!ovl) ovl = resolveIdx(expr_ty.reference_to(), idx_ty, irgen).second;
 
         if (ovl) return { ovl->result };
         return { Error(op, "Operator [] is not defined for type " + tp.pretty_name(irgen->block_hash)) };

@@ -638,7 +638,16 @@ namespace Yoyo
     {
         auto left_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->left }, lhs->toVariant());
         eval->target = target_ovl->left;
-        auto lhs_e = std::visit(*eval, lhs->toVariant());
+        auto lhs_e = toktp == TokenType::SquarePairMut ?
+            std::visit(YVMExpressionEvaluator::LValueEvaluator{eval->irgen}, lhs->toVariant()) :
+            std::visit(*eval, lhs->toVariant());
+        if (toktp == TokenType::SquarePair) {
+            eval->to_reference(left_type);
+            left_type = left_type.reference_to();
+        }
+        else if (toktp == TokenType::SquarePairMut) {
+            left_type = left_type.mutable_reference_to();
+        }
         eval->implicitConvert(lhs, left_type, target_ovl->left, false, true);
 
         auto right_type = *std::visit(ExpressionTypeChecker{ eval->irgen, target_ovl->right }, rhs->toVariant());
@@ -903,6 +912,14 @@ namespace Yoyo
         irgen->builder->write_1b_inst(OpCode::Switch);
         irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::i32);
         return {};
+    }
+
+    void YVMExpressionEvaluator::to_reference(const Type& type)
+    {
+        if (type.is_reference()) return;
+        if (type.should_sret()) return;
+
+        // TODO: reference for non sret types
     }
 
     std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)
@@ -1566,11 +1583,11 @@ namespace Yoyo
         TokenType tok = TokenType::SquarePair;
         if (expr_ty->is_mutable || expr_ty->is_mutable_reference()) {
             tok = TokenType::SquarePairMut;
-            std::tie(block, ovl) = resolveIdxMut(*expr_ty, *idx_ty, irgen);
+            std::tie(block, ovl) = resolveIdxMut(expr_ty->mutable_reference_to(), *idx_ty, irgen);
         }
 
         // if there is no mutable overload still default to the non mutable overload
-        if (!ovl) std::tie(block, ovl) = resolveIdx(*expr_ty, *idx_ty, irgen);
+        if (!ovl) std::tie(block, ovl) = resolveIdx(expr_ty->reference_to(), *idx_ty, irgen);
         return doBasicBinaryOp(this, ovl, tok, op->object.get(), op->index.get(), *expr_ty, *idx_ty, block);
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(GCNewExpression* expr)

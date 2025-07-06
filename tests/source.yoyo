@@ -1,13 +1,16 @@
 func_2: fn = {
-	a: mut = Vector2{.x = 10, .y = 20};
+	a: mut = Vector2{.x = 90, .y = 20};
 	test::print(&"${(&a)[0]}, ${(&a)[1]}");
-	test::print(&"${(&mut a)[0]}, ${(&mut a)[1]}");
+	b: mut u32 = 10;
+	test::print(&"${b}");
+	b[&a];
+	test::print(&"${b}");
 }
 
 Vector2: struct = {
 	x: u32, y: u32
 }
-
+operator: mut [](x: &mut u32, y: &Vector2) -> void = *x = y.x;
 operator: [](x: &Vector2, y: u32) -> u32 = {
 	if (y == 0) return x.x; else return x.y;
 }
