@@ -135,7 +135,7 @@ main: fn(inp: i32) = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    engine.compile();
+    REQUIRE(engine.compile());
     engine.prepareForExecution();
     for (auto i : std::views::iota(0i32, 10i32)) {
         auto fib = createFiberFor(mod, "source::main");
@@ -147,7 +147,8 @@ TEST_CASE("Mutable Index Operator", "[operators]")
 {
     std::string source(1 + R"(
 Indexer: struct = { val: u32 }
-operator: mut [](obj: &mut u32, arg: Indexer) = *obj = arg.val * arg.val;
+operator: mut [](obj: &mut u32, arg: Indexer) = *obj = arg.val;
+operator: [](obj: &u32, arg: Indexer) = return;
 main: fn(val: u32) = {
     b: mut u32 = 100;
     b[Indexer{.val}];
@@ -157,7 +158,7 @@ main: fn(val: u32) = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    engine.compile();
+    REQUIRE(engine.compile());
     engine.prepareForExecution();
     for (uint32_t i : std::views::iota(0u, 10u)) {
         auto fib = createFiberFor(mod, "source::main");
@@ -165,7 +166,36 @@ main: fn(val: u32) = {
         engine.execute();
     }
 }
+TEST_CASE("Test union initialization", "[operators]")
+{
+    std::string source(1 + R"(
+Color: union = {
+    ColorRGB: struct = { r: u8, g: u8, b: u8, a: u8 }
+    
+    RGB: ColorRGB,
+    Hex: u32,
 
+    to_str: fn(&this) -> str = {
+        if |rgb| ((*this) as RGB) return "rgb: ${rgb.r}, ${rgb.g}, ${rgb.b}";
+        else if |hex| ((*this) as Hex) return "hex: ${hex}";
+        else return "Undefined";
+    }
+}
+main: fn = {
+    c1 := Color::RGB(Color::ColorRGB{.r = 10, .g = 20, .b = 22, .a = 40});
+    c2 := COlor::Hex(12456);
+    test::print(c1.to_str());
+    test::print(c2.to_str());
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 #ifdef USE_GRAPHVIZ
 void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo::CFGNode*, Agnode_t*>& nodes, std::set<Yoyo::CFGNode*>& prepared)
 {

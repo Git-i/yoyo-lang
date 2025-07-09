@@ -13,6 +13,7 @@ namespace Yoyo
 	struct StructNativeTy : public NativeTy {
 		std::vector<size_t> offsets;
 	};
+	struct UnionNativeTy : public NativeTy {};
 	namespace NativeType
 	{
 		NativeTy* getI8();
@@ -37,11 +38,14 @@ namespace Yoyo
 		void destroy_proto(NativeProto*);
 
 		StructNativeTy* makeForStruct(std::span<NativeTy* const>);
+		UnionNativeTy* makeForUnion(std::span<NativeTy* const>);
 		size_t getElementOffset(const StructNativeTy* type, size_t idx);
 		NativeTy* getStructElementType(StructNativeTy* type, size_t idx);
 		size_t getNumElements(const StructNativeTy* type);
-		uint32_t get_size(NativeTy*);
+		uint32_t get_size(NativeTy* const);
+		uint32_t get_align(NativeTy* const);
 		void freeForStruct(StructNativeTy*);
+		void freeForUnion(UnionNativeTy*);
 
 		NativeModule* load_native_library(const std::string& lib_name);
 		void* get_library_fn(NativeModule* module, const std::string& fn_name);

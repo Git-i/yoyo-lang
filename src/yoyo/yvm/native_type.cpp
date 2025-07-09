@@ -139,12 +139,31 @@ namespace Yoyo
             ffi_get_struct_offsets(FFI_DEFAULT_ABI, ret_val, ret_val->offsets.data());
             return ret_val;
         }
-        uint32_t get_size(NativeTy* type)
+        UnionNativeTy* makeForUnion(std::span<NativeTy* const> types)
+        {
+            auto ret_val = new UnionNativeTy;   
+            auto biggest_size = std::ranges::max(types, {}, [](NativeTy* const arg) { return NativeType::get_size(arg); });
+            auto biggest_align = std::ranges::max(types, {}, [](NativeTy* const arg) { return NativeType::get_align(arg); });
+            ret_val->size = NativeType::get_size(biggest_size);
+            ret_val->alignment = NativeType::get_align(biggest_align);
+            ret_val->elements = new ffi_type*[2];
+            ret_val->elements[1] = nullptr;
+            return ret_val;
+        }
+        uint32_t get_size(NativeTy* const type)
         {
             return type->size;
         }
+        uint32_t get_align(NativeTy* const type)
+        {
+            return type->alignment;
+        }
         void freeForStruct(StructNativeTy* type)
         {
+            delete[] type->elements;
+            delete type;
+        }
+        void freeForUnion(UnionNativeTy* type) {
             delete[] type->elements;
             delete type;
         }

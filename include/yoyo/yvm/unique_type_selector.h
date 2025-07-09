@@ -3,6 +3,7 @@
 #include <memory>
 #include "native_type.h"
 #include <unordered_map>
+#include <set>
 namespace Yoyo {
 	struct UniqueFISelector {
 	private:
@@ -24,5 +25,11 @@ namespace Yoyo {
 		NativeTy* node_type = nullptr;
 		NativeTy* struct_type = nullptr;
 		NativeTy* get_struct_type(std::span<NativeTy* const>);
+	};
+
+	struct UnionTypeSelector {
+		std::vector<std::pair<std::set<NativeTy*>, NativeTy*>> used_unions;
+	public:
+		NativeTy* get_union_type(std::span<NativeTy* const>);
 	};
 }

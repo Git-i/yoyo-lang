@@ -22,7 +22,7 @@ namespace Yoyo
         ~YVMEngine() override;
         YVMAppModule* addAppModule(const std::string& name);
         ModuleBase* addModule(const std::string& module_name, std::string source);
-        void compile();
+        bool compile();
         void prepareForExecution();
         void addDynamicLibrary(std::string_view path);
         Fiber createFiber(const FunctionTy& fn);

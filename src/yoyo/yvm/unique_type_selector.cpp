@@ -90,5 +90,17 @@ namespace Yoyo
 		}
 		return should_child->initialize_proto(ret);
 	}
+	NativeTy* UnionTypeSelector::get_union_type(std::span<NativeTy* const> data)
+	{
+		auto data_as_set = std::set(data.begin(), data.end());
+		for (auto& [set, type] : used_unions) {
+			if (set == data_as_set) {
+				return type;
+			}
+		}
+		auto new_type = NativeType::makeForUnion(data);
+		used_unions.emplace_back(std::move(data_as_set), new_type);
+		return new_type;
+	}
 }
 

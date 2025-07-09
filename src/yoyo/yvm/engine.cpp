@@ -122,12 +122,12 @@ namespace Yoyo
         return md.get();
     }
 
-    void YVMEngine::compile()
+    bool YVMEngine::compile()
     {
         YVMIRGenerator irgen;
         auto keys_view = std::ranges::views::keys(modules);
         std::vector module_names(keys_view.begin(), keys_view.end());
-
+        bool has_error = false;
         for (auto& mod : modules)
         {
             auto yvm_mod = reinterpret_cast<YVMModule*>(mod.second.get());
@@ -135,8 +135,10 @@ namespace Yoyo
             auto src = sources.extract(mod.first);
             SourceView vw(src.mapped().first, mod.first);
             irgen.view = &vw;
-            irgen.GenerateIR(mod.first, std::move(src.mapped().second), yvm_mod, this);
+            bool this_success = irgen.GenerateIR(mod.first, std::move(src.mapped().second), yvm_mod, this);
+            has_error = !this_success || has_error;
         }
+        return !has_error;
     }
     void YVMEngine::addDynamicLibrary(std::string_view path)
     {
