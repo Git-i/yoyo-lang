@@ -47,12 +47,14 @@ namespace Yoyo
         }
         if (overloads.empty()) return { "",nullptr };
         std::pair<size_t, std::pair<std::string, OverloadDetailsBinary*>>* result = &overloads.front();
+        // find the minimum friction overload
         for(auto& ovl : std::ranges::subrange(overloads.begin()+1, overloads.end()))
         {
-            if (ovl.first == result->first) return { "",nullptr }; //ambiguous
             if(ovl.first < result->first)
                 result = &ovl;
         }
+        // check if multiple overloads have the minimum friction
+        for (auto& ovl : overloads) if (ovl.first == result->first && result != &ovl) return { "", nullptr };//ambiguos
         return result->second;
     }
     std::pair<std::string, OverloadDetailsBinary*> resolveAdd(const Type& lhs, const Type& rhs, IRGenerator* irgen)

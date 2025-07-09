@@ -151,7 +151,7 @@ operator: mut [](obj: &mut u32, arg: Indexer) = *obj = arg.val * arg.val;
 main: fn(val: u32) = {
     b: mut u32 = 100;
     b[Indexer{.val}];
-    test::assert(*b == val, &"*b == val");
+    test::assert(b == val, &"b == val");
 }
 )");
     Yoyo::YVMEngine engine;
