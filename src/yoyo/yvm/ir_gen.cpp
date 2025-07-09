@@ -557,6 +557,20 @@ namespace Yoyo
         {
             ovl->signature.parameters[0].type.saturate(module, this);
             ovl->signature.parameters[1].type.saturate(module, this);
+
+            // Validate the overloads
+
+            if (ovl->tok == TokenType::SquarePair) {
+                auto& obj_ty = ovl->signature.parameters[0].type;
+                if (!(obj_ty.is_reference() && !obj_ty.is_mutable_reference() && !obj_ty.is_gc_reference()))
+                    error(Error{ ovl, "First parameter in overload of [] must be an immutable reference" });
+            }
+            else if (ovl->tok == TokenType::SquarePairMut) {
+                auto& obj_ty = ovl->signature.parameters[0].type;
+                if (!obj_ty.is_mutable_reference())
+                    error(Error{ ovl, "First parameter in overload of mut [] must be a mutable reference" });
+            }
+
             for (auto& det : module->overloads.binary_details_for(ovl->tok) | std::views::filter([this](auto& arg) {
                 return arg.first == block_hash;
                })) {

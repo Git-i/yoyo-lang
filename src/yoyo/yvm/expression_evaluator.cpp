@@ -919,7 +919,12 @@ namespace Yoyo
         if (type.is_reference()) return;
         if (type.should_sret()) return;
 
-        // TODO: reference for non sret types
+        // for non sret types
+        // we have to allocate memory and copy it there
+        irgen->builder->write_alloca(NativeType::get_size(irgen->toNativeType(type)));
+        irgen->builder->write_1b_inst(OpCode::Switch);
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(type));
     }
 
     std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(NameExpression*nm)

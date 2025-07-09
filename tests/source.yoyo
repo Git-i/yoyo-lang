@@ -1,6 +1,6 @@
 func_2: fn = {
 	a: mut = Vector2{.x = 90, .y = 20};
-	test::print(&"${(&a)[0]}, ${(&a)[1]}");
+	test::print(&"${(a)[0]}, ${(a)[1]}");
 	b: mut u32 = 10;
 	test::print(&"${b}");
 	b[&a];
