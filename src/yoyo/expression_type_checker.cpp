@@ -63,7 +63,6 @@ namespace Yoyo
             return std::nullopt;
         if(!a.is_assignable_from(b, irgen))
         {
-            __debugbreak();
             return std::nullopt;
         }
         return Type{.name="void", .module = a.module->engine->modules.at("core").get()};
@@ -386,8 +385,8 @@ namespace Yoyo
                 return { err };
             }
             Error err(expr, "Attempt to assign between incompatible types");
-            err.markers.emplace_back(SourceSpan{ expr->lhs->beg, expr->lhs->end }, "Expression is of type");
-            err.markers.emplace_back(SourceSpan{ expr->rhs->beg, expr->rhs->end }, "Expression is of type");
+            err.markers.emplace_back(SourceSpan{ expr->lhs->beg, expr->lhs->end }, "Expression is of type " + lhs.pretty_name(irgen->block_hash));
+            err.markers.emplace_back(SourceSpan{ expr->rhs->beg, expr->rhs->end }, "Expression is of type " + rhs.pretty_name(irgen->block_hash));
             return { err };
         }
     }

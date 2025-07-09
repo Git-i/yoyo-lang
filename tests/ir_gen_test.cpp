@@ -6,12 +6,13 @@
 #include <parser.h>
 #include "error.h"
 #include <catch2/catch_test_macros.hpp>
-
+#include <catch2/matchers/catch_matchers_all.hpp>
 #ifdef USE_GRAPHVIZ
 #include "graphviz/gvc.h"
 #endif
 #include <yvm/yvm_engine.h>
 #include <yvm/app_module.h>
+#include <ranges>
 
 struct YoyoString {
     char* text;
@@ -23,6 +24,20 @@ int32_t func(void* arg)
     std::string_view sv =  Yoyo::Engine::viewString(arg);
     std::cout << sv << std::endl;
     return -76;
+}
+void test_assert(bool cond, void* string) {
+    struct AssertMatcher : Catch::Matchers::MatcherBase<bool> {
+    public:
+        void* in_str;
+        AssertMatcher(void* str) : in_str(str) {}
+        bool match(const bool& arg) const override {
+            return arg;
+        }
+        std::string describe() const override {
+            return "-> " + std::string(Yoyo::Engine::viewString(in_str));
+        }
+    };
+    REQUIRE_THAT(cond, AssertMatcher{string});
 }
 void print_int(uint64_t arg) {
     std::cout << arg << std::endl;
@@ -48,6 +63,17 @@ int32_t random_int(int32_t low, int32_t high) {
 int32_t cast_integer(uint64_t val) {
     return val;
 }
+
+Yoyo::Fiber createFiberFor(Yoyo::ModuleBase* mod, const std::string& function_name) {
+    auto eng = dynamic_cast<Yoyo::YVMEngine*>(mod->engine);
+    return eng->createFiber(eng->findFunction(mod, function_name).value());
+}
+void addTestModule(Yoyo::YVMEngine* eng) {
+    auto md = eng->addAppModule("test");
+    md->addFunction("(x: &str) -> i32", func, "print");
+    md->addFunction("(x: bool, y: &str) -> void", test_assert, "assert");
+}
+constexpr bool emit_ir = false;
 TEST_CASE("Test IR") 
 {
     std::ifstream ifs("source.yoyo");
@@ -78,52 +104,66 @@ TEST_CASE("Test IR")
     engine.compile();
     uint32_t idx = 3;
     engine.prepareForExecution();
-    for(auto& mod: engine.modules)
-    {
-        idx += 1;
-        idx %= 8;
-        auto str = "\033[1;3" + std::to_string(idx) + "m";
-        std::cout <<  str << std::flush;
-        std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod.second.get())->dumpIR() << std::endl;
-        std::cout << "\033[0m" << std::flush;
-        //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
+    if constexpr (emit_ir) {
+        for (auto& mod : engine.modules)
+        {
+            idx += 1;
+            idx %= 8;
+            auto str = "\033[1;3" + std::to_string(idx) + "m";
+            std::cout << str << std::flush;
+            std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod.second.get())->dumpIR() << std::endl;
+            std::cout << "\033[0m" << std::flush;
+            //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
+        }
     }
+    
     std::string func_2_name = src_md->module_hash + "func_2";
     auto fn2 = engine.findFunction(src_md, func_2_name).value();
     auto fib2 = engine.createFiber(fn2);
     engine.execute();
-    __debugbreak();
 }
-
-TEST_CASE("Error formatting", "[errors]")
+TEST_CASE("Index Operator", "[operators]")
 {
-    std::string source = 1 + R"(
-main: fn = {
-    variable := 100;
-    variable = 40;
-    var2: i32 = "Hello";
-    std::print(variable);
-})";
-    Yoyo::Parser p(source);
-    auto prg = p.parseProgram();
-    REQUIRE(!p.failed());
-    REQUIRE(prg.size() == 1);
-    auto decl = dynamic_cast<Yoyo::FunctionDeclaration*>(prg[0].get());
-    auto body = dynamic_cast<Yoyo::BlockStatement*>(decl->body.get());
-    Yoyo::Error e(body->statements[1].get(), "Attempting to assign to immutable value");
-    auto expr_stat = dynamic_cast<Yoyo::ExpressionStatement*>(body->statements[1].get());
-    auto expr = dynamic_cast<Yoyo::BinaryOperation*>(expr_stat->expression.get());
-    e.markers.emplace_back(Yoyo::SourceSpan{expr->lhs->beg, expr->lhs->end}, "Expression is immutable");
-    Yoyo::SourceView vw(source, "source.yoyo");
-    std::cout << e.to_string(vw, true) << std::endl;
-
-    Yoyo::Error e2(body->statements[2].get(), "Attempting to assign between incompatible types");
-    auto var_decl = dynamic_cast<Yoyo::VariableDeclaration*>(body->statements[2].get());
-    Yoyo::SourceLocation end{ var_decl->beg.line, var_decl->beg.column + var_decl->identifier.text.size() };
-    e2.markers.emplace_back(Yoyo::SourceSpan{ var_decl->beg, end }, "Expression is of type 'i32'");
-    e2.markers.emplace_back(Yoyo::SourceSpan{ var_decl->initializer->beg, var_decl->initializer->end }, "Expression is of type 'str'");
-    std::cout << e2.to_string(vw, true) << std::endl;
-
+    std::string source(1 + R"(
+I32_Index: struct = {}
+operator: [](obj: &I32_Index, arg: i32) -> i32 = return arg;
+main: fn(inp: i32) = {
+    a := I32_Index{};
+    test::assert(a[inp] == inp, &"a[inp] == inp");
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    engine.compile();
+    engine.prepareForExecution();
+    for (auto i : std::views::iota(0i32, 10i32)) {
+        auto fib = createFiberFor(mod, "source::main");
+        *(int32_t*)fib.parameters = i;
+        engine.execute();
+    }
+}
+TEST_CASE("Mutable Index Operator", "[operators]")
+{
+    std::string source(1 + R"(
+Indexer: struct = { val: u32 }
+operator: mut [](obj: &mut u32, arg: Indexer) = *obj = arg.val * arg.val;
+main: fn(val: u32) = {
+    b: mut u32 = 100;
+    b[Indexer{.val}];
+    test::assert(*b == val, &"*b == val");
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    engine.compile();
+    engine.prepareForExecution();
+    for (uint32_t i : std::views::iota(0u, 10u)) {
+        auto fib = createFiberFor(mod, "source::main");
+        *(uint32_t*)fib.parameters = i;
+        engine.execute();
+    }
 }
 
 #ifdef USE_GRAPHVIZ

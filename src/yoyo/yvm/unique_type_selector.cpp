@@ -22,6 +22,7 @@ namespace Yoyo
 	}
 	NativeTy* StructTypeSelector::get_struct_type(std::span<NativeTy* const> data)
 	{
+		if (data.size() == 0) return NativeType::getU8();
 		for (auto& child : children) {
 			if (child->node_type == data[0])
 			{
