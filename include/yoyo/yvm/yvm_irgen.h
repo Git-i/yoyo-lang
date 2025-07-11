@@ -9,10 +9,16 @@ namespace Yoyo {
     public:
 		Yvm::Module* code;
 		std::unique_ptr<Yvm::Emitter> builder;
+        struct VariableIndex {
+            enum IndexType { Alloc, Checkpoint };
+            size_t index;
+            IndexType type;
+            VariableIndex(size_t idx, IndexType tp) : index(idx), type(tp) {}
+        };
 		std::vector< //< the list of variables by each scope
             /// the list of variables this scope
             /// the std::pair<> is the variable name and the stack_addr and type of the variable
-            std::vector<std::pair<std::string, std::pair<size_t, Type>>>
+            std::vector<std::pair<std::string, std::pair<VariableIndex, Type>>>
         > variables;
 		std::string break_to;
 		std::string continue_to;
@@ -54,7 +60,6 @@ namespace Yoyo {
         void pushScope();
         void popScope();
         bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng);
-        size_t nextKnownAddr();
         std::optional<Type> getVariableType(const std::string& name, Expression*) override;
 	};
     class YVMExpressionEvaluator
@@ -63,6 +68,7 @@ namespace Yoyo {
         std::optional<Type> target;
         YVMIRGenerator* irgen;
         Type lastDeducedType;
+        size_t returned_alloc_addr;
         enum ComparisonPredicate
         {
             EQ, GT, LT, EQ_GT, EQ_LT, NE, SPACE
@@ -80,8 +86,8 @@ namespace Yoyo {
         /// perform_load set and on_stack not set does not allocate
         /// perform_load not set and on_stack set does not allocate
         /// perform_load not set and on_stack not set will allocate
-        void implicitConvert(Expression* xp, const Type&, const Type&, bool on_stack, bool perform_load) const;
-        void clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load) const;
+        void implicitConvert(Expression* xp, const Type&, const Type&, bool on_stack, bool perform_load);
+        void clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load);
         
         void destroy(const Type& type) const;
         std::vector<Type> doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);

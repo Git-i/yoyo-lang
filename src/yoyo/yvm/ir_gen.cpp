@@ -97,7 +97,7 @@ namespace Yoyo
                         builder->write_1b_inst(Pop);
                     }
                 }
-                new_fn_vars.back().emplace_back(param.name, std::pair{ stack_addr, param.type });
+                new_fn_vars.back().emplace_back(param.name, std::pair{ VariableIndex{stack_addr, VariableIndex::Alloc}, param.type });
             }
             idx++;
         }
@@ -212,7 +212,7 @@ namespace Yoyo
         for (size_t i = variables.size(); i > 0; --i)
         {
             size_t idx = i - 1;
-            if (auto var = std::ranges::find_if(variables[idx], [&name](const std::pair<std::string, std::pair<size_t, Type>>& dets) {
+            if (auto var = std::ranges::find_if(variables[idx], [&name](const auto& dets) {
                 return dets.first == name;
                 }); var != variables[idx].end())
             {
@@ -314,18 +314,25 @@ namespace Yoyo
         type.is_lvalue = true;
         decl->type = type;
         uint32_t type_size = NativeType::get_size(toNativeType(type));
+        size_t stack_idx = 0;
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant()).value_or_error();
             if(!expr_type.is_error_ty()) validate_expression_borrows(decl->initializer.get(), this);
             auto eval = YVMExpressionEvaluator{this, type};
             std::visit(eval, decl->initializer->toVariant());
+            stack_idx = eval.returned_alloc_addr;
             // TODO: reduce literal
             if(!type.should_sret())
             {
                 builder->write_alloca(type_size);
                 eval.implicitConvert(decl->initializer.get(), expr_type, type, true, false);
-            } else eval.implicitConvert(decl->initializer.get(), expr_type, type, false, false);
+                stack_idx = builder->last_alloc_addr();
+            }
+            else {
+                eval.implicitConvert(decl->initializer.get(), expr_type, type, false, false);
+                if (eval.returned_alloc_addr != 0) stack_idx = eval.returned_alloc_addr;
+            }
             if (!type.is_trivially_destructible(this))
             {
                 // register the object for destruction on ret/panic
@@ -337,9 +344,10 @@ namespace Yoyo
         else
         {
             builder->write_alloca(type_size);
+            stack_idx = builder->last_alloc_addr();
         }
         // TODO: stack addr of variables
-        variables.back().emplace_back(name, std::pair{builder->last_alloc_addr(), type});
+        variables.back().emplace_back(name, std::pair{ VariableIndex{stack_idx, VariableIndex::Alloc}, type });
     }
     void YVMIRGenerator::operator()(BlockStatement* stat)
     {
@@ -412,7 +420,7 @@ namespace Yoyo
 
             builder->create_jump(JumpIfFalse, for_cont);
             //for loop body
-            variables.back().emplace_back(stat->names[0].text, std::pair{builder->last_alloc_addr(), impl->impl_for.subtypes[0]});
+            variables.back().emplace_back(stat->names[0].text, std::pair{ VariableIndex{builder->last_alloc_addr(), VariableIndex::Alloc}, impl->impl_for.subtypes[0] });
             current_Statement = &stat->body;
             auto old_break_to = break_to; auto old_cont_to = continue_to;
             break_to = for_cont; continue_to = for_bb;
@@ -530,7 +538,7 @@ namespace Yoyo
             Type{ tp_e->is_mutable ? "__ref_mut" : "__ref", {tp_e->subtypes[0]} } :
             tp_e->subtypes[0];
         variable_type.saturate(module, this);
-        variables.back().emplace_back(stat->captured_name, std::pair{ builder->last_alloc_addr(), std::move(variable_type) });
+        variables.back().emplace_back(stat->captured_name, std::pair{ VariableIndex{builder->checkpoint(), VariableIndex::Checkpoint}, std::move(variable_type) });
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
 
@@ -692,11 +700,6 @@ namespace Yoyo
         }
         builder = nullptr;
         return !has_error;
-    }
-
-    size_t YVMIRGenerator::nextKnownAddr()
-    {
-        return std::ranges::max(variables.back() | std::views::values | std::views::keys);
     }
 
     

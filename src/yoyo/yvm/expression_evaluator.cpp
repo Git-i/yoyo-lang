@@ -102,7 +102,7 @@ namespace Yoyo
         return 0;
     }
 
-    void YVMExpressionEvaluator::implicitConvert(Expression* xp, const Type& src, const Type& dst, bool on_stack, bool do_load) const
+    void YVMExpressionEvaluator::implicitConvert(Expression* xp, const Type& src, const Type& dst, bool on_stack, bool do_load)
     {
         if(dst.is_equal(src)) { return clone(xp, src, on_stack, do_load); }
         if(!dst.is_assignable_from(src, irgen)) { 
@@ -273,7 +273,10 @@ namespace Yoyo
         // from here on out we require a pointer to our out data
         auto native = irgen->toNativeType(dst);
         auto struct_native = reinterpret_cast<StructNativeTy*>(native);
-        if (!on_stack) irgen->builder->write_alloca(NativeType::get_size(native));
+        auto ret_alloc = 0;
+        if (!on_stack) {
+            irgen->builder->write_alloca(NativeType::get_size(native)); ret_alloc = irgen->builder->last_alloc_addr();
+        }
         if(dst.is_optional())
         {
             //opt is {data, bool}
@@ -294,9 +297,11 @@ namespace Yoyo
             auto data_off = NativeType::getElementOffset(struct_native, 0);
             if (data_off == 0) {
                 implicitConvert(xp, src, dst.subtypes[0], true, false);
+                returned_alloc_addr = ret_alloc;
                 return;
             }
             debugbreak();
+            returned_alloc_addr = ret_alloc;
             return;
         }
         if(dst.is_variant())
@@ -317,6 +322,7 @@ namespace Yoyo
                 irgen->builder->write_const(i);
                 irgen->builder->write_1b_inst(OpCode::Switch);
                 irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u32);
+                returned_alloc_addr = ret_alloc;
                 return;
             }
         }
@@ -347,6 +353,7 @@ namespace Yoyo
                     irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
                     irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
                     irgen->builder->write_1b_inst(OpCode::TopConsume);
+                    returned_alloc_addr = ret_alloc;
                     return;
                 }
                 
@@ -402,7 +409,7 @@ namespace Yoyo
         }
     }
 
-    void YVMExpressionEvaluator::clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load) const
+    void YVMExpressionEvaluator::clone(Expression* xp, const Type& left_type, bool on_stack, bool perform_load)
     {
         if(!left_type.should_sret())
         {
@@ -417,12 +424,15 @@ namespace Yoyo
                 if (perform_load) return;
                 auto as_native = irgen->toNativeType(left_type);
                 irgen->builder->write_alloca(NativeType::get_size(as_native));
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(left_type));
             }
             return;
         }
         auto native = irgen->toNativeType(left_type);
         auto struct_native = reinterpret_cast<StructNativeTy*>(native);
+        auto ret_alloc = 0;
         if(!left_type.is_lvalue)
         {
             //move
@@ -435,9 +445,12 @@ namespace Yoyo
             irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // get the memory pointer
             irgen->builder->write_1b_inst(OpCode::MemCpy);
             irgen->builder->write_1b_inst(OpCode::TopConsume);
+            returned_alloc_addr = ret_alloc;
             return;
         }
-        if(!on_stack) irgen->builder->write_alloca(NativeType::get_size(native));
+        if (!on_stack) {
+            irgen->builder->write_alloca(NativeType::get_size(native)); ret_alloc = irgen->builder->last_alloc_addr();
+        }
         if(left_type.is_tuple())
         {
             // for each element we:
@@ -545,6 +558,7 @@ namespace Yoyo
             }
 
         }
+        returned_alloc_addr = ret_alloc;
     }
     void YVMExpressionEvaluator::destroy(const Type& type) const
     {
@@ -900,6 +914,7 @@ namespace Yoyo
         t.name = type_name;
         auto as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(t));
         irgen->builder->write_alloca(NativeType::get_size(as_native));
+        auto alloc_addr = irgen->builder->last_alloc_addr();
         auto decl = t.get_decl_if_union();
         auto arg = std::visit(YVMExpressionEvaluator{ irgen, decl->fields.at(variant) }, op->arguments[0]->toVariant());
         auto arg_ty = std::visit(ExpressionTypeChecker{ irgen, decl->fields.at(variant) }, op->arguments[0]->toVariant()).value_or_error();
@@ -910,7 +925,8 @@ namespace Yoyo
         irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native, 1));
         irgen->builder->write_const<uint32_t>(std::distance(decl->fields.begin(), decl->fields.find(variant)));
         irgen->builder->write_1b_inst(OpCode::Switch);
-        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::i32);
+        irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u32);
+        returned_alloc_addr = alloc_addr;
         return {};
     }
 
@@ -936,7 +952,10 @@ namespace Yoyo
             for (auto& var : irgen->variables[idx])
             {
                 if (var.first != nm->text) continue;
-                irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first);
+                if(var.second.first.type == YVMIRGenerator::VariableIndex::Checkpoint)
+                    irgen->builder->write_2b_inst(OpCode::StackCheckpoint, var.second.first.index);
+                else 
+                    irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first.index);
                 return {};
             }
         }
@@ -1185,7 +1204,10 @@ namespace Yoyo
             for(auto& var : irgen->variables[idx])
             {
                 if (var.first != nm->text) continue;
-                irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first);
+                if (var.second.first.type == YVMIRGenerator::VariableIndex::Checkpoint)
+                    irgen->builder->write_2b_inst(OpCode::StackCheckpoint, var.second.first.index);
+                else
+                    irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first.index);
                 if(!var.second.second.should_sret())
                 {
                     irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(var.second.second));
@@ -1356,7 +1378,7 @@ namespace Yoyo
                 irgen->error(tp.error());
             }
             else {
-                using_elf = using_elf ? true : !extended_lifetimes.emplace_back(std::visit(*this, first_expr->toVariant())).empty();
+                using_elf = !extended_lifetimes.emplace_back(std::visit(*this, first_expr->toVariant())).empty();
                 // if we are targeting a reference as the first argument, we don't need to implicit convert
                 if(!
                     (sig.parameters[0].type.is_reference() && 
@@ -1372,9 +1394,8 @@ namespace Yoyo
         {
             auto tp = std::visit(ExpressionTypeChecker{irgen, sig.parameters[i + is_bound].type }, exprs[i]->toVariant());
             this->target = sig.parameters[i + is_bound].type;
-            using_elf = using_elf ? 
-                true : 
-                !extended_lifetimes.emplace_back(std::visit(*this, exprs[i]->toVariant())).empty();
+            auto this_uses_elf = !extended_lifetimes.emplace_back(std::visit(*this, exprs[i]->toVariant())).empty();
+            using_elf = using_elf ? true : this_uses_elf;
             if (!tp) {
                 irgen->error(tp.error()); continue;
             }
@@ -1766,7 +1787,7 @@ namespace Yoyo
         auto as_native_type = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*t));
         auto decl = t->get_decl_if_class(irgen);
         irgen->builder->write_alloca(NativeType::get_size(as_native_type));
-
+        auto last_alloc = irgen->builder->last_alloc_addr();
         for(size_t i = 0; i < decl->vars.size(); i++)
         {
             auto& var = decl->vars[i];
@@ -1778,6 +1799,7 @@ namespace Yoyo
             implicitConvert(lit->values[var.name].get(), *val_ty, var.type, true, false);
             irgen->builder->write_1b_inst(OpCode::Pop);
         }
+        returned_alloc_addr = last_alloc;
         return {};
     }
 
@@ -1789,12 +1811,13 @@ namespace Yoyo
 
     std::vector<Type> YVMExpressionEvaluator::operator()(AsExpression* expr)
     {
-        /*auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
+        auto ty = std::visit(ExpressionTypeChecker{irgen}, expr->expr->toVariant());
         auto final_ty = std::visit(ExpressionTypeChecker{irgen}, expr->toVariant());
         if (!final_ty) { irgen->error(final_ty.error()); return {}; }
         if (!ty) { irgen->error(ty.error()); return {}; }
-        auto as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*final_ty));
-        auto internal_as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*ty));
+        auto final_as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*final_ty));
+        auto as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*ty));
+        /*
         std::visit(*this, expr->expr->toVariant());
         if(ty->is_variant())
         {
@@ -1850,34 +1873,36 @@ namespace Yoyo
                 return result;
             }
         }
+        return nullptr;*/
         if (auto decl = ty->get_decl_if_union())
         {
+            std::visit(*this, expr->expr->toVariant()); // stack: union
             auto it = decl->fields.find(expr->dest.name);
-            size_t idx = std::distance(decl->fields.begin(), it);
-            auto val = irgen->Alloca("union_conv", as_llvm);
-            auto ptr = irgen->builder->CreateStructGEP(as_llvm, val, 0);
-            auto internal_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 0);
-            irgen->builder->CreateStore(internal_ptr, ptr);
-
-            auto is_valid_ptr = irgen->builder->CreateStructGEP(as_llvm, val, 1);
-            auto idx_ptr = irgen->builder->CreateStructGEP(internal_as_llvm, internal, 1);
-            auto i32_ty = llvm::Type::getInt32Ty(irgen->context);
-            auto this_idx = llvm::ConstantInt::get(i32_ty, idx);
-            auto correct_idx = irgen->builder->CreateLoad(i32_ty, idx_ptr);
-
-            auto is_valid = irgen->builder->CreateICmpEQ(this_idx, correct_idx);
-            irgen->builder->CreateStore(is_valid, is_valid_ptr);
-            if (!ty->deref().is_trivially_destructible(irgen) && !ty->deref().is_lvalue)
-            {
-                auto lf = new ExtendedLifetimes;
-                lf->objects.emplace_back(std::move(ty).value(), internal);
-                std::string name = "__del_parents___aaaaaaaa";
-                memcpy(name.data() + 16, &lf, sizeof(void*));
-                val->setName(name);
-            }
-            return val;
+            uint32_t idx = std::distance(decl->fields.begin(), it);
+            irgen->builder->write_alloca(NativeType::get_size(final_as_native)); // stack: union, final
+            irgen->builder->write_1b_inst(OpCode::Switch); // stack: final, union
+            irgen->builder->write_1b_inst(OpCode::Dup); // stack: final, union, union
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native, 1)); // stack: final, union, union_idx_ptr
+            irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::u32); // stack: final, union, union_idx
+            irgen->builder->write_const(idx); // stack: final, union, union_idx, target_idx
+            irgen->builder->write_2b_inst(OpCode::CmpEq, 32); // stack: final, union, is_idx_valid
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // stack: final, union, is_idx_valid, final
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(final_as_native, 1)); // stack: final, union, is_valid_idx, final_idx
+            irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u32); // stack: final, union
+            irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native, 0)); // stack: final, union_data_ptr
+            irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1); // stack: final, union_data_ptr, final
+            irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::ptr);
+            
+            //if (!ty->deref().is_trivially_destructible(irgen) && !ty->deref().is_lvalue)
+            //{
+            //    auto lf = new ExtendedLifetimes;
+            //    lf->objects.emplace_back(std::move(ty).value(), internal);
+            //    std::string name = "__del_parents___aaaaaaaa";
+            //    memcpy(name.data() + 16, &lf, sizeof(void*));
+            //    val->setName(name);
+            //}
+            //return val;
         }
-        return nullptr;*/
         return {};
     }
 

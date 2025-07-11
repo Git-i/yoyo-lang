@@ -51,6 +51,11 @@ void get_string(void* out) {
     as_str->capacity = 15;
     strcpy(as_str->text, "Hello from c++");
 }
+void test_str_cmp(void* str1, void* str2) {
+    auto sv1 = Yoyo::Engine::viewString(str1);
+    auto sv2 = Yoyo::Engine::viewString(str2);
+    CHECK(sv1 == sv2);
+}
 uint32_t read_int()
 {
     uint32_t val = 10;
@@ -72,6 +77,7 @@ void addTestModule(Yoyo::YVMEngine* eng) {
     auto md = eng->addAppModule("test");
     md->addFunction("(x: &str) -> i32", func, "print");
     md->addFunction("(x: bool, y: &str) -> void", test_assert, "assert");
+    md->addFunction("(x: &str, y: &str) -> void", test_str_cmp, "str_cmp");
 }
 constexpr bool emit_ir = false;
 TEST_CASE("Test IR") 
@@ -176,16 +182,16 @@ Color: union = {
     Hex: u32,
 
     to_str: fn(&this) -> str = {
-        if |rgb| ((*this) as RGB) return "rgb: ${rgb.r}, ${rgb.g}, ${rgb.b}";
+        if |rgb| ((*this) as RGB) return "rgb: ${rgb.r}, ${rgb.g}, ${rgb.b}, ${rgb.a}";
         else if |hex| ((*this) as Hex) return "hex: ${hex}";
         else return "Undefined";
     }
 }
 main: fn = {
     c1 := Color::RGB(Color::ColorRGB{.r = 10, .g = 20, .b = 22, .a = 40});
-    c2 := COlor::Hex(12456);
-    test::print(c1.to_str());
-    test::print(c2.to_str());
+    c2 := Color::Hex(12456);
+    test::str_cmp(&c1.to_str(), &"rgb: 10, 20, 22, 40");
+    test::str_cmp(&c2.to_str(), &"hex: 12456");
 }
 )");
     Yoyo::YVMEngine engine;
@@ -193,6 +199,7 @@ main: fn = {
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
+    std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }

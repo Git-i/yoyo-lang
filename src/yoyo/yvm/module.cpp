@@ -150,6 +150,37 @@ namespace Yoyo
             return nullptr;
         }
         if (type.is_lambda()) return nullptr;
+        if (auto t = findUnionWithType(type.block_hash, type.full_name_no_block()); t.second.first) {
+            auto ptr = t.second.second;
+            if (ptr) return ptr;
+            //union is recursive
+            if (auto find_it = std::ranges::find(disallowed_types, type); find_it != disallowed_types.end())
+            {
+                auto decl = t.second.first;
+                irgen->error(Error(decl, "Type is recursive"));
+            }
+            auto not_allowed = disallowed_types;
+            not_allowed.push_back(type);
+
+            auto decl = t.second.first;
+
+            std::array<NativeTy*, 2> final_args;
+
+            std::vector<NativeTy*> args;
+            for (auto& [name, field_ty] : decl->fields) {
+                std::string block = t.first + type.full_name_no_block() + "::";
+                if (irgen) block.swap(irgen->block_hash);
+                field_ty.saturate(this, irgen);
+                if (irgen) block.swap(irgen->block_hash);
+
+                auto ty = reinterpret_cast<YVMModule*>(field_ty.module)->toNativeType(field_ty, hash, irgen, not_allowed);
+                if (!ty) return nullptr;
+                args.push_back(ty);
+            }
+            final_args[0] = eng.union_manager.get_union_type(args);
+            final_args[1] = NativeType::getU32();
+            return eng.struct_manager.get_struct_type(final_args);
+        }
         if (auto t = findClassWithType(type.block_hash, type.full_name_no_block()); std::get<2>(t.second))
         {
             auto ptr = std::get<1>(t.second);
