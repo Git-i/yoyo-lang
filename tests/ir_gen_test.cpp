@@ -172,7 +172,7 @@ main: fn(val: u32) = {
         engine.execute();
     }
 }
-TEST_CASE("Test union initialization", "[operators]")
+TEST_CASE("Test union initialization", "[unions]")
 {
     std::string source(1 + R"(
 Color: union = {
