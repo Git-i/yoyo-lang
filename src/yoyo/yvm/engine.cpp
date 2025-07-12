@@ -11,6 +11,7 @@
 #include <format>
 
 #include "minicoro.h"
+#include <iostream>
 namespace Yoyo
 {
     struct YoyoString {
@@ -186,11 +187,8 @@ namespace Yoyo
                 else rn.stack_data[i].ptr = elem_ptr;
             }
 
-            //jmp_buf panic_buf;
-            //if (setjmp(panic_buf)) {
-            //    // panic
-            //}
             rn.run_code(data->code, nullptr, n_elems + data->should_sret);
+            if (rn.in_panic) std::cout << "Fiber panicked" << std::endl;
             delete data;
             }, 0);
         desc.user_data = new CoroData{ .vm = &vm, .code = fn.code, .param_type = fn.params, .ret_ty = fn.ret, .should_sret = fn.should_sret };

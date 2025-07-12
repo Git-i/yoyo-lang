@@ -43,6 +43,13 @@ namespace Yoyo
             return NativeType::getU8();
         if (type.name == "void")
             return NativeType::getVoid();
+        if (type.is_gc_reference())
+        {
+            return eng.struct_manager.get_struct_type({ {
+                reinterpret_cast<YVMModule*>(type.deref().module)->toNativeType(type.deref(), hash, irgen, disallowed_types),
+                NativeType::getI64()
+            } });
+        }
         if (type.is_opaque_pointer() || type.is_reference())
             return NativeType::getPtrTy();
         if (type.is_char())

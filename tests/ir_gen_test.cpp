@@ -199,6 +199,26 @@ main: fn = {
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test garbage collected refcells", "[gc]")
+{
+    std::string source(1 + R"(
+func: fn(x: &mut i32, y: &mut i32) = return;
+main: fn = {
+    b: i32 = 10;
+    a: ^i32 = gcnew b;
+    test::print(&"before panic");
+    func(a, a);
+    test::print(&"after panic");
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
     std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();

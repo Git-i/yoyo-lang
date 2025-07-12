@@ -233,7 +233,7 @@ namespace Yoyo
             if (dst.is_mutable_reference()) {
                 type_name += "_mut";
                 irgen->builder->write_const(int64_t{ 0 });
-                irgen->builder->write_1b_inst(OpCode::CmpNe);
+                irgen->builder->write_2b_inst(OpCode::CmpNe, 64);
                 irgen->builder->create_jump(OpCode::JumpIfFalse, valid_borrow);
                 irgen->builder->write_1b_inst(OpCode::Panic);
                 irgen->builder->create_label(valid_borrow);
@@ -246,7 +246,7 @@ namespace Yoyo
                 // since we're going to add one to the borrow value we can just duplicate it rather than load again
                 irgen->builder->write_1b_inst(OpCode::Dup);
                 irgen->builder->write_const(int64_t{ -1 });
-                irgen->builder->write_1b_inst(OpCode::CmpEq);
+                irgen->builder->write_2b_inst(OpCode::CmpEq, 64);
                 irgen->builder->create_jump(OpCode::JumpIfFalse, valid_borrow);
                 irgen->builder->write_1b_inst(OpCode::Panic);
                 irgen->builder->create_label(valid_borrow);
