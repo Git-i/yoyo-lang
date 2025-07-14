@@ -32,4 +32,14 @@ namespace Yoyo {
 	public:
 		NativeTy* get_union_type(std::span<NativeTy* const>);
 	};
+
+	struct ArrayTypeSelector {
+		// there has to be a better data structure for this
+		// basically we map each type to map of size to array type
+		std::unordered_map<
+			NativeTy*,
+			std::unordered_map<size_t, NativeTy*>> used_arrays;
+	public:
+		NativeTy* get_array_type(NativeTy* tp, size_t size);
+	};
 }

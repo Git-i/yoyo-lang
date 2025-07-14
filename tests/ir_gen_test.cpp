@@ -223,6 +223,23 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test static array", "[array]")
+{
+    std::string source(1 + R"(
+LEN: const u32 = 5;
+main: fn = {
+    arr: [i32; LEN * 2] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 #ifdef USE_GRAPHVIZ
 void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo::CFGNode*, Agnode_t*>& nodes, std::set<Yoyo::CFGNode*>& prepared)
 {

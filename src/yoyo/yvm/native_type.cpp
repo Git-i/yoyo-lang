@@ -146,8 +146,20 @@ namespace Yoyo
             auto biggest_align = std::ranges::max(types, {}, [](NativeTy* const arg) { return NativeType::get_align(arg); });
             ret_val->size = NativeType::get_size(biggest_size);
             ret_val->alignment = NativeType::get_align(biggest_align);
+            ret_val->type = FFI_TYPE_STRUCT;
             ret_val->elements = new ffi_type*[2];
             ret_val->elements[1] = nullptr;
+            return ret_val;
+        }
+        ArrayNativeTy* makeForArray(NativeTy* type, size_t size)
+        {
+            static ffi_type* ffi_nullptr = nullptr;
+            auto ret_val = new ArrayNativeTy;
+            ret_val->alignment = type->alignment;
+            ret_val->size = type->size * size;
+            ret_val->elements = &ffi_nullptr;
+            ret_val->type = FFI_TYPE_STRUCT;
+            ret_val->original_size = type->size;
             return ret_val;
         }
         uint32_t get_size(NativeTy* const type)
@@ -170,6 +182,10 @@ namespace Yoyo
         size_t getElementOffset(const StructNativeTy* obj, size_t idx)
         {
             return obj->offsets[idx];
+        }
+        size_t getElementOffset(const ArrayNativeTy* type, size_t idx)
+        {
+            return idx * type->original_size;
         }
         NativeTy* getStructElementType(StructNativeTy* type, size_t idx)
         {

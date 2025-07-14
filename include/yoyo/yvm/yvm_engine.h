@@ -35,6 +35,7 @@ namespace Yoyo
         StructTypeSelector struct_manager;
         UniqueFISelector fi_manager;
         UnionTypeSelector union_manager;
+        ArrayTypeSelector array_manager;
         std::vector<NativeModule*> external_dlls;
 	};
 }

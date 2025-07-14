@@ -198,7 +198,13 @@ namespace Yoyo
         auto& elements = std::get<list_notation>(lit->elements);
         auto subtype = peerResolve(elements | std::views::transform([this](std::unique_ptr<Expression>& elem)
         {
+            bool swapped = false;
+            if (target && target->is_array()) {
+                swapped = true;
+                std::swap(*target, target->subtypes[0]);
+            }
             return std::make_pair(std::visit(*this, elem->toVariant()), elem.get());
+            if(swapped) std::swap(*target, target->subtypes[0]);
         }), irgen);
         if (!subtype)
         {

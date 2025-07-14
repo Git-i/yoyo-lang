@@ -102,5 +102,11 @@ namespace Yoyo
 		used_unions.emplace_back(std::move(data_as_set), new_type);
 		return new_type;
 	}
+	NativeTy* ArrayTypeSelector::get_array_type(NativeTy* tp, size_t size)
+	{
+		auto& this_map = used_arrays[tp];
+		if (!this_map.contains(size)) this_map[size] = NativeType::makeForArray(tp, size);
+		return this_map.at(size);
+	}
 }
 

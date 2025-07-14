@@ -133,8 +133,9 @@ namespace Yoyo
         }
         if (type.is_static_array())
         {
-            //TODO: Array native types
-            //return llvm::ArrayType::get(ToLLVMType(type.subtypes[0], hash, irgen, disallowed_types), type.static_array_size());
+            return eng.array_manager.get_array_type(
+                reinterpret_cast<YVMModule*>(type.subtypes[0].module)->toNativeType(type.subtypes[0], hash, irgen, disallowed_types),
+                type.static_array_size());
         }
         if (type.is_slice())
         {

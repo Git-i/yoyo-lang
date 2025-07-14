@@ -1047,11 +1047,13 @@ namespace Yoyo
     {
         using repeat_notation = std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>;
         using list_notation = std::vector<std::unique_ptr<Expression>>;
-        auto tp_check = ExpressionTypeChecker{irgen};
         auto type = ExpressionTypeChecker{ irgen, target }(lit);
+        auto tp_check = (target && target->is_array()) ? ExpressionTypeChecker{irgen, target->subtypes[0]}
+        : ExpressionTypeChecker{ irgen };
         if (!type) { irgen->error(type.error()); return {}; }
-        auto as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(*type));
+        auto as_native = reinterpret_cast<ArrayNativeTy*>(irgen->toNativeType(*type));
         irgen->builder->write_alloca(NativeType::get_size(as_native));
+        
         if(type->is_static_array())
         {
             if (std::holds_alternative<repeat_notation>(lit->elements)) {
@@ -1073,6 +1075,9 @@ namespace Yoyo
             auto& elements = std::get<list_notation>(lit->elements);
             for(size_t i = 0; i < elements.size(); ++i)
             {
+                if (target && target->is_array()) {
+                    std::swap(*target, target->subtypes[0]); 
+                }
                 std::visit(*this, elements[i]->toVariant());
                 irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
                 auto tp = std::visit(tp_check, elements[i]->toVariant());
