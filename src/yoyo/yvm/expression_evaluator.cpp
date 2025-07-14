@@ -1053,13 +1053,13 @@ namespace Yoyo
         if (!type) { irgen->error(type.error()); return {}; }
         auto as_native = reinterpret_cast<ArrayNativeTy*>(irgen->toNativeType(*type));
         irgen->builder->write_alloca(NativeType::get_size(as_native));
-        
+        size_t ret_addr = irgen->builder->last_alloc_addr();
         if(type->is_static_array())
         {
             if (std::holds_alternative<repeat_notation>(lit->elements)) {
                 auto& rpn = std::get<repeat_notation>(lit->elements);
                 if (target && target->is_array())
-                    std::visit(YVMExpressionEvaluator{ irgen, target->subtypes[0] }, rpn.first->toVariant());
+                    std::visit(YVMExpressionEvaluator{ irgen, type->subtypes[0] }, rpn.first->toVariant());
                 else
                     std::visit(*this, rpn.first->toVariant());
                 for (size_t i = 0; i < type->static_array_size(); i++)
@@ -1070,24 +1070,26 @@ namespace Yoyo
                     clone(rpn.first.get(), type->subtypes[0], true, false);
                     irgen->builder->write_1b_inst(OpCode::Pop);
                 }
+                returned_alloc_addr = ret_addr;
                 return {};
             }
             auto& elements = std::get<list_notation>(lit->elements);
+            *target = type->subtypes[0];
             for(size_t i = 0; i < elements.size(); ++i)
             {
-                if (target && target->is_array()) {
-                    std::swap(*target, target->subtypes[0]); 
-                }
                 std::visit(*this, elements[i]->toVariant());
                 irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+                irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native, i));
                 auto tp = std::visit(tp_check, elements[i]->toVariant());
                 if (!tp) {irgen->error(tp.error()); continue;}
                 implicitConvert(elements[i].get(),
                     tp.value(),
                     type->subtypes[0],
                     true, false);
+                irgen->builder->write_1b_inst(OpCode::Pop);
             }
         }
+        returned_alloc_addr = ret_addr;
         return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(RealLiteral* lit)

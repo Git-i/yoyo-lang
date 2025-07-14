@@ -73,11 +73,12 @@ Yoyo::Fiber createFiberFor(Yoyo::ModuleBase* mod, const std::string& function_na
     auto eng = dynamic_cast<Yoyo::YVMEngine*>(mod->engine);
     return eng->createFiber(eng->findFunction(mod, function_name).value());
 }
-void addTestModule(Yoyo::YVMEngine* eng) {
+Yoyo::YVMAppModule* addTestModule(Yoyo::YVMEngine* eng) {
     auto md = eng->addAppModule("test");
     md->addFunction("(x: &str) -> i32", func, "print");
     md->addFunction("(x: bool, y: &str) -> void", test_assert, "assert");
     md->addFunction("(x: &str, y: &str) -> void", test_str_cmp, "str_cmp");
+    return md;
 }
 constexpr bool emit_ir = false;
 TEST_CASE("Test IR") 
@@ -229,10 +230,14 @@ TEST_CASE("Test static array", "[array]")
 LEN: const u32 = 5;
 main: fn = {
     arr: [i32; LEN * 2] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    test::check_array(&arr);
 }
 )");
     Yoyo::YVMEngine engine;
-    addTestModule(&engine);
+    auto test_md = addTestModule(&engine);
+    test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) { 
+        for (auto i : std::views::iota(0, 10)) REQUIRE(i == reinterpret_cast<uint32_t*>(arr)[i]);
+    }), "check_array");
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
