@@ -77,10 +77,7 @@ namespace Yoyo
 	std::string Error::to_string(const SourceView& view, bool enable_color) const
 	{
 		std::vector<std::string> lines;
-		size_t begin = std::max(size_t(1), span.begin.line - 1);
-		size_t end = std::min(view.lines.size() + 1, span.end.line + 2);
-		for (auto line : std::views::iota(begin, end))
-		{
+		auto render_line = [this, &view, enable_color, &lines](size_t line) {
 			std::string line_body(view.lines[line - 1]);
 			//apply color for the portion of text that is in error
 			if (enable_color && span.end.line >= line && span.begin.line <= line)
@@ -94,6 +91,24 @@ namespace Yoyo
 			}
 			lines.emplace_back(std::format("{: >4} │ {}\n", line, line_body));
 			lines.emplace_back(markers_for("       ", enable_color, line, markers, view));
+			};
+		size_t begin = std::max(size_t(1), span.begin.line - 1);
+		size_t end = std::min(view.lines.size() + 1, span.end.line + 2);
+		std::vector<size_t> rendered_lines;
+		for (auto line : std::views::iota(begin, end))
+		{
+			rendered_lines.push_back(line);
+			render_line(line);
+		}
+
+		for (auto& marker : markers) {
+			if (auto it = std::ranges::find(rendered_lines, marker.first.begin.line); it != rendered_lines.end())
+				continue;
+			lines.emplace_back("\n");
+			for (auto line : std::views::iota(marker.first.begin.line, marker.first.end.line + 1)) {
+				rendered_lines.push_back(line);
+				render_line(line);
+			}
 		}
 		auto result = std::format("{}{}:{}:{} error: {}{}\n",
 			enable_color ? "\033[1;31m" : "",

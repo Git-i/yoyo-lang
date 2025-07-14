@@ -20,7 +20,10 @@ namespace Yoyo
         ModuleBase* module = irgen->module;
         std::string hash = irgen->block_hash;
         Type tp{ .name = nexpr->text };
-        irgen->apply_using(tp, module, hash);
+        if (auto err = irgen->apply_using(tp, module, hash)) {
+            err->span = SourceSpan{ nexpr->beg, nexpr->end };
+            irgen->error(*err);
+        }
         auto [blk, dets] = module->findConst(hash, nexpr->text);
         if (!dets)
         {

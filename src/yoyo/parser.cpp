@@ -122,7 +122,7 @@ namespace Yoyo
         auto iden = Get();
         if(!iden) return nullptr;
         if(iden->type == TokenType::Operator) return parseOperatorOverload(iden.value());
-        if (iden->type == TokenType::Using) return parseUsingDeclaration();
+        if (iden->type == TokenType::Using) return parseUsingDeclaration(iden.value());
         if(iden->type != TokenType::Identifier) error("Expected Identifier", iden);
         Get();//discard the ':'
         auto look_ahead = Peek();
@@ -416,7 +416,7 @@ namespace Yoyo
     }
     std::unique_ptr<Statement> Parser::parseMacroDeclaration(Token identifier)
     {
-        if (!discard(TokenType::Macro)) error("Expected 'union'", Peek());
+        if (!discard(TokenType::Macro)) error("Expected 'macro'", Peek());
         // only single param macros for now
         if (!discard(TokenType::LParen)) error("Expected '('", Peek());
         auto iden = Get();
@@ -441,7 +441,7 @@ namespace Yoyo
         auto end = decl->body->end;
         return Statement::attachSLAndParent(std::move(decl), identifier.loc, end, parent);
     }
-    std::unique_ptr<Statement> Parser::parseUsingDeclaration()
+    std::unique_ptr<Statement> Parser::parseUsingDeclaration(Token using_tok)
     {
         // modify the behaviour of the type parser to allow for ::{...} and ::*
         in_using_stat = true;
@@ -450,7 +450,9 @@ namespace Yoyo
         if (!tp) return nullptr;
         if (!discard(TokenType::SemiColon)) { error("Expected ';'", Peek()); return nullptr; }
         if (tp->name == "__star__") {
-            return std::make_unique<UsingStatement>(UsingStatement::UsingAll{ .block = tp->block_hash });
+            return Statement::attachSLAndParent(
+                std::make_unique<UsingStatement>(UsingStatement::UsingAll{ .block = tp->block_hash }),
+                using_tok.loc, discardLocation);
         }
         else if (tp->name == "__multi__") {
             //should have just used std::move tbh
@@ -459,17 +461,17 @@ namespace Yoyo
                 std::ranges::transform(tp->subtypes, std::back_inserter(entities), [](const Type& t) { return t.name; });
                 return entities;
                 };
-            return std::make_unique<UsingStatement>(UsingStatement::UsingMultiple{
+            return Statement::attachSLAndParent(std::make_unique<UsingStatement>(UsingStatement::UsingMultiple{
                     .block = tp->block_hash,
                     .entities = make_entities()
-                });
+                }), using_tok.loc, discardLocation);
         }
         if (!tp->subtypes.empty()) { error("Cannot instantiate generics here", Peek()); }
         
-        return std::make_unique<UsingStatement>(UsingStatement::UsingSingle{
+        return Statement::attachSLAndParent(std::make_unique<UsingStatement>(UsingStatement::UsingSingle{
                 .block = tp->block_hash,
                 .entity = tp->name
-            });
+            }), using_tok.loc, discardLocation);
     }
     Attribute parseAttribute(Parser& p)
     {

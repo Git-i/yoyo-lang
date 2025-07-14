@@ -269,6 +269,7 @@ Module2: struct = {
 }
 Module3: struct = {
     Type: struct = { to_str: fn(&this) -> str = return "Module 3 type"; }
+    print: fn = return;
 }
 using test::print;
 main: fn = {

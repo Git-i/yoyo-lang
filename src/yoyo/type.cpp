@@ -835,10 +835,12 @@ namespace Yoyo
     std::string FunctionSignature::pretty_name(const std::string& block_hash) const
     {
         std::string final_str = "fn(";
-        if (parameters.size() >= 1) final_str.append(parameters[0].type.pretty_name(block_hash));
-        for (auto& param : std::ranges::subrange(parameters.begin() + 1, parameters.end()))
-        {
-            final_str.append(", " + param.type.pretty_name(block_hash));
+        if (parameters.size() >= 1) {
+            final_str.append(parameters[0].type.pretty_name(block_hash));
+            for (auto& param : std::ranges::subrange(parameters.begin() + 1, parameters.end()))
+            {
+                final_str.append(", " + param.type.pretty_name(block_hash));
+            }
         }
         final_str.append(")");
         return final_str;

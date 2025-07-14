@@ -420,7 +420,10 @@ namespace Yoyo
         ModuleBase* module = irgen->module;
         std::string hash = irgen->block_hash;
         Type tp{ .name = expr->text };
-        irgen->apply_using(tp, module, hash);
+        if (auto err = irgen->apply_using(tp, module, hash)) {
+            err->span = { expr->beg, expr->end };
+            irgen->error(*err);
+        }
         if(auto [name_prefix, fn] = module->findFunction(hash, expr->text); fn)
         {
             irgen->saturateSignature(fn->sig, irgen->module);

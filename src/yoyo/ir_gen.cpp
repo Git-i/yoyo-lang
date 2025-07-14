@@ -398,7 +398,7 @@ namespace Yoyo
                 if (auto hs = this_md->hashOf(this_hsh, tp.name); hs && *hs == this_hsh && contains(stat, tp.name)) {
                     //ambiguous
                     if (contributing_stat) {
-                        Error err(SourceSpan{}, "The name " + tp.name + " is ambiguous in this context");
+                        Error err(SourceSpan{}, "The name \"" + tp.name + "\" is ambiguous in this context");
                         err.markers.emplace_back(SourceSpan{ contributing_stat->beg, contributing_stat->end }, "Can be accessed from here");
                         err.markers.emplace_back(SourceSpan{ stat->beg, stat->end }, "Can also be accessed from here");
                         return err;
@@ -409,10 +409,10 @@ namespace Yoyo
                 }
             }
             // remove this if ambiguity is resolved be how deep the declaration is
-            if (contributing_stat) break;
+            //if (contributing_stat) break;
         }
         if (exists && contributing_stat) {
-            Error err(SourceSpan{}, "The name " + tp.name + " exists in this context but is imported");
+            Error err(SourceSpan{}, "The name \"" + tp.name + "\" exists in this context but is imported");
             err.markers.emplace_back(SourceSpan{ contributing_stat->beg, contributing_stat->end }, "Import happens here");
             return err;
         }
