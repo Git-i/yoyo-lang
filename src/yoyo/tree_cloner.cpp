@@ -336,6 +336,10 @@ namespace Yoyo
         new_decl->name = decl->name;
         return new_decl;
     }
+    std::unique_ptr<Statement> StatementTreeCloner::operator()(UsingStatement* decl)
+    {
+        return std::make_unique<UsingStatement>(decl->content);
+    }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericClassDeclaration* decl)
     {
         std::vector<std::unique_ptr<Statement>> new_methods;

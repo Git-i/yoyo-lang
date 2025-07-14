@@ -77,6 +77,7 @@ namespace Yoyo
         Type return_t;
         bool in_class = false;
         ModuleBase* module;
+        std::vector<std::vector<UsingStatement*>> used_types;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
         std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
         std::vector<CFGNodeManager> function_cfgs;
@@ -107,7 +108,7 @@ namespace Yoyo
         void generateGenericClass(ModuleBase* mod, const std::string& hash, GenericClassDeclaration* decl, std::span<const Type> types);
         void generateGenericAlias(ModuleBase* mod, const std::string& block, GenericAliasDeclaration* decl, std::span<Type> types);
         void generateGenericInterface(ModuleBase* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types);
-        
+        std::optional<Error> apply_using(Type&, ModuleBase*&, std::string&);
     };
 
     class ExpressionTypeChecker

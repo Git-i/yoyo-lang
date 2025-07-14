@@ -112,4 +112,8 @@ namespace Yoyo
     {
         return this;
     }
+    StatementVariant UsingStatement::toVariant()
+    {
+        return this;
+    }
 }

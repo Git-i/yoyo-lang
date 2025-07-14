@@ -103,8 +103,12 @@ namespace Yoyo
         }
 
         variables.swap(new_fn_vars);
+
+        used_types.emplace_back();
         current_Statement = &decl->body;
         std::visit(*this, decl->body->toVariant());
+        used_types.pop_back();
+
         variables.swap(new_fn_vars);
         function_cfgs.pop_back();
         builder->close_function(&reinterpret_cast<YVMModule*>(module)->code, fn_name);
@@ -162,10 +166,12 @@ namespace Yoyo
         std::string this_hash = block_hash + decl->identifier + "::";
         block_hash.swap(this_hash);
 
+        used_types.emplace_back();
         for (auto& stat : decl->stats) {
             current_Statement = &stat;
             std::visit(*this, stat->toVariant());
         }
+        used_types.pop_back();
         block_hash.swap(this_hash);
         this_t = std::move(old_this);
         in_class = old_in_class;
@@ -194,10 +200,13 @@ namespace Yoyo
         auto old_this = std::move(this_t);
         this_t = Type{ .name = name, .subtypes = {} };
         this_t.saturate(module, this);
+
+        used_types.emplace_back();
         for (auto& stat : decl->sub_stats) {
             current_Statement = &stat;
             std::visit(*this, stat->toVariant());
         }
+        used_types.pop_back();
         block_hash.swap(curr_hash);
         in_class = old_in_class;
         this_t = std::move(old_this);
@@ -206,6 +215,11 @@ namespace Yoyo
     {
         assert(current_Statement->get() == decl);
         current_Statement->release();
+    }
+    void YVMIRGenerator::operator()(UsingStatement* stat)
+    {
+        used_types.back().push_back(stat);
+        // todo validate
     }
     std::optional<Type> YVMIRGenerator::getVariableType(const std::string& name, Expression* expr)
     {
@@ -248,6 +262,8 @@ namespace Yoyo
         this_t = Type{ .name = name, .subtypes = {} };
         this_t.saturate(module, this);
         checkClass(decl);
+
+        used_types.emplace_back();
         for(auto& stt: decl->stats)
         {
             current_Statement = &stt;
@@ -295,6 +311,7 @@ namespace Yoyo
             }
             block_hash = std::move(curr_hash);
         }
+        used_types.pop_back();
         this_t = std::move(old_this);
         in_class = old_in_class;
     }
@@ -352,6 +369,7 @@ namespace Yoyo
     void YVMIRGenerator::operator()(BlockStatement* stat)
     {
         pushScope();
+        used_types.emplace_back();
         for(auto& sub_stat : stat->statements)
         {
             current_Statement = &sub_stat;
@@ -359,6 +377,7 @@ namespace Yoyo
             if(dynamic_cast<ReturnStatement*>(sub_stat.get()))
                 return;
         }
+        used_types.pop_back();
         popScope();
     }
     void YVMIRGenerator::operator()(ForStatement* stat)
@@ -694,6 +713,7 @@ namespace Yoyo
         module = md;
         builder = std::make_unique<Yvm::Emitter>();
         pushScope();
+        used_types.emplace_back();
         for (auto& stat : statements) {
             current_Statement = &stat;
             std::visit(*this, stat->toVariant());

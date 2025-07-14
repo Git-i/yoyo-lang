@@ -24,6 +24,10 @@ namespace Yoyo
 		std::string description;
 		std::vector<std::pair<SourceSpan, std::string>> markers;
 		Error() = default;
+		Error(SourceSpan spn, std::string sum, std::string desc = "") :
+			span{ spn },
+			summary(std::move(sum)),
+			description(std::move(desc)) {}
 		Error(SourceLocation beg, SourceLocation end, std::string sum, std::string desc = "") :
 			span{ beg, end },
 			summary(std::move(sum)),

@@ -23,6 +23,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseInterfaceDeclaration(Token identifier);
         std::unique_ptr<Statement> parseUnionDeclaration(Token identifier);
         std::unique_ptr<Statement> parseMacroDeclaration(Token identifier);
+        std::unique_ptr<Statement> parseUsingDeclaration();
         std::unordered_map<std::string, std::unique_ptr<Expression>> parseObjectLiteral();
         std::unique_ptr<Statement> parseDeclaration();
         std::unique_ptr<Statement> parseReturnStatement(Token);
@@ -58,6 +59,7 @@ namespace Yoyo
     private:
         friend class MacroExprEval;
         bool has_error = false;
+        bool in_using_stat = true;
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
 
         uint32_t GetNextPrecedence();

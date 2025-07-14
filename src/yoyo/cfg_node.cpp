@@ -47,6 +47,7 @@ namespace Yoyo
             }
             node = cont->parents.empty() ? exit : cont;
         }
+        void operator()(UsingStatement* stat) const {}
         void operator()(ReturnStatement* stat)
         {
             node->statements.push_back(stat);

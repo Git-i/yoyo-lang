@@ -20,6 +20,7 @@ namespace Yoyo {
             /// the std::pair<> is the variable name and the stack_addr and type of the variable
             std::vector<std::pair<std::string, std::pair<VariableIndex, Type>>>
         > variables;
+        
 		std::string break_to;
 		std::string continue_to;
         virtual void doFunction(FunctionDeclaration* decl) override { (*this)(decl); };
@@ -56,6 +57,7 @@ namespace Yoyo {
         void operator()(CImportDeclaration*) {}
         void operator()(UnionDeclaration*);
         void operator()(MacroDeclaration*);
+        void operator()(UsingStatement*);
         void callDestructors(size_t depth = 0);
         void pushScope();
         void popScope();

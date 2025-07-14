@@ -122,6 +122,7 @@ namespace Yoyo
         auto iden = Get();
         if(!iden) return nullptr;
         if(iden->type == TokenType::Operator) return parseOperatorOverload(iden.value());
+        if (iden->type == TokenType::Using) return parseUsingDeclaration();
         if(iden->type != TokenType::Identifier) error("Expected Identifier", iden);
         Get();//discard the ':'
         auto look_ahead = Peek();
@@ -140,7 +141,6 @@ namespace Yoyo
         case TokenType::Alias: decl = parseAliasDeclaration(iden.value()); break;
         case TokenType::Module: decl = parseModuleImport(iden.value()); break;
         case TokenType::Macro: decl = parseMacroDeclaration(iden.value()); break;
-
         default: error("Expected 'fn', 'enum', 'const', 'alias', 'module', 'interface' or 'union'", iden);
         }
         decl->attributes = std::move(attrs);
@@ -228,6 +228,7 @@ namespace Yoyo
         auto tk = Peek();
         if(!tk) return false;
         if(tk->type == TokenType::Operator) return true;
+        if (tk->type == TokenType::Using) return true;
         if(tk->type == TokenType::Identifier)
         {
             auto [tok, loc] = *GetWithEndLocation();
@@ -439,6 +440,36 @@ namespace Yoyo
         decl->body->parent = decl.get();
         auto end = decl->body->end;
         return Statement::attachSLAndParent(std::move(decl), identifier.loc, end, parent);
+    }
+    std::unique_ptr<Statement> Parser::parseUsingDeclaration()
+    {
+        // modify the behaviour of the type parser to allow for ::{...} and ::*
+        in_using_stat = true;
+        auto tp = parseType(0);
+        in_using_stat = false;
+        if (!tp) return nullptr;
+        if (!discard(TokenType::SemiColon)) { error("Expected ';'", Peek()); return nullptr; }
+        if (tp->name == "__star__") {
+            return std::make_unique<UsingStatement>(UsingStatement::UsingAll{ .block = tp->block_hash });
+        }
+        else if (tp->name == "__multi__") {
+            //should have just used std::move tbh
+            auto make_entities = [&tp] {
+                std::vector<std::string> entities;
+                std::ranges::transform(tp->subtypes, std::back_inserter(entities), [](const Type& t) { return t.name; });
+                return entities;
+                };
+            return std::make_unique<UsingStatement>(UsingStatement::UsingMultiple{
+                    .block = tp->block_hash,
+                    .entities = make_entities()
+                });
+        }
+        if (!tp->subtypes.empty()) { error("Cannot instantiate generics here", Peek()); }
+        
+        return std::make_unique<UsingStatement>(UsingStatement::UsingSingle{
+                .block = tp->block_hash,
+                .entity = tp->name
+            });
     }
     Attribute parseAttribute(Parser& p)
     {
@@ -1330,7 +1361,34 @@ namespace Yoyo
             case TokenType::Question: t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk); break;
             case TokenType::DoubleColon:
                 {
-                    auto tp = parseType(precedence);
+                    if (auto tk = Peek(); in_using_stat && tk && tk->type == TokenType::Star) {
+                        Get();
+                        t->block_hash = t->full_name() + "::";
+                        t->name = "__star__";
+                        return t;
+                    }
+                    else if (auto tk = Peek(); in_using_stat && tk && tk->type == TokenType::LCurly) {
+                        Get();
+                        t->block_hash = t->full_name() + "::";
+                        t->name = "__multi__";
+                        while (!discard(TokenType::RCurly)) {
+                            auto iden = Get();
+                            if (!iden) return std::nullopt;
+                            if (iden->type != TokenType::Identifier) { error("Expected identifier", iden); return std::nullopt; }
+                            t->subtypes.push_back(Type{ .name = std::string(iden->text) });
+                            if (!discard(TokenType::Comma)) {
+                                if (discard(TokenType::RCurly)) return t;
+                                else { error("Expected ',' or '}'", Peek()); return std::nullopt; }
+                            }
+                        }
+                        return t;
+                    }
+                    else {
+                        std::optional<Type> tp = parseType(precedence);
+                        tp->block_hash = t->full_name() + "::" + tp->block_hash;
+                        return tp;
+                    }
+                    std::optional<Type> tp = parseType(precedence);
                     tp->name = t->full_name() + "::" + tp->name;
                     t = std::move(tp);
                     break;

@@ -339,8 +339,9 @@ namespace Yoyo
                     // rev_stack_addr 2 => [array, slice pointer, slice data pointer pointer, array]
                     // switch => [array, slice pointer, array, slice data pointer pointer]
                     // store ptr => [array, slice pointer]
-                    // constant => [array, slice pointer, array size]
-                    // dup, ptr_off => [array, slice pointer, array size, slice size pointer] 
+                    // dup, ptr_off => [array, slice pointer, slice size pointer] 
+                    // constant => [array, slice pointer, slice size pointer, array size]
+                    // switch => [array, slice pointer, array size, slice size pointer]
                     // store u64 => [array, slice pointer]
                     // top_consume => [slice pointer]
                     irgen->builder->write_1b_inst(OpCode::Dup);
@@ -348,9 +349,10 @@ namespace Yoyo
                     irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2);
                     irgen->builder->write_1b_inst(OpCode::Switch);
                     irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::ptr);
-                    irgen->builder->write_const<uint64_t>(src.deref().static_array_size());
                     irgen->builder->write_1b_inst(OpCode::Dup);
                     irgen->builder->write_ptr_off(NativeType::getElementOffset(struct_native, 1));
+                    irgen->builder->write_const<uint64_t>(src.deref().static_array_size());
+                    irgen->builder->write_1b_inst(OpCode::Switch);
                     irgen->builder->write_2b_inst(OpCode::Store, Yvm::Type::u64);
                     irgen->builder->write_1b_inst(OpCode::TopConsume);
                     returned_alloc_addr = ret_alloc;
@@ -1227,7 +1229,11 @@ namespace Yoyo
                 return {};
             }
         }
-        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, nm->text); fn)
+        ModuleBase* module = irgen->module;
+        std::string hash = irgen->block_hash;
+        Type tp{ .name = nm->text };
+        irgen->apply_using(tp, module, hash);
+        if(auto [name_prefix, fn] = module->findFunction(hash, nm->text); fn)
         {
             irgen->builder->write_fn_addr(name_prefix + nm->text);
             return {};

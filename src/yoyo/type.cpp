@@ -414,6 +414,10 @@ namespace Yoyo
             {
                 module = src;
                 block_hash = irgen ? irgen->block_hash : src->module_hash;
+                if (irgen) {
+                    auto err = irgen->apply_using(*this, module, block_hash);
+                    if (err) debugbreak();
+                }
                 auto hsh = module->hashOf(block_hash, name);
                 if(hsh) block_hash = std::move(hsh).value();
             }
@@ -428,13 +432,16 @@ namespace Yoyo
         {
             ModuleBase* md = src;
             std::string hash = irgen ? irgen->block_hash : src->module_hash;
-            bool first = true;
+            auto type = it.next();
+            auto err = irgen->apply_using(type, md, hash);
+            if (err) {
+                debugbreak();
+            }
             while(!it.is_end())
             {
-                auto type = it.next();
-                if (!advanceScope(type, md, hash, irgen, first))
+                type = it.next();
+                if (!advanceScope(type, md, hash, irgen, false))
                     debugbreak();
-                first = false;
             }
             name = it.last().name;
             module = md;

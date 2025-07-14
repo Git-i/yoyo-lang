@@ -29,6 +29,7 @@ namespace Yoyo
             md->generic_fns[block].emplace_back(decl);
             return true;
         }
+        bool operator()(UsingStatement* decl) const { return true;  }
         bool operator()(ClassDeclaration* decl) const
         {
             std::string mangled_name_prefix = block + decl->name + "::";

@@ -42,12 +42,16 @@ namespace Yoyo
 
     Type* ModuleBase::findAlias(const std::string& block, const std::string& name)
     {
+        // Aliases require special behaviour because they can shadow each other (only "This" is capable of this)
+        std::vector<std::pair<std::string, Type*>> found_aliases;
         for(auto&[hash, details_list] : aliases)
         {
             if(!block.starts_with(hash)) continue;
-            if(details_list.contains(name)) return &details_list.at(name);
+            if(details_list.contains(name)) found_aliases.emplace_back(hash, &details_list.at(name));
         }
-        return nullptr;
+        if (found_aliases.empty()) return nullptr;
+        // we pick the one with the longest name (i.e the deepest block)
+        return std::ranges::max(found_aliases, {}, [](auto& elem) { return elem.first.length(); }).second;
     }
     std::pair<std::string, InterfaceDeclaration*> ModuleBase::findInterface(const std::string& block, const std::string& name)
     {

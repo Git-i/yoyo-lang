@@ -336,6 +336,95 @@ namespace Yoyo
         this->module = old_mod;
     }
 
+    bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first);
+    std::optional<Error> IRGenerator::apply_using(Type& tp, ModuleBase*& md, std::string& hash)
+    {
+        ModuleBase* new_module = md;
+        std::string new_hash = hash;
+        // check if name already exists
+        bool exists = false;
+        if (md) {
+            if (auto hsh = md->hashOf(hash, tp.name)) { 
+                new_hash = *hsh + tp.name + "::";
+                exists = true;
+                new_module = md;
+            }
+            else if (tp.is_integral() || tp.is_floating_point()) {
+                new_module = md->engine->modules.at("core").get();
+                new_hash = tp.name + "::";
+                exists = true;
+            }
+            else if (md->engine->modules.contains(tp.name))
+            {
+                new_module = md->engine->modules.at(tp.name).get();
+                new_hash = new_module->module_hash;
+                exists = true;
+            }
+        }
+        // maybe we should store this along side the statement pointer
+        auto get_details = [&tp, this](UsingStatement* stt) -> std::tuple<ModuleBase*, std::string> {
+            std::string& block = std::visit([]<typename T>(T& ct)->std::string& {
+                if constexpr (std::is_same_v<T, UsingStatement::UsingSingle>) return ct.block;
+                else if constexpr (std::is_same_v<T, UsingStatement::UsingMultiple>) return ct.block;
+                else if constexpr (std::is_same_v<T, UsingStatement::UsingAll>) return ct.block;
+                else static_assert(false);
+                }, stt->content);
+                ModuleBase* md = module;
+                std::string hash = block_hash;
+                Type type{ .name = block + tp.name };
+
+                UnsaturatedTypeIterator iter(type);
+                auto inner_type = iter.next();
+                // validation is done outside
+                advanceScope(inner_type, md, hash, this, true);
+                while (!iter.is_end()) {
+                    inner_type = iter.next();
+                    advanceScope(inner_type, md, hash, this, false);
+                }
+                return { md, std::move(hash) };
+            };
+        auto contains = [](UsingStatement* stt, const std::string& name) -> bool {
+            return std::visit([&name]<typename T>(T& ct) {
+                if constexpr (std::is_same_v<T, UsingStatement::UsingSingle>) return ct.entity == name;
+                if constexpr (std::is_same_v<T, UsingStatement::UsingMultiple>)
+                    return std::ranges::find(ct.entities, name) != ct.entities.end();
+                if constexpr (std::is_same_v<T, UsingStatement::UsingAll>) return true;
+                }, stt->content);
+            };
+        UsingStatement* contributing_stat = nullptr;
+        for (auto& use_list : used_types | std::views::reverse) {
+            for (auto stat : use_list) {
+                auto [this_md, this_hsh] = get_details(stat);
+                if (auto hs = this_md->hashOf(this_hsh, tp.name); hs && *hs == this_hsh && contains(stat, tp.name)) {
+                    //ambiguous
+                    if (contributing_stat) {
+                        Error err(SourceSpan{}, "The name " + tp.name + " is ambiguous in this context");
+                        err.markers.emplace_back(SourceSpan{ contributing_stat->beg, contributing_stat->end }, "Can be accessed from here");
+                        err.markers.emplace_back(SourceSpan{ stat->beg, stat->end }, "Can also be accessed from here");
+                        return err;
+                    }
+                    contributing_stat = stat;
+                    new_module = this_md;
+                    new_hash = this_hsh;
+                }
+            }
+            // remove this if ambiguity is resolved be how deep the declaration is
+            if (contributing_stat) break;
+        }
+        if (exists && contributing_stat) {
+            Error err(SourceSpan{}, "The name " + tp.name + " exists in this context but is imported");
+            err.markers.emplace_back(SourceSpan{ contributing_stat->beg, contributing_stat->end }, "Import happens here");
+            return err;
+        }
+        else if (exists || contributing_stat) {
+            md = new_module;
+            hash = new_hash;
+            return std::nullopt;
+        }
+        // this branch can hit on valid code in some cases like aliases
+        else return std::nullopt;
+    }
+
 
     
 }

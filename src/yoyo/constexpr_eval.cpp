@@ -17,7 +17,11 @@ namespace Yoyo
     }
     Constant ConstantEvaluator::operator()(NameExpression* nexpr)
     {
-        auto [blk, dets] = irgen->module->findConst(irgen->block_hash, nexpr->text);
+        ModuleBase* module = irgen->module;
+        std::string hash = irgen->block_hash;
+        Type tp{ .name = nexpr->text };
+        irgen->apply_using(tp, module, hash);
+        auto [blk, dets] = module->findConst(hash, nexpr->text);
         if (!dets)
         {
             irgen->error(Error(nexpr, nexpr->text + " does not name a constant")); return nullptr;
@@ -31,8 +35,9 @@ namespace Yoyo
         if (std::holds_alternative<Constant>(val)) return std::get<Constant>(val);
         
         irgen->block_hash.swap(blk);
-        
+        std::swap(irgen->module, module);
         irgen->doConst(std::get<ConstantDeclaration*>(val));
+        std::swap(irgen->module, module);
         irgen->block_hash.swap(blk);
         return std::get<Constant>(val);
     }

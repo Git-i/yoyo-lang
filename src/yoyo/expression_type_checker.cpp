@@ -417,13 +417,16 @@ namespace Yoyo
         {
             return { std::move(type).value() };
         }
-        
-        if(auto [name_prefix, fn] = irgen->module->findFunction(irgen->block_hash, expr->text); fn)
+        ModuleBase* module = irgen->module;
+        std::string hash = irgen->block_hash;
+        Type tp{ .name = expr->text };
+        irgen->apply_using(tp, module, hash);
+        if(auto [name_prefix, fn] = module->findFunction(hash, expr->text); fn)
         {
             irgen->saturateSignature(fn->sig, irgen->module);
             return { FunctionType{fn->sig, false} };
         }
-        if (auto [name_prefix, fn] = irgen->module->findGenericFn(irgen->block_hash, expr->text); fn)
+        if (auto [name_prefix, fn] = module->findGenericFn(hash, expr->text); fn)
         {
             auto ty = FunctionType(fn->signature, false);
             ty.name = "__generic_fn" + expr->text;
@@ -431,7 +434,7 @@ namespace Yoyo
             ty.block_hash = name_prefix;
             return { std::move(ty) };
         }
-        if (auto [name_pf, c] = irgen->module->findConst(irgen->block_hash, expr->text); c)
+        if (auto [name_pf, c] = module->findConst(hash, expr->text); c)
         {
             return { std::get<0>(*c) };
         }
@@ -535,6 +538,7 @@ namespace Yoyo
             hash = md->module_hash;
             return true;
         }
+        
         if(md->modules.contains(type.name))
         {
             md = md->modules.at(type.name);
@@ -619,14 +623,19 @@ namespace Yoyo
         std::string hash = irgen->block_hash;
         std::string second_to_last = "";
         auto iterator = UnsaturatedTypeIterator(scp->type);
-        bool first = true;
+        auto type = iterator.next();
+        auto err = irgen->apply_using(type, md, hash);
+        if (err) {
+            err->span = SourceSpan{ scp->beg, scp->end };
+            return { std::move(err).value() };
+        }
+        second_to_last.swap(type.name);
         while (!iterator.is_end())
         {
-            auto type = iterator.next();
-            if (!advanceScope(type, md, hash, irgen, first)) {
+            type = iterator.next();
+            if (!advanceScope(type, md, hash, irgen, false)) {
                 return { Error(scp, "The name '" + type.name + "' does not exist in \"" + hash + "\"") };
             }
-            first = false;
             second_to_last.swap(type.name);
         }
         auto last = iterator.last();

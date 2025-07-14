@@ -129,7 +129,7 @@ TEST_CASE("Test IR")
     auto fib2 = engine.createFiber(fn2);
     engine.execute();
 }
-TEST_CASE("Index Operator", "[operators]")
+TEST_CASE("Index Operator", "[operators][array][static_array]")
 {
     std::string source(1 + R"(
 I32_Index: struct = {}
@@ -209,7 +209,7 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
-TEST_CASE("Test garbage collected refcells", "[gc]")
+TEST_CASE("Test garbage collected refcells", "[gc][can_panic]")
 {
     std::string source(1 + R"(
 func: fn(x: &mut i32, y: &mut i32) = return;
@@ -230,7 +230,7 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
-TEST_CASE("Test static array", "[array]")
+TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(
 LEN: const u32 = 5;
@@ -244,6 +244,51 @@ main: fn = {
     test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) { 
         for (auto i : std::views::iota(0, 10)) REQUIRE(i + 1 == reinterpret_cast<uint32_t*>(arr)[i]);
     }), "check_array");
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test using statement", "[using][scope]")
+{
+    std::string source(1 + R"(
+Module1: struct = {
+    Type: struct = {
+        to_str: fn(&this) -> str = return "Module 1 type";
+    }
+}
+Module2: struct = {
+    Type: struct = {
+        to_str: fn(&this) -> str = return "Module 2 type";
+    }
+    Type2: struct = {
+        to_str: fn(&this) -> str = return "Module 2 type 2";
+    }
+}
+Module3: struct = {
+    Type: struct = { to_str: fn(&this) -> str = return "Module 3 type"; }
+}
+using test::print;
+main: fn = {
+    {
+        using Module1::Type;
+        print(&Type{}.to_str());
+    }
+    {
+        using Module2::{Type, Type2};
+        print(&Type{}.to_str());
+        print(&Type2{}.to_str());
+    }
+    {
+        using Module3::*;
+        print(&Type{}.to_str());
+    }
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
