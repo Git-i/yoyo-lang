@@ -137,13 +137,19 @@ operator: [](obj: &I32_Index, arg: i32) -> i32 = return arg;
 main: fn(inp: i32) = {
     a := I32_Index{};
     test::assert(a[inp] == inp, &"a[inp] == inp");
+
+    //arrays have special index operators that must be tested separately
+    arr: [i32; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    test::assert(*arr[test::i32_to_u32(inp)] == inp, &"arr[inp] == inp");
 }
 )");
     Yoyo::YVMEngine engine;
-    addTestModule(&engine);
+    auto test_mod = addTestModule(&engine);
+    test_mod->addFunction("(x: i32) -> u32", static_cast<uint32_t(*)(int32_t)>([](int32_t x) -> uint32_t { return x; }), "i32_to_u32");
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     for (auto i : std::views::iota(0i32, 10i32)) {
         auto fib = createFiberFor(mod, "source::main");
         *(int32_t*)fib.parameters = i;
@@ -220,7 +226,7 @@ main: fn = {
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
-    std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
@@ -236,12 +242,12 @@ main: fn = {
     Yoyo::YVMEngine engine;
     auto test_md = addTestModule(&engine);
     test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) { 
-        for (auto i : std::views::iota(0, 10)) REQUIRE(i == reinterpret_cast<uint32_t*>(arr)[i]);
+        for (auto i : std::views::iota(0, 10)) REQUIRE(i + 1 == reinterpret_cast<uint32_t*>(arr)[i]);
     }), "check_array");
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
-    std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }

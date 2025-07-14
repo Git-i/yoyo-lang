@@ -478,9 +478,10 @@ namespace Yoyo
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(SubscriptOperation* op)
     {
         auto tp = std::visit(*this, op->object->toVariant()).value_or_error();
-        if (tp.is_array())
+        auto idx = std::visit(*this, op->index->toVariant()).value_or_error();
+        if (tp.is_array() && idx.is_integral() && !idx.is_signed_integral())
             return { tp.is_mutable ? tp.subtypes[0].mutable_reference_to() : tp.subtypes[0].reference_to() };
-        if (tp.deref().is_array())
+        if (tp.deref().is_array() && idx.is_integral() && !idx.is_signed_integral())
             return { tp.is_mutable_reference() ? tp.deref().subtypes[0].mutable_reference_to() : tp.deref().subtypes[0].reference_to() };
         if (tp.is_mut_slice())
             return { tp.subtypes[0].mutable_reference_to() };
@@ -498,7 +499,12 @@ namespace Yoyo
         if (!ovl) ovl = resolveIdx(expr_ty.reference_to(), idx_ty, irgen).second;
 
         if (ovl) return { ovl->result };
-        return { Error(op, "Operator [] is not defined for type " + tp.pretty_name(irgen->block_hash)) };
+        auto obj_name = tp.pretty_name(irgen->block_hash);
+        auto idx_name = idx.pretty_name(irgen->block_hash);
+        auto err = Error(op, "Operator [] does not exist between types " + obj_name + " and " + idx_name);
+        err.markers.emplace_back(SourceSpan{ op->object->beg, op->object->end }, "Expression is of type " + obj_name);
+        err.markers.emplace_back(SourceSpan{ op->index->beg, op->index->end }, "Expression is of type " + idx_name);
+        return { err };
     }
     ExpressionTypeChecker::Result ExpressionTypeChecker::operator()(LambdaExpression* expr)
     {

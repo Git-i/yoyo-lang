@@ -1611,6 +1611,30 @@ namespace Yoyo
         auto idx_ty = std::visit(tp, op->index->toVariant());
         if (!idx_ty) irgen->error(idx_ty.error());
 
+        //========array indices are handled specially============ 
+        //it can be a part of the type system but would cause many generic instantiations
+        if (expr_ty->deref().is_array() && idx_ty->is_integral() && !idx_ty->is_signed_integral()) {
+            // we could have evaluated this after the index, but the evaluation order matters (used for the move semantics)
+            std::visit(*this, op->object->toVariant());
+            //integer literals
+            if (!idx_ty->is_unsigned_integral()) target = Type{ .name = "u64" };
+            std::visit(*this, op->index->toVariant());
+            // integer literals don't need the implicit conversion
+            if (idx_ty->is_unsigned_integral()) implicitConvert(op->index.get(), *idx_ty, Type{ .name = "u64" }, false, true);
+            auto as_native = irgen->toNativeType(expr_ty->deref());
+
+            // dynamic arrays are a struct and static arrays are just arrays
+            if (expr_ty->deref().is_static_array()) {
+                auto elem_size = NativeType::getElementOffset(reinterpret_cast<ArrayNativeTy*>(as_native), 1);
+                irgen->builder->write_const<uint64_t>(elem_size);
+                irgen->builder->write_1b_inst(OpCode::Mul64);
+                irgen->builder->write_1b_inst(OpCode::Switch);
+                irgen->builder->write_1b_inst(OpCode::PtrOff);
+                return {};
+            }
+        }
+        //=======================================================
+
         OverloadDetailsBinary* ovl = nullptr;
         std::string block = "";
         TokenType tok = TokenType::SquarePair;
