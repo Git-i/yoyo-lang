@@ -216,10 +216,30 @@ namespace Yoyo
         assert(current_Statement->get() == decl);
         current_Statement->release();
     }
+    bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first);
     void YVMIRGenerator::operator()(UsingStatement* stat)
     {
+        auto& block = std::visit([](auto& ct) -> std::string& { return ct.block; }, stat->content);
+        if (!block.empty())
+        {
+            Type og_tp{ block };
+            UnsaturatedTypeIterator it{ og_tp };
+            auto was_last = it.is_end();
+            Type tp = was_last ? it.last() : it.next();
+            ModuleBase* mod = module;
+            std::string hash = block_hash;
+            if (!advanceScope(tp, mod, hash, this, true)) {
+                error(Error(stat, "Block is not accessible from current scope")); return;
+            }
+            if (was_last) block = hash;
+            else {
+                block = hash;
+                while (!it.is_end()) {
+                    block += it.next().full_name() + "::";
+                }
+            }
+        }
         used_types.back().push_back(stat);
-        // todo validate
     }
     std::optional<Type> YVMIRGenerator::getVariableType(const std::string& name, Expression* expr)
     {

@@ -383,19 +383,34 @@ namespace Yoyo
                 }
                 return { md, std::move(hash) };
             };
-        auto contains = [](UsingStatement* stt, const std::string& name) -> bool {
-            return std::visit([&name]<typename T>(T& ct) {
-                if constexpr (std::is_same_v<T, UsingStatement::UsingSingle>) return ct.entity == name;
-                if constexpr (std::is_same_v<T, UsingStatement::UsingMultiple>)
-                    return std::ranges::find(ct.entities, name) != ct.entities.end();
-                if constexpr (std::is_same_v<T, UsingStatement::UsingAll>) return true;
-                }, stt->content);
+        auto contains = [](UsingStatement* stt, const std::string& name) -> std::optional<std::string> {
+            struct OperatorStruct {
+                const std::string& name;
+                std::string block_pfx;
+                std::optional<std::string> operator()(UsingStatement::UsingSingle& ct) {
+                    return ct.entity == name ? std::optional(block_pfx + ct.block) : std::nullopt;
+                }
+                std::optional<std::string> operator()(UsingStatement::UsingMultiple& ct) {
+                    auto orig_block = (block_pfx + ct.block);
+                    for (auto& entity : ct.entities) {
+                        block_pfx = orig_block;
+                        if(auto vs = std::visit(*this, entity)) return vs;
+                    }
+                    return std::nullopt;
+                }
+                std::optional<std::string> operator()(UsingStatement::UsingAll& ct) {
+                    return (block_pfx + ct.block);
+                }
+            };
+            return std::visit(OperatorStruct{name, ""}, stt->content);
             };
         UsingStatement* contributing_stat = nullptr;
         for (auto& use_list : used_types | std::views::reverse) {
             for (auto stat : use_list) {
                 auto [this_md, this_hsh] = get_details(stat);
-                if (auto hs = this_md->hashOf(this_hsh, tp.name); hs && *hs == this_hsh && contains(stat, tp.name)) {
+                if (auto hs = contains(stat, tp.name)) {
+                    auto actual_hash = this_md->hashOf(*hs, tp.name);
+                    if (!actual_hash || *actual_hash != *hs) continue;
                     //ambiguous
                     if (contributing_stat) {
                         Error err(SourceSpan{}, "The name \"" + tp.name + "\" is ambiguous in this context");
@@ -405,7 +420,7 @@ namespace Yoyo
                     }
                     contributing_stat = stat;
                     new_module = this_md;
-                    new_hash = this_hsh;
+                    new_hash = *hs;
                 }
             }
             // remove this if ambiguity is resolved be how deep the declaration is

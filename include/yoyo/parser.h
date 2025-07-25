@@ -39,6 +39,7 @@ namespace Yoyo
         uint32_t GetNextTypePrecedence();
         std::vector<std::unique_ptr<Statement>> parseProgram();
         std::optional<Type> parseType(uint32_t precedence);
+        UsingStatement::ContentTy parseUsingContent();
         [[nodiscard]] bool discard(TokenType t);
         [[nodiscard]] bool failed() const {return has_error;};
         void pushToken(Token t, SourceLocation loc);
@@ -59,7 +60,6 @@ namespace Yoyo
     private:
         friend class MacroExprEval;
         bool has_error = false;
-        bool in_using_stat = true;
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
 
         uint32_t GetNextPrecedence();

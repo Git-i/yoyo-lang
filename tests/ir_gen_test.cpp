@@ -260,16 +260,17 @@ Module1: struct = {
     }
 }
 Module2: struct = {
-    Type: struct = {
-        to_str: fn(&this) -> str = return "Module 2 type";
-    }
-    Type2: struct = {
-        to_str: fn(&this) -> str = return "Module 2 type 2";
+    TypeWrapper: struct = {
+        Type: struct = {
+            to_str: fn(&this) -> str = return "Module 2 type";
+        }
+        Type2: struct = {
+            to_str: fn(&this) -> str = return "Module 2 type 2";
+        }
     }
 }
 Module3: struct = {
     Type: struct = { to_str: fn(&this) -> str = return "Module 3 type"; }
-    print: fn = return;
 }
 using test::print;
 main: fn = {
@@ -278,7 +279,9 @@ main: fn = {
         print(&Type{}.to_str());
     }
     {
-        using Module2::{Type, Type2};
+        using Module2::{
+            TypeWrapper::{Type, Type2}
+        };
         print(&Type{}.to_str());
         print(&Type2{}.to_str());
     }

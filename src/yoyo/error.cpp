@@ -77,6 +77,13 @@ namespace Yoyo
 	std::string Error::to_string(const SourceView& view, bool enable_color) const
 	{
 		std::vector<std::string> lines;
+		auto result = std::format("{}{}:{}:{} error: {}{}\n",
+			enable_color ? "\033[1;31m" : "",
+			view.filename,
+			span.begin.line,
+			span.begin.column,
+			summary,
+			enable_color ? "\033[0m" : "");
 		auto render_line = [this, &view, enable_color, &lines](size_t line) {
 			std::string line_body(view.lines[line - 1]);
 			//apply color for the portion of text that is in error
@@ -104,19 +111,19 @@ namespace Yoyo
 		for (auto& marker : markers) {
 			if (auto it = std::ranges::find(rendered_lines, marker.first.begin.line); it != rendered_lines.end())
 				continue;
-			lines.emplace_back("\n");
+			std::string_view red = enable_color ? "\033[1;31m" : "";
+			std::string reset = enable_color ? "\033[0m\n" : "\n";
+			lines.emplace_back("\n" + 
+				std::string(red) + 
+				std::string(result.size() - (enable_color ? red.size() + reset.size() : 0), '=') +
+				reset);
+			
 			for (auto line : std::views::iota(marker.first.begin.line, marker.first.end.line + 1)) {
 				rendered_lines.push_back(line);
 				render_line(line);
 			}
 		}
-		auto result = std::format("{}{}:{}:{} error: {}{}\n",
-			enable_color ? "\033[1;31m" : "",
-			view.filename,
-			span.begin.line,
-			span.begin.column,
-			summary,
-			enable_color ? "\033[0m" : "");
+		
 		for (const auto& line : lines)
 			result.append(line);
 		return result;

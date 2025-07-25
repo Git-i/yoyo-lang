@@ -422,7 +422,7 @@ namespace Yoyo
         Type tp{ .name = expr->text };
         if (auto err = irgen->apply_using(tp, module, hash)) {
             err->span = { expr->beg, expr->end };
-            irgen->error(*err);
+            return { *err };
         }
         if(auto [name_prefix, fn] = module->findFunction(hash, expr->text); fn)
         {

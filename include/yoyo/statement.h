@@ -358,16 +358,20 @@ namespace Yoyo
     public:
         // Brings one entity into the current scope
         struct UsingSingle { std::string block; std::string entity; }; // using Module::Type;
-        // Bring multiple entities into the current scope
-        struct UsingMultiple { std::string block; std::vector<std::string> entities; }; // using Module::{Type1, Type2, Type3};
         // Bring all top-level entities from one scope into the current scope
         struct UsingAll { std::string block;  }; // using Module::*;
-        
-        std::variant<UsingSingle, UsingMultiple, UsingAll> content;
+        // Bring multiple entities into the current scope
+        struct UsingMultiple {
+            using UsingContentTy = std::variant<UsingSingle, UsingMultiple, UsingAll>;
+            std::string block; 
+            std::vector<UsingContentTy> entities; 
+        }; // using Module::{Type1, Type2, Type3};
+        using ContentTy = UsingMultiple::UsingContentTy;
+        ContentTy content;
         UsingStatement(UsingSingle sg) : content(std::move(sg)) {};
         UsingStatement(UsingMultiple sg) : content(std::move(sg)) {};
         UsingStatement(UsingAll sg) : content(std::move(sg)) {};
-        UsingStatement(decltype(UsingStatement::content) ct) : content(std::move(content)) {}
+        UsingStatement(decltype(UsingStatement::content) ct) : content(std::move(ct)) {}
         StatementVariant toVariant() override;
     };
 }
