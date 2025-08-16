@@ -954,10 +954,10 @@ namespace Yoyo
             for (auto& var : irgen->variables[idx])
             {
                 if (var.first != nm->text) continue;
-                if(var.second.first.type == YVMIRGenerator::VariableIndex::Checkpoint)
-                    irgen->builder->write_2b_inst(OpCode::StackCheckpoint, var.second.first.index);
+                if(var.second.idx.type == YVMIRGenerator::VariableIndex::Checkpoint)
+                    irgen->builder->write_2b_inst(OpCode::StackCheckpoint, var.second.idx.index);
                 else 
-                    irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first.index);
+                    irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.idx.index);
                 return {};
             }
         }
@@ -1213,13 +1213,13 @@ namespace Yoyo
             for(auto& var : irgen->variables[idx])
             {
                 if (var.first != nm->text) continue;
-                if (var.second.first.type == YVMIRGenerator::VariableIndex::Checkpoint)
-                    irgen->builder->write_2b_inst(OpCode::StackCheckpoint, var.second.first.index);
+                if (var.second.idx.type == YVMIRGenerator::VariableIndex::Checkpoint)
+                    irgen->builder->write_2b_inst(OpCode::StackCheckpoint, var.second.idx.index);
                 else
-                    irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.first.index);
-                if(!var.second.second.should_sret())
+                    irgen->builder->write_2b_inst(OpCode::StackAddr, var.second.idx.index);
+                if(!var.second.type.should_sret())
                 {
-                    irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(var.second.second));
+                    irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(var.second.type));
                 }
                 if(!ret_type->is_lvalue && !ret_type->is_trivially_destructible(irgen))
                 {
@@ -1786,6 +1786,25 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(LambdaExpression* expr)
     {
+        // for lambda expressions, every lambda has a different type this generates the type name
+        std::string lambda_ty = "__lambda" + irgen->block_hash + std::to_string(reinterpret_cast<std::uintptr_t>(expr));
+        StructNativeTy* elem_types = nullptr;
+        if (!expr->captures.empty()) {
+            std::vector<NativeTy*> context_types;
+            context_types.reserve(expr->captures.size());
+            for (auto& capture : expr->captures)
+            {
+                NameExpression name(capture.name);
+                auto type = ExpressionTypeChecker{ irgen }(&name);
+                if (!type) irgen->error(type.error());
+                // references cannot be captured as non owning because `&&` does not exist(not yet?)
+                if (type->is_reference() && capture.cp_type != Ownership::Owning) {
+                    irgen->error(Error(expr, "Cannot capture reference as non owning"));
+                }
+                context_types.push_back(capture.cp_type == Ownership::Owning ? irgen->toNativeType(*type) : NativeType::getPtrTy());
+            }
+        }
+        reinterpret_cast<YVMModule*>(irgen->module)->lambdas[lambda_ty] = {};
         return {};
     }
 

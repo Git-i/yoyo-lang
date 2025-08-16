@@ -78,6 +78,7 @@ namespace Yoyo
 						}
 						//TODO
 						irgen->error(Error(nullptr, "Cannot convert constant to valid macro type"));
+						return std::monostate{};
 					} };
 			}
 			if (expr->text == "parse_expr") {

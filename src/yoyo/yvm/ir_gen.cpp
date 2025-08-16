@@ -71,6 +71,9 @@ namespace Yoyo
 
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(), decl);
         function_cfgs.back().annotate();
+        function_borrow_checkers.emplace_back();
+        function_borrow_checkers.back().make_block(); // entry block
+        function_borrow_checkers.back().current_block = function_borrow_checkers.back().blocks[0].get();
         decltype(this->variables) new_fn_vars;
         new_fn_vars.emplace_back();
 
@@ -97,7 +100,7 @@ namespace Yoyo
                         builder->write_1b_inst(Pop);
                     }
                 }
-                new_fn_vars.back().emplace_back(param.name, std::pair{ VariableIndex{stack_addr, VariableIndex::Alloc}, param.type });
+                new_fn_vars.back().emplace_back(param.name, VariableEntry{ VariableIndex{stack_addr, VariableIndex::Alloc}, param.type });
             }
             idx++;
         }
@@ -108,6 +111,9 @@ namespace Yoyo
         current_Statement = &decl->body;
         std::visit(*this, decl->body->toVariant());
         used_types.pop_back();
+
+        std::visit(BorrowCheckerEmitter{ this }, decl->body->toVariant());
+        function_borrow_checkers.back().check_and_report(this);
 
         variables.swap(new_fn_vars);
         function_cfgs.pop_back();
@@ -133,7 +139,6 @@ namespace Yoyo
     {
         auto as_var = stat->expression->toVariant();
         auto ty = std::visit(ExpressionTypeChecker{this}, as_var).value_or_error();
-        if(!ty.is_error_ty()) validate_expression_borrows(stat->expression.get(), this);
         auto eval = YVMExpressionEvaluator{this};
         std::visit(eval, as_var);
         if(!ty.is_lvalue)
@@ -250,7 +255,7 @@ namespace Yoyo
                 return dets.first == name;
                 }); var != variables[idx].end())
             {
-                auto& type = var->second.second;
+                auto& type = var->second.type;
                 //its only lvalue if its not last use
                 bool is_last_use = function_cfgs.back().last_uses.at(name).contains(expr);
                 type.is_lvalue = !is_last_use;
@@ -355,7 +360,6 @@ namespace Yoyo
         if(decl->initializer)
         {
             auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant()).value_or_error();
-            if(!expr_type.is_error_ty()) validate_expression_borrows(decl->initializer.get(), this);
             auto eval = YVMExpressionEvaluator{this, type};
             std::visit(eval, decl->initializer->toVariant());
             stack_idx = eval.returned_alloc_addr;
@@ -384,7 +388,7 @@ namespace Yoyo
             stack_idx = builder->last_alloc_addr();
         }
         // TODO: stack addr of variables
-        variables.back().emplace_back(name, std::pair{ VariableIndex{stack_idx, VariableIndex::Alloc}, type });
+        variables.back().emplace_back(name, VariableEntry{ VariableIndex{stack_idx, VariableIndex::Alloc}, type });
     }
     void YVMIRGenerator::operator()(BlockStatement* stat)
     {
@@ -459,7 +463,7 @@ namespace Yoyo
 
             builder->create_jump(JumpIfFalse, for_cont);
             //for loop body
-            variables.back().emplace_back(stat->names[0].text, std::pair{ VariableIndex{builder->last_alloc_addr(), VariableIndex::Alloc}, impl->impl_for.subtypes[0] });
+            variables.back().emplace_back(stat->names[0].text, VariableEntry{ VariableIndex{builder->last_alloc_addr(), VariableIndex::Alloc}, impl->impl_for.subtypes[0] });
             current_Statement = &stat->body;
             auto old_break_to = break_to; auto old_cont_to = continue_to;
             break_to = for_cont; continue_to = for_bb;
@@ -503,7 +507,6 @@ namespace Yoyo
             error(Error(expr->condition.get(), "Condition in 'while' must evaluate to a boolean"));
             return;
         }
-        validate_expression_borrows(expr->condition.get(), this);
         auto while_bb = builder->create_label("while_begin");
         auto while_cont = builder->unq_label_name("while_cont");
         
@@ -532,13 +535,6 @@ namespace Yoyo
         if (!tp_e->is_optional() && !tp_e->is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
         if (!stat->else_capture.empty()) { debugbreak(); return; }
         if (stat->is_ref && tp_e->is_value_conversion_result()) { error(Error(stat->condition.get(), "Expanded expression cannot be borrowed", "")); return; }
-
-        std::array<std::pair<Expression*, BorrowResult::borrow_result_t>, 1> borrow_res;
-        borrow_res[0].first = stat->condition.get();
-        borrow_res[0].second = tp_e->is_mutable ?
-            std::visit(BorrowResult::LValueBorrowResult{ this }, stat->condition->toVariant()) :
-            std::visit(BorrowResult{ this }, stat->condition->toVariant());
-        validate_borrows(borrow_res, this);
 
         if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
 
@@ -577,7 +573,7 @@ namespace Yoyo
             Type{ tp_e->is_mutable ? "__ref_mut" : "__ref", {tp_e->subtypes[0]} } :
             tp_e->subtypes[0];
         variable_type.saturate(module, this);
-        variables.back().emplace_back(stat->captured_name, std::pair{ VariableIndex{builder->checkpoint(), VariableIndex::Checkpoint}, std::move(variable_type) });
+        variables.back().emplace_back(stat->captured_name, VariableEntry{ VariableIndex{builder->checkpoint(), VariableIndex::Checkpoint}, std::move(variable_type) });
         current_Statement = &stat->body;
         std::visit(*this, stat->body->toVariant());
 
@@ -661,7 +657,7 @@ namespace Yoyo
             auto t = std::visit(ExpressionTypeChecker{ this, return_t }, stat->expression->toVariant()).value_or_error();
             if (!return_t.is_assignable_from(t, this)) { error(Error(stat, "Type is not convertible to return type")); return; }
             if (return_t.is_non_owning(this))
-                if (!std::visit(LifetimeExceedsFunctionChecker{ this }, stat->expression->toVariant())) debugbreak();
+                if (false /*!std::visit(LifetimeExceedsFunctionChecker{this}, stat->expression->toVariant())*/) debugbreak();
             std::visit(YVMExpressionEvaluator{ this, return_t }, stat->expression->toVariant());
             if (!return_t.should_sret())
             {

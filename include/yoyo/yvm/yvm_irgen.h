@@ -15,10 +15,14 @@ namespace Yoyo {
             IndexType type;
             VariableIndex(size_t idx, IndexType tp) : index(idx), type(tp) {}
         };
+        struct VariableEntry {
+            VariableIndex idx;
+            Type type;
+        };
 		std::vector< //< the list of variables by each scope
             /// the list of variables this scope
             /// the std::pair<> is the variable name and the stack_addr and type of the variable
-            std::vector<std::pair<std::string, std::pair<VariableIndex, Type>>>
+            std::vector<std::pair<std::string, VariableEntry>>
         > variables;
         
 		std::string break_to;

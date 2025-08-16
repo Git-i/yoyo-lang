@@ -10,63 +10,10 @@
 #include "module.h"
 #include "cfg_node.h"
 #include "token.h"
+#include "borrow_checker.h"
 namespace Yoyo
 {
-    class IRGenerator;
-    //TODO: also rename, why can't AI do this :-(
-    /// The basic principle is:
-    /// - If the result of the expressions references any variable, it should be reflected in the borrows
-    /// or mutable_borrows maps
-    class BorrowResult
-    {
-        IRGenerator* irgen;
-    public:
-        enum BorrowType { Mut, Const };
-        explicit BorrowResult(IRGenerator* irgen):irgen(irgen){}
-
-
-        using borrow_result_t = std::vector<std::pair<std::string, BorrowType>>;
-        struct LValueBorrowResult
-        {
-            IRGenerator* irgen;
-            borrow_result_t operator()(NameExpression*);
-            borrow_result_t operator()(BinaryOperation*);
-            borrow_result_t operator()(Expression*){ return {}; }
-            borrow_result_t operator()(CallOperation*);
-            borrow_result_t operator()(PrefixOperation*);
-            borrow_result_t operator()(AsExpression*);
-            borrow_result_t operator()(GroupingExpression*){ return {}; }
-        };
-
-        //literals don't borrow (hopefully)
-        borrow_result_t operator()(IntegerLiteral*) const {return {};}
-        borrow_result_t operator()(BooleanLiteral*) const {return {};}
-        borrow_result_t operator()(TupleLiteral*) const {return {};}
-        borrow_result_t operator()(ArrayLiteral*) const {return {};}
-        borrow_result_t operator()(RealLiteral*) const {return {};}
-        borrow_result_t operator()(StringLiteral*) const {return {};}
-        borrow_result_t operator()(ObjectLiteral*) const {return {};}
-        borrow_result_t operator()(NullLiteral*) const {return {};}
-        borrow_result_t operator()(CharLiteral*) const {return {};}
-        borrow_result_t operator()(LogicalOperation*) const {return {};}
-
-
-        borrow_result_t operator()(NameExpression*);
-        borrow_result_t operator()(PrefixOperation*);
-        borrow_result_t operator()(BinaryOperation*);
-        borrow_result_t operator()(GroupingExpression*);
-        borrow_result_t operator()(CallOperation*);
-        borrow_result_t operator()(MacroInvocation*);
-        borrow_result_t doCall(CallOperation* expr);
-        //TODO
-        borrow_result_t operator()(PostfixOperation*){ return {}; }
-        borrow_result_t operator()(SubscriptOperation*){ return {}; }
-        borrow_result_t operator()(LambdaExpression*){ return {}; }
-        borrow_result_t operator()(ScopeOperation*){ return {}; }
-        borrow_result_t operator()(GCNewExpression*){ return {}; }
-        borrow_result_t operator()(AsExpression*);
-        borrow_result_t operator()(SpawnExpression*);
-    };
+    struct BorrowChecker;
     class IRGenerator
     {
     public:
@@ -79,9 +26,12 @@ namespace Yoyo
         ModuleBase* module;
         std::vector<std::vector<UsingStatement*>> used_types;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
-        std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
+        //std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
+        //std::unordered_map<std::string, BorrowResult::borrow_result_t> lambda_borrows;
         std::vector<CFGNodeManager> function_cfgs;
+        std::vector<BorrowChecker> function_borrow_checkers;
         std::string block_hash;
+        bool has_error = false;
 
         void saturateSignature(FunctionSignature& sig, ModuleBase* md);
         bool isShadowing(const std::string&) const;
@@ -97,7 +47,6 @@ namespace Yoyo
         
         std::optional<Type> inferReturnType(Statement* stat);
         
-        bool has_error = false;
         virtual std::optional<Type> getVariableType(const std::string& name, Expression*) = 0;
         virtual void doFunction(FunctionDeclaration*) = 0;
         virtual void doClass(ClassDeclaration*) = 0;
@@ -110,7 +59,7 @@ namespace Yoyo
         void generateGenericInterface(ModuleBase* md, const std::string& block, GenericInterfaceDeclaration* decl, std::span<Type> types);
         std::optional<Error> apply_using(Type&, ModuleBase*&, std::string&);
     };
-
+    
     class ExpressionTypeChecker
     {
         IRGenerator* irgen;
@@ -171,21 +120,6 @@ namespace Yoyo
         Result operator()(GCNewExpression*);
         Result operator()(MacroInvocation*);
         Result operator()(SpawnExpression*);
-    };
-    
-    
-    //TODO: rename
-    class LifetimeExceedsFunctionChecker
-    {
-        IRGenerator* irgen;
-    public:
-        explicit LifetimeExceedsFunctionChecker(IRGenerator* irgen)
-            : irgen(irgen)
-        {
-        }
-        bool operator()(NameExpression*);
-        bool operator()(Expression*);
-
     };
     struct MacroEvaluator
     {
@@ -254,8 +188,5 @@ namespace Yoyo
         void operator()(Statement*);
         void eval(MacroInvocation*);
     };
-
-    void validate_expression_borrows(Expression*, IRGenerator*);
-    void validate_borrows(std::span<const std::pair<Expression*, BorrowResult::borrow_result_t>> param, IRGenerator* irgen);
 
 }

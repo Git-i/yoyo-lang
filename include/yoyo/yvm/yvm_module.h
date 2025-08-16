@@ -14,6 +14,7 @@ namespace Yoyo
         Yvm::Module code;
         std::unordered_map<ClassDeclaration*, StructNativeTy*> classes_types;
         std::unordered_map<UnionDeclaration*, StructNativeTy*> union_types;
+        // lambda type name -> (capture type, expression)
         std::unordered_map<std::string, std::pair<StructNativeTy*, std::unique_ptr<LambdaExpression>>> lambdas;
 
         std::pair<std::string, std::tuple<std::string, StructNativeTy*, ClassDeclaration*>> findClassWithType(const std::string& block, const std::string& name);

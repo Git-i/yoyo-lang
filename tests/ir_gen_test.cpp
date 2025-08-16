@@ -134,13 +134,15 @@ TEST_CASE("Index Operator", "[operators][array][static_array]")
     std::string source(1 + R"(
 I32_Index: struct = {}
 operator: [](obj: &I32_Index, arg: i32) -> i32 = return arg;
+func: fn(idx: &mut I32_Index, idx_o: I32_Index) = return;
 main: fn(inp: i32) = {
-    a := I32_Index{};
+    a : mut = I32_Index{};
     test::assert(a[inp] == inp, &"a[inp] == inp");
 
     //arrays have special index operators that must be tested separately
     arr: [i32; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     test::assert(*arr[test::i32_to_u32(inp)] == inp, &"arr[inp] == inp");
+    func(&mut a, a);
 }
 )");
     Yoyo::YVMEngine engine;
@@ -300,6 +302,48 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Simple borrow checker", "[borrow-checker]") {
+    std::string source(1 + R"(
+main: fn = {
+    a: mut i32 = 0;
+    with(t as (&a, &mut a)) {
+        
+    }
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+//TEST_CASE("Test lambdas", "[lambda][borrow-checker]")
+//{
+//    std::string source(1 + R"(
+//reassign_int: fn(b: &mut i32) = *b = 20;
+//main: fn = {
+//    b: mut = 100;
+//    // lambdas can be "stored" even if they're non owning
+//    func := |&mut b| {
+//        *b = 40;
+//    }
+//    reassign_int(&mut b); // variables held by lambdas can still be borrowed even if owned by lambda
+//    // variables are borrowed when the lambda is used (or moved)
+//    func();
+//}
+//)");
+//    Yoyo::YVMEngine engine;
+//    addTestModule(&engine);
+//    auto mod = engine.addModule("source", source);
+//    REQUIRE(engine.compile());
+//    engine.prepareForExecution();
+//    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+//    auto fib = createFiberFor(mod, "source::main");
+//    engine.execute();
+//}
 #ifdef USE_GRAPHVIZ
 void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo::CFGNode*, Agnode_t*>& nodes, std::set<Yoyo::CFGNode*>& prepared)
 {
