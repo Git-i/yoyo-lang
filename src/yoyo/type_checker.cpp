@@ -1,0 +1,1247 @@
+#include "ir_gen.h"
+#include "overload_details.h"
+#include "overload_resolve.h"
+#include "type_checker.h"
+#include <ranges>
+#define core_module irgen->module->engine->modules.at("core").get()
+namespace Yoyo
+{
+    /// Similar to saturate but can switch to the AST for incomplete generic types
+    /// also substitutes generics given an already existing context
+    /// also returns the statement that the type belongs to if we followed that path
+    Statement* normalize_type(Type&, const std::unordered_map<std::string, Type>&);
+	void TypeChecker::operator()(IfStatement* stat)
+	{
+        state->add_constraint(EqualConstraint{ 
+            std::visit(targetless(), stat->condition->toVariant()), 
+            Type{.name = "bool", .module = core_module} 
+        });
+        std::visit(*this, stat->then_stat->toVariant());
+        if (stat->else_stat) std::visit(*this, stat->else_stat->toVariant());
+	}
+    void TypeChecker::operator()(WhileStatement* stat)
+    {
+        state->add_constraint(EqualConstraint{
+            std::visit(targetless(), stat->condition->toVariant()),
+            Type{.name = "bool", .module = core_module}
+            });
+
+        std::visit(*this, stat->body->toVariant());
+    }
+    void TypeChecker::operator()(ForStatement* stat)
+    {
+        auto iter = std::visit(targetless(), stat->iterable->toVariant());
+        auto item = state->new_type_var();
+
+        state->add_constraint(ImplInterfaceConstraint{
+                iter,
+                Type{.name = "Iterator",  .subtypes = {item}, .module = core_module, .block_hash = "core::",}
+            });
+
+        // new variable block
+        state->push_variable_block();
+        state->create_variable(std::string(stat->names[0].text), std::move(item));
+        std::visit(*this, stat->body->toVariant());
+        state->pop_variable_block();
+    }
+    void TypeChecker::operator()(BlockStatement* stat)
+    {
+        state->push_variable_block();
+        for (auto& stt : stat->statements) {
+            std::visit(*this, stt->toVariant());
+        }
+        state->pop_variable_block();
+    }
+    void TypeChecker::operator()(ReturnStatement* stat)
+    {
+        // if its not a void function there must be a return expression
+        if (!state->return_type.is_void() && !stat->expression) {
+            irgen->error(Error(stat, "Expected expression in return statement of non-void function"));
+            return;
+        }
+        if (stat->expression) {
+            // `target` should handle it but add equality constraint for safety
+            state->add_constraint(EqualConstraint{
+                std::visit(new_target(state->return_type), stat->expression->toVariant()),
+                state->return_type
+                });
+        }
+    }
+    void TypeChecker::operator()(ExpressionStatement* stat)
+    {
+        std::visit(targetless(), stat->expression->toVariant());
+    }
+    void TypeChecker::operator()(ConditionalExtraction* stat)
+    {
+        auto tp = std::visit(targetless(), stat->condition->toVariant());
+        auto obj_ty = state->new_type_var();
+        if (stat->is_ref) {
+            // value_conversion_result::<T> extracts to T
+            // optional extracts to T, ref extracts to &T or &mut T
+            // ref_conversion_result::<T> extracts to T, ref extracts to &T or &mut T
+            state->add_constraint(RefExtractsToConstraint{
+                    tp,
+                    obj_ty
+                });
+        }
+        else {
+            state->add_constraint(ExtractsToConstraint{ tp, obj_ty });
+        }
+    }
+    FunctionType TypeChecker::operator()(IntegerLiteral* lit) const {
+        if (target)
+            if (target->is_integral()) return { *target };
+            else {
+                irgen->error(Error(lit, "Cannot convert integer literal to " + target->full_name())); 
+                return Type{ "__error_type" };
+            }
+        
+        lit->evaluated_type = state->new_type_var();
+        state->add_constraint(IsIntegerConstraint{lit->evaluated_type});
+        state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text)});
+    }
+    FunctionType TypeChecker::operator()(BooleanLiteral*) const {
+        return Type{ "bool" };
+    }
+    FunctionType TypeChecker::operator()(TupleLiteral* lit) const {
+        if (target) {
+            if (!target->is_tuple()) {
+                irgen->error(Error(lit, "Cannot convert tuple literal to " + target->full_name()));
+                return Type{ "__error_type" };
+            }
+            if (target->subtypes.size() != lit->elements.size()) {
+                irgen->error(Error(lit, "Tuple element count mismatch"));
+                return Type{ "__error_type" };
+            }
+        }
+        lit->evaluated_type = Type{ .name = "__tup", .module = irgen->module->engine->modules.at("core").get() };
+        for (auto i : std::views::iota(0u, lit->elements.size())) {
+            auto elem_ty = 
+                std::visit(target ? new_target(target->subtypes[i]) : *this, lit->elements[i]->toVariant());
+            lit->evaluated_type.subtypes.push_back(elem_ty);
+        }
+
+        return lit->evaluated_type;
+    }
+    // FunctionType TypeChecker::operator()(ArrayLiteral* lit) const { /*TODO*/ }
+    FunctionType TypeChecker::operator()(RealLiteral* lit) const {
+        if (target)
+            if (target->is_floating_point()) return { *target };
+            else {
+                irgen->error(Error(lit, "Cannot convert real literal to " + target->full_name()));
+                return Type{ "__error_type" };
+            }
+
+        lit->evaluated_type = state->new_type_var();
+        state->add_constraint(IsFloatConstraint{ lit->evaluated_type });
+        state->add_constraint(CanStoreRealConstraint{ lit->evaluated_type, std::stod(std::string(lit->token.text)) });
+        return lit->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(StringLiteral* str) const {
+        if (target && !target->is_str()) {
+            irgen->error(Error(str, "Cannot convert string literal to " + target->full_name()));
+        }
+        str->evaluated_type = Type{ .name = "str",
+            .module = irgen->module->engine->modules.at("core").get() };
+        // check all the string interpolation parameters
+        for (auto& entry : str->literal) {
+            if (std::holds_alternative<std::unique_ptr<Expression>>(entry)) {
+                auto& interp = std::get<std::unique_ptr<Expression>>(entry);
+                state->add_constraint(ToStringConstraint{ std::visit(targetless(), interp->toVariant())});
+            }
+        }
+        return str->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(NameExpression* ex) const {
+        irgen->error(Error(ex, "Not implemented"));
+        return Type{ "__error_type" };
+    }
+    FunctionType TypeChecker::operator()(GenericNameExpression* ex) const {
+        irgen->error(Error(ex, "Not implemented"));
+        return Type{ "__error_type" };
+    }
+    FunctionType TypeChecker::operator()(PrefixOperation* op) const {
+        // I could add an equality constraint with the result
+        switch (op->op.type)
+        {
+            using enum TokenType;
+        case Minus: {
+            // -<expr>
+            op->evaluated_type = state->new_type_var();
+            state->add_constraint(HasUnaryMinusConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type });
+            break;
+        }
+        case Bang: {
+            // !<expr>
+            op->evaluated_type = state->new_type_var();
+            state->add_constraint(HasUnaryNotConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type });
+            break;
+        }
+        case Star:
+        {
+            op->evaluated_type = state->new_type_var();
+            state->add_constraint(IsReferenceToConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type });
+            break;
+        }
+        case Ampersand:
+        {
+            // `&<expr>` is defined for every type except for references
+            auto inner = std::visit(targetless(), op->operand->toVariant());
+            op->evaluated_type = Type{ .name = "__ref", .subtypes = { inner }, .module = core_module };
+            state->add_constraint(IsNotReferenceConstraint{ std::move(inner) });
+            break;
+        }
+        case RefMut:
+        {
+            auto inner = std::visit(targetless(), op->operand->toVariant());
+            op->evaluated_type = Type{ .name = "__ref_mut", .subtypes = { inner }, .module = core_module };
+            state->add_constraint(IsNotReferenceConstraint{ std::move(inner) });
+            break;
+        }
+        default: break; // unreachable
+        }
+
+        if (target) {
+            state->add_constraint(EqualConstraint{ op->evaluated_type, *target });
+            //op->type = *target; // the node is going to be converted
+        }
+        return op->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(BinaryOperation* expr) const {
+        using enum TokenType;
+        auto do_overloadable_explicit_token = [expr, this](TokenType tk) { 
+            auto left = std::visit(targetless(), expr->lhs->toVariant());
+            auto right = std::visit(targetless(), expr->rhs->toVariant());
+            expr->evaluated_type = state->new_type_var();
+            state->add_constraint(BinaryOperableConstraint{ left, right, expr->evaluated_type, tk });
+            // constrain the return type for comparison operators
+            // == and != support any return type
+            if (expr->op.type == DoubleEqual || expr->op.type == BangEqual) {
+                expr->evaluated_type = Type{ .name = "bool",.module = core_module };
+            }
+            else if (expr->op.type != Spaceship) {
+                state->add_constraint(ComparableConstraint{ expr->evaluated_type });
+                expr->evaluated_type = Type{ .name = "bool", .module = core_module };
+            }
+            if (target) {
+                state->add_constraint(EqualConstraint{ expr->evaluated_type, *target });
+                //op->type = *target; // the node is going to be converted
+            }
+            return expr->evaluated_type;
+            };
+        auto do_overloadable = [expr, this, &do_overloadable_explicit_token]() {
+            return do_overloadable_explicit_token(expr->op.type);
+            };
+        switch (expr->op.type) {
+        case Minus: [[fallthrough]];
+        case Star: [[fallthrough]];
+        case Slash: [[fallthrough]];
+        case Percent: [[fallthrough]];
+        case DoubleGreater: [[fallthrough]];
+        case DoubleLess: [[fallthrough]];
+        case Plus: return do_overloadable();
+        case Less: [[fallthrough]];
+        case GreaterEqual: [[fallthrough]];
+        case LessEqual: [[fallthrough]];
+        case BangEqual: [[fallthrough]];
+        case DoubleEqual: [[fallthrough]];
+        case Spaceship: [[fallthrough]];
+        case Greater: return do_overloadable_explicit_token(TokenType::Spaceship); // comparisons are all overloaded with <=>
+        case Dot: // TODO;
+        case DoubleDotEqual: irgen->error(Error(expr, "Not implemented yet")); return {};
+        case DoubleDot: irgen->error(Error(expr, "Not implemented yet")); return {};
+        }
+    }
+    FunctionType TypeChecker::operator()(GroupingExpression* expr) const {
+        expr->evaluated_type = std::visit(*this, expr->expr->toVariant());
+        return expr->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(LogicalOperation* expr) const {
+        if (target && !target->is_boolean()) {
+            irgen->error(Error(expr, "Cannot convert bool to " + target->full_name()));
+            return Type{ "__error_type" };
+        }
+        auto left = std::visit(targetless(), expr->lhs->toVariant());
+        auto right = std::visit(targetless(), expr->rhs->toVariant());
+        // nothing can implicitly convert to bool and logical operations only work for and return bools
+        state->add_constraint(EqualConstraint{ left, Type{.name = "bool", .module = core_module } });
+        state->add_constraint(EqualConstraint{ right, Type{ .name = "bool", .module = core_module }});
+        expr->evaluated_type = Type{ .name = "bool", .module = core_module };
+        return expr->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(PostfixOperation* op) const { return {}; }
+    FunctionType TypeChecker::operator()(CallOperation* op) const {
+        auto callee_ty = std::visit(targetless(), op->callee->toVariant());
+        if (callee_ty.name.starts_with("__union_var")) {
+            // not a function call, actually Union initialization
+            // TODO
+            return Type{ "__error_type" };
+        }
+        state->add_constraint(IsInvocableConstraint{ callee_ty });
+        // is of the form <expr>.<expr>() not <expr>()
+        auto is_bound = callee_ty.is_bound;
+        if (is_bound) {
+            irgen->error(Error(op, "Not implemented"));
+            return Type{ "__error_type" };
+        }
+        for (auto i  : std::views::iota(0u, op->arguments.size())) {
+            state->add_constraint(ValidAsFunctionArgConstraint{
+                std::visit(targetless(), op->arguments[i]->toVariant()),
+                callee_ty,
+                i + is_bound
+                });
+        }
+        op->evaluated_type = state->new_type_var();
+        state->add_constraint(IsReturnOfConstraint{ op->evaluated_type, callee_ty });
+        if (target) {
+            state->add_constraint(EqualConstraint{ op->evaluated_type, *target });
+        }
+        return op->evaluated_type;
+    }
+    // TODO
+    //FunctionType TypeChecker::operator()(SubscriptOperation* subs) const {
+    //    auto obj = std::visit(targetless(), subs->object->toVariant());
+    //    auto idx = std::visit(targetless(), subs->index->toVariant());
+    //    // state->add_constraint();
+    //}
+    //FunctionType TypeChecker::operator()(LambdaExpression*) const {}
+    bool advanceScopeModified(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen) {
+        if (md->modules.contains(type.name))
+        {
+            md = md->modules.at(type.name);
+            hash = md->module_hash;
+            return true;
+        }
+        if (auto dets = md->findClass(hash, type.name); dets.second)
+        {
+            if (std::get<0>(*dets.second) != hash + type.name + "::") return false;
+            hash = std::get<0>(*dets.second);
+            return true;
+        }
+        if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
+        {
+            if (type.subtypes.size() != decl->clause.types.size()) return false;
+            for (auto& sub : type.subtypes) sub.saturate(md, irgen);
+            auto mangled_name = decl->name + IRGenerator::mangleGenericArgs(type.subtypes);
+            irgen->generateGenericClass(md, hsh, decl, std::span{ type.subtypes });
+            if (auto dets = md->findClass(hash, mangled_name); dets.second)
+            {
+                hash = std::get<0>(*dets.second); return true;
+            }
+            return false;
+        }
+        if (auto [name, fn] = md->findFunction(hash, type.name); fn)
+        {
+            hash = name + type.name + "::";
+            return true;
+        }
+        if (auto [hsh, interface] = md->findInterface(hash, type.name); interface)
+        {
+            hash = hsh + "%%" + type.name + "%%interface"; //interfaces are terminal and cannot have subtyes
+            return true;
+        }
+        if (auto alias = md->findAlias(hash, type.name); alias)
+        {
+            advanceScopeModified(*alias, md, hash, irgen);
+        }
+        return false;
+    }
+    template<class T>
+    concept has_clause = requires(T obj) {
+        { obj.clause } -> std::same_as<GenericClause&>;
+    };
+    FunctionType TypeChecker::operator()(ScopeOperation* scp) const {
+        // we have 2 modes for scope checking
+        // the first we check the module table and keep traversing
+        // till we occur an incomplete generic (subtypes not monomorphized into module table)
+        // we switch to looking directly at the generic's syntax tree
+        ModuleBase* md = irgen->module;
+        std::string hash = irgen->block_hash;
+        std::string second_to_last = "";
+        auto iterator = UnsaturatedTypeIterator(scp->type);
+        auto type = iterator.next();
+        auto err = irgen->apply_using(type, md, hash);
+        if (err) {
+            err->span = SourceSpan{ scp->beg, scp->end };
+        }
+        second_to_last.swap(type.name);
+
+        bool generic_mode = false;
+        Type generic_type;
+        Statement* current_stat = nullptr;
+
+        while (!iterator.is_end())
+        {
+            type = iterator.next();
+            if (!advanceScopeModified(type, md, hash, irgen)) {
+                // check if its generic
+                if (auto [hsh, interface] = md->findGenericInterface(hash, type.name); interface)
+                {
+                    generic_mode = true;
+                    std::swap(type, generic_type);
+                    current_stat = interface;
+                    break;
+                }
+                else if (auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
+                {
+                    generic_mode = true;
+                    std::swap(type, generic_type);
+                    current_stat = fn;
+                    break;
+                }
+                else if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
+                {
+                    generic_mode = true;
+                    std::swap(type, generic_type);
+                    current_stat = decl;
+                    break;
+                }
+            }
+            second_to_last.swap(type.name);
+        }
+
+        auto get_generic_clause = []<typename T>(T* arg) {
+            if constexpr (has_clause<T>) {
+                return &arg->clause;
+            }
+            else return static_cast<GenericClause*>(nullptr);
+        };
+        auto get_decl_name = []<std::derived_from<Statement> T>(T* arg)  -> std::string {
+            if constexpr (std::derived_from<T, ClassDeclaration>) {
+                return arg->name;
+            }
+            else if constexpr (std::derived_from<T, FunctionDeclaration>) {
+                return arg->name;
+            }
+            else if constexpr (std::derived_from<T, UnionDeclaration>) {
+                return arg->name;
+            }
+            else if constexpr (std::same_as<T, EnumDeclaration>) {
+                return arg->identifier;
+            }
+            else if constexpr (std::derived_from<T, InterfaceDeclaration>) {
+                return arg->name;
+            }
+            else if constexpr (std::derived_from<T, AliasDeclaration>) {
+                return arg->name;
+            }
+            else if constexpr (std::derived_from<T, ConstantDeclaration>) {
+                return arg->name;
+            }
+            return "__not_a_declaration__";
+        };
+        auto get_next_stat = [&get_decl_name](Statement* stat, const std::string& name, auto& self) -> Statement* {
+            if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) { // Class and generic class declarations
+                auto it = std::ranges::find_if(cls->stats, [&get_decl_name, &name](auto& elem) {
+                    return std::visit(get_decl_name, elem->toVariant()) == name;
+                    });
+                if (it != cls->stats.end()) {
+                    return it->get();
+                }
+            }
+            else if (auto fn = dynamic_cast<FunctionDeclaration*>(stat)) {
+                return self(fn->body.get(), name, self); // maybe its defined in the function body
+            }
+            else if (auto enm = dynamic_cast<EnumDeclaration*>(stat)) {
+                auto it = std::ranges::find_if(enm->stats, [&get_decl_name, &name](auto& elem) {
+                    return std::visit(get_decl_name, elem->toVariant()) == name;
+                    });
+                if (it != enm->stats.end()) {
+                    return it->get();
+                }
+            }
+            // interfaces cannot have sub-definitions (i.e cant define struct within interface)
+            else if (auto unn = dynamic_cast<UnionDeclaration*>(stat)) {
+                auto it = std::ranges::find_if(unn->sub_stats, [&get_decl_name, &name](auto& elem) {
+                    return std::visit(get_decl_name, elem->toVariant()) == name;
+                    });
+                if (it != unn->sub_stats.end()) {
+                    return it->get();
+                }
+            }
+            // within function body
+            else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
+                for (auto& stat : blk->statements) {
+                    auto stat_name = std::visit(get_decl_name, stat->toVariant());
+                    if (stat_name == name) {
+                        return stat.get();
+                    }
+                    // we can look deeper as this statement is not a declaration
+                    else if (stat_name == "__not_a_declaration__") {
+                        auto res = self(stat.get(), name, self);
+                        if (res) return res;
+                    }
+                }
+            }
+            else if (auto whl = dynamic_cast<WhileStatement*>(stat))
+                return self(whl->body.get(), name, self);
+            else if (auto fr = dynamic_cast<ForStatement*>(stat))
+                return self(fr->body.get(), name, self);
+            else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
+                auto exists = self(if_stat->then_stat.get(), name, self);
+                if (exists) return exists;
+                if (if_stat->else_stat) return self(if_stat->else_stat.get(), name, self);
+            }
+            else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
+                auto exists = self(cond->body.get(), name, self);
+                if (exists) return exists;
+                if (cond->else_body) return self(cond->else_body.get(), name, self);
+            }
+            else if (auto with = dynamic_cast<WithStatement*>(stat)) {
+                return self(with->body.get(), name, self);
+            }
+            return nullptr;
+        };
+        if (generic_mode) {
+            // T -> i32, T -> ?1
+            // this works because even though types can be nested (struct declared in struct)
+            // the generic names must be unique (i.e you can't use a generic name that already exists in scope)
+            std::unordered_map<std::string, Type> generic_instantiations;
+            auto clause = std::visit(get_generic_clause, current_stat->toVariant());
+            // specifying more types than what the schema allows
+            if (generic_type.subtypes.size() > clause->types.size()) {
+                irgen->error(Error(scp, "Too many generic types specified"));
+                return Type{ "__error_type" };
+            }
+            hash += generic_type.name;
+            std::vector<Type> subtypes;
+            // initialize each generic starting with the specified ones
+            for (auto i : std::views::iota(0u, generic_type.subtypes.size())) {
+                // TODO normalize the specified types
+                subtypes.push_back(generic_type.subtypes[i]);
+                generic_instantiations[clause->types[i]] = generic_type.subtypes[i];
+            }
+            // initialize unspecified generics to type variables
+            for (auto i : std::views::iota(generic_type.subtypes.size(), clause->types.size())) {
+                generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
+            }
+            hash += IRGenerator::mangleGenericArgs(subtypes) + "::";
+            subtypes.clear();
+            // keep traversing the iterator
+            while (!iterator.is_end()) {
+                generic_type = iterator.next();
+                // instead of searching the module tree, we search the AST directly because
+                // the parent has not been monomorphized
+                current_stat = get_next_stat(current_stat, generic_type.name, get_next_stat);
+                if (!current_stat) {
+                    irgen->error(Error(scp, "No entity named " + generic_type.name));
+                    return Type{ "__error_type" };
+                }
+                clause = std::visit(get_generic_clause, current_stat->toVariant());
+                auto num_types_in_clause = clause ? clause->types.size() : 0;
+                if (generic_type.subtypes.size() > num_types_in_clause) {
+                    irgen->error(Error(scp, "Too many generic types specified"));
+                    return Type{ "__error_type" };
+                }
+                for (auto i : std::views::iota(0u, generic_type.subtypes.size())) {
+                    subtypes.push_back(generic_type.subtypes[i]);
+                    generic_instantiations[clause->types[i]] = generic_type.subtypes[i];
+                }
+                for (auto i : std::views::iota(generic_type.subtypes.size(), num_types_in_clause)) {
+                    generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
+                }
+                hash += generic_type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
+                subtypes.clear();
+
+            }
+            
+            // at this point we are at the last element of the iter ( foo::bar::...::[end] )
+            auto last = iterator.last();
+            // scope expressions must refer to values not types
+            // so the last element must be a function, union variant, constant, enum variant
+            // and the function can be from an interface too so thats a slightly special case
+            auto next_stat = get_next_stat(current_stat, generic_type.name, get_next_stat);
+            // there is no next valid statement so its either an enum variant, interface function or union variant
+            if (!next_stat) {
+                if (auto intf = dynamic_cast<InterfaceDeclaration*>(current_stat)) {
+                    auto it = std::ranges::find_if(intf->methods, [&last](auto& mth) {
+                        return mth->name == last.name;
+                        });
+                    if (it == intf->methods.end()) {
+                        irgen->error(Error(scp, "No method name '" + last.name + "' in the specified interface"));
+                        return Type{ "__error_type" };
+                    }
+                    // return { Type{"__interface_fn" + actual_hash + interface->name + "$" + last.name } };
+                }
+                // enums
+                if (auto enm = dynamic_cast<EnumDeclaration*>(current_stat)) {
+                    // not valid enum variant
+                    if (!enm->values.contains(last.name)) {
+                        irgen->error(Error(scp, "Enum doesn't contain specified value"));
+                    }
+                    if (!last.subtypes.empty()) {
+                        irgen->error(Error(scp, "Enum child cannot have subtypes"));
+                        return Type{ "__error_type" };
+                    }
+                    // TODO enum hash
+                    scp->evaluated_type = Type{ .name = generic_type.name, .module = md, .block_hash = hash };
+                }
+                if (auto unn = dynamic_cast<UnionDeclaration*>(current_stat)) {
+                    if (!unn->fields.contains(last.name)) {
+                        irgen->error(Error(scp, "Union doesn't contain specified value"));
+                    }
+                    if (!last.subtypes.empty()) {
+                        irgen->error(Error(scp, "Union child cannot have subtypes"));
+                        return Type{ "__error_type" };
+                    }
+                    Type this_tp = unn->fields.at(last.name);
+                    normalize_type(this_tp, generic_instantiations);
+                    // TODO union hash
+                    scp->evaluated_type = Type{
+                        .name = "__union_var" + unn->name + "$" + last.name,
+                        .subtypes = { this_tp },
+                        .module = md,
+                        .block_hash = hash,
+                    };
+                }
+            }
+            
+            if (auto fn = dynamic_cast<FunctionDeclaration*>(next_stat)) {
+                scp->evaluated_type.name = "__fn";
+                scp->evaluated_type.block_hash = hash;
+                // function may be generic so we add its types to our generic instantiations
+                if (auto generic = dynamic_cast<GenericFunctionDeclaration*>(fn)) {
+                    for (auto i : std::views::iota(0u, last.subtypes.size())) {
+                        generic_instantiations[clause->types[i]] = last.subtypes[i];
+                    }
+                    // initialize unspecified generics to type variables
+                    for (auto i : std::views::iota(last.subtypes.size(), clause->types.size())) {
+                        generic_instantiations[clause->types[i]] = state->new_type_var();
+                    }
+                }
+                // function signature is stored in subtypes
+                for (auto& param : fn->signature.parameters) {
+                    scp->evaluated_type.subtypes.push_back(param.type);
+                    normalize_type(scp->evaluated_type.subtypes.back(), generic_instantiations);
+                }
+                scp->evaluated_type.subtypes.push_back(fn->signature.returnType);
+                normalize_type(scp->evaluated_type.subtypes.back(), generic_instantiations);
+            }
+            if (auto constant = dynamic_cast<ConstantDeclaration*>(next_stat)) {
+                scp->evaluated_type = constant->type;
+                normalize_type(scp->evaluated_type, generic_instantiations);
+            }
+        }
+        // no generics were encountered at all and we've reached the last entry
+        else {
+            // TODO
+        }
+        return scp->evaluated_type;
+    }
+    //FunctionType TypeChecker::operator()(ObjectLiteral* lit) const {
+    //    auto stat = normalize_type(lit->t, {});
+    //}
+    FunctionType TypeChecker::operator()(NullLiteral* lit) const {
+        if (target) {
+            if (!target->is_optional()) {
+                irgen->error(Error(lit, "Cannot convert from 'null' to non-optional type"));
+                return Type{ "__error_type" };
+            }
+            lit->evaluated_type = *target;
+            return *target;
+        }
+        auto inner = state->new_type_var();
+        lit->evaluated_type = Type{ .name = "__opt", .subtypes = { inner }, .module = core_module };
+        return lit->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(AsExpression* ex) const {
+        irgen->error(Error(ex, "Not implemented"));
+        return Type{ "__error_type" };
+    }
+    FunctionType TypeChecker::operator()(CharLiteral* ch) const {
+        if (target) {
+            if (!target->is_char()) {
+                irgen->error(Error(ch, "Cannot convert char to " + target->full_name()));
+            }
+        }
+        ch->evaluated_type = Type{ .name = "char", .module = core_module };
+        return ch->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(GCNewExpression* gcn) const {
+        auto sub_type = std::visit(
+            target ?
+                new_target(target->subtypes[0]) :
+                *this,
+            gcn->target_expression->toVariant());
+        state->add_constraint(OwningConstraint{ sub_type }); // cannot store non owning value in gc
+        gcn->evaluated_type = Type{ .name = "__gcref", .subtypes = { sub_type }, .module = core_module };
+        return gcn->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(MacroInvocation* mcr) const {
+        MacroEvaluator{ irgen }.eval(mcr);
+        mcr->evaluated_type = std::visit(*this, mcr->result->toVariant());
+        return mcr->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(SpawnExpression* ex) const {
+        irgen->error(Error(ex, "Not implemented"));
+        return Type{ "__error_type" };
+    }
+
+    static bool is_type_variable(const Type& tp) {
+        return tp.name[0] == '?';
+    }
+    static bool has_type_variable(const Type& tp) {
+        if (is_type_variable(tp)) return true;
+        for (auto& sub : tp.subtypes) {
+            if (has_type_variable(sub)) return true;
+        }
+        return false;
+    }
+    //======================================//
+    //========CONSTRAINT SOLVING============//
+    //======================================//
+
+    // TODO 
+    // any constraint that just checks should also
+    // reduce the domain but still return false (eg to string constraint)
+    bool ConstraintSolver::operator()(IsIntegerConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (is_type_variable(type)) {
+            auto domain = state->get_type_domain(type);
+            auto grp = Domain::Group{};
+            grp.add_type(Type{ .name = "i8", .module = core_module });
+            grp.add_type(Type{ .name = "i16", .module = core_module });
+            grp.add_type(Type{ .name = "i32", .module = core_module });
+            grp.add_type(Type{ .name = "i64", .module = core_module });
+
+            grp.add_type(Type{ .name = "u8", .module = core_module });
+            grp.add_type(Type{ .name = "u16", .module = core_module });
+            grp.add_type(Type{ .name = "u32", .module = core_module });
+            grp.add_type(Type{ .name = "u64", .module = core_module });
+            if(auto error = domain->add_and_intersect(std::move(grp)))
+                irgen->error(*error);
+        }
+        else {
+            if (!type.is_integral()) irgen->error(Error(con.expr, "This type must be an integer"));
+            // this constraint is done
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(CanStoreIntegerConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (is_type_variable(type)) {
+            if (auto as_u64 = std::get_if<uint64_t>(&con.value))
+                state->get_type_domain(type)->constrain_to_store(*as_u64);
+            else
+                state->get_type_domain(type)->constrain_to_store(std::get<int64_t>(con.value));
+            return false;
+        }
+        else {
+            // TODO
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(IsFloatConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (is_type_variable(type)) {
+            auto domain = state->get_type_domain(type);
+            auto grp = Domain::Group{};
+            grp.add_type(Type{ .name = "f32", .module = core_module });
+            grp.add_type(Type{ .name = "f64", .module = core_module });
+            if (auto error = domain->add_and_intersect(std::move(grp)))
+                irgen->error(*error);
+        }
+        else {
+            if (!type.is_floating_point()) irgen->error(Error(con.expr, "This type must be an floating point"));
+            // this constraint is done
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(CanStoreRealConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (is_type_variable(type)) {
+            state->get_type_domain(type)->constrain_to_store(con.value);
+            return false; // we return false because the domain may get populated again and we need to still filter
+        }
+        else {
+            // TODO
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(ToStringConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (is_type_variable(type)) {
+            return false;
+        }
+        else if (has_type_variable(type)) {
+            // we can technically check the class definition
+            return false;
+        }
+        else {
+            // TODO Type::has_to_str()
+            return true;
+        }
+    }
+    std::optional<Error> generic_match(Type tp1, Type tp2, ASTNode* loc, ConstraintSolver* solver) {
+        // include the block in the name
+        // because type.subtypes only occurs generics at the end ─────────────────╮
+        // so we can check cases where the generic occurs earlier ──╮             │
+        //                        ╭─────────────────────────────────╯ like here   │
+        //                       vvv                                              │
+        // eg Module::Something::<T>::OtherStuff::Type[::<U>] <───────────────────╯
+        tp1.name = tp1.full_name();
+        tp2.name = tp2.full_name();
+        auto tp1_iter = UnsaturatedTypeIterator(tp1);
+        auto tp2_iter = UnsaturatedTypeIterator(tp2);
+        if (tp1_iter.num_iters() != tp2_iter.num_iters()) {
+            return Error(loc, std::format("The types {} and {} are incompatible", tp1.name, tp2.name));
+        }
+        while (!tp1_iter.is_end()) {
+            auto this1 = tp1_iter.next();
+            auto this2 = tp2_iter.next();
+            // we now have an atomic framgent of the type path that isn't the end
+            // using the the earlier example we have    ╭ one of these individually with correct subtype representation
+            //   ╭────────────┬─────────────┬───────────╯        
+            // vvvvvv  vvvvvvvvvvvvvv  vvvvvvvvvv
+            // Module::Something::<T>::OtherStuff::Type::<U>
+            if (this1.name != this2.name) {
+                return Error(loc, std::format("The types {} and {} are incompatible", tp1.name, tp2.name));
+            }
+            if (this1.subtypes.size() != this2.subtypes.size()) {
+                return Error(loc, std::format("The types {} and {} are incompatible", tp1.name, tp2.name));
+            }
+            for (auto i : std::views::iota(0u, this1.subtypes.size())) {
+                // this is the T in Something::<T> hence it could be a varaible
+                // or another full on type
+                if (is_type_variable(this1.subtypes[i]) || is_type_variable(this2.subtypes[i])) {
+                    solver->add_new_constraint(EqualConstraint{ this1.subtypes[i], this2.subtypes[i] });
+                }
+                else {
+                    if(auto failed = generic_match(this1.subtypes[i], this2.subtypes[i], loc, solver))
+                        return failed;
+                }
+            }
+        }
+        auto end1 = tp1_iter.last(); // using the example this is `Type` with proper subtypes
+        auto end2 = tp2_iter.last();
+        if (end1.name != end2.name) {
+            return Error(loc, std::format("The types {} and {} are incompatible", tp1.name, tp2.name));
+        }
+        if (end1.subtypes.size() != end2.subtypes.size()) {
+            return Error(loc, std::format("The types {} and {} are incompatible", tp1.name, tp2.name));
+        }
+        for (auto i : std::views::iota(0u, end1.subtypes.size())) {
+            if (is_type_variable(end1.subtypes[i]) || is_type_variable(end2.subtypes[i])) {
+                solver->add_new_constraint(EqualConstraint{ end1.subtypes[i], end2.subtypes[i] });
+            }
+            else {
+                if (auto failed = generic_match(end1.subtypes[i], end2.subtypes[i], loc, solver))
+                    return failed;
+            }
+        }
+        return std::nullopt;
+    }
+    bool can_match(Type tp1, Type tp2);
+    bool ConstraintSolver::operator()(EqualConstraint& con)
+    {
+        auto type1 = state->best_repr(con.type1);
+        auto type2 = state->best_repr(con.type2);
+        if (is_type_variable(type1)) {
+            // ?1 and ?2 <case 1>
+            if (is_type_variable(type2)) {
+                state->unify_types(type1, type2);
+            }
+            // type 2 can be a Type::<?1> or a Path::To::<?1>::Type::Val
+            // but not exaclty a type variable, what to do here?
+            // ?1 and Something::<?2>::Type <case 2>
+            else if (has_type_variable(type2)) {
+                return false; //keep for later?
+            }
+            // ?1 and concrete <case 3>
+            else {
+                if(auto err = state->get_type_domain(type1)->equal_constrain(std::move(type2)))
+                    irgen->error(*err);
+            }
+        }
+        else if (has_type_variable(type1)) {
+            // same as <case 2>
+            if (is_type_variable(type2)) {
+                return false; //keep for later?
+            }
+            // Something::<?1>::Type and Something::<?1>::Type <case 4>
+            else if (has_type_variable(type2)) {
+                // dissect and match to generate  new constraints
+                // this can come in three forms 
+                // the block string can have the variables ...::Something::<?1>::...
+                // the actual subtypes can have the variables (much easier)
+                // the actual subtypes match either form 1 or 2 (recursive) (actual hell)
+                // or both
+                // luckily we have a neat routine for that
+                //begin checking subtypes
+                if(auto err = generic_match(std::move(type1), std::move(type2), con.expr, this))
+                    irgen->error(*err);
+            }
+            // Something::<?1>::Type and concrete <case 5>
+            else {
+                // generic match can also work here probably
+                if (auto err = generic_match(std::move(type1), std::move(type2), con.expr, this))
+                    irgen->error(*err);
+            }
+        }
+        else {
+            // type 1 is concrete
+            
+            // concrete and ?2 (same as <case 3>)
+            if (is_type_variable(type2)) {
+                if (auto err = state->get_type_domain(type2)->equal_constrain(std::move(type1)))
+                    irgen->error(*err);
+            }
+            // concrete and Something::<?2>::Type (same as <case 5>)
+            else if (has_type_variable(type2)) {
+                if (auto err = generic_match(std::move(type1), std::move(type2), con.expr, this))
+                    irgen->error(*err);
+            }
+            // concrete and concrete
+            else {
+                if (!type1.is_equal(type2)) {
+                    irgen->error(Error(con.expr, std::format("The types {} and {} have to be equal", 
+                        type1.pretty_name(irgen->block_hash),
+                        type2.pretty_name(irgen->block_hash))));
+                }
+            }
+        }
+        return true; //remove this constraint
+    }
+    bool ConstraintSolver::operator()(OwningConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (has_type_variable(type)) {
+            return false;
+        }
+
+        if (type.is_non_owning(irgen))
+            irgen->error(Error(con.expr, std::format("They type {} must be owning", type.pretty_name(irgen->block_hash))));
+        return true;
+    }
+    bool ConstraintSolver::operator()(IsInvocableConstraint& con)
+    {
+        auto callee = state->best_repr(con.type);
+        if (is_type_variable(callee)) {
+            return false;
+        }
+        if (callee.name != "__fn") {
+            irgen->error(Error(con.expr, "Type is not callable"));
+            return true;
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(ValidAsFunctionArgConstraint& con)
+    {
+        auto callee = state->best_repr(con.function);
+        auto arg = state->best_repr(con.type);
+
+        if (is_type_variable(callee)) {
+            return false;
+        }
+
+        if (callee.name != "__fn") {
+            irgen->error(Error(con.expr, "Type is not callable"));
+            return true;
+        }
+
+        if ((callee.subtypes.size() - 1) <= con.arg_no) {
+            irgen->error(Error(con.expr, "Too many function args"));
+            return true;
+        }
+
+        add_new_constraint(EqualConstraint{ callee.subtypes[con.arg_no], arg });
+        return true;
+    }
+    bool ConstraintSolver::operator()(IsReturnOfConstraint& con)
+    {
+        auto callee = state->best_repr(con.function);
+        auto arg = state->best_repr(con.type);
+
+        if (is_type_variable(callee)) {
+            return false;
+        }
+
+        if (callee.name != "__fn") {
+            irgen->error(Error(con.expr, "Type is not callable"));
+            return true;
+        }
+
+        add_new_constraint(EqualConstraint{ callee.subtypes.back(), arg});
+        return true;
+    }
+    bool ConstraintSolver::operator()(ImplInterfaceConstraint& con)
+    {
+        // we use this to restrict the domain of a type
+        // it can also technically work for type matching but gets iffy with enable_if
+        auto type = state->best_repr(con.type);
+        auto intf = state->best_repr(con.interface);
+
+        // intf cannot be a type variable
+
+        ClassDeclaration* decl = nullptr;
+        
+        if (is_type_variable(type)) {
+            state->get_type_domain(type); // constrain to impl interface
+        }
+        else if (has_type_variable(type)) {
+            decl = dynamic_cast<ClassDeclaration*>(normalize_type(type, {}));
+        }
+        else {
+            decl = type.get_decl_if_class(irgen);
+        }
+
+        if (decl) {
+            bool did = false;
+            for (auto& impl : decl->impls) {
+                if (impl.impl_for.name == intf.name) {
+                    std::swap(irgen->block_hash, type.block_hash);
+                    auto as_sat = impl.impl_for.saturated(type.module, irgen);
+                    std::swap(irgen->block_hash, type.block_hash);
+
+                    if (as_sat.block_hash == intf.block_hash) {
+                        did = true;
+                        add_new_constraint(EqualConstraint{ std::move(as_sat), intf });
+                        break;
+                    }
+                }
+            }
+            if (!did) {
+                irgen->error(Error(con.expr, "Type does not implement interface"));
+            }
+        }
+        else {
+            // TODO check for automatic interfaces
+            irgen->error(Error(con.expr, "Type does not implement interface"));
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(HasUnaryMinusConstraint& con) {
+        auto type = state->best_repr(con.type);
+        auto rets = state->best_repr(con.ret);
+
+        if(is_type_variable(type)) {
+            return false;
+        }
+        // TODO
+        return false;
+    }
+    bool ConstraintSolver::operator()(HasUnaryNotConstraint& con)
+    {
+        // TODO
+        return false;
+    }
+    bool ConstraintSolver::operator()(IsReferenceToConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        auto other = state->best_repr(con.other);
+        
+        add_new_constraint(EqualConstraint{
+                type,
+                other.reference_to()
+            });
+        return true;
+    }
+    bool ConstraintSolver::operator()(IsNotReferenceConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (is_type_variable(type)) {
+            return false;
+        }
+        if (type.is_reference()) {
+            irgen->error(Error(con.expr, std::format("The type {} must not a reference", type.pretty_name(irgen->block_hash))));
+        }
+        return true;
+    }
+    std::pair<std::string, OverloadDetailsBinary*> resolveBin(const Type& lhs, const Type& rhs, TokenType t, IRGenerator* irgen);
+    bool ConstraintSolver::operator()(BinaryOperableConstraint& con) {
+        auto left = state->best_repr(con.left);
+        auto right = state->best_repr(con.right);
+        if(is_type_variable(left)) {
+            if(is_type_variable(right)) {
+                return false;
+            } else if(has_type_variable(right)) {
+                return false;
+            } else {
+                // constrain left to all possible types
+                // right has a binary operation with
+                auto grp = Domain::Group{};
+                for(auto&[hash, detail] : 
+                    right.module->overloads.binary_details_for(con.op) | 
+                    std::views::filter([&right, this](auto& elem) { 
+                        std::swap(elem.first, irgen->block_hash);
+                        elem.second.left.saturate(right.module, irgen);
+                        elem.second.right.saturate(right.module, irgen);
+                        std::swap(elem.first, irgen->block_hash);
+                        return elem.second.right.is_equal(right); 
+                    }))
+                {
+                    auto obj = detail.left;
+                    grp.add_type(std::move(obj));
+                }
+                state->get_type_domain(left)->add_and_intersect(std::move(grp));
+            }
+        } else if (has_type_variable(left)) {
+            if(is_type_variable(right)) {
+                return false;
+            } else if(has_type_variable(right)) {
+                // this can actually work
+                return false;
+            } else {
+                // this can also work
+                return false;
+                /*auto grp = Domain::Group{};
+                for(auto&[hash, detail] : 
+                    right.module->overloads.binary_details_for(con.op) | 
+                    std::views::filter([&right, this](auto& elem) { 
+                        std::swap(elem.first, irgen->block_hash);
+                        elem.second.left.saturate(right.module, irgen);
+                        elem.second.right.saturate(right.module, irgen);
+                        std::swap(elem.first, irgen->block_hash);
+                        return elem.second.right.is_equal(right); 
+                    }))
+                {
+                    if (can_match(detail.left, left)) {
+                        auto obj = detail.left;
+                        grp.add_type(std::move(obj));
+                    }
+                }
+                state->get_type_domain(left)->add_and_intersect(std::move(grp));*/
+            }
+        } else {
+            //left is concrete
+            if(is_type_variable(right)) {
+                auto grp = Domain::Group{};
+                for (auto& [hash, detail] :
+                    right.module->overloads.binary_details_for(con.op) |
+                    std::views::filter([&left, this](auto& elem) {
+                        std::swap(elem.first, irgen->block_hash);
+                        elem.second.left.saturate(left.module, irgen);
+                        elem.second.right.saturate(left.module, irgen);
+                        std::swap(elem.first, irgen->block_hash);
+                        return elem.second.left.is_equal(left);
+                        }))
+                {
+                    auto obj = detail.right;
+                    grp.add_type(std::move(obj));
+                }
+                state->get_type_domain(right)->add_and_intersect(std::move(grp));
+            } else if(has_type_variable(right)) {
+                // this can also work
+                return false;
+            } else { // both are concrete
+                auto[block, dets] = resolveBin(left, right, con.op, irgen);
+                if (!dets) {
+                    irgen->error(Error(con.expr, "No operator exists between these 2 types"));
+                }
+            }
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(ComparableConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (has_type_variable(type)) {
+            return false;
+        }
+
+        if (
+            !((type.name == "CmpOrd" || type.name == "CmpPartOrd")
+                && type.module == core_module)
+            )
+        {
+            irgen->error(Error(con.expr, std::format("{} does not support <, >, >= or <=", type.pretty_name(irgen->block_hash))));
+        }
+        return true;
+    }
+    uint32_t UnificationTable::unite(uint32_t id, uint32_t id2, IRGenerator *irgen) {
+        auto finda = find(id);
+        auto findb = find(id2);
+        if (finda == findb)
+            return finda;
+        if (rank[finda] < rank[findb])
+            std::swap(finda, findb);
+        parents[findb] = finda;
+        if (rank[finda] == rank[findb])
+            rank[finda]++;
+
+        if (auto produced_error =
+                domains[finda].merge_intersect(std::move(domains[findb])))
+          irgen->error(*produced_error);
+        domains.erase(findb);
+        return finda;
+    }
+    void TypeCheckerState::resolve_function(FunctionDeclaration* decl, IRGenerator* irgen)
+    {
+        push_variable_block();
+        // generate constraints
+        std::visit(TypeChecker{std::nullopt, irgen, this}, decl->body->toVariant());
+        // solve constraints
+        ConstraintSolver sv{ false, irgen, this };
+        bool has_change = true;
+        while (has_change) {
+            has_change = false;
+            for (auto it = constraints.begin(); it != constraints.end(); ++it) {
+                if (std::visit(sv, *it)) {
+                    // returns true if constraint has been dealt with and should be removed
+                    it = constraints.erase(it);
+                    has_change = true;
+                }
+            }
+            // add newly generated constraints here
+        }
+        // not enough information given
+        if (!constraints.empty()) {
+            
+        }
+        // substitute types in every ast node??
+        // maybe we can do this in the borrow checker ?
+        pop_variable_block();
+    }
+    bool ConstraintSolver::operator()(ExtractsToConstraint& con)
+    {
+        // only 3 kinds of types satisfy this
+        // T? (__opt::<T>) extracts to T
+        // __conv_result_ref::<T> extracts to T (special internal type returned by variant conversion)
+        // __conv_result_val::<T> extracts to T              ^^^^^^----same case as above
+
+        auto target = state->best_repr(con.dst);
+        auto type = state->best_repr(con.type);
+
+        if (is_type_variable(type)) {
+            return false; // we can't know
+        }
+
+        if (type.name != "__opt" && type.name != "__conv_result_ref" && type.name != "__conv_result_val") {
+            irgen->error(Error(con.expr, "Invalid type for conditional extraction"));
+            return true;
+        }
+        add_new_constraint(EqualConstraint{
+                type.subtypes[0],
+                target
+            });
+        return true;
+    }
+    bool ConstraintSolver::operator()(RefExtractsToConstraint& con)
+    {
+        // only 2 kinds of types satisfy this
+        // T? (__opt::<T>) extracts to &T or &mut T
+        // __conv_result_ref::<T> extracts to T (special internal type returned by variant conversion)
+
+        auto target = state->best_repr(con.dst);
+        auto type = state->best_repr(con.type);
+
+        if (is_type_variable(type)) {
+            return false; // we can't know
+        }
+
+        if (type.name != "__opt" && type.name != "__conv_result_ref") {
+            irgen->error(Error(con.expr, "Invalid type for reference conditional extraction"));
+            return true;
+        }
+        add_new_constraint(EqualConstraint{
+                type.is_mutable ? type.subtypes[0].mutable_reference_to() : type.subtypes[0].reference_to(),
+                target
+            });
+        return true;
+    }
+} // namespace Yoyo

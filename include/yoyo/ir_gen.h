@@ -6,11 +6,13 @@
 #include "engine.h"
 #include <utility>
 #include <functional>
+#include <ranges>
 #include "error.h"
 #include "module.h"
 #include "cfg_node.h"
 #include "token.h"
 #include "borrow_checker.h"
+#include "type_checker.h"
 namespace Yoyo
 {
     struct BorrowChecker;
@@ -42,7 +44,17 @@ namespace Yoyo
         void annotateClass(ClassDeclaration*);
         void checkClass(ClassDeclaration*);
         static FunctionDeclaration* GetParentFunction(ASTNode* node);
-        static std::string mangleGenericArgs(std::span<const Type> list);
+        template<std::ranges::forward_range T>
+        static std::string mangleGenericArgs(const T& list) 
+            requires std::same_as<std::remove_cvref_t<decltype(*list.begin())>, Type>
+        {
+            if (std::ranges::empty(list)) return "";
+            std::string final = "::<" + list.begin()->full_name();
+            for (auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
+                final += "," + tp.full_name();
+            final += ">";
+            return final;
+        }
         
         
         std::optional<Type> inferReturnType(Statement* stat);

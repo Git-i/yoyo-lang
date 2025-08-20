@@ -72,6 +72,7 @@ namespace Yoyo
     public:
         ~Expression() override = default;
         virtual ExpressionVariant toVariant() = 0;
+        Type evaluated_type;
         static auto attachSLAndParent(std::unique_ptr<Expression> self, SourceLocation bg, SourceLocation end,ASTNode* parent = nullptr)
             -> std::unique_ptr<Expression>
         {

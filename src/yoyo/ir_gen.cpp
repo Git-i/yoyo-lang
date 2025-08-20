@@ -187,16 +187,6 @@ namespace Yoyo
         return reinterpret_cast<FunctionDeclaration*>(parent);
     }
 
-    std::string IRGenerator::mangleGenericArgs(std::span<const Type> list)
-    {
-        if (list.empty()) return "";
-        std::string final = "::<" + list[0].full_name();
-        for(auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
-            final += "," + tp.full_name();
-        final += ">";
-        return final;
-    }
-
   
     bool canReturn(Statement* stat)
     {

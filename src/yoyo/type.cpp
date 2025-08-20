@@ -898,4 +898,8 @@ namespace Yoyo
             pos++;
             return tp;
     }
+    uint32_t UnsaturatedTypeIterator::num_iters()
+    {
+        return (split_cache.size() - 1) - pos;
+    }
 }
