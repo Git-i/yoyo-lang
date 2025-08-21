@@ -1,6 +1,7 @@
 #include "ir_gen.h"
 #include <variant>
 #include <ranges>
+#define RE_REPR(x) x->evaluated_type = stt->best_repr(x->evaluated_type)
 namespace Yoyo
 {
     std::pair<std::string, OverloadDetailsBinary*> resolveBin(const Type& lhs, const Type& rhs, TokenType t, IRGenerator* irgen);
@@ -197,25 +198,29 @@ namespace Yoyo
         variables.pop_back();
     }
 
-    std::string BorrowCheckerEmitter::operator()(IntegerLiteral*) {
+    std::string BorrowCheckerEmitter::operator()(IntegerLiteral* lit) {
         // __literal is a special object to denote it can't be borrowed
         // mutably
+        RE_REPR(lit);
         return "__literal";
     }
-    std::string BorrowCheckerEmitter::operator()(BooleanLiteral*) {
+    std::string BorrowCheckerEmitter::operator()(BooleanLiteral* lit) {
+        RE_REPR(lit);
         return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(TupleLiteral* exp) {
+        RE_REPR(exp);
         auto& checker = irgen->function_borrow_checkers.back();
         // implicit conversion can happen here but they don't involve borrows
         auto tuple = checker.make_object();
         for (auto& elem : exp->elements) {
             auto elem_eval = std::visit(*this, elem->toVariant());
-            clone_into(checker, elem_eval, tuple, exp->evaluated_type, exp, irgen); // TODO: update when type system is better
+            clone_into(checker, elem_eval, tuple, elem->evaluated_type, exp, irgen); // TODO: update when type system is better
         }
         return tuple;
     }
     std::string BorrowCheckerEmitter::operator()(ArrayLiteral* lit) {
+        RE_REPR(lit);
         auto& checker = irgen->function_borrow_checkers.back();
         auto array = checker.make_object();
         // [<expr>, <expr>, ... ]
@@ -223,24 +228,23 @@ namespace Yoyo
             auto& array_elems = std::get<std::vector<std::unique_ptr<Expression>>>(lit->elements);
             for (auto& elem : array_elems) {
                 auto elem_eval = std::visit(*this, elem->toVariant());
-                auto type = std::visit(ExpressionTypeChecker{ irgen }, elem->toVariant());
-                clone_into(checker, elem_eval, array, *type, lit, irgen); // TODO: update when type system is better
+                clone_into(checker, elem_eval, array, elem->evaluated_type, lit, irgen); // TODO: update when type system is better
             }
         }
         // [<expr>; <expr>] repeat first <expr>, sencond <expr> times (second expr is a constant)
         else {
             auto& elem_size = std::get<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>(lit->elements);
-            auto type = std::visit(ExpressionTypeChecker{ irgen }, elem_size.first->toVariant());
-            type->is_lvalue = true; // type must be an lvalue because its copied mutliple times
             auto elem_eval = std::visit(*this, elem_size.first->toVariant());
-            clone_into(checker, elem_eval, array, *type, lit, irgen);
+            clone_into(checker, elem_eval, array, elem_size.first->evaluated_type, lit, irgen);
         }
         return array;
     }
-    std::string BorrowCheckerEmitter::operator()(RealLiteral*) {
+    std::string BorrowCheckerEmitter::operator()(RealLiteral* lit) {
+        RE_REPR(lit);
         return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(StringLiteral* lit) {
+        RE_REPR(lit);
         auto& checker = irgen->function_borrow_checkers.back();
         for (auto& entry : lit->literal) {
             if (std::holds_alternative<std::unique_ptr<Expression>>(entry)) {
@@ -258,6 +262,7 @@ namespace Yoyo
         return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(NameExpression* name) {
+        RE_REPR(name);
         for (auto& block : variables | std::views::reverse) {
             for (auto& [var_name, id] : block) {
                 if (var_name == name->text) return id;
@@ -265,12 +270,14 @@ namespace Yoyo
         }
         irgen->error(Error(name, "Borrow checker internal error"));
     }
-    std::string BorrowCheckerEmitter::operator()(GenericNameExpression*) {
+    std::string BorrowCheckerEmitter::operator()(GenericNameExpression* name) {
+        RE_REPR(name);
         // this is probably a function
         // need to actually check tho so TODO
         return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(PrefixOperation* pfx) {
+        RE_REPR(pfx);
         auto& checker = irgen->function_borrow_checkers.back();
         auto this_eval = std::visit(*this, pfx->operand->toVariant());
         switch (pfx->op.type) {
@@ -280,6 +287,7 @@ namespace Yoyo
         }
     }
     std::string BorrowCheckerEmitter::operator()(BinaryOperation* op) {
+        RE_REPR(op);
         using enum TokenType;
         auto do_overloadable_explicit_token = [op, this](TokenType tk) {
             auto& checker = irgen->function_borrow_checkers.back();
@@ -291,7 +299,7 @@ namespace Yoyo
                 {target->left, left, op->lhs.get()},
                 {target->right, right, op->rhs.get()}
             } }, irgen, op, *this);
-            if (target->result.is_non_owning(irgen)) return res;
+            if (op->evaluated_type.is_non_owning(irgen)) return res;
             else {
                 checker.drop_object(res, op);
                 return (std::string)checker.make_object();
@@ -321,13 +329,16 @@ namespace Yoyo
         }
     }
     std::string BorrowCheckerEmitter::operator()(GroupingExpression* grp) {
+        RE_REPR(grp);
         return std::visit(*this, grp->expr->toVariant());
     }
-    std::string BorrowCheckerEmitter::operator()(LogicalOperation*) {
+    std::string BorrowCheckerEmitter::operator()(LogicalOperation* lg) {
+        RE_REPR(lg);
         return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(PostfixOperation*) { return ""; }
     std::string BorrowCheckerEmitter::operator()(CallOperation* op) {
+        RE_REPR(op);
         auto& checker = irgen->function_borrow_checkers.back();
         ExpressionTypeChecker type_checker{ irgen };
         auto result_type = type_checker(op).value();
@@ -359,14 +370,17 @@ namespace Yoyo
         }
     }
     std::string BorrowCheckerEmitter::operator()(SubscriptOperation* op) {
+        RE_REPR(op);
         irgen->error(Error(op, "Not implemented yet")); return "";
     }
     std::string BorrowCheckerEmitter::operator()(LambdaExpression*) { return ""; }
-    std::string BorrowCheckerEmitter::operator()(ScopeOperation*) {
+    std::string BorrowCheckerEmitter::operator()(ScopeOperation* scp) {
+        RE_REPR(scp);
         // either function, enum or constant
         return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(ObjectLiteral* lit) {
+        RE_REPR(lit);
         auto& checker = irgen->function_borrow_checkers.back();
         // implicit conversion can happen here but they don't involve borrows
         auto obj = checker.make_object();
@@ -378,21 +392,27 @@ namespace Yoyo
         return obj;
     }
     std::string BorrowCheckerEmitter::operator()(NullLiteral* lit) {
+        RE_REPR(lit);
         return "__literal";
     }
-    std::string BorrowCheckerEmitter::operator()(AsExpression*) {
+    std::string BorrowCheckerEmitter::operator()(AsExpression* ss) {
+        RE_REPR(ss);
         return "__not_implemented";
     }
-    std::string BorrowCheckerEmitter::operator()(CharLiteral*) {
+    std::string BorrowCheckerEmitter::operator()(CharLiteral* lit) {
+        RE_REPR(lit);
         return "__literal";
     }
-    std::string BorrowCheckerEmitter::operator()(GCNewExpression*) {
+    std::string BorrowCheckerEmitter::operator()(GCNewExpression* gcn) {
+        RE_REPR(gcn);
         return "__no_borrow";
     }
     std::string BorrowCheckerEmitter::operator()(MacroInvocation* ivc) {
+        RE_REPR(ivc);
         return std::visit(*this, ivc->result->toVariant());
     }
-    std::string BorrowCheckerEmitter::operator()(SpawnExpression*) {
+    std::string BorrowCheckerEmitter::operator()(SpawnExpression* exr) {
+        RE_REPR(exr);
         // fibers can't borrow from other fibers
         return "__literal";
     }

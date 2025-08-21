@@ -78,7 +78,7 @@ namespace Yoyo
         TypeCheckerState stt{};
         stt.resolve_function(decl, this);
 
-        std::visit(BorrowCheckerEmitter{ this }, decl->body->toVariant());
+        std::visit(BorrowCheckerEmitter{ this, &stt }, decl->body->toVariant());
         function_borrow_checkers.back().check_and_report(this);
 
         decltype(this->variables) new_fn_vars;

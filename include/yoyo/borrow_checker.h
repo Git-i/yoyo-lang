@@ -3,6 +3,7 @@
 namespace Yoyo
 {
     struct BorrowCheckerBlock;
+    struct TypeCheckerState;
     struct Instruction {
         struct BorrowInstruction { std::string into; std::string operand; };
         std::variant<
@@ -102,6 +103,7 @@ namespace Yoyo
     // emits borrow checker IR for statements and expressions
     class BorrowCheckerEmitter {
         IRGenerator* irgen;
+        TypeCheckerState* stt;
         // std::vector -- each block
         //    std::vector -- each variable
         //        std::pair -- variable entry
@@ -109,7 +111,7 @@ namespace Yoyo
         //            std::string -- borrow checker id
         std::vector<std::vector<std::pair<std::string, std::string>>> variables;
     public:
-        BorrowCheckerEmitter(IRGenerator* irgen) : irgen(irgen), variables(1) {}
+        BorrowCheckerEmitter(IRGenerator* irgen, TypeCheckerState* stt) : irgen(irgen), variables(1), stt(stt) {}
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
         void operator()(VariableDeclaration*);
