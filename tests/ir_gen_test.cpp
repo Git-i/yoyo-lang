@@ -307,7 +307,7 @@ TEST_CASE("Simple borrow checker", "[borrow-checker]") {
 main: fn = {
     x: _? = "Hello" as _;
     if |as_str| (x) {
-        test::print(&x);
+        test::print(&as_str);
     }
 }
 )");

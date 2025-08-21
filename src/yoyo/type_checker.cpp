@@ -916,7 +916,67 @@ namespace Yoyo
         }
         // no generics were encountered at all and we've reached the last entry
         else {
-            // TODO
+            auto last = iterator.last();
+            if (auto [actual_hash, enm] = md->findEnum(hash, second_to_last); enm)
+            {
+                if (md != irgen->module && enm->is_private()) {
+                    irgen->error(Error(scp, "The enum type " + actual_hash + enm->identifier + " is private"));
+                    return Type{ "__error_type" };
+                }
+                if (!last.subtypes.empty()) {
+                    irgen->error(Error(scp, "Enum child cannot have subtypes"));
+                    return Type{ "__error_type" };
+                }
+                if (enm->values.contains(last.name)) { 
+                    scp->evaluated_type = Type{ .name = second_to_last, .module = md, .block_hash = actual_hash };
+                } else {
+                    irgen->error(Error(scp, "Enum does not contain specified value"));
+                    return Type{ "__error_type" };
+                }
+            }
+            if (auto [actual_hash, unn] = md->findUnion(hash, second_to_last); unn)
+            {
+                if (md != irgen->module && unn->is_private()) {
+                    irgen->error(Error(scp, "The union is private"));
+                    return Type{ "__error_type" };
+                }
+                if (!last.subtypes.empty()) {
+                    irgen->error(Error(scp, "Union child cannot have subtypes"));
+                    return Type{ "__error_type" };
+                }
+                if (unn->fields.contains(last.name)) {
+                    scp->evaluated_type = Type{ .name = "__union_var" + unn->name + "$" + last.name, .module = md, .block_hash = actual_hash };
+                }
+                else {
+                    irgen->error(Error(scp, "Union does not contain specified variant"));
+                    return Type{ "__error_type" };
+                }
+            }
+            if (auto [name, fn] = md->findFunction(hash, last.name); fn)
+            {
+                if (md != irgen->module && fn->is_private()) {
+                    irgen->error(Error(scp, "The function type " + name + fn->name + " is private"));
+                    return Type{ "__error_type" };
+                }
+
+                irgen->block_hash.swap(hash);
+                irgen->saturateSignature(fn->sig, md);
+                irgen->block_hash.swap(hash);
+
+                scp->evaluated_type.block_hash = hash + last.name;
+                scp->evaluated_type.name = "__fn";
+                scp->evaluated_type.module = md;
+                std::ranges::copy(fn->sig.parameters | std::views::transform([](auto& elem) { return elem.type; }), 
+                    std::back_inserter(scp->evaluated_type.subtypes));
+                scp->evaluated_type.subtypes.push_back(fn->sig.returnType);
+            }
+            if (auto [name, c] = md->findConst(hash, last.name); c)
+            {
+                irgen->block_hash.swap(hash);
+                std::get<0>(*c).saturate(md, irgen);
+                irgen->block_hash.swap(hash);
+                return { std::get<0>(*c) };
+            }
         }
         return scp->evaluated_type;
     }
@@ -938,8 +998,19 @@ namespace Yoyo
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(AsExpression* ex) const {
-        irgen->error(Error(ex, "Not implemented"));
-        return Type{ "__error_type" };
+        auto src = std::visit(targetless(), ex->expr->toVariant());
+        normalize_type(ex->dest, state, irgen, {});
+        state->add_constraint(ConvertibleToConstraint{
+                src, ex->dest, ex
+            });
+        if (target) {
+            state->add_constraint(EqualConstraint{
+                    ex->dest,
+                    *target, ex
+                });
+        }
+        ex->evaluated_type = ex->dest;
+        return ex->evaluated_type;
     }
     FunctionType TypeChecker::operator()(CharLiteral* ch) const {
         if (target) {
@@ -1559,6 +1630,23 @@ namespace Yoyo
             irgen->error(Error(con.expr, std::format("They type {} must be non owning", type.pretty_name(irgen->block_hash))));
         return true;
     }
+    bool ConstraintSolver::operator()(ConvertibleToConstraint& con)
+    {
+        auto src = state->best_repr(con.from);
+        auto dst = state->best_repr(con.to);
+
+        // TODO other cases
+        if (is_type_variable(dst)) {
+            if (!has_type_variable(src)) {
+                // src can convert to src? and depending on the type other things
+                Domain::Group gp;
+                gp.add_type(Type{ .name = "__opt", .subtypes{src}, .module = core_module });
+                state->get_type_domain(dst)->add_and_intersect(std::move(gp));
+                return true;
+            }
+        }
+        return false;
+    }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
     {
         temp_constraints.push_back(std::move(con));
@@ -1572,9 +1660,6 @@ namespace Yoyo
     }
     void TypeCheckerState::add_constraint(TypeCheckerConstraint c)
     {
-        if (auto eq = std::get_if<EqualConstraint>(&c)) {
-            debugbreak();
-        }
         constraints.push_back(std::move(c));
     }
     void TypeCheckerState::unify_types(const Type& t1, const Type& t2, IRGenerator* irgen)

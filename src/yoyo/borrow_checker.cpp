@@ -174,7 +174,10 @@ namespace Yoyo
 
         checker.create_cond_br(if_stat, else_stat ? else_stat : if_cont);
         checker.set_block(if_stat);
+        variables.emplace_back();
+        variables.back().emplace_back(stat->captured_name, cond);
         std::visit(*this, stat->body->toVariant());
+        variables.pop_back();
         checker.drop_object(cond, stat->condition.get());
         checker.create_br(if_cont);
 

@@ -78,6 +78,7 @@ namespace Yoyo
         [[nodiscard]] Type make_mut() const;
         [[nodiscard]] Type make_lvalue() const;
         [[nodiscard]] Type take_mutability_characteristics(const Type&) const;
+        [[nodiscard]] Type extracts_to() const;
         /// Merges the types into one variant type or returns one of them if they're equal
         /// if @c a is already a variant it adds @c b to the list(if @c b is not already there)
         /// if @c b is a variant is does the same

@@ -551,6 +551,14 @@ namespace Yoyo
         return t;
     }
 
+    Type Type::extracts_to() const
+    {
+        if (is_optional()) {
+            return subtypes[0];
+        }
+        return Type("__error_type");
+    }
+
     Type Type::variant_merge(Type a, Type b)
     {
         if(a.is_equal(b)) return a;
@@ -819,6 +827,7 @@ namespace Yoyo
             res.back() = ')';
             return res;
         }
+        if (tp.is_optional()) return pretty_name_suffix(tp.subtypes[0]) + "?";
         return tp.name;
     }
     std::string Type::pretty_name(const std::string& block) const

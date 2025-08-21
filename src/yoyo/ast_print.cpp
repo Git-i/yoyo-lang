@@ -6,6 +6,11 @@ namespace Yoyo {
 	void ASTPrinter::operator()(VariableDeclaration* decl)
 	{
 		stream << std::format("{}[variable| name: {}, type: {}]\n", prefix, decl->identifier.text, decl->type->pretty_name(""));
+		if (decl->initializer) {
+			prefix += "    ";
+			std::visit(*this, decl->initializer->toVariant());
+			prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
+		}
 	}
 	void ASTPrinter::operator()(IfStatement* stat)
 	{
@@ -107,9 +112,22 @@ namespace Yoyo {
 		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
 	}
 
+	void ASTPrinter::operator()(StringLiteral*)
+	{
+		stream << std::format("{}[string literal| TODO]\n", prefix);
+	}
+
 	void ASTPrinter::operator()(NameExpression* nm)
 	{
 		stream << std::format("{}[name| text: {}, type: {}]\n", prefix, nm->text, nm->evaluated_type.pretty_name(""));
+	}
+
+	void ASTPrinter::operator()(AsExpression* as_expr)
+	{
+		stream << std::format("{}[as| type: {}]\n", prefix, as_expr->evaluated_type.pretty_name(""));
+		prefix += "    ";
+		std::visit(*this, as_expr->expr->toVariant());
+		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
 	}
 
 }

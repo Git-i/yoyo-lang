@@ -122,6 +122,11 @@ namespace Yoyo
         Type dst;
         Expression* expr;
     };
+    struct ConvertibleToConstraint {
+        Type from;
+        Type to;
+        Expression* expr;
+    };
     using TypeCheckerConstraint = std::variant<
         IsIntegerConstraint,
         CanStoreIntegerConstraint,
@@ -142,7 +147,8 @@ namespace Yoyo
         ImplInterfaceConstraint,
         ExtractsToConstraint,
         RefExtractsToConstraint,
-        NonOwningConstraint
+        NonOwningConstraint,
+        ConvertibleToConstraint
     >;
     /// represents the possible types a variable can be
     class Domain {
@@ -248,7 +254,7 @@ namespace Yoyo
         bool operator()(ExtractsToConstraint& con);
         bool operator()(RefExtractsToConstraint& con);
         bool operator()(NonOwningConstraint& con);
-
+        bool operator()(ConvertibleToConstraint& con);
         void add_new_constraint(TypeCheckerConstraint);
     };
 	struct TypeChecker

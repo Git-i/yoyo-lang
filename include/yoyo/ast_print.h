@@ -37,7 +37,7 @@ namespace Yoyo {
         void operator()(TupleLiteral*);
         void operator()(ArrayLiteral*) {}
         void operator()(RealLiteral*) {}
-        void operator()(StringLiteral*) {}
+        void operator()(StringLiteral*);
         void operator()(NameExpression*);
         void operator()(GenericNameExpression*) {}
         void operator()(PrefixOperation*){}
@@ -51,7 +51,7 @@ namespace Yoyo {
         void operator()(ScopeOperation*) {}
         void operator()(ObjectLiteral*) {}
         void operator()(NullLiteral*) {}
-        void operator()(AsExpression*) {}
+        void operator()(AsExpression*);
         void operator()(CharLiteral*) {}
         void operator()(GCNewExpression*){}
         void operator()(MacroInvocation*){}
