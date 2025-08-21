@@ -6,23 +6,245 @@
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo
 {
+    Statement* normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type>);
+    // ignore this huge function
+    template<class T>
+    concept has_clause = requires(T obj) {
+        { obj.clause } -> std::same_as<GenericClause&>;
+    };
+    // from type.cpp
+    bool from_builtins(const Type& tp);
+    bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first);
+    std::optional<Error> advanceScopeNormalize(
+        Statement*& stat, 
+        ModuleBase*& md, 
+        std::string& hash, 
+        Type& type,
+        TypeCheckerState* stt,
+        IRGenerator* irgen, 
+        std::unordered_map<std::string, Type>& generic_instantiations) 
+    {
+        if (stat) {
+            // in generic mode
+            auto get_generic_clause = []<typename T>(T * arg) {
+                if constexpr (has_clause<T>) {
+                    return &arg->clause;
+                }
+                else return static_cast<GenericClause*>(nullptr);
+            };
+            auto get_decl_name = []<std::derived_from<Statement> T>(T * arg)  -> std::string {
+                if constexpr (std::derived_from<T, ClassDeclaration>) {
+                    return arg->name;
+                }
+                else if constexpr (std::derived_from<T, FunctionDeclaration>) {
+                    return arg->name;
+                }
+                else if constexpr (std::derived_from<T, UnionDeclaration>) {
+                    return arg->name;
+                }
+                else if constexpr (std::same_as<T, EnumDeclaration>) {
+                    return arg->identifier;
+                }
+                else if constexpr (std::derived_from<T, InterfaceDeclaration>) {
+                    return arg->name;
+                }
+                else if constexpr (std::derived_from<T, AliasDeclaration>) {
+                    return arg->name;
+                }
+                else if constexpr (std::derived_from<T, ConstantDeclaration>) {
+                    return arg->name;
+                }
+                return "__not_a_declaration__";
+            };
+            auto get_next_stat = [&get_decl_name](Statement* stat, const std::string& name, auto& self) -> Statement* {
+                if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) { // Class and generic class declarations
+                    auto it = std::ranges::find_if(cls->stats, [&get_decl_name, &name](auto& elem) {
+                        return std::visit(get_decl_name, elem->toVariant()) == name;
+                        });
+                    if (it != cls->stats.end()) {
+                        return it->get();
+                    }
+                }
+                else if (auto fn = dynamic_cast<FunctionDeclaration*>(stat)) {
+                    return self(fn->body.get(), name, self); // maybe its defined in the function body
+                }
+                else if (auto enm = dynamic_cast<EnumDeclaration*>(stat)) {
+                    auto it = std::ranges::find_if(enm->stats, [&get_decl_name, &name](auto& elem) {
+                        return std::visit(get_decl_name, elem->toVariant()) == name;
+                        });
+                    if (it != enm->stats.end()) {
+                        return it->get();
+                    }
+                }
+                // interfaces cannot have sub-definitions (i.e cant define struct within interface)
+                else if (auto unn = dynamic_cast<UnionDeclaration*>(stat)) {
+                    auto it = std::ranges::find_if(unn->sub_stats, [&get_decl_name, &name](auto& elem) {
+                        return std::visit(get_decl_name, elem->toVariant()) == name;
+                        });
+                    if (it != unn->sub_stats.end()) {
+                        return it->get();
+                    }
+                }
+                // within function body
+                else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
+                    for (auto& stat : blk->statements) {
+                        auto stat_name = std::visit(get_decl_name, stat->toVariant());
+                        if (stat_name == name) {
+                            return stat.get();
+                        }
+                        // we can look deeper as this statement is not a declaration
+                        else if (stat_name == "__not_a_declaration__") {
+                            auto res = self(stat.get(), name, self);
+                            if (res) return res;
+                        }
+                    }
+                }
+                else if (auto whl = dynamic_cast<WhileStatement*>(stat))
+                    return self(whl->body.get(), name, self);
+                else if (auto fr = dynamic_cast<ForStatement*>(stat))
+                    return self(fr->body.get(), name, self);
+                else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
+                    auto exists = self(if_stat->then_stat.get(), name, self);
+                    if (exists) return exists;
+                    if (if_stat->else_stat) return self(if_stat->else_stat.get(), name, self);
+                }
+                else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
+                    auto exists = self(cond->body.get(), name, self);
+                    if (exists) return exists;
+                    if (cond->else_body) return self(cond->else_body.get(), name, self);
+                }
+                else if (auto with = dynamic_cast<WithStatement*>(stat)) {
+                    return self(with->body.get(), name, self);
+                }
+                return nullptr;
+                };
+            // instead of searching the module tree, we search the AST directly because
+            // the parent has not been monomorphized
+            stat = get_next_stat(stat, type.name, get_next_stat);
+            if (!stat) {
+                return Error(SourceSpan{}, "No entity named " + type.name);
+            }
+            auto clause = std::visit(get_generic_clause, stat->toVariant());
+            auto num_types_in_clause = clause ? clause->types.size() : 0;
+            if (type.subtypes.size() > num_types_in_clause) {
+                return Error(SourceSpan{}, "Too many generic types specified");
+            }
+            std::vector<Type> subtypes;
+            for (auto i : std::views::iota(0u, type.subtypes.size())) {
+                normalize_type(type.subtypes[i], stt, irgen, {});
+                subtypes.push_back(type.subtypes[i]);
+                generic_instantiations[clause->types[i]] = type.subtypes[i];
+            }
+            for (auto i : std::views::iota(type.subtypes.size(), num_types_in_clause)) {
+                generic_instantiations[clause->types[i]] = subtypes.emplace_back(stt->new_type_var());
+            }
+            hash += type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
+            subtypes.clear();
+        }
+        else {
+            if (auto dets = md->findClass(hash, type.name); dets.second)
+            {
+                if (std::get<0>(*dets.second) != hash + type.name + "::") return Error(SourceSpan{}, "Internal error");
+                hash = std::get<0>(*dets.second);
+            }
+            if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
+            {
+                stat = decl;
+                hash = hsh;
+                return advanceScopeNormalize(stat, md, hash, type, stt, irgen, generic_instantiations);
+            }
+            if (auto [name, fn] = md->findFunction(hash, type.name); fn)
+            {
+                hash = name + type.name + "::";
+            }
+            if (auto [hsh, interface] = md->findInterface(hash, type.name); interface)
+            {
+                hash = hsh + "%%" + type.name + "%%interface"; //interfaces are terminal and cannot have subtyes
+            }
+            if (auto alias = md->findAlias(hash, type.name); alias)
+            {
+                advanceScope(*alias, md, hash, irgen, false);
+            }
+            if (auto [hsh, interface] = md->findGenericInterface(hash, type.name); interface)
+            {
+                stat = interface;
+                hash = hsh;
+                return advanceScopeNormalize(stat, md, hash, type, stt, irgen, generic_instantiations);
+            }
+            else if (auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
+            {
+                stat = interface;
+                hash = hsh;
+                return advanceScopeNormalize(stat, md, hash, type, stt, irgen, generic_instantiations);
+            }
+            return std::nullopt;
+        }
+    }
     /// Similar to saturate but can switch to the AST for incomplete generic types
     /// also substitutes generics given an already existing context
     /// also returns the statement that the type belongs to if we followed that path
-    Statement* normalize_type(Type&, const std::unordered_map<std::string, Type>&) {
-        debugbreak();
-        return nullptr;
+    Statement* normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type> generic_instantiations) {
+        if (tp.name == "_") {
+            tp = stt->new_type_var();
+            return nullptr;
+        }
+        ModuleBase* md = irgen->module;
+        std::string hash = irgen->block_hash;
+        std::string second_to_last = "";
+        auto iterator = UnsaturatedTypeIterator(tp);
+        Statement* current_stat = nullptr;
+        if (iterator.is_end()) {
+            //if we have no subtyes chances are that they're in the last as a string
+            auto last = iterator.last(tp.subtypes.empty());
+            if (tp.subtypes.empty()) tp.subtypes = last.subtypes;
+            tp.name = last.name;
+            if (!from_builtins(tp))
+            {
+                tp.module = irgen->module;
+                tp.block_hash = irgen->block_hash;
+                auto err = irgen->apply_using(tp, tp.module, tp.block_hash);
+                if (err) debugbreak();
+
+                auto hsh = tp.module->hashOf(tp.block_hash, tp.name);
+                if (hsh) tp.block_hash = std::move(hsh).value();
+            }
+            else
+                tp.module = core_module;
+        }
+        else {
+            auto type = iterator.next();
+            auto err = irgen->apply_using(type, md, hash);
+            if (err) {
+                irgen->error(*err);
+            }
+            
+            while (!iterator.is_end())
+            {
+                type = iterator.next();
+                if (auto err = advanceScopeNormalize(current_stat, md, hash, type, stt, irgen, generic_instantiations))
+                {
+                    debugbreak();
+                }
+            }
+            tp.name = iterator.last().name;
+            tp.block_hash = hash;
+            tp.module = md;
+        }
+        for (auto& sub : tp.subtypes) normalize_type(sub, stt, irgen, generic_instantiations);
+        
+        return current_stat;
     }
     void TypeChecker::operator()(VariableDeclaration* decl)
     {
         Type tp;
         if (decl->type) {
-            decl->type->saturate(irgen->module, irgen);
+            normalize_type(*decl->type, state, irgen, {});
             tp = *decl->type;
         }
         if (decl->initializer) {
             tp = std::visit(new_target(decl->type), decl->initializer->toVariant());
         }
+        decl->type = tp;
         state->create_variable(std::string(decl->identifier.text), tp);
     }
     void TypeChecker::operator()(IfStatement* stat)
@@ -419,10 +641,7 @@ namespace Yoyo
         }
         return false;
     }
-    template<class T>
-    concept has_clause = requires(T obj) {
-        { obj.clause } -> std::same_as<GenericClause&>;
-    };
+    
     FunctionType TypeChecker::operator()(ScopeOperation* scp) const {
         // we have 2 modes for scope checking
         // the first we check the module table and keep traversing
@@ -658,7 +877,7 @@ namespace Yoyo
                         return Type{ "__error_type" };
                     }
                     Type this_tp = unn->fields.at(last.name);
-                    normalize_type(this_tp, generic_instantiations);
+                    normalize_type(this_tp, state, irgen, generic_instantiations);
                     // TODO union hash
                     scp->evaluated_type = Type{
                         .name = "__union_var" + unn->name + "$" + last.name,
@@ -685,14 +904,14 @@ namespace Yoyo
                 // function signature is stored in subtypes
                 for (auto& param : fn->signature.parameters) {
                     scp->evaluated_type.subtypes.push_back(param.type);
-                    normalize_type(scp->evaluated_type.subtypes.back(), generic_instantiations);
+                    normalize_type(scp->evaluated_type.subtypes.back(), state, irgen, generic_instantiations);
                 }
                 scp->evaluated_type.subtypes.push_back(fn->signature.returnType);
-                normalize_type(scp->evaluated_type.subtypes.back(), generic_instantiations);
+                normalize_type(scp->evaluated_type.subtypes.back(), state, irgen, generic_instantiations);
             }
             if (auto constant = dynamic_cast<ConstantDeclaration*>(next_stat)) {
                 scp->evaluated_type = constant->type;
-                normalize_type(scp->evaluated_type, generic_instantiations);
+                normalize_type(scp->evaluated_type, state, irgen, generic_instantiations);
             }
         }
         // no generics were encountered at all and we've reached the last entry
@@ -702,7 +921,7 @@ namespace Yoyo
         return scp->evaluated_type;
     }
     FunctionType TypeChecker::operator()(ObjectLiteral* lit) const {
-        auto stat = normalize_type(lit->t, {});
+        auto stat = normalize_type(lit->t, state, irgen, {});
         return Type{};
     }
     FunctionType TypeChecker::operator()(NullLiteral* lit) const {
@@ -1069,7 +1288,7 @@ namespace Yoyo
             state->get_type_domain(type); // constrain to impl interface
         }
         else if (has_type_variable(type)) {
-            decl = dynamic_cast<ClassDeclaration*>(normalize_type(type, {}));
+            decl = dynamic_cast<ClassDeclaration*>(normalize_type(type, state, irgen, {}));
         }
         else {
             decl = type.get_decl_if_class(irgen);

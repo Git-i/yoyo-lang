@@ -22,7 +22,7 @@ sources = [
     'src/yoyo/runtime.cpp',
     'src/yoyo/borrow_checker.cpp',
     'src/yoyo/type_checker.cpp',
-
+    'src/yoyo/ast_print.cpp',
     
     'include/yoyo/ast_node.h',
     'include/yoyo/cfg_node.h',
@@ -53,6 +53,7 @@ sources = [
     'include/yoyo/runtime.h',
     'include/yoyo/borrow_checker.h',
     'include/yoyo/type_checker.h',
+    'include/yoyo/ast_print.h',
 ]
 backend = get_option('executor')
 deps =  [dependency('bdw-gc')]

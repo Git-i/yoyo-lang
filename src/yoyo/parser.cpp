@@ -706,16 +706,6 @@ namespace Yoyo
         bool is_mut = discard(TokenType::Mut);
         auto tk = Peek();
         if(!tk) return nullptr;
-        if(tk->type == TokenType::Underscore)
-        {
-            Get();
-            if(!discard(TokenType::Equal)) error("Expected '='", Peek());
-            auto initializer = parseExpression(0);
-            if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
-            return Statement::attachSLAndParent(
-            std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut),
-            identifier.loc, discardLocation, parent);
-        }
         if(tk->type == TokenType::Equal)
         {
             Get();
@@ -1396,6 +1386,7 @@ namespace Yoyo
         case TokenType::LParen: Get(); t = parseGroupType(*this); break;
         case TokenType::Caret: Get(); t = parseGCRefType(*tk, *this); break;
         case TokenType::Called: Get(); t = parseCalledFnType(*tk, *this); break;
+        case TokenType::Underscore: Get(); t = Type("_"); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())

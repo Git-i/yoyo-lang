@@ -99,6 +99,7 @@ namespace Yoyo
     void BorrowCheckerEmitter::operator()(UnionDeclaration*) {}
     void BorrowCheckerEmitter::operator()(MacroDeclaration*) {}
     void BorrowCheckerEmitter::operator()(VariableDeclaration* decl) {
+        decl->type = stt->best_repr(*decl->type);
         auto& checker = irgen->function_borrow_checkers.back();
         if (decl->initializer) std::visit(*this, decl->initializer->toVariant());
         // variables have to be fully owning so we don't need to worry about moving

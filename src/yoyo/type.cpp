@@ -384,7 +384,7 @@ namespace Yoyo
         tp.saturate(module, nullptr);
         return tp;
     }
-    inline static bool from_builtins(const Type& tp) {
+    bool from_builtins(const Type& tp) {
         return (tp.is_conversion_result() ||
             tp.is_array() ||
             tp.is_char() ||
@@ -810,6 +810,15 @@ namespace Yoyo
             return "called " + tp.signature->pretty_name("");
         if (tp.name.starts_with("?"))
             return "{unknown}";
+        if (tp.is_tuple()) {
+            std::string res = "(";
+            for (auto& st : tp.subtypes) {
+                res += pretty_name_suffix(st) + ", ";
+            }
+            res.pop_back();
+            res.back() = ')';
+            return res;
+        }
         return tp.name;
     }
     std::string Type::pretty_name(const std::string& block) const

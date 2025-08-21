@@ -8,6 +8,7 @@
 #include "gc/gc.h"
 #include <cassert>
 #include <yvm/fwd_decl.h>
+#include "ast_print.h"
 using enum Yvm::OpCode;
 namespace Yoyo
 {
@@ -79,7 +80,9 @@ namespace Yoyo
         stt.resolve_function(decl, this);
 
         std::visit(BorrowCheckerEmitter{ this, &stt }, decl->body->toVariant());
+        std::visit(ASTPrinter{ std::cout }, decl->body->toVariant());
         function_borrow_checkers.back().check_and_report(this);
+
 
         decltype(this->variables) new_fn_vars;
         new_fn_vars.emplace_back();
