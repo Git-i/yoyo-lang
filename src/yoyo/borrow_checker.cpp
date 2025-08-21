@@ -65,7 +65,7 @@ namespace Yoyo
     }
     // first parameter maps target to provided type
     std::string do_call_like(
-        std::span<const std::tuple<const Type&, const Type&, Expression*>> input_types, 
+        std::span<Expression* const> input_types, 
         IRGenerator* irgen,
         Expression* exp,
         BorrowCheckerEmitter& em
@@ -75,9 +75,9 @@ namespace Yoyo
         // it also handles copy/move/implicit convert automatically
         auto& checker = irgen->function_borrow_checkers.back();
         std::string out = checker.make_object();
-        for (auto& [target, provided, expr] : input_types) {
+        for (auto expr : input_types) {
             auto this_eval = std::visit(em, expr->toVariant());
-            convert_into(checker, this_eval, out, provided, target, expr, irgen);
+            convert_into(checker, this_eval, out, expr->evaluated_type, expr->evaluated_type, expr, irgen);
         }
         return out;
     }
@@ -291,13 +291,9 @@ namespace Yoyo
         using enum TokenType;
         auto do_overloadable_explicit_token = [op, this](TokenType tk) {
             auto& checker = irgen->function_borrow_checkers.back();
-            auto tp_check = ExpressionTypeChecker{ irgen };
-            auto left = std::visit(tp_check, op->lhs->toVariant()).value();
-            auto right = std::visit(tp_check, op->rhs->toVariant()).value();
-            auto [block, target] = resolveBin(left, right, tk, irgen);
             auto res = do_call_like({ {
-                {target->left, left, op->lhs.get()},
-                {target->right, right, op->rhs.get()}
+                op->lhs.get(),
+                op->rhs.get()
             } }, irgen, op, *this);
             if (op->evaluated_type.is_non_owning(irgen)) return res;
             else {
@@ -353,13 +349,9 @@ namespace Yoyo
             irgen->error(Error(op, "Not implemented"));
             return "";
         }
-        std::vector<std::tuple<const Type&, const Type&, Expression*>> input_types;
-        std::vector<Type> evaluated_type;
-        // this is extremely unsafe it will be changed with the type system rewrite (TODO)
-        evaluated_type.reserve(op->arguments.size());
+        std::vector<Expression*> input_types;
         for (auto i : std::views::iota(0u, op->arguments.size())) {
-            evaluated_type.push_back(std::visit(type_checker, op->arguments[i]->toVariant()).value());
-            input_types.emplace_back(callee.sig.parameters[i].type, evaluated_type.back(), op->arguments[i].get());
+            input_types.emplace_back(op->arguments[i].get());
         }
 
         auto res = do_call_like(input_types, irgen, op, *this);
