@@ -211,8 +211,7 @@ namespace Yoyo
         auto tuple = checker.make_object();
         for (auto& elem : exp->elements) {
             auto elem_eval = std::visit(*this, elem->toVariant());
-            auto type = std::visit(ExpressionTypeChecker{ irgen }, elem->toVariant());
-            clone_into(checker, elem_eval, tuple, *type, exp, irgen); // TODO: update when type system is better
+            clone_into(checker, elem_eval, tuple, exp->evaluated_type, exp, irgen); // TODO: update when type system is better
         }
         return tuple;
     }

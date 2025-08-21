@@ -9,8 +9,23 @@ namespace Yoyo
     /// Similar to saturate but can switch to the AST for incomplete generic types
     /// also substitutes generics given an already existing context
     /// also returns the statement that the type belongs to if we followed that path
-    Statement* normalize_type(Type&, const std::unordered_map<std::string, Type>&);
-	void TypeChecker::operator()(IfStatement* stat)
+    Statement* normalize_type(Type&, const std::unordered_map<std::string, Type>&) {
+        debugbreak();
+        return nullptr;
+    }
+    void TypeChecker::operator()(VariableDeclaration* decl)
+    {
+        Type tp;
+        if (decl->type) {
+            decl->type->saturate(irgen->module, irgen);
+            tp = *decl->type;
+        }
+        if (decl->initializer) {
+            tp = std::visit(new_target(decl->type), decl->initializer->toVariant());
+        }
+        state->create_variable(std::string(decl->identifier.text), tp);
+    }
+    void TypeChecker::operator()(IfStatement* stat)
 	{
         state->add_constraint(EqualConstraint{ 
             std::visit(targetless(), stat->condition->toVariant()), 
@@ -87,6 +102,21 @@ namespace Yoyo
         else {
             state->add_constraint(ExtractsToConstraint{ tp, obj_ty });
         }
+        state->push_variable_block();
+        state->create_variable(stat->captured_name, obj_ty);
+        std::visit(*this, stat->body->toVariant());
+        state->pop_variable_block();
+
+        if (stat->else_body) std::visit(*this, stat->else_body->toVariant());
+    }
+    void TypeChecker::operator()(WithStatement* stat)
+    {
+        auto tp = std::visit(targetless(), stat->expression->toVariant());
+        state->add_constraint(NonOwningConstraint{ tp, stat->expression.get() });
+        state->push_variable_block();
+        state->create_variable(stat->name, tp);
+        std::visit(*this, stat->body->toVariant());
+        state->pop_variable_block();
     }
     FunctionType TypeChecker::operator()(IntegerLiteral* lit) const {
         if (target)
@@ -99,6 +129,7 @@ namespace Yoyo
         lit->evaluated_type = state->new_type_var();
         state->add_constraint(IsIntegerConstraint{lit->evaluated_type});
         state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text)});
+        return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(BooleanLiteral*) const {
         return Type{ "bool" };
@@ -123,7 +154,10 @@ namespace Yoyo
 
         return lit->evaluated_type;
     }
-    // FunctionType TypeChecker::operator()(ArrayLiteral* lit) const { /*TODO*/ }
+    FunctionType TypeChecker::operator()(ArrayLiteral* lit) const { 
+        /*TODO*/ 
+        return Type{};
+    }
     FunctionType TypeChecker::operator()(RealLiteral* lit) const {
         if (target)
             if (target->is_floating_point()) return { *target };
@@ -153,7 +187,43 @@ namespace Yoyo
         return str->evaluated_type;
     }
     FunctionType TypeChecker::operator()(NameExpression* ex) const {
-        irgen->error(Error(ex, "Not implemented"));
+        for (auto& block : state->variables | std::views::reverse) {
+            if (block.contains(ex->text)) {
+                ex->evaluated_type = block.at(ex->text);
+                return ex->evaluated_type;
+            }
+        }
+        // if not a variable it may be a function
+        ModuleBase* module = irgen->module;
+        std::string hash = irgen->block_hash;
+        Type tp{ .name = ex->text };
+        if (auto err = irgen->apply_using(tp, module, hash)) {
+            err->span = { ex->beg, ex->end };
+            irgen->error(*err);
+            return Type{ "__error_type" };
+        }
+        if (auto [name_prefix, fn] = module->findFunction(hash, ex->text); fn)
+        {
+            irgen->saturateSignature(fn->sig, irgen->module);
+            tp.name = "__fn";
+            tp.block_hash = name_prefix + ex->text;
+            std::ranges::copy(fn->sig.parameters | std::views::transform([](auto& e) { return e.type; }), std::back_inserter(tp.subtypes));
+            tp.subtypes.push_back(fn->sig.returnType);
+            ex->evaluated_type = tp;
+            return tp;
+        }
+        if (auto [name_prefix, fn] = module->findGenericFn(hash, ex->text); fn)
+        {
+            auto ty = FunctionType(fn->signature, false);
+            ty.name = "__generic_fn" + ex->text;
+            ty.module = irgen->module;
+            ty.block_hash = name_prefix;
+            return { std::move(ty) };
+        }
+        if (auto [name_pf, c] = module->findConst(hash, ex->text); c)
+        {
+            return { std::get<0>(*c) };
+        }
         return Type{ "__error_type" };
     }
     FunctionType TypeChecker::operator()(GenericNameExpression* ex) const {
@@ -288,23 +358,26 @@ namespace Yoyo
             state->add_constraint(ValidAsFunctionArgConstraint{
                 std::visit(targetless(), op->arguments[i]->toVariant()),
                 callee_ty,
-                i + is_bound
+                i + is_bound,
+                op->arguments[i].get()
                 });
         }
         op->evaluated_type = state->new_type_var();
-        state->add_constraint(IsReturnOfConstraint{ op->evaluated_type, callee_ty });
+        state->add_constraint(IsReturnOfConstraint{ op->evaluated_type, callee_ty, op });
         if (target) {
-            state->add_constraint(EqualConstraint{ op->evaluated_type, *target });
+            state->add_constraint(EqualConstraint{ op->evaluated_type, *target, op });
         }
         return op->evaluated_type;
     }
     // TODO
-    //FunctionType TypeChecker::operator()(SubscriptOperation* subs) const {
-    //    auto obj = std::visit(targetless(), subs->object->toVariant());
-    //    auto idx = std::visit(targetless(), subs->index->toVariant());
-    //    // state->add_constraint();
-    //}
-    //FunctionType TypeChecker::operator()(LambdaExpression*) const {}
+    FunctionType TypeChecker::operator()(SubscriptOperation* subs) const {
+        auto obj = std::visit(targetless(), subs->object->toVariant());
+        auto idx = std::visit(targetless(), subs->index->toVariant());
+        // state->add_constraint();
+        return Type{};
+    }
+    FunctionType TypeChecker::operator()(LambdaExpression*) const { return Type{}; }
+
     bool advanceScopeModified(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen) {
         if (md->modules.contains(type.name))
         {
@@ -628,9 +701,10 @@ namespace Yoyo
         }
         return scp->evaluated_type;
     }
-    //FunctionType TypeChecker::operator()(ObjectLiteral* lit) const {
-    //    auto stat = normalize_type(lit->t, {});
-    //}
+    FunctionType TypeChecker::operator()(ObjectLiteral* lit) const {
+        auto stat = normalize_type(lit->t, {});
+        return Type{};
+    }
     FunctionType TypeChecker::operator()(NullLiteral* lit) const {
         if (target) {
             if (!target->is_optional()) {
@@ -675,6 +749,16 @@ namespace Yoyo
     FunctionType TypeChecker::operator()(SpawnExpression* ex) const {
         irgen->error(Error(ex, "Not implemented"));
         return Type{ "__error_type" };
+    }
+
+    TypeChecker TypeChecker::new_target(std::optional<Type> tgt) const
+    {
+        return TypeChecker{ tgt, irgen, state };
+    }
+
+    TypeChecker TypeChecker::targetless() const
+    {
+        return TypeChecker{ std::nullopt, irgen, state };
     }
 
     static bool is_type_variable(const Type& tp) {
@@ -777,15 +861,15 @@ namespace Yoyo
             return true;
         }
     }
-    std::optional<Error> generic_match(Type tp1, Type tp2, ASTNode* loc, ConstraintSolver* solver) {
+    std::optional<Error> generic_match(Type tp1, Type tp2, Expression* loc, ConstraintSolver* solver) {
         // include the block in the name
         // because type.subtypes only occurs generics at the end ─────────────────╮
         // so we can check cases where the generic occurs earlier ──╮             │
         //                        ╭─────────────────────────────────╯ like here   │
         //                       vvv                                              │
         // eg Module::Something::<T>::OtherStuff::Type[::<U>] <───────────────────╯
-        tp1.name = tp1.full_name();
-        tp2.name = tp2.full_name();
+        tp1.name = tp1.full_name_no_generics();
+        tp2.name = tp2.full_name_no_generics();
         auto tp1_iter = UnsaturatedTypeIterator(tp1);
         auto tp2_iter = UnsaturatedTypeIterator(tp2);
         if (tp1_iter.num_iters() != tp2_iter.num_iters()) {
@@ -809,7 +893,7 @@ namespace Yoyo
                 // this is the T in Something::<T> hence it could be a varaible
                 // or another full on type
                 if (is_type_variable(this1.subtypes[i]) || is_type_variable(this2.subtypes[i])) {
-                    solver->add_new_constraint(EqualConstraint{ this1.subtypes[i], this2.subtypes[i] });
+                    solver->add_new_constraint(EqualConstraint{ this1.subtypes[i], this2.subtypes[i], loc });
                 }
                 else {
                     if(auto failed = generic_match(this1.subtypes[i], this2.subtypes[i], loc, solver))
@@ -827,7 +911,7 @@ namespace Yoyo
         }
         for (auto i : std::views::iota(0u, end1.subtypes.size())) {
             if (is_type_variable(end1.subtypes[i]) || is_type_variable(end2.subtypes[i])) {
-                solver->add_new_constraint(EqualConstraint{ end1.subtypes[i], end2.subtypes[i] });
+                solver->add_new_constraint(EqualConstraint{ end1.subtypes[i], end2.subtypes[i], loc });
             }
             else {
                 if (auto failed = generic_match(end1.subtypes[i], end2.subtypes[i], loc, solver))
@@ -844,7 +928,7 @@ namespace Yoyo
         if (is_type_variable(type1)) {
             // ?1 and ?2 <case 1>
             if (is_type_variable(type2)) {
-                state->unify_types(type1, type2);
+                state->unify_types(type1, type2, irgen);
             }
             // type 2 can be a Type::<?1> or a Path::To::<?1>::Type::Val
             // but not exaclty a type variable, what to do here?
@@ -902,6 +986,7 @@ namespace Yoyo
                     irgen->error(Error(con.expr, std::format("The types {} and {} have to be equal", 
                         type1.pretty_name(irgen->block_hash),
                         type2.pretty_name(irgen->block_hash))));
+                    return true;
                 }
             }
         }
@@ -949,7 +1034,7 @@ namespace Yoyo
             return true;
         }
 
-        add_new_constraint(EqualConstraint{ callee.subtypes[con.arg_no], arg });
+        add_new_constraint(EqualConstraint{ callee.subtypes[con.arg_no], arg, con.expr });
         return true;
     }
     bool ConstraintSolver::operator()(IsReturnOfConstraint& con)
@@ -966,7 +1051,7 @@ namespace Yoyo
             return true;
         }
 
-        add_new_constraint(EqualConstraint{ callee.subtypes.back(), arg});
+        add_new_constraint(EqualConstraint{ callee.subtypes.back(), arg, con.expr });
         return true;
     }
     bool ConstraintSolver::operator()(ImplInterfaceConstraint& con)
@@ -1173,25 +1258,24 @@ namespace Yoyo
     void TypeCheckerState::resolve_function(FunctionDeclaration* decl, IRGenerator* irgen)
     {
         push_variable_block();
+        return_type = decl->signature.returnType;
         // generate constraints
         std::visit(TypeChecker{std::nullopt, irgen, this}, decl->body->toVariant());
         // solve constraints
         ConstraintSolver sv{ false, irgen, this };
         bool has_change = true;
         while (has_change) {
-            has_change = false;
-            for (auto it = constraints.begin(); it != constraints.end(); ++it) {
-                if (std::visit(sv, *it)) {
-                    // returns true if constraint has been dealt with and should be removed
-                    it = constraints.erase(it);
-                    has_change = true;
-                }
-            }
+            has_change = std::erase_if(constraints, [&sv](TypeCheckerConstraint& elem) {
+                return std::visit(sv, elem);
+                }) != 0;
             // add newly generated constraints here
+            std::ranges::move(sv.temp_constraints, std::back_inserter(constraints));
+            sv.temp_constraints.clear();
         }
         // not enough information given
         if (!constraints.empty()) {
-            
+            // TODO actual reporting
+            irgen->error(Error(decl, "Not enough info to resolve types"));
         }
         // substitute types in every ast node??
         // maybe we can do this in the borrow checker ?
@@ -1240,8 +1324,270 @@ namespace Yoyo
         }
         add_new_constraint(EqualConstraint{
                 type.is_mutable ? type.subtypes[0].mutable_reference_to() : type.subtypes[0].reference_to(),
-                target
+                target,
+                con.expr
             });
         return true;
+    }
+    bool ConstraintSolver::operator()(NonOwningConstraint& con)
+    {
+        auto type = state->best_repr(con.type);
+        if (has_type_variable(type)) {
+            return false;
+        }
+
+        if (!type.is_non_owning(irgen))
+            irgen->error(Error(con.expr, std::format("They type {} must be non owning", type.pretty_name(irgen->block_hash))));
+        return true;
+    }
+    void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
+    {
+        temp_constraints.push_back(std::move(con));
+    }
+    Type TypeCheckerState::new_type_var()
+    {
+        auto idx = tbl.parents.size();
+        tbl.parents.push_back(idx);
+        tbl.rank.push_back(0);
+        return Type{ .name = std::format("?{}", idx) };
+    }
+    void TypeCheckerState::add_constraint(TypeCheckerConstraint c)
+    {
+        if (auto eq = std::get_if<EqualConstraint>(&c)) {
+            debugbreak();
+        }
+        constraints.push_back(std::move(c));
+    }
+    void TypeCheckerState::unify_types(const Type& t1, const Type& t2, IRGenerator* irgen)
+    {
+        if (is_type_variable(t1) && is_type_variable(t2)) {
+            tbl.unite(tbl.type_to_id(t1), tbl.type_to_id(t2), irgen);
+        }
+    }
+    void TypeCheckerState::push_variable_block()
+    {
+        variables.emplace_back();
+    }
+    void TypeCheckerState::pop_variable_block()
+    {
+        variables.pop_back();
+    }
+    void TypeCheckerState::create_variable(std::string name, Type type)
+    {
+        variables.back()[name] = std::move(type);
+    }
+    Type TypeCheckerState::best_repr(const Type& tp)
+    {
+        // convert to parent from
+        if (is_type_variable(tp)) {
+            auto actual_id = tbl.find(tbl.type_to_id(tp));
+            auto domain = tbl.domain_of(actual_id);
+            if (domain->is_solved()) {
+                return domain->get_solution();
+            }
+            return tbl.id_to_type(actual_id);
+        }
+        else if (has_type_variable(tp)) {
+            // decompose tp and rebuild but substitute all type vars with best repr
+            std::string actual_block;
+            Type buffer = tp;
+            buffer.name = buffer.full_name_no_generics();
+            auto it = UnsaturatedTypeIterator(buffer);
+            while (!it.is_end()) {
+                auto elem = it.next();
+                actual_block += elem.name + IRGenerator::mangleGenericArgs(elem.subtypes | std::views::transform([this](auto& elem) {
+                    return best_repr(elem);
+                    })) + "::";
+            }
+            Type final_t = it.last();
+            for (auto& elem : final_t.subtypes) { elem = best_repr(elem); }
+            final_t.block_hash = actual_block;
+            final_t.module = tp.module;
+            return final_t;
+        }
+        else {
+            // concrete already
+            return tp;
+        }
+    }
+    Domain* TypeCheckerState::get_type_domain(const Type& type)
+    {
+        return tbl.domain_of(tbl.find(tbl.type_to_id(type)));
+    }
+    void Domain::Group::add_type(Type&& tp)
+    {
+        types.push_back(tp);
+    }
+    std::optional<Error> Domain::add_and_intersect(Group&& grp)
+    {
+        if (concrete_types.types.empty()) {
+            concrete_types = grp;
+            return std::nullopt;
+        }
+        std::vector<Type> out;
+        std::ranges::set_intersection(concrete_types.types, grp.types, std::back_inserter(out));
+        concrete_types.types = std::move(out);
+        if (concrete_types.types.empty()) {
+            return Error(nullptr, "Intersection error");
+        }
+        return std::nullopt;
+    }
+    int64_t getIntMinOf(const Type& type)
+    {
+        if (type.is_signed_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<int8_t>::min();
+            case 16: return std::numeric_limits<int16_t>::min();
+            case 32: return std::numeric_limits<int32_t>::min();
+            case 64: return std::numeric_limits<int64_t>::min();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if (type.is_unsigned_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<uint8_t>::min();
+            case 16: return std::numeric_limits<uint16_t>::min();
+            case 32: return std::numeric_limits<uint32_t>::min();
+            case 64: return std::numeric_limits<uint64_t>::min();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if (type.is_floating_point())
+        {
+            if (*type.float_width() == 32) return -std::pow(2, 24);
+            if (*type.float_width() == 64) return -std::pow(2, 53);
+        }
+        return 0;
+    }
+    uint64_t getIntMaxOf(const Type& type)
+    {
+        if (type.is_signed_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<int8_t>::max();
+            case 16: return std::numeric_limits<int16_t>::max();
+            case 32: return std::numeric_limits<int32_t>::max();
+            case 64: return std::numeric_limits<int64_t>::max();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if (type.is_unsigned_integral())
+        {
+            switch (*type.integer_width())
+            {
+            case 8: return std::numeric_limits<uint8_t>::max();
+            case 16: return std::numeric_limits<uint16_t>::max();
+            case 32: return std::numeric_limits<uint32_t>::max();
+            case 64: return std::numeric_limits<uint64_t>::max();
+            default: return 0;/*unreachable*/
+            }
+        }
+        if (type.is_floating_point())
+        {
+            if (*type.float_width() == 32) return std::pow(2, 24);
+            if (*type.float_width() == 64) return std::pow(2, 53);
+        }
+        return 0;
+    }
+    double getFloatMinOf(const Type& type)
+    {
+        if (type.is_floating_point())
+        {
+            if (*type.float_width() == 32) return std::numeric_limits<float>::min();
+            if (*type.float_width() == 64) return std::numeric_limits<double>::min();
+        }
+        return 0;
+    }
+
+    double getFloatMaxOf(const Type& type)
+    {
+        if (type.is_floating_point())
+        {
+            if (*type.float_width() == 32) return std::numeric_limits<float>::max();
+            if (*type.float_width() == 64) return std::numeric_limits<double>::max();
+        }
+        return 0;
+    }
+    std::optional<Error> Domain::constrain_to_store(uint64_t val)
+    {
+        if (concrete_types.types.empty()) {
+            return std::nullopt;
+        }
+        std::erase_if(concrete_types.types, [val](Type& elem) { 
+            if (!elem.is_integral()) { return true; }
+            return !((elem.is_signed_integral() || getIntMinOf(elem) <= val) && getIntMaxOf(elem) >= val);
+            });
+        if (concrete_types.types.empty()) {
+            return Error(nullptr, "Type cannot store " + std::to_string(val));
+        }
+        return std::nullopt;
+    }
+    std::optional<Error> Domain::constrain_to_store(int64_t val)
+    {
+        if (val < 0) {
+            if (concrete_types.types.empty()) {
+                return std::nullopt;
+            }
+            std::erase_if(concrete_types.types, [val](Type& elem) {
+                if (!elem.is_signed_integral()) { return true; }
+                return !(getIntMinOf(elem) <= val);
+                });
+            if (concrete_types.types.empty()) {
+                return Error(nullptr, "Type cannot store " + std::to_string(val));
+            }
+            return std::nullopt;
+        }
+        else {
+            return constrain_to_store(static_cast<uint64_t>(val));
+        }
+    }
+    std::optional<Error> Domain::constrain_to_store(double val)
+    {
+        if (concrete_types.types.empty()) {
+            return std::nullopt;
+        }
+        std::erase_if(concrete_types.types, [val](Type& elem) {
+            if (!elem.is_floating_point()) { return true; }
+            return !(getFloatMinOf(elem) < val && getFloatMaxOf(elem) > val);
+            });
+        if (concrete_types.types.empty()) {
+            return Error(nullptr, "Type cannot store " + std::to_string(val));
+        }
+        return std::nullopt;
+    }
+    std::optional<Error> Domain::merge_intersect(Domain&& dmn)
+    {
+        return add_and_intersect(std::move(dmn.concrete_types));
+    }
+    std::optional<Error> Domain::equal_constrain(Type other)
+    {
+        if (concrete_types.types.empty()) {
+            concrete_types.types.push_back(std::move(other));
+            return std::nullopt;
+        }
+        if (std::ranges::any_of(concrete_types.types, [this, &other](auto& elem) {
+            return elem.is_equal(other);
+            }))
+        {
+            concrete_types.types.clear();
+            concrete_types.types.push_back(std::move(other));
+            return std::nullopt;
+        }
+        else {
+            return Error(nullptr, "Type use contradiction");
+        }
+    }
+    bool Domain::is_solved()
+    {
+        return concrete_types.types.size() == 1;
+    }
+    Type Domain::get_solution()
+    {
+        return concrete_types.types[0];
     }
 } // namespace Yoyo

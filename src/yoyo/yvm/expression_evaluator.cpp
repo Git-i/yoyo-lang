@@ -20,87 +20,8 @@ namespace Yoyo
             eval.destroy(value);
         }
     }
-    int64_t getIntMinOf(const Type& type)
-    {
-        if(type.is_signed_integral())
-        {
-            switch (*type.integer_width())
-            {
-            case 8: return std::numeric_limits<int8_t>::min();
-            case 16: return std::numeric_limits<int16_t>::min();
-            case 32: return std::numeric_limits<int32_t>::min();
-            case 64: return std::numeric_limits<int64_t>::min();
-            default: return 0;/*unreachable*/
-            }
-        }
-        if(type.is_unsigned_integral())
-        {
-            switch (*type.integer_width())
-            {
-            case 8: return std::numeric_limits<uint8_t>::min();
-            case 16: return std::numeric_limits<uint16_t>::min();
-            case 32: return std::numeric_limits<uint32_t>::min();
-            case 64: return std::numeric_limits<uint64_t>::min();
-            default: return 0;/*unreachable*/
-            }
-        }
-        if(type.is_floating_point())
-        {
-            if(*type.float_width() == 32) return -std::pow(2, 24);
-            if(*type.float_width() == 64) return -std::pow(2, 53);
-        }
-        return 0;
-    }
-    uint64_t getIntMaxOf(const Type& type)
-    {
-        if(type.is_signed_integral())
-        {
-            switch (*type.integer_width())
-            {
-            case 8: return std::numeric_limits<int8_t>::max();
-            case 16: return std::numeric_limits<int16_t>::max();
-            case 32: return std::numeric_limits<int32_t>::max();
-            case 64: return std::numeric_limits<int64_t>::max();
-            default: return 0;/*unreachable*/
-            }
-        }
-        if(type.is_unsigned_integral())
-        {
-            switch (*type.integer_width())
-            {
-            case 8: return std::numeric_limits<uint8_t>::max();
-            case 16: return std::numeric_limits<uint16_t>::max();
-            case 32: return std::numeric_limits<uint32_t>::max();
-            case 64: return std::numeric_limits<uint64_t>::max();
-            default: return 0;/*unreachable*/
-            }
-        }
-        if(type.is_floating_point())
-        {
-            if(*type.float_width() == 32) return std::pow(2, 24);
-            if(*type.float_width() == 64) return std::pow(2, 53);
-        }
-        return 0;
-    }
-    double getFloatMinOf(const Type& type)
-    {
-        if(type.is_floating_point())
-        {
-            if(*type.float_width() == 32) return std::numeric_limits<float>::min();
-            if(*type.float_width() == 64) return std::numeric_limits<double>::min();
-        }
-        return 0;
-    }
-
-    double getFloatMaxOf(const Type& type)
-    {
-        if(type.is_floating_point())
-        {
-            if(*type.float_width() == 32) return std::numeric_limits<float>::max();
-            if(*type.float_width() == 64) return std::numeric_limits<double>::max();
-        }
-        return 0;
-    }
+    
+    
 
     void YVMExpressionEvaluator::implicitConvert(Expression* xp, const Type& src, const Type& dst, bool on_stack, bool do_load)
     {
@@ -128,8 +49,6 @@ namespace Yoyo
         }
         if(src.name == "flit")
         {
-            double min_bound = getFloatMinOf(dst);
-            double max_bound = getFloatMaxOf(dst);
             if(dst.is_floating_point())
             {
                 if(*dst.float_width() != 64)

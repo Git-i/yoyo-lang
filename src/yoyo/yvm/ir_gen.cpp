@@ -74,6 +74,13 @@ namespace Yoyo
         function_borrow_checkers.emplace_back();
         function_borrow_checkers.back().make_block(); // entry block
         function_borrow_checkers.back().current_block = function_borrow_checkers.back().blocks[0].get();
+
+        TypeCheckerState stt{};
+        stt.resolve_function(decl, this);
+
+        std::visit(BorrowCheckerEmitter{ this }, decl->body->toVariant());
+        function_borrow_checkers.back().check_and_report(this);
+
         decltype(this->variables) new_fn_vars;
         new_fn_vars.emplace_back();
 
@@ -112,8 +119,7 @@ namespace Yoyo
         std::visit(*this, decl->body->toVariant());
         used_types.pop_back();
 
-        std::visit(BorrowCheckerEmitter{ this }, decl->body->toVariant());
-        function_borrow_checkers.back().check_and_report(this);
+        
 
         variables.swap(new_fn_vars);
         function_cfgs.pop_back();

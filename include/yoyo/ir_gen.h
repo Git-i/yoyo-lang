@@ -49,8 +49,8 @@ namespace Yoyo
             requires std::same_as<std::remove_cvref_t<decltype(*list.begin())>, Type>
         {
             if (std::ranges::empty(list)) return "";
-            std::string final = "::<" + list.begin()->full_name();
-            for (auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
+            std::string final = "::<" + (*list.begin()).full_name();
+            for (const auto& tp : std::ranges::subrange(list.begin() + 1, list.end()))
                 final += "," + tp.full_name();
             final += ">";
             return final;

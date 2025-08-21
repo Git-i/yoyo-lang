@@ -81,6 +81,10 @@ namespace Yoyo
         Type type;
         Expression* expr;
     };
+    struct NonOwningConstraint {
+        Type type;
+        Expression* expr;
+    };
     // type can be called (a function or lambda)
     struct IsInvocableConstraint {
         Type type;
@@ -137,14 +141,12 @@ namespace Yoyo
         IsReturnOfConstraint,
         ImplInterfaceConstraint,
         ExtractsToConstraint,
-        RefExtractsToConstraint
+        RefExtractsToConstraint,
+        NonOwningConstraint
     >;
     /// represents the possible types a variable can be
     class Domain {
-        enum TriState : uint8_t { None = 0, False, True };
         bool is_infinite = true;
-        TriState is_owning = None;
-
     public:
         // set of concrete types a type can be
         // it must be one of the elements in a group
@@ -152,17 +154,22 @@ namespace Yoyo
             std::vector<Type> types;
             void add_type(Type&&);
         };
-        std::optional<Error> add_and_intersect(Group&&);
-        void constrain_to_store(uint64_t);
-        void constrain_to_store(int64_t);
-        void constrain_to_store(double);
-        std::optional<Error> merge_intersect(Domain&&);
-        std::optional<Error> equal_constrain(Type&& other);
+        // add a group of types and intersect it with the current group
+        [[nodiscard]] std::optional<Error> add_and_intersect(Group&&);
+        [[nodiscard]] std::optional<Error> constrain_to_store(uint64_t);
+        [[nodiscard]] std::optional<Error> constrain_to_store(int64_t);
+        [[nodiscard]] std::optional<Error> constrain_to_store(double);
+        // basically `add_and_intersect` but with an entire domain
+        [[nodiscard]] std::optional<Error> merge_intersect(Domain&&);
+        // this solves the domain
+        [[nodiscard]] std::optional<Error> equal_constrain(Type other);
+        bool is_solved();
+        Type get_solution();
     private:
-        std::vector<Group> concrete_types;
+        Group concrete_types;
     };
     // This is a union-find
-    // but variables maintain thier domain (set of types they can possibly be)
+    // but variables maintain their domain (set of types they can possibly be)
     // checked with each constraint
     struct UnificationTable {
         std::vector<uint32_t> parents;
@@ -193,12 +200,21 @@ namespace Yoyo
     struct TypeCheckerState {
         std::vector<std::unordered_map<std::string, Type>> variables;
         std::vector<TypeCheckerConstraint> constraints;
+        UnificationTable tbl;
+        // the return type of the function being checked
         Type return_type;
+        // Creates a new type variable
         Type new_type_var();
+        // Adds a new constraint to be checked
+        // (should not be called by the constraint checker, it has a special method for that)
         void add_constraint(TypeCheckerConstraint);
-        void unify_types(const Type&, const Type&);
+        // given 2 type variables, make them equal to each other
+        void unify_types(const Type&, const Type&, IRGenerator* irgen);
+        // append a new block for variables
         void push_variable_block();
+        // remove a block for variables
         void pop_variable_block();
+        // register a new variable
         void create_variable(std::string name, Type type);
         // applies a type substitution if possible
         // else converts it to its most solved form
@@ -211,6 +227,7 @@ namespace Yoyo
         bool has_error;
         IRGenerator* irgen;
         TypeCheckerState* state;
+        std::vector<TypeCheckerConstraint> temp_constraints;
         bool operator()(IsIntegerConstraint& con);
         bool operator()(CanStoreIntegerConstraint& con);
         bool operator()(IsFloatConstraint& con);
@@ -230,6 +247,7 @@ namespace Yoyo
         bool operator()(ImplInterfaceConstraint& con);
         bool operator()(ExtractsToConstraint& con);
         bool operator()(RefExtractsToConstraint& con);
+        bool operator()(NonOwningConstraint& con);
 
         void add_new_constraint(TypeCheckerConstraint);
     };
@@ -240,7 +258,7 @@ namespace Yoyo
         TypeCheckerState* state;
         void operator()(FunctionDeclaration*) {}
         void operator()(ClassDeclaration*) {}
-        void operator()(VariableDeclaration*) {}
+        void operator()(VariableDeclaration*);
         void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
@@ -252,18 +270,18 @@ namespace Yoyo
         void operator()(ModuleImport*) {}
         void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);
-        void operator()(OperatorOverload*);
-        void operator()(GenericFunctionDeclaration*);
-        void operator()(AliasDeclaration*);
-        void operator()(GenericAliasDeclaration*);
-        void operator()(GenericClassDeclaration*);
-        void operator()(InterfaceDeclaration*);
-        void operator()(BreakStatement*);
-        void operator()(ContinueStatement*);
-        void operator()(ConstantDeclaration*);
-        void operator()(CImportDeclaration*);
-        void operator()(UnionDeclaration*);
-        void operator()(MacroDeclaration*);
+        void operator()(OperatorOverload*) {}
+        void operator()(GenericFunctionDeclaration*) {}
+        void operator()(AliasDeclaration*) {}
+        void operator()(GenericAliasDeclaration*) {}
+        void operator()(GenericClassDeclaration*) {}
+        void operator()(InterfaceDeclaration*) {}
+        void operator()(BreakStatement*) {}
+        void operator()(ContinueStatement*) {}
+        void operator()(ConstantDeclaration*){}
+        void operator()(CImportDeclaration*) {}
+        void operator()(UnionDeclaration*) {}
+        void operator()(MacroDeclaration*) {}
 
         FunctionType operator()(IntegerLiteral*) const;
         FunctionType operator()(BooleanLiteral*) const;

@@ -304,8 +304,10 @@ main: fn = {
 }
 TEST_CASE("Simple borrow checker", "[borrow-checker]") {
     std::string source(1 + R"(
+takes_u64: fn(t: u64) = return;
 main: fn = {
-    a: mut i32 = 0;
+    a := 0;
+    takes_u64(a);
     with(t as (&a, &mut a)) {
         
     }

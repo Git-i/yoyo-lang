@@ -23,6 +23,10 @@ namespace Yoyo
         }
         return final;
     }
+    std::string Type::full_name_no_generics() const
+    {
+        return block_hash + name;
+    }
     //TODO: move to util header !??
     std::vector<std::string_view> split(std::string_view str, std::string_view delim)
     {
@@ -804,6 +808,8 @@ namespace Yoyo
             return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&]";
         if (tp.name == "__called_fn")
             return "called " + tp.signature->pretty_name("");
+        if (tp.name.starts_with("?"))
+            return "{unknown}";
         return tp.name;
     }
     std::string Type::pretty_name(const std::string& block) const
