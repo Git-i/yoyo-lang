@@ -175,7 +175,7 @@ namespace Yoyo
         checker.create_cond_br(if_stat, else_stat ? else_stat : if_cont);
         checker.set_block(if_stat);
         variables.emplace_back();
-        variables.back().emplace_back(stat->captured_name, cond);
+        variables.back().emplace_back(stat->captured_name, stat->is_ref ? cond : checker.make_object());
         std::visit(*this, stat->body->toVariant());
         variables.pop_back();
         checker.drop_object(cond, stat->condition.get());
@@ -342,18 +342,19 @@ namespace Yoyo
         auto& checker = irgen->function_borrow_checkers.back();
         ExpressionTypeChecker type_checker{ irgen };
         auto result_type = type_checker(op).value();
-        auto callee = std::visit(type_checker, op->callee->toVariant()).value();
+        auto& callee = op->evaluated_type;
         if (callee.name.starts_with("__union_var"))
         {
             irgen->error(Error(op, "Not implemented"));
             return "";
         }
 
-        if (callee.is_bound) {
-            irgen->error(Error(op, "Not implemented"));
-            return "";
-        }
+        //if (callee.is_bound) {
+        //    irgen->error(Error(op, "Not implemented"));
+        //    return "";
+        //}
         std::vector<Expression*> input_types;
+        input_types.push_back(op->callee.get());
         for (auto i : std::views::iota(0u, op->arguments.size())) {
             input_types.emplace_back(op->arguments[i].get());
         }
@@ -393,7 +394,11 @@ namespace Yoyo
     }
     std::string BorrowCheckerEmitter::operator()(AsExpression* ss) {
         RE_REPR(ss);
-        return "__not_implemented";
+        auto& checker = irgen->function_borrow_checkers.back();
+        auto src = std::visit(*this, ss->expr->toVariant());
+        auto res = checker.make_object();
+        convert_into(checker, src, res, ss->expr->evaluated_type, ss->evaluated_type, ss, irgen);
+        return res;
     }
     std::string BorrowCheckerEmitter::operator()(CharLiteral* lit) {
         RE_REPR(lit);

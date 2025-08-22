@@ -171,7 +171,6 @@ namespace Yoyo
         [[nodiscard]] std::optional<Error> equal_constrain(Type other);
         bool is_solved();
         Type get_solution();
-    private:
         Group concrete_types;
     };
     // This is a union-find

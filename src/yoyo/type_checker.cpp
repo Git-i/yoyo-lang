@@ -188,6 +188,10 @@ namespace Yoyo
             tp = stt->new_type_var();
             return nullptr;
         }
+        if (generic_instantiations.contains(tp.name)) {
+            tp = generic_instantiations[tp.name];
+            return nullptr;
+        }
         ModuleBase* md = irgen->module;
         std::string hash = irgen->block_hash;
         std::string second_to_last = "";
@@ -842,7 +846,7 @@ namespace Yoyo
             // scope expressions must refer to values not types
             // so the last element must be a function, union variant, constant, enum variant
             // and the function can be from an interface too so thats a slightly special case
-            auto next_stat = get_next_stat(current_stat, generic_type.name, get_next_stat);
+            auto next_stat = get_next_stat(current_stat, last.name, get_next_stat);
             // there is no next valid statement so its either an enum variant, interface function or union variant
             if (!next_stat) {
                 if (auto intf = dynamic_cast<InterfaceDeclaration*>(current_stat)) {
@@ -1056,6 +1060,8 @@ namespace Yoyo
     }
     static bool has_type_variable(const Type& tp) {
         if (is_type_variable(tp)) return true;
+        if (tp.block_hash.find('?') != std::string::npos) 
+            return true;
         for (auto& sub : tp.subtypes) {
             if (has_type_variable(sub)) return true;
         }
@@ -1210,7 +1216,57 @@ namespace Yoyo
         }
         return std::nullopt;
     }
-    bool can_match(Type tp1, Type tp2);
+    bool can_match(Type tp1, Type tp2) {
+        tp1.name = tp1.full_name_no_generics();
+        tp2.name = tp2.full_name_no_generics();
+        auto tp1_iter = UnsaturatedTypeIterator(tp1);
+        auto tp2_iter = UnsaturatedTypeIterator(tp2);
+        if (tp1_iter.num_iters() != tp2_iter.num_iters()) {
+            return false;
+        }
+        while (!tp1_iter.is_end()) {
+            auto this1 = tp1_iter.next();
+            auto this2 = tp2_iter.next();
+            // this iteration is explained in `generic_match`
+            if (this1.name != this2.name) {
+                return false;
+            }
+            if (this1.subtypes.size() != this2.subtypes.size()) {
+                return false;
+            }
+            for (auto i : std::views::iota(0u, this1.subtypes.size())) {
+                // if one of the subtypes is a variable, it matches
+                // else we recurse
+                if (is_type_variable(this1.subtypes[i]) || is_type_variable(this2.subtypes[i])) {
+                    continue;
+                }
+                else {
+                    if (auto pass = can_match(this1.subtypes[i], this2.subtypes[i]))
+                        continue;
+                    else return false;
+                }
+            }
+        }
+        auto end1 = tp1_iter.last(); // using the example this is `Type` with proper subtypes
+        auto end2 = tp2_iter.last();
+        if (end1.name != end2.name) {
+            return false;
+        }
+        if (end1.subtypes.size() != end2.subtypes.size()) {
+            return false;
+        }
+        for (auto i : std::views::iota(0u, end1.subtypes.size())) {
+            if (is_type_variable(end1.subtypes[i]) || is_type_variable(end2.subtypes[i])) {
+                continue;
+            }
+            else {
+                if (auto pass = can_match(end1.subtypes[i], end2.subtypes[i]))
+                    continue;
+                else return false;
+            }
+        }
+        return true;
+    }
     bool ConstraintSolver::operator()(EqualConstraint& con)
     {
         auto type1 = state->best_repr(con.type1);
@@ -1224,7 +1280,11 @@ namespace Yoyo
             // but not exaclty a type variable, what to do here?
             // ?1 and Something::<?2>::Type <case 2>
             else if (has_type_variable(type2)) {
-                return false; //keep for later?
+                // Here we substitute into the domain
+                // even though domain was originally designed to contain
+                // concrete types the validation can be handled by the state
+                if (auto err = state->get_type_domain(type1)->equal_constrain(std::move(type2)))
+                    irgen->error(*err);
             }
             // ?1 and concrete <case 3>
             else {
@@ -1235,7 +1295,8 @@ namespace Yoyo
         else if (has_type_variable(type1)) {
             // same as <case 2>
             if (is_type_variable(type2)) {
-                return false; //keep for later?
+                if (auto err = state->get_type_domain(type2)->equal_constrain(std::move(type1)))
+                    irgen->error(*err);
             }
             // Something::<?1>::Type and Something::<?1>::Type <case 4>
             else if (has_type_variable(type2)) {
@@ -1645,6 +1706,13 @@ namespace Yoyo
                 return true;
             }
         }
+        else {
+            // anything can convert to optional
+            if (dst.name == "__opt") {
+                add_new_constraint(EqualConstraint{ dst.subtypes[0], src });
+                return true;
+            }
+        }
         return false;
     }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
@@ -1687,6 +1755,12 @@ namespace Yoyo
             auto actual_id = tbl.find(tbl.type_to_id(tp));
             auto domain = tbl.domain_of(actual_id);
             if (domain->is_solved()) {
+                // this solution may be parametrized
+                if (has_type_variable(domain->concrete_types.types[0])) {
+                    // see if we have already solved what its parametrized to
+                    // should probably prevent recusrion by checking if the solution contains the variable
+                    domain->concrete_types.types[0] = best_repr(domain->concrete_types.types[0]);
+                }
                 return domain->get_solution();
             }
             return tbl.id_to_type(actual_id);
@@ -1874,12 +1948,14 @@ namespace Yoyo
             concrete_types.types.push_back(std::move(other));
             return std::nullopt;
         }
-        if (std::ranges::any_of(concrete_types.types, [this, &other](auto& elem) {
-            return elem.is_equal(other);
-            }))
+        // other must not be concrete
+        // so instead of replacing the entire domain we remove elements that can't match
+        // if we empty the domain then there's an error
+        std::erase_if(concrete_types.types, [this, &other](auto& elem) {
+            return !can_match(other, elem);
+            });
+        if (!concrete_types.types.empty())
         {
-            concrete_types.types.clear();
-            concrete_types.types.push_back(std::move(other));
             return std::nullopt;
         }
         else {

@@ -304,8 +304,14 @@ main: fn = {
 }
 TEST_CASE("Simple borrow checker", "[borrow-checker]") {
     std::string source(1 + R"(
+Helper: struct = {
+    // for some reason I need 2 levels of indirection
+    Helper2: struct::<T> = {
+        make_obj: fn -> T = {}
+    }
+}
 main: fn = {
-    x: _? = "Hello" as _;
+    x: _? = Helper::Helper2::make_obj() as _;
     if |as_str| (x) {
         test::print(&as_str);
     }
