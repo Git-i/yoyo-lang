@@ -311,7 +311,7 @@ Helper: struct = {
     }
 }
 main: fn = {
-    x: _? = Helper::Helper2::make_obj() as _;
+    x: _ = Helper::Helper2::make_obj() as _?;
     if |as_str| (x) {
         test::print(&as_str);
     }

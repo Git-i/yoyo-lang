@@ -6,11 +6,105 @@
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo
 {
+    template<typename T>
+    std::string get_decl_name(T* arg) {
+        if constexpr (std::derived_from<T, ClassDeclaration>) {
+            return arg->name;
+        }
+        else if constexpr (std::derived_from<T, FunctionDeclaration>) {
+            return arg->name;
+        }
+        else if constexpr (std::derived_from<T, UnionDeclaration>) {
+            return arg->name;
+        }
+        else if constexpr (std::same_as<T, EnumDeclaration>) {
+            return arg->identifier;
+        }
+        else if constexpr (std::derived_from<T, InterfaceDeclaration>) {
+            return arg->name;
+        }
+        else if constexpr (std::derived_from<T, AliasDeclaration>) {
+            return arg->name;
+        }
+        else if constexpr (std::derived_from<T, ConstantDeclaration>) {
+            return arg->name;
+        }
+        return "__not_a_declaration__";
+    }
+    Statement* get_next_stat(Statement* stat, const std::string& name) {
+        if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) { // Class and generic class declarations
+            auto it = std::ranges::find_if(cls->stats, [&name](auto& elem) {
+                return std::visit([](auto* arg) { return get_decl_name(arg); }, elem->toVariant()) == name;
+                });
+            if (it != cls->stats.end()) {
+                return it->get();
+            }
+        }
+        else if (auto fn = dynamic_cast<FunctionDeclaration*>(stat)) {
+            return get_next_stat(fn->body.get(), name); // maybe its defined in the function body
+        }
+        else if (auto enm = dynamic_cast<EnumDeclaration*>(stat)) {
+            auto it = std::ranges::find_if(enm->stats, [&name](auto& elem) {
+                return std::visit([](auto* arg) { return get_decl_name(arg); }, elem->toVariant()) == name;
+                });
+            if (it != enm->stats.end()) {
+                return it->get();
+            }
+        }
+        // interfaces cannot have sub-definitions (i.e cant define struct within interface)
+        else if (auto unn = dynamic_cast<UnionDeclaration*>(stat)) {
+            auto it = std::ranges::find_if(unn->sub_stats, [&name](auto& elem) {
+                return std::visit([](auto* arg) { return get_decl_name(arg); }, elem->toVariant()) == name;
+                });
+            if (it != unn->sub_stats.end()) {
+                return it->get();
+            }
+        }
+        // within function body
+        else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
+            for (auto& stat : blk->statements) {
+                auto stat_name = std::visit([](auto* arg) { return get_decl_name(arg); }, stat->toVariant());
+                if (stat_name == name) {
+                    return stat.get();
+                }
+                // we can look deeper as this statement is not a declaration
+                else if (stat_name == "__not_a_declaration__") {
+                    auto res = get_next_stat(stat.get(), name);
+                    if (res) return res;
+                }
+            }
+        }
+        else if (auto whl = dynamic_cast<WhileStatement*>(stat))
+            return get_next_stat(whl->body.get(), name);
+        else if (auto fr = dynamic_cast<ForStatement*>(stat))
+            return get_next_stat(fr->body.get(), name);
+        else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
+            auto exists = get_next_stat(if_stat->then_stat.get(), name);
+            if (exists) return exists;
+            if (if_stat->else_stat) return get_next_stat(if_stat->else_stat.get(), name);
+        }
+        else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
+            auto exists = get_next_stat(cond->body.get(), name);
+            if (exists) return exists;
+            if (cond->else_body) return get_next_stat(cond->else_body.get(), name);
+        }
+        else if (auto with = dynamic_cast<WithStatement*>(stat)) {
+            return get_next_stat(with->body.get(), name);
+        }
+        return nullptr;
+    }
     Statement* normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type>);
     // ignore this huge function
     template<class T>
     concept has_clause = requires(T obj) {
         { obj.clause } -> std::same_as<GenericClause&>;
+    };
+    template<typename T>
+    GenericClause* get_generic_clause(T* arg) {
+        if constexpr (has_clause<T>) {
+            return &arg->clause;
+        }
+        else return static_cast<GenericClause*>(nullptr);
     };
     // from type.cpp
     bool from_builtins(const Type& tp);
@@ -26,105 +120,14 @@ namespace Yoyo
     {
         if (stat) {
             // in generic mode
-            auto get_generic_clause = []<typename T>(T * arg) {
-                if constexpr (has_clause<T>) {
-                    return &arg->clause;
-                }
-                else return static_cast<GenericClause*>(nullptr);
-            };
-            auto get_decl_name = []<std::derived_from<Statement> T>(T * arg)  -> std::string {
-                if constexpr (std::derived_from<T, ClassDeclaration>) {
-                    return arg->name;
-                }
-                else if constexpr (std::derived_from<T, FunctionDeclaration>) {
-                    return arg->name;
-                }
-                else if constexpr (std::derived_from<T, UnionDeclaration>) {
-                    return arg->name;
-                }
-                else if constexpr (std::same_as<T, EnumDeclaration>) {
-                    return arg->identifier;
-                }
-                else if constexpr (std::derived_from<T, InterfaceDeclaration>) {
-                    return arg->name;
-                }
-                else if constexpr (std::derived_from<T, AliasDeclaration>) {
-                    return arg->name;
-                }
-                else if constexpr (std::derived_from<T, ConstantDeclaration>) {
-                    return arg->name;
-                }
-                return "__not_a_declaration__";
-            };
-            auto get_next_stat = [&get_decl_name](Statement* stat, const std::string& name, auto& self) -> Statement* {
-                if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) { // Class and generic class declarations
-                    auto it = std::ranges::find_if(cls->stats, [&get_decl_name, &name](auto& elem) {
-                        return std::visit(get_decl_name, elem->toVariant()) == name;
-                        });
-                    if (it != cls->stats.end()) {
-                        return it->get();
-                    }
-                }
-                else if (auto fn = dynamic_cast<FunctionDeclaration*>(stat)) {
-                    return self(fn->body.get(), name, self); // maybe its defined in the function body
-                }
-                else if (auto enm = dynamic_cast<EnumDeclaration*>(stat)) {
-                    auto it = std::ranges::find_if(enm->stats, [&get_decl_name, &name](auto& elem) {
-                        return std::visit(get_decl_name, elem->toVariant()) == name;
-                        });
-                    if (it != enm->stats.end()) {
-                        return it->get();
-                    }
-                }
-                // interfaces cannot have sub-definitions (i.e cant define struct within interface)
-                else if (auto unn = dynamic_cast<UnionDeclaration*>(stat)) {
-                    auto it = std::ranges::find_if(unn->sub_stats, [&get_decl_name, &name](auto& elem) {
-                        return std::visit(get_decl_name, elem->toVariant()) == name;
-                        });
-                    if (it != unn->sub_stats.end()) {
-                        return it->get();
-                    }
-                }
-                // within function body
-                else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
-                    for (auto& stat : blk->statements) {
-                        auto stat_name = std::visit(get_decl_name, stat->toVariant());
-                        if (stat_name == name) {
-                            return stat.get();
-                        }
-                        // we can look deeper as this statement is not a declaration
-                        else if (stat_name == "__not_a_declaration__") {
-                            auto res = self(stat.get(), name, self);
-                            if (res) return res;
-                        }
-                    }
-                }
-                else if (auto whl = dynamic_cast<WhileStatement*>(stat))
-                    return self(whl->body.get(), name, self);
-                else if (auto fr = dynamic_cast<ForStatement*>(stat))
-                    return self(fr->body.get(), name, self);
-                else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
-                    auto exists = self(if_stat->then_stat.get(), name, self);
-                    if (exists) return exists;
-                    if (if_stat->else_stat) return self(if_stat->else_stat.get(), name, self);
-                }
-                else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
-                    auto exists = self(cond->body.get(), name, self);
-                    if (exists) return exists;
-                    if (cond->else_body) return self(cond->else_body.get(), name, self);
-                }
-                else if (auto with = dynamic_cast<WithStatement*>(stat)) {
-                    return self(with->body.get(), name, self);
-                }
-                return nullptr;
-                };
+            
             // instead of searching the module tree, we search the AST directly because
             // the parent has not been monomorphized
-            stat = get_next_stat(stat, type.name, get_next_stat);
+            stat = get_next_stat(stat, type.name);
             if (!stat) {
                 return Error(SourceSpan{}, "No entity named " + type.name);
             }
-            auto clause = std::visit(get_generic_clause, stat->toVariant());
+            auto clause = std::visit([](auto* arg) { return get_generic_clause(arg); }, stat->toVariant());
             auto num_types_in_clause = clause ? clause->types.size() : 0;
             if (type.subtypes.size() > num_types_in_clause) {
                 return Error(SourceSpan{}, "Too many generic types specified");
@@ -150,8 +153,22 @@ namespace Yoyo
             if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
             {
                 stat = decl;
-                hash = hsh;
-                return advanceScopeNormalize(stat, md, hash, type, stt, irgen, generic_instantiations);
+                auto clause = std::visit([](auto* arg) { return get_generic_clause(arg); }, stat->toVariant());
+                auto num_types_in_clause = clause ? clause->types.size() : 0;
+                if (type.subtypes.size() > num_types_in_clause) {
+                    return Error(SourceSpan{}, "Too many generic types specified");
+                }
+                std::vector<Type> subtypes;
+                for (auto i : std::views::iota(0u, type.subtypes.size())) {
+                    normalize_type(type.subtypes[i], stt, irgen, {});
+                    subtypes.push_back(type.subtypes[i]);
+                    generic_instantiations[clause->types[i]] = type.subtypes[i];
+                }
+                for (auto i : std::views::iota(type.subtypes.size(), num_types_in_clause)) {
+                    generic_instantiations[clause->types[i]] = subtypes.emplace_back(stt->new_type_var());
+                }
+                hash = hsh + type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
+                return std::nullopt;
             }
             if (auto [name, fn] = md->findFunction(hash, type.name); fn)
             {
@@ -169,13 +186,43 @@ namespace Yoyo
             {
                 stat = interface;
                 hash = hsh;
-                return advanceScopeNormalize(stat, md, hash, type, stt, irgen, generic_instantiations);
+                auto clause = std::visit([](auto* arg) { return get_generic_clause(arg); }, stat->toVariant());
+                auto num_types_in_clause = clause ? clause->types.size() : 0;
+                if (type.subtypes.size() > num_types_in_clause) {
+                    return Error(SourceSpan{}, "Too many generic types specified");
+                }
+                std::vector<Type> subtypes;
+                for (auto i : std::views::iota(0u, type.subtypes.size())) {
+                    normalize_type(type.subtypes[i], stt, irgen, {});
+                    subtypes.push_back(type.subtypes[i]);
+                    generic_instantiations[clause->types[i]] = type.subtypes[i];
+                }
+                for (auto i : std::views::iota(type.subtypes.size(), num_types_in_clause)) {
+                    generic_instantiations[clause->types[i]] = subtypes.emplace_back(stt->new_type_var());
+                }
+                hash = hsh + type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
+                return std::nullopt;
             }
             else if (auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
             {
-                stat = interface;
+                stat = fn;
                 hash = hsh;
-                return advanceScopeNormalize(stat, md, hash, type, stt, irgen, generic_instantiations);
+                auto clause = std::visit([](auto* arg) { return get_generic_clause(arg); }, stat->toVariant());
+                auto num_types_in_clause = clause ? clause->types.size() : 0;
+                if (type.subtypes.size() > num_types_in_clause) {
+                    return Error(SourceSpan{}, "Too many generic types specified");
+                }
+                std::vector<Type> subtypes;
+                for (auto i : std::views::iota(0u, type.subtypes.size())) {
+                    normalize_type(type.subtypes[i], stt, irgen, {});
+                    subtypes.push_back(type.subtypes[i]);
+                    generic_instantiations[clause->types[i]] = type.subtypes[i];
+                }
+                for (auto i : std::views::iota(type.subtypes.size(), num_types_in_clause)) {
+                    generic_instantiations[clause->types[i]] = subtypes.emplace_back(stt->new_type_var());
+                }
+                hash = hsh + type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
+                return std::nullopt;
             }
             return std::nullopt;
         }
@@ -661,192 +708,27 @@ namespace Yoyo
             err->span = SourceSpan{ scp->beg, scp->end };
         }
         second_to_last.swap(type.name);
-
-        bool generic_mode = false;
         Type generic_type;
         Statement* current_stat = nullptr;
 
+        std::unordered_map<std::string, Type> generic_instantiations;
         while (!iterator.is_end())
         {
             type = iterator.next();
-            if (!advanceScopeModified(type, md, hash, irgen)) {
-                // check if its generic
-                if (auto [hsh, interface] = md->findGenericInterface(hash, type.name); interface)
-                {
-                    generic_mode = true;
-                    std::swap(type, generic_type);
-                    current_stat = interface;
-                    break;
-                }
-                else if (auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn)
-                {
-                    generic_mode = true;
-                    std::swap(type, generic_type);
-                    current_stat = fn;
-                    break;
-                }
-                else if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl)
-                {
-                    generic_mode = true;
-                    std::swap(type, generic_type);
-                    current_stat = decl;
-                    break;
-                }
+            if (auto err = advanceScopeNormalize(current_stat, md, hash, type, state, irgen, generic_instantiations))
+            {
+                debugbreak();
             }
             second_to_last.swap(type.name);
         }
-
-        auto get_generic_clause = []<typename T>(T* arg) {
-            if constexpr (has_clause<T>) {
-                return &arg->clause;
-            }
-            else return static_cast<GenericClause*>(nullptr);
-        };
-        auto get_decl_name = []<std::derived_from<Statement> T>(T* arg)  -> std::string {
-            if constexpr (std::derived_from<T, ClassDeclaration>) {
-                return arg->name;
-            }
-            else if constexpr (std::derived_from<T, FunctionDeclaration>) {
-                return arg->name;
-            }
-            else if constexpr (std::derived_from<T, UnionDeclaration>) {
-                return arg->name;
-            }
-            else if constexpr (std::same_as<T, EnumDeclaration>) {
-                return arg->identifier;
-            }
-            else if constexpr (std::derived_from<T, InterfaceDeclaration>) {
-                return arg->name;
-            }
-            else if constexpr (std::derived_from<T, AliasDeclaration>) {
-                return arg->name;
-            }
-            else if constexpr (std::derived_from<T, ConstantDeclaration>) {
-                return arg->name;
-            }
-            return "__not_a_declaration__";
-        };
-        auto get_next_stat = [&get_decl_name](Statement* stat, const std::string& name, auto& self) -> Statement* {
-            if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) { // Class and generic class declarations
-                auto it = std::ranges::find_if(cls->stats, [&get_decl_name, &name](auto& elem) {
-                    return std::visit(get_decl_name, elem->toVariant()) == name;
-                    });
-                if (it != cls->stats.end()) {
-                    return it->get();
-                }
-            }
-            else if (auto fn = dynamic_cast<FunctionDeclaration*>(stat)) {
-                return self(fn->body.get(), name, self); // maybe its defined in the function body
-            }
-            else if (auto enm = dynamic_cast<EnumDeclaration*>(stat)) {
-                auto it = std::ranges::find_if(enm->stats, [&get_decl_name, &name](auto& elem) {
-                    return std::visit(get_decl_name, elem->toVariant()) == name;
-                    });
-                if (it != enm->stats.end()) {
-                    return it->get();
-                }
-            }
-            // interfaces cannot have sub-definitions (i.e cant define struct within interface)
-            else if (auto unn = dynamic_cast<UnionDeclaration*>(stat)) {
-                auto it = std::ranges::find_if(unn->sub_stats, [&get_decl_name, &name](auto& elem) {
-                    return std::visit(get_decl_name, elem->toVariant()) == name;
-                    });
-                if (it != unn->sub_stats.end()) {
-                    return it->get();
-                }
-            }
-            // within function body
-            else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
-                for (auto& stat : blk->statements) {
-                    auto stat_name = std::visit(get_decl_name, stat->toVariant());
-                    if (stat_name == name) {
-                        return stat.get();
-                    }
-                    // we can look deeper as this statement is not a declaration
-                    else if (stat_name == "__not_a_declaration__") {
-                        auto res = self(stat.get(), name, self);
-                        if (res) return res;
-                    }
-                }
-            }
-            else if (auto whl = dynamic_cast<WhileStatement*>(stat))
-                return self(whl->body.get(), name, self);
-            else if (auto fr = dynamic_cast<ForStatement*>(stat))
-                return self(fr->body.get(), name, self);
-            else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
-                auto exists = self(if_stat->then_stat.get(), name, self);
-                if (exists) return exists;
-                if (if_stat->else_stat) return self(if_stat->else_stat.get(), name, self);
-            }
-            else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
-                auto exists = self(cond->body.get(), name, self);
-                if (exists) return exists;
-                if (cond->else_body) return self(cond->else_body.get(), name, self);
-            }
-            else if (auto with = dynamic_cast<WithStatement*>(stat)) {
-                return self(with->body.get(), name, self);
-            }
-            return nullptr;
-        };
-        if (generic_mode) {
-            // T -> i32, T -> ?1
-            // this works because even though types can be nested (struct declared in struct)
-            // the generic names must be unique (i.e you can't use a generic name that already exists in scope)
-            std::unordered_map<std::string, Type> generic_instantiations;
-            auto clause = std::visit(get_generic_clause, current_stat->toVariant());
-            // specifying more types than what the schema allows
-            if (generic_type.subtypes.size() > clause->types.size()) {
-                irgen->error(Error(scp, "Too many generic types specified"));
-                return Type{ "__error_type" };
-            }
-            hash += generic_type.name;
-            std::vector<Type> subtypes;
-            // initialize each generic starting with the specified ones
-            for (auto i : std::views::iota(0u, generic_type.subtypes.size())) {
-                // TODO normalize the specified types
-                subtypes.push_back(generic_type.subtypes[i]);
-                generic_instantiations[clause->types[i]] = generic_type.subtypes[i];
-            }
-            // initialize unspecified generics to type variables
-            for (auto i : std::views::iota(generic_type.subtypes.size(), clause->types.size())) {
-                generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
-            }
-            hash += IRGenerator::mangleGenericArgs(subtypes) + "::";
-            subtypes.clear();
-            // keep traversing the iterator
-            while (!iterator.is_end()) {
-                generic_type = iterator.next();
-                // instead of searching the module tree, we search the AST directly because
-                // the parent has not been monomorphized
-                current_stat = get_next_stat(current_stat, generic_type.name, get_next_stat);
-                if (!current_stat) {
-                    irgen->error(Error(scp, "No entity named " + generic_type.name));
-                    return Type{ "__error_type" };
-                }
-                clause = std::visit(get_generic_clause, current_stat->toVariant());
-                auto num_types_in_clause = clause ? clause->types.size() : 0;
-                if (generic_type.subtypes.size() > num_types_in_clause) {
-                    irgen->error(Error(scp, "Too many generic types specified"));
-                    return Type{ "__error_type" };
-                }
-                for (auto i : std::views::iota(0u, generic_type.subtypes.size())) {
-                    subtypes.push_back(generic_type.subtypes[i]);
-                    generic_instantiations[clause->types[i]] = generic_type.subtypes[i];
-                }
-                for (auto i : std::views::iota(generic_type.subtypes.size(), num_types_in_clause)) {
-                    generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
-                }
-                hash += generic_type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
-                subtypes.clear();
-
-            }
+        if (current_stat) {
             
             // at this point we are at the last element of the iter ( foo::bar::...::[end] )
             auto last = iterator.last();
             // scope expressions must refer to values not types
             // so the last element must be a function, union variant, constant, enum variant
             // and the function can be from an interface too so thats a slightly special case
-            auto next_stat = get_next_stat(current_stat, last.name, get_next_stat);
+            Statement* next_stat = get_next_stat(current_stat, last.name);
             // there is no next valid statement so its either an enum variant, interface function or union variant
             if (!next_stat) {
                 if (auto intf = dynamic_cast<InterfaceDeclaration*>(current_stat)) {
@@ -891,7 +773,7 @@ namespace Yoyo
                     };
                 }
             }
-            
+            auto clause = std::visit([](auto* arg) { return get_generic_clause(arg); }, next_stat->toVariant());
             if (auto fn = dynamic_cast<FunctionDeclaration*>(next_stat)) {
                 scp->evaluated_type.name = "__fn";
                 scp->evaluated_type.block_hash = hash;
