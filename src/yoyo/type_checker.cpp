@@ -6,6 +6,18 @@
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo
 {
+    static Statement* get_type_stat(const Type& type, const std::string& hash, ModuleBase* const md) {
+        if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl) {
+            return decl;
+        }
+        else if (auto [this_hash, fn] = md->findGenericFn(hash, type.name); fn) {
+            return fn;
+        }
+        else if (auto [hsh, itf] = md->findGenericInterface(hash, type.name); itf) {
+            return itf;
+        }
+        return nullptr;
+    }
     template<typename T>
     std::string get_decl_name(T* arg) {
         if constexpr (std::derived_from<T, ClassDeclaration>) {
@@ -703,15 +715,35 @@ namespace Yoyo
         std::string second_to_last = "";
         auto iterator = UnsaturatedTypeIterator(scp->type);
         auto type = iterator.next();
+        // handle the first element [first]::Other::...::end;
         auto err = irgen->apply_using(type, md, hash);
         if (err) {
             err->span = SourceSpan{ scp->beg, scp->end };
         }
-        second_to_last.swap(type.name);
-        Type generic_type;
-        Statement* current_stat = nullptr;
-
         std::unordered_map<std::string, Type> generic_instantiations;
+        
+        Statement* current_stat = get_type_stat(type, hash, md);
+        auto clause = current_stat ? std::visit([](auto* arg) { return get_generic_clause(arg); }, current_stat->toVariant()) : nullptr;
+        // add all generic types
+        std::vector<Type> subtypes;
+        auto num_subtypes = clause ? clause->types.size() : 0;
+        if (type.subtypes.size() > num_subtypes) { 
+            irgen->error(Error(scp, "Provided more types than schema allows")); 
+            return Type{ "__error_type" }; 
+        }
+        for (auto i : std::views::iota(0u, type.subtypes.size())) {
+            normalize_type(type.subtypes[i], state, irgen, {});
+            subtypes.push_back(type.subtypes[i]);
+            generic_instantiations[clause->types[i]] = type.subtypes[i];
+        }
+        for (auto i : std::views::iota(type.subtypes.size(), num_subtypes)) {
+            generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
+        }
+        hash.erase(hash.size() - 2, 2);
+        hash += IRGenerator::mangleGenericArgs(subtypes) + "::";
+
+        second_to_last.swap(type.name);
+
         while (!iterator.is_end())
         {
             type = iterator.next();
@@ -752,7 +784,7 @@ namespace Yoyo
                         return Type{ "__error_type" };
                     }
                     // TODO enum hash
-                    scp->evaluated_type = Type{ .name = generic_type.name, .module = md, .block_hash = hash };
+                    scp->evaluated_type = Type{ .name = second_to_last, .module = md, .block_hash = hash };
                 }
                 if (auto unn = dynamic_cast<UnionDeclaration*>(current_stat)) {
                     if (!unn->fields.contains(last.name)) {
