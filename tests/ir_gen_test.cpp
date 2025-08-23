@@ -304,11 +304,9 @@ main: fn = {
 }
 TEST_CASE("Simple borrow checker", "[borrow-checker]") {
     std::string source(1 + R"(
-Helper: struct::<T> = {
-    make_obj: fn -> T = {}
-}
+make_obj: fn::<T> -> T = {}
 main: fn = {
-    x: _ = Helper::make_obj() as _?;
+    x: _ = make_obj() as _?;
     if |as_str| (x) {
         test::print(&as_str);
     }

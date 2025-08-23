@@ -272,7 +272,7 @@ namespace Yoyo
                 if (var_name == name->text) return id;
             }
         }
-        irgen->error(Error(name, "Borrow checker internal error"));
+        return "__literal";
     }
     std::string BorrowCheckerEmitter::operator()(GenericNameExpression* name) {
         RE_REPR(name);
@@ -340,8 +340,6 @@ namespace Yoyo
     std::string BorrowCheckerEmitter::operator()(CallOperation* op) {
         RE_REPR(op);
         auto& checker = irgen->function_borrow_checkers.back();
-        ExpressionTypeChecker type_checker{ irgen };
-        auto result_type = type_checker(op).value();
         auto& callee = op->evaluated_type;
         if (callee.name.starts_with("__union_var"))
         {
@@ -360,7 +358,7 @@ namespace Yoyo
         }
 
         auto res = do_call_like(input_types, irgen, op, *this);
-        if (result_type.is_non_owning(irgen)) return res;
+        if (op->evaluated_type.is_non_owning(irgen)) return res;
         else {
             checker.drop_object(res, op);
             return (std::string)checker.make_object();

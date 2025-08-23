@@ -499,11 +499,26 @@ namespace Yoyo
         }
         if (auto [name_prefix, fn] = module->findGenericFn(hash, ex->text); fn)
         {
-            auto ty = FunctionType(fn->signature, false);
-            ty.name = "__generic_fn" + ex->text;
-            ty.module = irgen->module;
-            ty.block_hash = name_prefix;
-            return { std::move(ty) };
+            auto clause = &fn->clause;
+            tp.name = "__fn";
+            tp.module = module;
+            tp.block_hash = name_prefix;
+            std::vector<Type> subtypes;
+            std::unordered_map<std::string, Type> generic_instantiations;
+            auto num_subtypes = clause ? clause->types.size() : 0;
+            for (auto i : std::views::iota(0u, num_subtypes)) {
+                generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
+            }
+            tp.block_hash += fn->name + IRGenerator::mangleGenericArgs(subtypes) + "::";
+            std::ranges::move(fn->signature.parameters | std::views::transform([&generic_instantiations, this](auto& e) {
+                Type tp = e.type;
+                normalize_type(tp, state, irgen, generic_instantiations);
+                return e.type;
+                }), std::back_inserter(tp.subtypes));
+            tp.subtypes.push_back(fn->signature.returnType);
+            normalize_type(tp.subtypes.back(), state, irgen, generic_instantiations);
+            ex->evaluated_type = tp;
+            return tp;
         }
         if (auto [name_pf, c] = module->findConst(hash, ex->text); c)
         {
