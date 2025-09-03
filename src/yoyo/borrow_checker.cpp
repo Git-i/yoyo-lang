@@ -299,7 +299,7 @@ namespace Yoyo
                 op->lhs.get(),
                 op->rhs.get()
             } }, irgen, op, *this);
-            if (op->evaluated_type.is_non_owning(irgen)) return res;
+            if (stt->is_non_owning(op->evaluated_type, irgen)) return res;
             else {
                 checker.drop_object(res, op);
                 return (std::string)checker.make_object();
@@ -358,7 +358,7 @@ namespace Yoyo
         }
 
         auto res = do_call_like(input_types, irgen, op, *this);
-        if (op->evaluated_type.is_non_owning(irgen)) return res;
+        if (stt->is_non_owning(op->evaluated_type, irgen)) return res;
         else {
             checker.drop_object(res, op);
             return (std::string)checker.make_object();

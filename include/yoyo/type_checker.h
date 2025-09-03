@@ -65,6 +65,12 @@ namespace Yoyo
         TokenType op;
         Expression* expr;
     };
+    struct BinaryDotCompatibleConstraint {
+        Type tp;
+        Expression* right;
+        Type result;
+        Expression* expr;
+    };
     // type is either CmpOrd or CmpPartOrd
     struct ComparableConstraint {
         Type type;
@@ -148,7 +154,8 @@ namespace Yoyo
         ExtractsToConstraint,
         RefExtractsToConstraint,
         NonOwningConstraint,
-        ConvertibleToConstraint
+        ConvertibleToConstraint,
+        BinaryDotCompatibleConstraint
     >;
     /// represents the possible types a variable can be
     class Domain {
@@ -227,6 +234,8 @@ namespace Yoyo
         Domain* get_type_domain(const Type&);
 
         void resolve_function(FunctionDeclaration* decl, IRGenerator* irgen);
+        // A variation of Type::is_non_owning that is guaranteed to not instantiate generics
+        bool is_non_owning(const Type&, IRGenerator*);
     };
     struct ConstraintSolver {
         bool has_error;
@@ -254,6 +263,7 @@ namespace Yoyo
         bool operator()(RefExtractsToConstraint& con);
         bool operator()(NonOwningConstraint& con);
         bool operator()(ConvertibleToConstraint& con);
+        bool operator()(BinaryDotCompatibleConstraint& con);
         void add_new_constraint(TypeCheckerConstraint);
     };
 	struct TypeChecker

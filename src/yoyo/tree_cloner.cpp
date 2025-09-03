@@ -242,7 +242,7 @@ namespace Yoyo
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(ReturnStatement* stat)
     {
-        return std::make_unique<ReturnStatement>(copy_expr(stat->expression));
+        return std::make_unique<ReturnStatement>(stat->expression ? copy_expr(stat->expression) : nullptr);
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(ExpressionStatement* stat)

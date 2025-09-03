@@ -304,12 +304,13 @@ main: fn = {
 }
 TEST_CASE("Simple borrow checker", "[borrow-checker]") {
     std::string source(1 + R"(
-make_obj: fn::<T> -> T = {}
+GenericType: class::<T> = {
+    value: T,
+    new: fn -> GenericType::<T> = return;
+}
 main: fn = {
-    x: _ = make_obj() as _?;
-    if |as_str| (x) {
-        test::print(&as_str);
-    }
+    x := GenericType::new();
+    test::print(&x.value);
 }
 )");
     Yoyo::YVMEngine engine;

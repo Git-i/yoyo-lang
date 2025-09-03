@@ -6,7 +6,7 @@
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo
 {
-    static Statement* get_type_stat(const Type& type, const std::string& hash, ModuleBase* const md) {
+    static Statement* get_type_stat(const Type& type, const std::string& hash, ModuleBase* const md, bool add_non_generics = false) {
         if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl) {
             return decl;
         }
@@ -15,6 +15,17 @@ namespace Yoyo
         }
         else if (auto [hsh, itf] = md->findGenericInterface(hash, type.name); itf) {
             return itf;
+        }
+        if (add_non_generics) {
+            if (auto [hsh, decl] = md->findClass(hash, type.name); decl) {
+                return decl->second.get();
+            }
+            else if (auto [hsh, decl] = md->findEnum(hash, type.name); decl) {
+                return decl;
+            }
+            else if (auto [hsh, decl] = md->findUnion(hash, type.name); decl) {
+                return decl;
+            }
         }
         return nullptr;
     }
@@ -105,7 +116,8 @@ namespace Yoyo
         }
         return nullptr;
     }
-    Statement* normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type>);
+    std::pair<Statement*, std::unordered_map<std::string, Type>> 
+        normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type>);
     // ignore this huge function
     template<class T>
     concept has_clause = requires(T obj) {
@@ -242,14 +254,16 @@ namespace Yoyo
     /// Similar to saturate but can switch to the AST for incomplete generic types
     /// also substitutes generics given an already existing context
     /// also returns the statement that the type belongs to if we followed that path
-    Statement* normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type> generic_instantiations) {
+    auto normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type> generic_instantiations) 
+        -> std::pair<Statement*, std::unordered_map<std::string, Type>>
+    {
         if (tp.name == "_") {
             tp = stt->new_type_var();
-            return nullptr;
+            return { nullptr, generic_instantiations };
         }
         if (generic_instantiations.contains(tp.name)) {
             tp = generic_instantiations[tp.name];
-            return nullptr;
+            return { nullptr, generic_instantiations };
         }
         ModuleBase* md = irgen->module;
         std::string hash = irgen->block_hash;
@@ -270,6 +284,18 @@ namespace Yoyo
 
                 auto hsh = tp.module->hashOf(tp.block_hash, tp.name);
                 if (hsh) tp.block_hash = std::move(hsh).value();
+
+                // introduce generic substitutions
+                current_stat = get_type_stat(tp, tp.block_hash, tp.module);
+                if (current_stat) {
+                    auto clause = std::visit([](auto* a) { return get_generic_clause(a); }, current_stat->toVariant());
+                    if (clause) {
+                        for (auto i : std::views::iota(0u, clause->types.size())) {
+                            normalize_type(tp.subtypes[i], stt, irgen, generic_instantiations);
+                            generic_instantiations[clause->types[i]] = tp.subtypes[i];
+                        }
+                    }
+                }
             }
             else
                 tp.module = core_module;
@@ -293,9 +319,15 @@ namespace Yoyo
             tp.block_hash = hash;
             tp.module = md;
         }
-        for (auto& sub : tp.subtypes) normalize_type(sub, stt, irgen, generic_instantiations);
-        
-        return current_stat;
+        for (auto& sub : tp.subtypes) {
+            if (sub.module && !sub.block_hash.empty()) continue;
+            normalize_type(sub, stt, irgen, generic_instantiations);
+        }
+        // Current stat is empty but we were successful
+        if (!current_stat) {
+            current_stat = get_type_stat(tp, tp.block_hash, tp.module, true);
+        }
+        return { current_stat, generic_instantiations };
     }
     void TypeChecker::operator()(VariableDeclaration* decl)
     {
@@ -617,7 +649,16 @@ namespace Yoyo
         case DoubleEqual: [[fallthrough]];
         case Spaceship: [[fallthrough]];
         case Greater: return do_overloadable_explicit_token(TokenType::Spaceship); // comparisons are all overloaded with <=>
-        case Dot: // TODO;
+        case Dot: {
+            expr->evaluated_type = state->new_type_var();
+            state->add_constraint(BinaryDotCompatibleConstraint{
+                std::visit(targetless(), expr->lhs->toVariant()),
+                expr->rhs.get(),
+                expr->evaluated_type,
+                expr
+                });
+            return expr->evaluated_type;
+        }   
         case DoubleDotEqual: irgen->error(Error(expr, "Not implemented yet")); return {};
         case DoubleDot: irgen->error(Error(expr, "Not implemented yet")); return {};
         }
@@ -1349,7 +1390,7 @@ namespace Yoyo
             state->get_type_domain(type); // constrain to impl interface
         }
         else if (has_type_variable(type)) {
-            decl = dynamic_cast<ClassDeclaration*>(normalize_type(type, state, irgen, {}));
+            decl = dynamic_cast<ClassDeclaration*>(normalize_type(type, state, irgen, {}).first);
         }
         else {
             decl = type.get_decl_if_class(irgen);
@@ -1561,6 +1602,22 @@ namespace Yoyo
         // maybe we can do this in the borrow checker ?
         pop_variable_block();
     }
+    bool TypeCheckerState::is_non_owning(const Type& tp, IRGenerator* irgen)
+    {
+        if ((tp.is_reference() && !tp.is_gc_reference()) || tp.is_slice()) return true;
+        if (tp.is_view() && !tp.is_gc_view()) return true;
+        if (tp.is_optional() || tp.is_variant() || tp.is_tuple())
+        {
+            for (auto& subtype : tp.subtypes)
+                if (is_non_owning(subtype, irgen)) return true;
+        }
+        if (tp.name == "__conv_result_ref") return true;
+        if (auto decl = get_type_stat(tp, tp.block_hash, tp.module))
+            // unions can also be non-owning but its not implemented yet
+            if(auto as_cls = dynamic_cast<ClassDeclaration*>(decl))
+                return as_cls->ownership == Ownership::NonOwning || as_cls->ownership == Ownership::NonOwningMut;
+        return false;
+    }
     bool ConstraintSolver::operator()(ExtractsToConstraint& con)
     {
         // only 3 kinds of types satisfy this
@@ -1640,6 +1697,43 @@ namespace Yoyo
             if (dst.name == "__opt") {
                 add_new_constraint(EqualConstraint{ dst.subtypes[0], src });
                 return true;
+            }
+        }
+        return false;
+    }
+    bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con)
+    {
+        auto left = state->best_repr(con.tp);
+        auto result = state->best_repr(con.result);
+        // check tuple member access <tuple>.<number>
+        if (left.deref().is_tuple()) {
+            if (auto as_int = dynamic_cast<IntegerLiteral*>(con.right)) {
+                auto return_type = left
+                    .deref() // remove reference to get the underlying tuple
+                    .subtypes[std::stol(std::string{ as_int->text })] // get the right subtype
+                    .take_mutability_characteristics(left.deref());
+                add_new_constraint(EqualConstraint{ result, return_type });
+                return true;
+            }
+        }
+        auto no_reference = left.deref();
+        // check class member access
+
+        auto [stat, gctx] = normalize_type(no_reference, state, irgen, {});
+        auto as_name = dynamic_cast<NameExpression*>(con.right);
+        if (as_name) {
+            if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
+                auto it = std::ranges::find_if(cls->vars, [as_name](ClassVariable& var) {
+                    return var.name == as_name->text;
+                    });
+                if (it != cls->vars.end()) {
+                    // we copy out because we may be in a generic declaration
+                    // and we don't modify the AST to not affect future instantiations
+                    auto type = it->type;
+                    normalize_type(type, state, irgen, gctx);
+                    add_new_constraint(EqualConstraint{ result, type });
+                    return true;
+                }
             }
         }
         return false;
