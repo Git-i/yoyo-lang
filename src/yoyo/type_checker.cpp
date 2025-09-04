@@ -1330,7 +1330,7 @@ namespace Yoyo
         if (is_type_variable(callee)) {
             return false;
         }
-        if (callee.name != "__fn") {
+        if (callee.name != "__fn" && callee.name != "__bound_fn") {
             irgen->error(Error(con.expr, "Type is not callable"));
             return true;
         }
@@ -1344,18 +1344,64 @@ namespace Yoyo
         if (is_type_variable(callee)) {
             return false;
         }
-
-        if (callee.name != "__fn") {
+        bool is_bound = callee.name == "__bound_fn";
+        if (callee.name != "__fn" && !is_bound) {
             irgen->error(Error(con.expr, "Type is not callable"));
             return true;
         }
-
+        // checking the bound expr
+        if (is_bound && con.arg_no == uint32_t(-1)) {
+            // ^this is only compatible with gc references
+            if (callee.subtypes[0].is_gc_reference()) {
+                add_new_constraint(EqualConstraint{ callee.subtypes[0], arg });
+            }
+            // &mut this works with mutable references and mutable arguments
+            else if (callee.subtypes[0].is_mutable_reference()) {
+                if (is_type_variable(arg)) {
+                    // this type is either &mut This or This
+                    Domain::Group gp;
+                    gp.add_type(Type(callee.subtypes[0]));
+                    gp.add_type(Type(callee.subtypes[0].deref()));
+                    auto domain = state->get_type_domain(arg);
+                    if (auto err = domain->add_and_intersect(std::move(gp))) {
+                        irgen->error(err.value());
+                    }
+                }
+                else {
+                    if (arg.is_mutable_reference() || arg.is_mutable) {
+                        add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref() });
+                    }
+                    else {
+                        irgen->error(Error(con.expr, "Tried to bind to mutable reference with immutable parameter"));
+                    }
+                }
+            }
+            // &this works for arguments of type Type, &Type, &mut Type and ^Type
+            else if (callee.subtypes[0].is_reference()) {
+                if (is_type_variable(arg)) {
+                    // this type is either &mut This or This
+                    Domain::Group gp;
+                    gp.add_type(Type(callee.subtypes[0].deref()));
+                    gp.add_type(Type(callee.subtypes[0].deref().reference_to()));
+                    gp.add_type(Type(callee.subtypes[0].deref().mutable_reference_to()));
+                    gp.add_type(Type(callee.subtypes[0].deref().gc_reference_to()));
+                    auto domain = state->get_type_domain(arg);
+                    if (auto err = domain->add_and_intersect(std::move(gp))) {
+                        irgen->error(err.value());
+                    }
+                }
+                else {
+                    add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref() });
+                }
+            }
+            return true;
+        }
         if ((callee.subtypes.size() - 1) <= con.arg_no) {
             irgen->error(Error(con.expr, "Too many function args"));
             return true;
         }
 
-        add_new_constraint(EqualConstraint{ callee.subtypes[con.arg_no], arg, con.expr });
+        add_new_constraint(EqualConstraint{ callee.subtypes[con.arg_no + is_bound], arg, con.expr });
         return true;
     }
     bool ConstraintSolver::operator()(IsReturnOfConstraint& con)
@@ -1367,7 +1413,7 @@ namespace Yoyo
             return false;
         }
 
-        if (callee.name != "__fn") {
+        if (callee.name != "__fn" && callee.name != "__bound_fn") {
             irgen->error(Error(con.expr, "Type is not callable"));
             return true;
         }
@@ -1717,11 +1763,11 @@ namespace Yoyo
             }
         }
         auto no_reference = left.deref();
-        // check class member access
-
+        // TODO probably remove this functionality from normalize_type and change it to something else
         auto [stat, gctx] = normalize_type(no_reference, state, irgen, {});
         auto as_name = dynamic_cast<NameExpression*>(con.right);
         if (as_name) {
+            // check class member access
             if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
                 auto it = std::ranges::find_if(cls->vars, [as_name](ClassVariable& var) {
                     return var.name == as_name->text;
@@ -1732,6 +1778,43 @@ namespace Yoyo
                     auto type = it->type;
                     normalize_type(type, state, irgen, gctx);
                     add_new_constraint(EqualConstraint{ result, type });
+                    return true;
+                }
+            }
+            // if the right is a name it could also be a function binding i.e `vec.push`
+            // we check the type for subfunctions whose first parameter is `this`, `&this`, or `&mut this`
+            // then we evaluate right hand as normal and bind as a last option
+            // (we need a custom operator. that will be checked first but it doesn't exist)
+            // so the flow looks like ( 
+            // > check for submethod
+            // > convert to operator. result and check for submethod (useful for methods static and dynamic arrays have in common)
+            // > evaluate right as usual and perform binding (done outside here)
+            auto sub_stat = get_next_stat(stat, as_name->text);
+            if (auto fn = dynamic_cast<FunctionDeclaration*>(sub_stat)) {
+                if (!fn->signature.parameters.empty() && fn->signature.parameters[0].name == "this") {
+                    // correct the right type
+                    con.right->evaluated_type.name = "__fn";
+                    con.right->evaluated_type.block_hash = left.block_hash + as_name->text + "::";
+                    con.right->evaluated_type.module = left.module;
+                    std::ranges::copy(fn->signature.parameters |
+                        std::views::transform([](auto& param) { return param.type; }) |
+                        std::views::transform([this, gctx](Type param) { normalize_type(param, state, irgen, gctx); return param; }),
+                        std::back_inserter(con.right->evaluated_type.subtypes));
+                    auto& first_type = con.right->evaluated_type.subtypes[0];
+                    // first_type name is This we edit it to left
+                    if (!first_type.is_reference()) first_type = left;
+                    else first_type.subtypes[0] = left;
+                    con.right->evaluated_type.subtypes.push_back(fn->signature.returnType);
+                    normalize_type(con.right->evaluated_type.subtypes.back(), state, irgen, gctx);
+                    auto result_type = Type{
+                            .name = "__bound_fn", // the first parameter
+                            .subtypes = con.right->evaluated_type.subtypes,
+                            .module = left.module,
+                            .block_hash = con.right->evaluated_type.block_hash
+                    };
+                    add_new_constraint(EqualConstraint{ result, result_type, con.expr });
+
+                    add_new_constraint(ValidAsFunctionArgConstraint{ left, std::move(result_type), uint32_t(-1), con.expr });
                     return true;
                 }
             }

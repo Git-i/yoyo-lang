@@ -122,6 +122,15 @@ namespace Yoyo {
 		stream << std::format("{}[name| text: {}, type: {}]\n", prefix, nm->text, nm->evaluated_type.pretty_name(""));
 	}
 
+	void ASTPrinter::operator()(BinaryOperation* op)
+	{
+		stream << std::format("{}[binary operation| operator: {}, type: {}]\n", prefix, op->op.text, op->evaluated_type.pretty_name(""));
+		prefix += "    ";
+		std::visit(*this, op->lhs->toVariant());
+		std::visit(*this, op->rhs->toVariant());
+		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
+	}
+
 	void ASTPrinter::operator()(CallOperation* op)
 	{
 		stream << std::format("{}[function call| return: {}]\n", prefix, op->evaluated_type.pretty_name(""));

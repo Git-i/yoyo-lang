@@ -307,9 +307,11 @@ TEST_CASE("Simple borrow checker", "[borrow-checker]") {
 GenericType: class::<T> = {
     value: T,
     new: fn -> GenericType::<T> = return;
+    use: fn(&this) -> T = return this.value;
 }
 main: fn = {
     x := GenericType::new();
+    y := x.use();
     test::print(&x.value);
 }
 )");

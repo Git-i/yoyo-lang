@@ -324,7 +324,7 @@ namespace Yoyo
         case Spaceship: [[fallthrough]];
         case Greater: return do_overloadable_explicit_token(TokenType::Spaceship);
         case Dot: // return doDot(op->lhs.get(), op->rhs.get(), *left_t);
-        case DoubleDotEqual: irgen->error(Error(op, "Not implemented yet")); return {};
+        case DoubleDotEqual: RE_REPR(op->lhs); return ""; // TODO irgen->error(Error(op, "Not implemented yet")); return {};
         case DoubleDot: irgen->error(Error(op, "Not implemented yet")); return {};
         }
     }

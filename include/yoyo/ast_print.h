@@ -41,7 +41,7 @@ namespace Yoyo {
         void operator()(NameExpression*);
         void operator()(GenericNameExpression*) {}
         void operator()(PrefixOperation*){}
-        void operator()(BinaryOperation*) {}
+        void operator()(BinaryOperation*);
         void operator()(GroupingExpression*) {}
         void operator()(LogicalOperation*) {}
         void operator()(PostfixOperation*) {}

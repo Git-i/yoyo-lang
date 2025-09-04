@@ -384,6 +384,13 @@ namespace Yoyo
         tp.saturate(module, nullptr);
         return tp;
     }
+    Type Type::gc_reference_to() const
+    {
+        if (is_reference()) return *this;
+        auto tp = Type{ "__gcref", {*this} };
+        tp.saturate(module, nullptr);
+        return tp;
+    }
     bool from_builtins(const Type& tp) {
         return (tp.is_conversion_result() ||
             tp.is_array() ||
