@@ -864,7 +864,7 @@ namespace Yoyo
             auto clause = std::visit([](auto* arg) { return get_generic_clause(arg); }, next_stat->toVariant());
             if (auto fn = dynamic_cast<FunctionDeclaration*>(next_stat)) {
                 scp->evaluated_type.name = "__fn";
-                scp->evaluated_type.block_hash = hash;
+                scp->evaluated_type.block_hash = hash + fn->name + "::";
                 // function may be generic so we add its types to our generic instantiations
                 if (auto generic = dynamic_cast<GenericFunctionDeclaration*>(fn)) {
                     for (auto i : std::views::iota(0u, last.subtypes.size())) {
@@ -937,7 +937,7 @@ namespace Yoyo
                 irgen->saturateSignature(fn->sig, md);
                 irgen->block_hash.swap(hash);
 
-                scp->evaluated_type.block_hash = hash + last.name;
+                scp->evaluated_type.block_hash = hash + last.name + "::";
                 scp->evaluated_type.name = "__fn";
                 scp->evaluated_type.module = md;
                 std::ranges::copy(fn->sig.parameters | std::views::transform([](auto& elem) { return elem.type; }), 
@@ -1626,6 +1626,7 @@ namespace Yoyo
     {
         push_variable_block();
         return_type = decl->signature.returnType;
+        write_new_constraints_to = &constraints;
         // generate constraints
         std::visit(TypeChecker{std::nullopt, irgen, this}, decl->body->toVariant());
         // solve constraints
@@ -1751,6 +1752,11 @@ namespace Yoyo
     {
         auto left = state->best_repr(con.tp);
         auto result = state->best_repr(con.result);
+        auto as_name = dynamic_cast<NameExpression*>(con.right);
+        // if left is type variable and right is name, we could have ambiguity
+        if (is_type_variable(left) && as_name) {
+            return false;
+        }
         // check tuple member access <tuple>.<number>
         if (left.deref().is_tuple()) {
             if (auto as_int = dynamic_cast<IntegerLiteral*>(con.right)) {
@@ -1765,7 +1771,6 @@ namespace Yoyo
         auto no_reference = left.deref();
         // TODO probably remove this functionality from normalize_type and change it to something else
         auto [stat, gctx] = normalize_type(no_reference, state, irgen, {});
-        auto as_name = dynamic_cast<NameExpression*>(con.right);
         if (as_name) {
             // check class member access
             if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
@@ -1819,7 +1824,24 @@ namespace Yoyo
                 }
             }
         }
-        return false;
+        // here we evaluate the right as usual and perform the binding
+        auto new_constraint_address = &temp_constraints;
+        std::swap(state->write_new_constraints_to, new_constraint_address);
+        auto right_t = std::visit(TypeChecker{ std::nullopt, irgen, state }, con.right->toVariant());
+        std::swap(state->write_new_constraints_to, new_constraint_address);
+        auto right = state->best_repr(right_t);
+        if (right.name != "__fn") {
+            irgen->error(Error(con.expr, "Cannot bind to non function"));
+        }
+        auto result_type = Type{
+            .name = "__bound_fn", // the first parameter
+            .subtypes = right.subtypes,
+            .module = left.module,
+            .block_hash = right.block_hash
+        };
+        add_new_constraint(EqualConstraint{ result, result_type, con.expr });
+        add_new_constraint(ValidAsFunctionArgConstraint{ left, std::move(result_type), uint32_t(-1), con.expr });
+        return true;
     }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
     {
@@ -1834,7 +1856,7 @@ namespace Yoyo
     }
     void TypeCheckerState::add_constraint(TypeCheckerConstraint c)
     {
-        constraints.push_back(std::move(c));
+        write_new_constraints_to->push_back(std::move(c));
     }
     void TypeCheckerState::unify_types(const Type& t1, const Type& t2, IRGenerator* irgen)
     {

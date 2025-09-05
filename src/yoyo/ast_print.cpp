@@ -144,7 +144,7 @@ namespace Yoyo {
 
 	void ASTPrinter::operator()(ScopeOperation* op)
 	{
-		stream << std::format("{}[scope| path: {}]\n", prefix, op->evaluated_type.full_name());
+		stream << std::format("{}[scope| path: {}]\n", prefix, op->evaluated_type.pretty_name(""));
 	}
 
 	void ASTPrinter::operator()(AsExpression* as_expr)

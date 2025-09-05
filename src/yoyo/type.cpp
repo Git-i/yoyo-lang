@@ -807,61 +807,63 @@ namespace Yoyo
             return Token{Name, ret_val};
         }
     };
-    std::string pretty_name_suffix(const Type& tp)
+    std::string pretty_name_suffix(const Type& tp, const std::string& blk)
     {
         if (tp.is_mutable_reference())
-            return "&mut " + pretty_name_suffix(tp.subtypes[0]);
+            return "&mut " + tp.subtypes[0].pretty_name(blk);
         if (tp.is_gc_reference())
-            return "^" + pretty_name_suffix(tp.subtypes[0]);
+            return "^" + tp.subtypes[0].pretty_name(blk);
         if (tp.is_reference())
-            return "&" + pretty_name_suffix(tp.subtypes[0]);
+            return "&" + tp.subtypes[0].pretty_name(blk);
         if (tp.is_static_array())
-            return "[" + pretty_name_suffix(tp.subtypes[0]) + "; " + std::to_string(tp.static_array_size()) + "]";
+            return "[" + tp.subtypes[0].pretty_name(blk) + "; " + std::to_string(tp.static_array_size()) + "]";
         if (tp.is_mut_slice())
-            return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&mut]";
+            return "[" + tp.subtypes[0].pretty_name(blk) + ":&mut]";
         if (tp.is_slice())
-            return "[" + pretty_name_suffix(tp.subtypes[0]) + ":&]";
+            return "[" + tp.subtypes[0].pretty_name(blk) + ":&]";
         if (tp.name == "__called_fn")
             return "called " + tp.signature->pretty_name("");
         if (tp.name.starts_with("?"))
-            return "{unknown}";
+            return "{unknown:" + tp.name + "}";
         if (tp.is_tuple()) {
             std::string res = "(";
             for (auto& st : tp.subtypes) {
-                res += pretty_name_suffix(st) + ", ";
+                res += st.pretty_name(blk) + ", ";
             }
             res.pop_back();
             res.back() = ')';
             return res;
         }
-        if (tp.is_optional()) return pretty_name_suffix(tp.subtypes[0]) + "?";
-        return tp.name;
+        if (tp.name == "__fn" || tp.name == "__bound_fn") {
+            std::string res;
+            res += "(";
+            if (tp.subtypes.size() > 1) {
+                for (auto i : std::views::iota(0u, tp.subtypes.size() - 1)) {
+                    res += tp.subtypes[i].pretty_name(blk);
+                    res += (i == tp.subtypes.size() - 2) ? ")" : ", ";
+                }
+            }
+            else res += ")";
+            res += " -> " + tp.subtypes.back().pretty_name(blk);
+            return res;
+        }
+        if (tp.is_optional()) return tp.subtypes[0].pretty_name(blk) + "?";
+        std::string res = tp.name;
+        if (!tp.subtypes.empty()) {
+            res += "::<";
+            for (auto& i : std::ranges::subrange(tp.subtypes.begin(), tp.subtypes.end() - 1)) {
+                res += i.pretty_name(blk) + ", ";
+            }
+            res += tp.subtypes.back().pretty_name(blk) + ">";
+        }
+        return res;
     }
     std::string Type::pretty_name(const std::string& block) const
     {
-        if (block_hash.empty()) return pretty_name_suffix(*this);
-        std::string name_pf;
-        auto this_split = split(block_hash, "%");
-        auto other_split = split(block, "%");
-        size_t start_idx = 0;
-        while (true)
-        {
-            if (start_idx >= this_split.size() || start_idx >= other_split.size()) break;
-            if (this_split[start_idx] == other_split[start_idx]) start_idx++;
-            else break;
-        }
-        for (auto& spl : std::ranges::subrange(this_split.begin() + start_idx, this_split.end()))
-        {
-            for(auto&[md_name, module] : module->engine->modules)
-            {
-                if (module->module_hash == spl) name_pf.append(md_name + "::");
-                continue;
-            }
-            if (spl.starts_with("__class__")) spl = std::string_view(spl.begin() + 9, spl.end());
-            spl = std::string_view(spl.begin(), spl.end() - 3);
-            name_pf.append(std::string(spl) + "::");
-        }
-        return name_pf + pretty_name_suffix(*this);
+        if (block_hash.empty()) return pretty_name_suffix(*this, block);
+       
+        std::string name_pf = block_hash; // TODO: filter block by common prefix
+        return name_pf + pretty_name_suffix(*this, block);
     }
     std::string FunctionSignature::pretty_name(const std::string& block_hash) const
     {

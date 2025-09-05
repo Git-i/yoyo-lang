@@ -212,6 +212,7 @@ namespace Yoyo
     struct TypeCheckerState {
         std::vector<std::unordered_map<std::string, Type>> variables;
         std::vector<TypeCheckerConstraint> constraints;
+        std::vector<TypeCheckerConstraint>* write_new_constraints_to;
         UnificationTable tbl;
         // the return type of the function being checked
         Type return_type;

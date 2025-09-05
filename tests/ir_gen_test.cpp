@@ -309,9 +309,13 @@ GenericType: class::<T> = {
     new: fn -> GenericType::<T> = return;
     use: fn(&this) -> T = return this.value;
 }
+Type: struct = {
+    func: fn(param: &str) = return;
+}
 main: fn = {
     x := GenericType::new();
     y := x.use();
+    y.Type::func();
     test::print(&x.value);
 }
 )");
