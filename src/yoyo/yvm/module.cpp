@@ -82,6 +82,15 @@ namespace Yoyo
             args[1] = NativeType::getU8();
             return eng.struct_manager.get_struct_type(args);
         }
+        if (type.is_result()) {
+            std::array<NativeTy*, 2> args{};
+            args[0] = eng.union_manager.get_union_type({ {
+                reinterpret_cast<YVMModule*>(type.subtypes[0].module)->toNativeType(type.subtypes[0], hash, irgen, disallowed_types),
+                reinterpret_cast<YVMModule*>(type.subtypes[1].module)->toNativeType(type.subtypes[1], hash, irgen, disallowed_types)
+            } });
+            args[1] = NativeType::getU8();
+            return eng.struct_manager.get_struct_type(args);
+        }
         if (type.is_str())
         {
             std::array<NativeTy*, 3> args{};

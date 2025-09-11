@@ -339,6 +339,7 @@ namespace Yoyo
         if (decl->initializer) {
             tp = std::visit(new_target(decl->type), decl->initializer->toVariant());
         }
+        tp.is_mutable = decl->is_mut;
         decl->type = tp;
         state->create_variable(std::string(decl->identifier.text), tp);
     }
@@ -407,6 +408,7 @@ namespace Yoyo
     {
         auto tp = std::visit(targetless(), stat->condition->toVariant());
         auto obj_ty = state->new_type_var();
+        Type else_ty;
         if (stat->is_ref) {
             // value_conversion_result::<T> extracts to T
             // optional extracts to T, ref extracts to &T or &mut T
@@ -419,12 +421,26 @@ namespace Yoyo
         else {
             state->add_constraint(ExtractsToConstraint{ tp, obj_ty });
         }
+        if (!stat->else_capture.empty()) {
+            else_ty = state->new_type_var();
+            if (stat->else_is_ref)
+                state->add_constraint(ElseRefExtractsToConstraint{ tp, else_ty });
+            else
+                state->add_constraint(ElseExtractsToConstraint{ tp, else_ty });
+        }
         state->push_variable_block();
         state->create_variable(stat->captured_name, obj_ty);
         std::visit(*this, stat->body->toVariant());
         state->pop_variable_block();
 
-        if (stat->else_body) std::visit(*this, stat->else_body->toVariant());
+        if (stat->else_body) {
+            if (!stat->else_capture.empty()) {
+                state->push_variable_block();
+                state->create_variable(stat->else_capture, else_ty);
+            }
+            std::visit(*this, stat->else_body->toVariant());
+            if (!stat->else_capture.empty()) state->pop_variable_block();
+        }
     }
     void TypeChecker::operator()(WithStatement* stat)
     {
@@ -908,7 +924,7 @@ namespace Yoyo
                     return Type{ "__error_type" };
                 }
             }
-            if (auto [actual_hash, unn] = md->findUnion(hash, second_to_last); unn)
+            else if (auto [actual_hash, unn] = md->findUnion(hash, second_to_last); unn)
             {
                 if (md != irgen->module && unn->is_private()) {
                     irgen->error(Error(scp, "The union is private"));
@@ -926,7 +942,7 @@ namespace Yoyo
                     return Type{ "__error_type" };
                 }
             }
-            if (auto [name, fn] = md->findFunction(hash, last.name); fn)
+            else if (auto [name, fn] = md->findFunction(hash, last.name); fn)
             {
                 if (md != irgen->module && fn->is_private()) {
                     irgen->error(Error(scp, "The function type " + name + fn->name + " is private"));
@@ -944,12 +960,16 @@ namespace Yoyo
                     std::back_inserter(scp->evaluated_type.subtypes));
                 scp->evaluated_type.subtypes.push_back(fn->sig.returnType);
             }
-            if (auto [name, c] = md->findConst(hash, last.name); c)
+            else if (auto [name, c] = md->findConst(hash, last.name); c)
             {
                 irgen->block_hash.swap(hash);
                 std::get<0>(*c).saturate(md, irgen);
                 irgen->block_hash.swap(hash);
                 return { std::get<0>(*c) };
+            }
+            else {
+                irgen->error(Error(scp, last.name + " does not exist in " + hash));
+                return Type{ "__error_type" };
             }
         }
         return scp->evaluated_type;
@@ -1059,7 +1079,7 @@ namespace Yoyo
             grp.add_type(Type{ .name = "u16", .module = core_module });
             grp.add_type(Type{ .name = "u32", .module = core_module });
             grp.add_type(Type{ .name = "u64", .module = core_module });
-            if(auto error = domain->add_and_intersect(std::move(grp)))
+            if(auto error = domain->add_and_intersect(std::move(grp), state))
                 irgen->error(*error);
         }
         else {
@@ -1091,7 +1111,7 @@ namespace Yoyo
             auto grp = Domain::Group{};
             grp.add_type(Type{ .name = "f32", .module = core_module });
             grp.add_type(Type{ .name = "f64", .module = core_module });
-            if (auto error = domain->add_and_intersect(std::move(grp)))
+            if (auto error = domain->add_and_intersect(std::move(grp), state))
                 irgen->error(*error);
         }
         else {
@@ -1127,7 +1147,7 @@ namespace Yoyo
             return true;
         }
     }
-    std::optional<Error> generic_match(Type tp1, Type tp2, Expression* loc, ConstraintSolver* solver) {
+    std::optional<Error> generic_match(Type tp1, Type tp2, Expression* loc, TypeCheckerState* solver) {
         // include the block in the name
         // because type.subtypes only occurs generics at the end ─────────────────╮
         // so we can check cases where the generic occurs earlier ──╮             │
@@ -1159,7 +1179,7 @@ namespace Yoyo
                 // this is the T in Something::<T> hence it could be a varaible
                 // or another full on type
                 if (is_type_variable(this1.subtypes[i]) || is_type_variable(this2.subtypes[i])) {
-                    solver->add_new_constraint(EqualConstraint{ this1.subtypes[i], this2.subtypes[i], loc });
+                    solver->add_constraint(EqualConstraint{ this1.subtypes[i], this2.subtypes[i], loc });
                 }
                 else {
                     if(auto failed = generic_match(this1.subtypes[i], this2.subtypes[i], loc, solver))
@@ -1177,7 +1197,7 @@ namespace Yoyo
         }
         for (auto i : std::views::iota(0u, end1.subtypes.size())) {
             if (is_type_variable(end1.subtypes[i]) || is_type_variable(end2.subtypes[i])) {
-                solver->add_new_constraint(EqualConstraint{ end1.subtypes[i], end2.subtypes[i], loc });
+                solver->add_constraint(EqualConstraint{ end1.subtypes[i], end2.subtypes[i], loc });
             }
             else {
                 if (auto failed = generic_match(end1.subtypes[i], end2.subtypes[i], loc, solver))
@@ -1278,13 +1298,13 @@ namespace Yoyo
                 // or both
                 // luckily we have a neat routine for that
                 //begin checking subtypes
-                if(auto err = generic_match(std::move(type1), std::move(type2), con.expr, this))
+                if(auto err = generic_match(std::move(type1), std::move(type2), con.expr, state))
                     irgen->error(*err);
             }
             // Something::<?1>::Type and concrete <case 5>
             else {
                 // generic match can also work here probably
-                if (auto err = generic_match(std::move(type1), std::move(type2), con.expr, this))
+                if (auto err = generic_match(std::move(type1), std::move(type2), con.expr, state))
                     irgen->error(*err);
             }
         }
@@ -1298,7 +1318,7 @@ namespace Yoyo
             }
             // concrete and Something::<?2>::Type (same as <case 5>)
             else if (has_type_variable(type2)) {
-                if (auto err = generic_match(std::move(type1), std::move(type2), con.expr, this))
+                if (auto err = generic_match(std::move(type1), std::move(type2), con.expr, state))
                     irgen->error(*err);
             }
             // concrete and concrete
@@ -1327,6 +1347,7 @@ namespace Yoyo
     bool ConstraintSolver::operator()(IsInvocableConstraint& con)
     {
         auto callee = state->best_repr(con.type);
+        if (callee.is_error_ty()) return true;
         if (is_type_variable(callee)) {
             return false;
         }
@@ -1363,7 +1384,7 @@ namespace Yoyo
                     gp.add_type(Type(callee.subtypes[0]));
                     gp.add_type(Type(callee.subtypes[0].deref()));
                     auto domain = state->get_type_domain(arg);
-                    if (auto err = domain->add_and_intersect(std::move(gp))) {
+                    if (auto err = domain->add_and_intersect(std::move(gp), state)) {
                         irgen->error(err.value());
                     }
                 }
@@ -1386,7 +1407,7 @@ namespace Yoyo
                     gp.add_type(Type(callee.subtypes[0].deref().mutable_reference_to()));
                     gp.add_type(Type(callee.subtypes[0].deref().gc_reference_to()));
                     auto domain = state->get_type_domain(arg);
-                    if (auto err = domain->add_and_intersect(std::move(gp))) {
+                    if (auto err = domain->add_and_intersect(std::move(gp), state)) {
                         irgen->error(err.value());
                     }
                 }
@@ -1408,7 +1429,7 @@ namespace Yoyo
     {
         auto callee = state->best_repr(con.function);
         auto arg = state->best_repr(con.type);
-
+        if(callee.is_error_ty() || arg.is_error_ty()) return true;
         if (is_type_variable(callee)) {
             return false;
         }
@@ -1530,7 +1551,8 @@ namespace Yoyo
                     auto obj = detail.left;
                     grp.add_type(std::move(obj));
                 }
-                state->get_type_domain(left)->add_and_intersect(std::move(grp));
+                if(auto err = state->get_type_domain(left)->add_and_intersect(std::move(grp), state))
+                    irgen->error(err.value());
             }
         } else if (has_type_variable(left)) {
             if(is_type_variable(right)) {
@@ -1576,7 +1598,8 @@ namespace Yoyo
                     auto obj = detail.right;
                     grp.add_type(std::move(obj));
                 }
-                state->get_type_domain(right)->add_and_intersect(std::move(grp));
+                if(auto err = state->get_type_domain(right)->add_and_intersect(std::move(grp), state))
+                    irgen->error(err.value());
             } else if(has_type_variable(right)) {
                 // this can also work
                 return false;
@@ -1605,7 +1628,7 @@ namespace Yoyo
         }
         return true;
     }
-    uint32_t UnificationTable::unite(uint32_t id, uint32_t id2, IRGenerator *irgen) {
+    uint32_t UnificationTable::unite(uint32_t id, uint32_t id2, IRGenerator *irgen, TypeCheckerState* state) {
         auto finda = find(id);
         auto findb = find(id2);
         if (finda == findb)
@@ -1617,7 +1640,7 @@ namespace Yoyo
             rank[finda]++;
 
         if (auto produced_error =
-                domains[finda].merge_intersect(std::move(domains[findb])))
+                domains[finda].merge_intersect(std::move(domains[findb]), state))
           irgen->error(*produced_error);
         domains.erase(findb);
         return finda;
@@ -1631,6 +1654,8 @@ namespace Yoyo
         std::visit(TypeChecker{std::nullopt, irgen, this}, decl->body->toVariant());
         // solve constraints
         ConstraintSolver sv{ false, irgen, this };
+        // any generated constraints are written into a temporary buffer
+        write_new_constraints_to = &sv.temp_constraints;
         bool has_change = true;
         while (has_change) {
             has_change = std::erase_if(constraints, [&sv](TypeCheckerConstraint& elem) {
@@ -1653,10 +1678,11 @@ namespace Yoyo
     {
         if ((tp.is_reference() && !tp.is_gc_reference()) || tp.is_slice()) return true;
         if (tp.is_view() && !tp.is_gc_view()) return true;
-        if (tp.is_optional() || tp.is_variant() || tp.is_tuple())
+        if (tp.is_optional() || tp.is_variant() || tp.is_tuple() || tp.is_result())
         {
             for (auto& subtype : tp.subtypes)
                 if (is_non_owning(subtype, irgen)) return true;
+            return false;
         }
         if (tp.name == "__conv_result_ref") return true;
         if (auto decl = get_type_stat(tp, tp.block_hash, tp.module))
@@ -1679,7 +1705,12 @@ namespace Yoyo
             return false; // we can't know
         }
 
-        if (type.name != "__opt" && type.name != "__conv_result_ref" && type.name != "__conv_result_val") {
+        if (
+            type.name != "__opt" && 
+            type.name != "__conv_result_ref" && 
+            type.name != "__conv_result_val" &&
+            type.name != "__res"
+            ) {
             irgen->error(Error(con.expr, "Invalid type for conditional extraction"));
             return true;
         }
@@ -1693,6 +1724,7 @@ namespace Yoyo
     {
         // only 2 kinds of types satisfy this
         // T? (__opt::<T>) extracts to &T or &mut T
+        // T \ E (__res::<T, E>)
         // __conv_result_ref::<T> extracts to T (special internal type returned by variant conversion)
 
         auto target = state->best_repr(con.dst);
@@ -1702,7 +1734,9 @@ namespace Yoyo
             return false; // we can't know
         }
 
-        if (type.name != "__opt" && type.name != "__conv_result_ref") {
+        if (type.name != "__opt" && 
+            type.name != "__conv_result_ref" &&
+            type.name != "__res") {
             irgen->error(Error(con.expr, "Invalid type for reference conditional extraction"));
             return true;
         }
@@ -1735,7 +1769,7 @@ namespace Yoyo
                 // src can convert to src? and depending on the type other things
                 Domain::Group gp;
                 gp.add_type(Type{ .name = "__opt", .subtypes{src}, .module = core_module });
-                state->get_type_domain(dst)->add_and_intersect(std::move(gp));
+                if (auto err = state->get_type_domain(dst)->add_and_intersect(std::move(gp), state)) irgen->error(err.value());
                 return true;
             }
         }
@@ -1824,11 +1858,7 @@ namespace Yoyo
                 }
             }
         }
-        // here we evaluate the right as usual and perform the binding
-        auto new_constraint_address = &temp_constraints;
-        std::swap(state->write_new_constraints_to, new_constraint_address);
         auto right_t = std::visit(TypeChecker{ std::nullopt, irgen, state }, con.right->toVariant());
-        std::swap(state->write_new_constraints_to, new_constraint_address);
         auto right = state->best_repr(right_t);
         if (right.name != "__fn") {
             irgen->error(Error(con.expr, "Cannot bind to non function"));
@@ -1841,6 +1871,75 @@ namespace Yoyo
         };
         add_new_constraint(EqualConstraint{ result, result_type, con.expr });
         add_new_constraint(ValidAsFunctionArgConstraint{ left, std::move(result_type), uint32_t(-1), con.expr });
+        return true;
+    }
+    bool ConstraintSolver::operator()(ElseRefExtractsToConstraint& con)
+    {
+        // this is only satisfied by the result type
+        // T??E (__res::<T, E>) and it extracts to &E
+        auto target = state->best_repr(con.dst);
+        auto type = state->best_repr(con.type);
+        auto mutable_reference_to = [base = core_module](const Type& tp) {
+            return Type{ .name = "__ref_mut", .subtypes = {tp}, .module = base };
+            };
+        auto reference_to = [base = core_module](const Type& tp) {
+            return Type{ .name = "__ref", .subtypes = {tp}, .module = base };
+            };
+        if (is_type_variable(type)) {
+            // Domain supports partial types
+            Domain::Group grp;
+            auto error_type = state->new_type_var();
+            grp.add_type(Type{ .name = "__res", .subtypes = { state->new_type_var(), error_type }});
+            auto err = state->get_type_domain(type)->add_and_intersect(std::move(grp), state);
+            if (err) irgen->error(err.value());
+            add_new_constraint(EqualConstraint{
+                 type.is_mutable ? mutable_reference_to(error_type) : reference_to(error_type),
+                 target,
+                 con.expr
+                });
+            return true;
+        }
+
+        if (type.name != "__res") {
+            irgen->error(Error(con.expr, "Conditional extraction can also have else branch capture with results"));
+            return true;
+        }
+        add_new_constraint(EqualConstraint{
+                type.is_mutable ? mutable_reference_to(type.subtypes[1]) : mutable_reference_to(type.subtypes[1]),
+                target,
+                con.expr
+            });
+        return true;
+    }
+    bool ConstraintSolver::operator()(ElseExtractsToConstraint& con)
+    {
+        auto target = state->best_repr(con.dst);
+        auto type = state->best_repr(con.type);
+
+        if (is_type_variable(type)) {
+            // Domain supports partial types
+            Domain::Group grp;
+            auto error_type = state->new_type_var();
+            grp.add_type(Type{ .name = "__res", .subtypes = { state->new_type_var(), error_type } });
+            auto err = state->get_type_domain(type)->add_and_intersect(std::move(grp), state);
+            if (err) irgen->error(err.value());
+            add_new_constraint(EqualConstraint{
+                 error_type,
+                 target,
+                 con.expr
+                });
+            return true;
+        }
+
+        if (type.name != "__res") {
+            irgen->error(Error(con.expr, "Conditional extraction can also have else branch capture with results"));
+            return true;
+        }
+        add_new_constraint(EqualConstraint{
+                type.subtypes[1],
+                target,
+                con.expr
+            });
         return true;
     }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
@@ -1861,7 +1960,7 @@ namespace Yoyo
     void TypeCheckerState::unify_types(const Type& t1, const Type& t2, IRGenerator* irgen)
     {
         if (is_type_variable(t1) && is_type_variable(t2)) {
-            tbl.unite(tbl.type_to_id(t1), tbl.type_to_id(t2), irgen);
+            tbl.unite(tbl.type_to_id(t1), tbl.type_to_id(t2), irgen, this);
         }
     }
     void TypeCheckerState::push_variable_block()
@@ -1889,9 +1988,9 @@ namespace Yoyo
                     // should probably prevent recusrion by checking if the solution contains the variable
                     domain->concrete_types.types[0] = best_repr(domain->concrete_types.types[0]);
                 }
-                return domain->get_solution();
+                return domain->get_solution().take_mutability_characteristics(tp);
             }
-            return tbl.id_to_type(actual_id);
+            return tbl.id_to_type(actual_id).take_mutability_characteristics(tp);
         }
         else if (has_type_variable(tp)) {
             // decompose tp and rebuild but substitute all type vars with best repr
@@ -1909,7 +2008,7 @@ namespace Yoyo
             for (auto& elem : final_t.subtypes) { elem = best_repr(elem); }
             final_t.block_hash = actual_block;
             final_t.module = tp.module;
-            return final_t;
+            return final_t.take_mutability_characteristics(tp);
         }
         else {
             // concrete already
@@ -1924,18 +2023,40 @@ namespace Yoyo
     {
         types.push_back(tp);
     }
-    std::optional<Error> Domain::add_and_intersect(Group&& grp)
+    std::optional<Error> Domain::add_and_intersect(Group&& grp, TypeCheckerState* state)
     {
         if (concrete_types.types.empty()) {
-            concrete_types = grp;
+            concrete_types.types = std::move(grp.types);
             return std::nullopt;
         }
+        // We could have non concrete types so the intersection process is a bit more delicate
         std::vector<Type> out;
-        std::ranges::set_intersection(concrete_types.types, grp.types, std::back_inserter(out));
-        concrete_types.types = std::move(out);
-        if (concrete_types.types.empty()) {
-            return Error(nullptr, "Intersection error");
+        std::vector<TypeCheckerConstraint> cons;
+        auto cons_ptr = &cons;
+        std::swap(state->write_new_constraints_to, cons_ptr);
+        for (auto& type : grp.types) {
+            // find matching type and generate equality constraints
+            for (auto& current_type : concrete_types.types) {
+                // we redirect generated constraints from generic match to a different vector
+                // so that if they don't match we don't have wrong constraints in our solver
+                auto res = generic_match(type, current_type, nullptr, state);
+                if (!res.has_value()) {
+                    // std::move(current_type) should also work
+                    // the generated constraints should cover any blind spots
+                    out.push_back(std::move(type)); 
+                    // cons_ptr should contain our original constraint buffer
+                    std::ranges::move(cons, std::back_inserter(*cons_ptr));
+                    cons.clear();
+                    break;
+                }
+                cons.clear();
+            }
         }
+        if (out.empty()) {
+            return Error(nullptr, "Constradictory type");
+        }
+        concrete_types.types = std::move(out);
+        std::swap(state->write_new_constraints_to, cons_ptr);
         return std::nullopt;
     }
     int64_t getIntMinOf(const Type& type)
@@ -2066,9 +2187,9 @@ namespace Yoyo
         }
         return std::nullopt;
     }
-    std::optional<Error> Domain::merge_intersect(Domain&& dmn)
+    std::optional<Error> Domain::merge_intersect(Domain&& dmn, TypeCheckerState* state)
     {
-        return add_and_intersect(std::move(dmn.concrete_types));
+        return add_and_intersect(std::move(dmn.concrete_types), state);
     }
     std::optional<Error> Domain::equal_constrain(Type other)
     {

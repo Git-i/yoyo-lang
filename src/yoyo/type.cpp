@@ -248,7 +248,7 @@ namespace Yoyo
     {
         if((is_reference() && !is_gc_reference()) || is_slice()) return true;
         if (is_view() && !is_gc_view()) return true;
-        if(is_optional() || is_variant() || is_tuple())
+        if(is_optional() || is_variant() || is_tuple() || is_result())
         {
             for(auto& subtype : subtypes)
                 if(subtype.is_non_owning(irgen)) return true;
@@ -262,7 +262,7 @@ namespace Yoyo
     bool Type::is_non_owning_mut(IRGenerator* irgen) const
     {
         if(is_mutable_reference() || is_mut_slice()) return true;
-        if(is_optional() || is_variant() || is_tuple())
+        if(is_optional() || is_variant() || is_tuple() || is_result())
         {
             for(auto& subtype : subtypes)
                 if(subtype.is_non_owning_mut(irgen)) return true;
@@ -407,6 +407,7 @@ namespace Yoyo
             tp.is_reference() ||
             tp.is_slice() ||
             tp.is_view() ||
+            tp.is_result() ||
             (tp.block_hash == "core::" && tp.name == "Fiber"));
     }
     bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool);

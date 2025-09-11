@@ -78,7 +78,10 @@ namespace Yoyo
 
         TypeCheckerState stt{};
         stt.resolve_function(decl, this);
-
+        // don't go further if type checking failed
+        if (has_error) {
+            return;
+        }
         std::visit(BorrowCheckerEmitter{ this, &stt }, decl->body->toVariant());
         std::visit(ASTPrinter{ std::cout }, decl->body->toVariant());
         function_borrow_checkers.back().check_and_report(this);

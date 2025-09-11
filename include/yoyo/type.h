@@ -68,6 +68,7 @@ namespace Yoyo
 
         [[nodiscard]] bool is_tuple() const {return name == "__tup";}
         [[nodiscard]] bool is_optional() const {return name == "__opt";}
+        [[nodiscard]] bool is_result() const { return name == "__res"; }
         [[nodiscard]] bool is_str() const {return name == "str";}
         [[nodiscard]] bool is_variant() const {return name == "__var";}
         [[nodiscard]] bool is_char() const {return name == "char";}

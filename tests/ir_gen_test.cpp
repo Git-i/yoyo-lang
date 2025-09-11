@@ -328,6 +328,27 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test Results", "[type-checker], [result-type]") {
+    std::string source(1 + R"(
+// test::return_result: fn -> i32 \ str;
+main: fn = {
+    result: mut = test::return_result();
+    if |as_int| (result) {
+    } else |&as_str| {
+        as_str.test::print();
+    }
+}
+)");
+    Yoyo::YVMEngine engine;
+    auto test_mod = addTestModule(&engine);
+    test_mod->addFunction("-> i32 \\ str", static_cast<void(*)(void*)>([](void* in) {}), "return_result");
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 //TEST_CASE("Test lambdas", "[lambda][borrow-checker]")
 //{
 //    std::string source(1 + R"(

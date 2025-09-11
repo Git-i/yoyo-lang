@@ -1037,7 +1037,7 @@ namespace Yoyo
             if(discard(TokenType::Pipe))
             {
                 if(discard(TokenType::Ampersand)) else_is_ref = true;
-                auto else_iden = Peek();
+                auto else_iden = Get();
                 if(!else_iden) return nullptr;
                 if(else_iden->type != TokenType::Identifier) error("Expected identifier", else_iden);
                 if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
@@ -1205,6 +1205,7 @@ namespace Yoyo
         case TokenType::DoubleColon: return ScopePrecedence;
         case TokenType::Question: return OptionalPreference;
         case TokenType::Colon: return OptionalPreference;
+        case TokenType::BackSlash: return OptionalPreference;
         default: return 0;
         }
     }
@@ -1242,7 +1243,14 @@ namespace Yoyo
     }
     std::optional<Type> parsePostfixTypeExpr(Parser& p, Type left, Token t)
     {
-        if(t.type == TokenType::Question) return Type{ .name = "__opt", .subtypes = {std::move(left)}};
+        if (t.type == TokenType::Question) return Type{ .name = "__opt", .subtypes = {std::move(left)} };
+        else if (t.type == TokenType::BackSlash) {
+            auto err_ty = p.parseType(0); // TODO result type precedence(type precedence in general)
+            return Type{ .name = "__res", .subtypes = {
+                    std::move(left), std::move(err_ty).value()
+                }
+            };
+        }
         return std::nullopt;
     }
     std::optional<Type> parseRefType(Token tk, Parser& p)
@@ -1395,7 +1403,9 @@ namespace Yoyo
             switch(tk->type)
             {
             case TokenType::TemplateOpen: t = parseTemplateTypeExpr(*this, std::move(t).value()); break;
-            case TokenType::Question: t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk); break;
+            case TokenType::Question: [[fallthrough]];
+            case TokenType::BackSlash:
+                t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk); break;
             case TokenType::DoubleColon:
                 {
                     std::optional<Type> tp = parseType(precedence);

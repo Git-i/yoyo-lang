@@ -160,7 +160,10 @@ namespace Yoyo {
                     }
                     return Token{TokenType::Underscore, loc};
                 }
-            case '?': return Token{TokenType::Question, loc, {source.data() + position - 1, 1} };
+            case '?': 
+                {
+                return Token{ TokenType::Question, loc, {source.data() + position - 1, 1} };
+                }
             case '\t': [[fallthrough]];
             case ' ': [[fallthrough]];
             case '\r': [[fallthrough]];
@@ -175,7 +178,7 @@ namespace Yoyo {
             case '\\': 
             {
                 if (NextIs('}')) return Token{ TokenType::SlashBrace, loc, {source.data() + position - 2, 2} };
-                return std::nullopt;
+                return Token{ TokenType::BackSlash, loc, {source.data() + position - 1, 1} };
             }
             default:
                 {

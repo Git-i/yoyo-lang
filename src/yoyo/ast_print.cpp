@@ -70,7 +70,18 @@ namespace Yoyo {
 
 	void ASTPrinter::operator()(ConditionalExtraction* conde)
 	{
-		//TODO
+		stream << std::format("{}[conditional extraction, into: {}]\n", prefix, conde->captured_name);
+		prefix += "    ";
+		std::visit(*this, conde->body->toVariant());
+		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
+		if (conde->else_body) {
+			stream << std::format("{}[else{}\n", prefix,
+				conde->else_capture.empty() ?
+				std::string("]") : std::format(", into: {}]", conde->else_capture));
+			prefix += "    ";
+			std::visit(*this, conde->else_body->toVariant());
+			prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
+		}
 	}
 
 	void ASTPrinter::operator()(WithStatement* stat)

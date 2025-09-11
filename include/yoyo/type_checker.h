@@ -122,8 +122,21 @@ namespace Yoyo
         Type dst;
         Expression* expr;
     };
+    // type can be used in else block of conditional extraction
+    // if |_| (object as type) else |value: dst| {}
+    struct ElseExtractsToConstraint {
+        Type type;
+        Type dst;
+        Expression* expr;
+    };
     // Similar to extracts to but when the extraction results borrows
     struct RefExtractsToConstraint {
+        Type type;
+        Type dst;
+        Expression* expr;
+    };
+    // Similar to else extracts to but the result borrows
+    struct ElseRefExtractsToConstraint {
         Type type;
         Type dst;
         Expression* expr;
@@ -155,7 +168,9 @@ namespace Yoyo
         RefExtractsToConstraint,
         NonOwningConstraint,
         ConvertibleToConstraint,
-        BinaryDotCompatibleConstraint
+        BinaryDotCompatibleConstraint,
+        ElseExtractsToConstraint,
+        ElseRefExtractsToConstraint
     >;
     /// represents the possible types a variable can be
     class Domain {
@@ -168,12 +183,12 @@ namespace Yoyo
             void add_type(Type&&);
         };
         // add a group of types and intersect it with the current group
-        [[nodiscard]] std::optional<Error> add_and_intersect(Group&&);
+        [[nodiscard]] std::optional<Error> add_and_intersect(Group&&, TypeCheckerState*);
         [[nodiscard]] std::optional<Error> constrain_to_store(uint64_t);
         [[nodiscard]] std::optional<Error> constrain_to_store(int64_t);
         [[nodiscard]] std::optional<Error> constrain_to_store(double);
         // basically `add_and_intersect` but with an entire domain
-        [[nodiscard]] std::optional<Error> merge_intersect(Domain&&);
+        [[nodiscard]] std::optional<Error> merge_intersect(Domain&&, TypeCheckerState*);
         // this solves the domain
         [[nodiscard]] std::optional<Error> equal_constrain(Type other);
         bool is_solved();
@@ -204,7 +219,7 @@ namespace Yoyo
                 parents[id] = find(parents[id]);
             return parents[id];
         }
-        uint32_t unite(uint32_t id, uint32_t id2, IRGenerator *irgen);
+        uint32_t unite(uint32_t id, uint32_t id2, IRGenerator *irgen, TypeCheckerState*);
         Domain* domain_of(uint32_t id) {
             return &domains[find(id)];
         }
@@ -265,6 +280,8 @@ namespace Yoyo
         bool operator()(NonOwningConstraint& con);
         bool operator()(ConvertibleToConstraint& con);
         bool operator()(BinaryDotCompatibleConstraint& con);
+        bool operator()(ElseRefExtractsToConstraint& con);
+        bool operator()(ElseExtractsToConstraint& con);
         void add_new_constraint(TypeCheckerConstraint);
     };
 	struct TypeChecker
