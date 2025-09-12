@@ -319,4 +319,65 @@ namespace Yoyo
         self->call_expr = std::move(expr);
         return Expression::attachSLAndParent(std::move(self), tk.loc, end, parser.parent);
     }
+    std::unique_ptr<Expression> IfParselet::parse(Parser& p, Token tk)
+    {
+        if (p.Peek() && p.Peek()->type == TokenType::Pipe) return nullptr; // p.parseConditionalExtraction(tk);
+        if (!p.discard(TokenType::LParen)) p.error("Expected '('", p.Peek());
+        auto condition = p.parseExpression(0);
+        if (!condition) p.synchronizeTo({ {TokenType::RParen} });
+        if (!p.discard(TokenType::RParen)) p.error("Expected ')'", p.Peek());
+        auto then = p.parseExpression(0);
+
+        std::unique_ptr<Expression> else_stat = nullptr;
+        auto else_tk = p.Peek();
+        if (else_tk && else_tk->type == TokenType::Else)
+        {
+            p.Get();
+            else_stat = p.parseExpression(0);
+        }
+        SourceLocation end = else_stat ? else_stat->end : then->end;
+        return Expression::attachSLAndParent(
+            std::make_unique<IfExpression>(std::move(condition), std::move(then), std::move(else_stat)),
+            tk.loc, end, p.parent);
+    }
+    std::unique_ptr<Expression> BlockParselet::parse(Parser& p, Token tk)
+    {
+        std::vector<std::unique_ptr<Statement>> statements;
+        std::unique_ptr<Expression> expr;
+        auto is_expr = [](std::unique_ptr<ASTNode>& expr) {
+            return dynamic_cast<Expression*>(expr.get());
+            };
+        while (!p.discard(TokenType::RCurly))
+        {
+            auto decl = p.parseExpressionOrDeclaration();
+            if (auto ex = is_expr(decl)) {
+                // expression statements can omit `;` on certain expressions
+                // so if the next token does not end the block we consider it a statement
+                if (p.canOmitSemiColon(ex)) {
+                    if (p.discard(TokenType::RCurly)) {
+                        decl.release();
+                        expr.reset(ex);
+                        break;
+                    }
+                    else {
+                        decl.release();
+                        statements.push_back(std::make_unique<ExpressionStatement>(std::unique_ptr<Expression>(ex)));
+                        continue;
+                    }
+                }
+                else {
+                    if (!p.discard(TokenType::RCurly)) {
+                        p.error("Expected ';' or '}'", p.Peek()); 
+                        return nullptr;
+                    }
+                    decl.release();
+                    expr.reset(ex);
+                    break;
+                }
+            }
+            statements.push_back(std::unique_ptr<Statement>(dynamic_cast<Statement*>(decl.release())));
+        }
+        return Expression::attachSLAndParent(
+            std::make_unique<BlockExpression>(std::move(statements), std::move(expr)), tk.loc, p.discardLocation, p.parent);
+    }
 }

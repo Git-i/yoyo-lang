@@ -32,6 +32,7 @@ namespace Yoyo
         uint32_t depth = 0;
         void addChild(CFGNode* child);
         std::vector<Statement*> statements;
+        std::vector<Expression*> expressions;
         CFGNodeManager* manager = nullptr;
     };
     struct VarInfo

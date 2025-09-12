@@ -98,6 +98,7 @@ namespace Yoyo
     void BorrowCheckerEmitter::operator()(CImportDeclaration*) {}
     void BorrowCheckerEmitter::operator()(UnionDeclaration*) {}
     void BorrowCheckerEmitter::operator()(MacroDeclaration*) {}
+    
     void BorrowCheckerEmitter::operator()(VariableDeclaration* decl) {
         decl->type = stt->best_repr(*decl->type);
         auto& checker = irgen->function_borrow_checkers.back();
@@ -105,25 +106,28 @@ namespace Yoyo
         // variables have to be fully owning so we don't need to worry about moving
         variables.back().emplace_back(std::string(decl->identifier.text), checker.make_object());
     }
-    void BorrowCheckerEmitter::operator()(IfStatement* stat) {
+    std::string BorrowCheckerEmitter::operator()(IfExpression* stat) {
+        RE_REPR(stat);
         auto& checker = irgen->function_borrow_checkers.back();
         auto if_stat = checker.make_block();
         auto if_cont = checker.make_block();
-        auto else_stat = stat->else_stat ? checker.make_block() : nullptr;
+        auto else_stat = stat->else_expr ? checker.make_block() : nullptr;
         checker.drop_object(std::visit(*this, stat->condition->toVariant()), stat->condition.get());
 
         checker.create_cond_br(if_stat, else_stat ? else_stat : if_cont);
         checker.set_block(if_stat);
-        std::visit(*this, stat->then_stat->toVariant());
+        std::visit(*this, stat->then_expr->toVariant());
         checker.create_br(if_cont);
 
         if (else_stat) {
             checker.set_block(else_stat);
-            std::visit(*this, stat->else_stat->toVariant());
+            std::visit(*this, stat->else_expr->toVariant());
             checker.create_br(if_cont);
         }
 
         checker.set_block(if_cont);
+        return "";
+        // TODO
     }
     void BorrowCheckerEmitter::operator()(WhileStatement* stat) {
         auto& checker = irgen->function_borrow_checkers.back();
@@ -145,17 +149,20 @@ namespace Yoyo
     void BorrowCheckerEmitter::operator()(ForStatement*) {
         // TODO
     }
-    void BorrowCheckerEmitter::operator()(BlockStatement* stat) {
+    std::string BorrowCheckerEmitter::operator()(BlockExpression* stat) {
+        RE_REPR(stat);
         auto& checker = irgen->function_borrow_checkers.back();
         variables.emplace_back();
         for (auto& stt : stat->statements) {
             std::visit(*this, stt->toVariant());
         }
-
+        if (stat->expr) std::visit(*this, stat->expr->toVariant());
         for (auto& variable : variables.back() | std::views::reverse) {
             checker.drop_object(variable.second, stat);
         }
         variables.pop_back();
+        // TODO
+        return "";
     }
     void BorrowCheckerEmitter::operator()(ReturnStatement*) {
     // TODO
@@ -369,6 +376,7 @@ namespace Yoyo
         irgen->error(Error(op, "Not implemented yet")); return "";
     }
     std::string BorrowCheckerEmitter::operator()(LambdaExpression*) { return ""; }
+    std::string BorrowCheckerEmitter::operator()(TryExpression*) { return ""; }
     std::string BorrowCheckerEmitter::operator()(ScopeOperation* scp) {
         RE_REPR(scp);
         // either function, enum or constant

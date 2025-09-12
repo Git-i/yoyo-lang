@@ -14,6 +14,8 @@ namespace Yoyo
     {
     public:
         explicit Parser(std::string& source);
+        std::unique_ptr<ASTNode> parseExpressionOrDeclaration();
+        bool canOmitSemiColon(Expression*);
         std::unique_ptr<Expression> parseExpression(uint32_t precedence);
         std::unique_ptr<Statement> parseVariableDeclaration(Token identifier);
         std::unique_ptr<Statement> parseEnumDeclaration(Token identifier);
@@ -29,8 +31,6 @@ namespace Yoyo
         std::unique_ptr<Statement> parseReturnStatement(Token);
         std::unique_ptr<Statement> parseExpressionStatement();
         std::unique_ptr<Statement> parseConditionalExtraction(Token);
-        std::unique_ptr<Statement> parseIfStatement(Token);
-        std::unique_ptr<Statement> parseBlockStatement(Token);
         std::unique_ptr<Statement> parseForStatement(Token);
         std::unique_ptr<Statement> parseWhileStatement(Token);
         std::unique_ptr<Statement> parseStatement();

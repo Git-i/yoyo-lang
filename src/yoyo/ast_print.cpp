@@ -12,13 +12,13 @@ namespace Yoyo {
 			prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
 		}
 	}
-	void ASTPrinter::operator()(IfStatement* stat)
+	void ASTPrinter::operator()(IfExpression* stat)
 	{
-		stream << std::format("{}[if]\n", prefix);
+		stream << std::format("{}[if type: {}]\n", prefix, stat->evaluated_type.pretty_name(""));
 		prefix += "    ";
 		std::visit(*this, stat->condition->toVariant());
-		std::visit(*this, stat->then_stat->toVariant());
-		if (stat->else_stat) std::visit(*this, stat->else_stat->toVariant());
+		std::visit(*this, stat->then_expr->toVariant());
+		if (stat->else_expr) std::visit(*this, stat->else_expr->toVariant());
 		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
 	}
 
@@ -40,13 +40,14 @@ namespace Yoyo {
 		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
 	}
 
-	void ASTPrinter::operator()(BlockStatement* stats)
+	void ASTPrinter::operator()(BlockExpression* stats)
 	{
-		stream << std::format("{}[block]\n", prefix);
+		stream << std::format("{}[block type: {}]\n", prefix, stats->evaluated_type.pretty_name(""));
 		prefix += "    ";
 		for (auto& stat : stats->statements) {
 			std::visit(*this, stat->toVariant());
 		}
+		if (stats->expr) std::visit(*this, stats->expr->toVariant());
 		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
 	}
 

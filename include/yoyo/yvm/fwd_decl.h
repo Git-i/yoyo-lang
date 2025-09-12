@@ -7,13 +7,12 @@ namespace Yoyo
     struct ForwardDeclaratorPass1
     {
         YVMModule* md;
-        std::unique_ptr<Statement>& stmt;
         std::string block;
         bool operator()(FunctionDeclaration* decl) const
         {
             md->functions[block].emplace_back(decl->name, decl->signature, decl->attributes);
             std::string new_blk = block + decl->name + "::";
-            std::visit(ForwardDeclaratorPass1{ md, decl->body, new_blk }, decl->body->toVariant());
+            std::visit(ForwardDeclaratorPass1{ md, new_blk }, decl->body->toVariant());
             return true;
         }
         bool operator()(ConstantDeclaration* decl) const
@@ -36,7 +35,7 @@ namespace Yoyo
 
             for (auto& stt : decl->stats)
             {
-                std::visit(ForwardDeclaratorPass1{ md, stt, mangled_name_prefix }, stt->toVariant());
+                std::visit(ForwardDeclaratorPass1{ md, mangled_name_prefix }, stt->toVariant());
             }
             md->aliases[mangled_name_prefix]["This"] = Type{
                 .name = decl->name
@@ -70,7 +69,7 @@ namespace Yoyo
 
             for (auto& stt : decl->stats)
             {
-                std::visit(ForwardDeclaratorPass1{ md, stt, new_blk }, stt->toVariant());
+                std::visit(ForwardDeclaratorPass1{ md, new_blk }, stt->toVariant());
             }
             md->aliases[new_blk]["This"] = Type{
                 .name = decl->identifier,
@@ -101,7 +100,7 @@ namespace Yoyo
         }
         bool operator()(InterfaceDeclaration* decl)
         {
-            std::ignore = stmt.release();
+            //std::ignore = stmt.release();
             md->interfaces[block].emplace_back(decl);
             auto mangled_name_prefix = block + decl->name + "::";
             md->aliases[mangled_name_prefix]["This"] = Type{
@@ -125,7 +124,7 @@ namespace Yoyo
 
             for (auto& stt : decl->sub_stats)
             {
-                std::visit(ForwardDeclaratorPass1{ md, stt, new_blk }, stt->toVariant());
+                std::visit(ForwardDeclaratorPass1{ md, new_blk }, stt->toVariant());
             }
             md->aliases[new_blk]["This"] = Type{
                 .name = decl->name,
@@ -137,10 +136,11 @@ namespace Yoyo
 
             return true;
         }
-        bool operator()(BlockStatement* stat) {
+        bool operator()(BlockExpression* stat) {
             for (auto& sub : stat->statements) {
-                std::visit(ForwardDeclaratorPass1{ md, sub, block }, sub->toVariant());
+                std::visit(ForwardDeclaratorPass1{ md, block }, sub->toVariant());
             }
+            if (stat->expr) std::visit(ForwardDeclaratorPass1{ md, block }, stat->expr->toVariant());
             return false;
         }
         bool operator()(MacroDeclaration* decl) {
@@ -148,5 +148,6 @@ namespace Yoyo
             return true;
         }
         bool operator()(Statement*) const { return false; };
+        bool operator()(Expression*) const { return false;  }
     };
 }

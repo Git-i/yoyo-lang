@@ -43,15 +43,7 @@ namespace Yoyo
     {
         return this;
     }
-    StatementVariant IfStatement::toVariant()
-    {
-        return this;
-    }
     StatementVariant WhileStatement::toVariant()
-    {
-        return this;
-    }
-    StatementVariant BlockStatement::toVariant()
     {
         return this;
     }

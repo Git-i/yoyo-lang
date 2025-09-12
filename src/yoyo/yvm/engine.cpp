@@ -113,7 +113,7 @@ namespace Yoyo
         vm.add_module(&reinterpret_cast<YVMModule*>(md.get())->code);
         for (auto& stat : prog)
         {
-            if (!std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(md.get()), stat, md->module_hash }, stat->toVariant()))
+            if (!std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(md.get()), md->module_hash }, stat->toVariant()))
             {
                 modules.erase(module_name);
                 break;

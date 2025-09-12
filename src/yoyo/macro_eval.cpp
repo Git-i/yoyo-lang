@@ -535,20 +535,20 @@ namespace Yoyo
 		
 		variables.back()[name] = std::visit(MacroExprEval{ irgen, this }, decl->initializer->toVariant());
 	}
-	void MacroEvaluator::operator()(IfStatement* stat)
-	{
-		auto cond = std::visit(MacroExprEval{ irgen, this }, stat->condition->toVariant());
-		if (!std::holds_alternative<bool>(cond)) irgen->error(Error(stat->condition.get(), "If statement condition must evaluate to bool"));
-		if (std::get<bool>(cond)) {
-			std::visit(*this, stat->then_stat->toVariant());
-			if (has_returned) return;
-		}
-		else {
-			if (stat->else_stat) {
-				std::visit(*this, stat->else_stat->toVariant());
-			}
-		}
-	}
+	//void MacroEvaluator::operator()(IfStatement* stat)
+	//{
+	//	auto cond = std::visit(MacroExprEval{ irgen, this }, stat->condition->toVariant());
+	//	if (!std::holds_alternative<bool>(cond)) irgen->error(Error(stat->condition.get(), "If statement condition must evaluate to bool"));
+	//	if (std::get<bool>(cond)) {
+	//		std::visit(*this, stat->then_stat->toVariant());
+	//		if (has_returned) return;
+	//	}
+	//	else {
+	//		if (stat->else_stat) {
+	//			std::visit(*this, stat->else_stat->toVariant());
+	//		}
+	//	}
+	//}
 	void MacroEvaluator::operator()(WhileStatement* stat)
 	{
 		auto expr_eval = MacroExprEval{ irgen, this };
@@ -592,18 +592,19 @@ namespace Yoyo
 		}
 		variables.pop_back();
 	}
-	void MacroEvaluator::operator()(BlockStatement* stats)
-	{
-		variables.emplace_back();
-		for (auto& stat : stats->statements) {
-			std::visit(*this, stat->toVariant());
-			if (has_returned) {
-				variables.pop_back();
-				return;
-			}
-		}
-		variables.pop_back();
-	}
+	// TODO
+	//void MacroEvaluator::operator()(BlockStatement* stats)
+	//{
+	//	variables.emplace_back();
+	//	for (auto& stat : stats->statements) {
+	//		std::visit(*this, stat->toVariant());
+	//		if (has_returned) {
+	//			variables.pop_back();
+	//			return;
+	//		}
+	//	}
+	//	variables.pop_back();
+	//}
 	void MacroEvaluator::operator()(ReturnStatement* ret)
 	{
 		if (!ret->expression) irgen->error(Error(ret, "Must return a value"));

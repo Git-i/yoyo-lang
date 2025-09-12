@@ -84,28 +84,28 @@ namespace Yoyo
             }
         }
         // within function body
-        else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
-            for (auto& stat : blk->statements) {
-                auto stat_name = std::visit([](auto* arg) { return get_decl_name(arg); }, stat->toVariant());
-                if (stat_name == name) {
-                    return stat.get();
-                }
-                // we can look deeper as this statement is not a declaration
-                else if (stat_name == "__not_a_declaration__") {
-                    auto res = get_next_stat(stat.get(), name);
-                    if (res) return res;
-                }
-            }
-        }
+        //else if (auto blk = dynamic_cast<BlockStatement*>(stat)) {
+        //    for (auto& stat : blk->statements) {
+        //        auto stat_name = std::visit([](auto* arg) { return get_decl_name(arg); }, stat->toVariant());
+        //        if (stat_name == name) {
+        //            return stat.get();
+        //        }
+        //        // we can look deeper as this statement is not a declaration
+        //        else if (stat_name == "__not_a_declaration__") {
+        //            auto res = get_next_stat(stat.get(), name);
+        //            if (res) return res;
+        //        }
+        //    }
+        //}
         else if (auto whl = dynamic_cast<WhileStatement*>(stat))
             return get_next_stat(whl->body.get(), name);
         else if (auto fr = dynamic_cast<ForStatement*>(stat))
             return get_next_stat(fr->body.get(), name);
-        else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
-            auto exists = get_next_stat(if_stat->then_stat.get(), name);
-            if (exists) return exists;
-            if (if_stat->else_stat) return get_next_stat(if_stat->else_stat.get(), name);
-        }
+        //else if (auto if_stat = dynamic_cast<IfStatement*>(stat)) {
+        //    auto exists = get_next_stat(if_stat->then_stat.get(), name);
+        //    if (exists) return exists;
+        //    if (if_stat->else_stat) return get_next_stat(if_stat->else_stat.get(), name);
+        //}
         else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
             auto exists = get_next_stat(cond->body.get(), name);
             if (exists) return exists;
@@ -343,14 +343,27 @@ namespace Yoyo
         decl->type = tp;
         state->create_variable(std::string(decl->identifier.text), tp);
     }
-    void TypeChecker::operator()(IfStatement* stat)
+    FunctionType TypeChecker::operator()(IfExpression* stat) const
 	{
         state->add_constraint(EqualConstraint{ 
             std::visit(targetless(), stat->condition->toVariant()), 
             Type{.name = "bool", .module = core_module} 
         });
-        std::visit(*this, stat->then_stat->toVariant());
-        if (stat->else_stat) std::visit(*this, stat->else_stat->toVariant());
+        auto if_type = std::visit(*this, stat->then_expr->toVariant());
+        if (stat->else_expr) {
+            auto else_type = std::visit(*this, stat->else_expr->toVariant());
+            stat->evaluated_type = state->new_type_var();
+            state->add_constraint(IfStatementConstraint{
+                if_type,
+                else_type,
+                stat->then_transfers_control,
+                stat->else_transfers_control,
+                stat->evaluated_type,
+                stat
+                });
+        }
+        else stat->evaluated_type = Type{ .name = "void", .module = core_module };
+        return stat->evaluated_type;
 	}
     void TypeChecker::operator()(WhileStatement* stat)
     {
@@ -377,13 +390,21 @@ namespace Yoyo
         std::visit(*this, stat->body->toVariant());
         state->pop_variable_block();
     }
-    void TypeChecker::operator()(BlockStatement* stat)
+    FunctionType TypeChecker::operator()(BlockExpression* stat) const
     {
         state->push_variable_block();
         for (auto& stt : stat->statements) {
-            std::visit(*this, stt->toVariant());
+            std::visit(targetless(), stt->toVariant());
         }
+        if (stat->expr) stat->evaluated_type = std::visit(targetless(), stat->expr->toVariant());
+        else stat->evaluated_type = Type{ .name = "void", .module = core_module };
         state->pop_variable_block();
+        return stat->evaluated_type;
+    }
+    FunctionType TypeChecker::operator()(TryExpression*) const
+    {
+        // TODO
+        return FunctionType();
     }
     void TypeChecker::operator()(ReturnStatement* stat)
     {
@@ -465,7 +486,7 @@ namespace Yoyo
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(BooleanLiteral*) const {
-        return Type{ "bool" };
+        return Type{ .name = "bool", .module = core_module };
     }
     FunctionType TypeChecker::operator()(TupleLiteral* lit) const {
         if (target) {
@@ -1940,6 +1961,45 @@ namespace Yoyo
                 target,
                 con.expr
             });
+        return true;
+    }
+    bool ConstraintSolver::operator()(IfStatementConstraint& con)
+    {
+        auto then_tp = state->best_repr(con.then_type);
+        auto else_tp = state->best_repr(con.else_type);
+        auto result = state->best_repr(con.result);
+        if (con.then_transfers_control && con.else_transfers_control) {
+            // no constraints they're free to be any valid type
+            add_new_constraint(EqualConstraint{ result, Type{.name = "void", .module = core_module} });
+        }
+        else if (!con.then_transfers_control && con.else_transfers_control) {
+            // (then = else) or (else is void) and (result = then)
+            add_new_constraint(EqualConstraint{ then_tp, result });
+            add_new_constraint(EqualOrIsVoidConstraint{ else_tp, then_tp });
+        }
+        else if (con.then_transfers_control && !con.else_transfers_control) {
+            // (then = else) or (then is void) and (result = else)
+            add_new_constraint(EqualConstraint{ else_tp, result });
+            add_new_constraint(EqualOrIsVoidConstraint{ then_tp, else_tp });
+        }
+        // they both don't transfer control
+        else {
+            //(then = else) and result = then(or else)
+            add_new_constraint(EqualConstraint{ else_tp, then_tp });
+            add_new_constraint(EqualConstraint{ else_tp, result });
+        }
+        return true;
+    }
+    bool ConstraintSolver::operator()(EqualOrIsVoidConstraint& con)
+    {
+        auto tp1 = state->best_repr(con.type1);
+        auto tp2 = state->best_repr(con.type2);
+
+        if (is_type_variable(tp1)) {
+            return false;
+        }
+        if (tp1.is_void()) return true;
+        add_new_constraint(EqualConstraint{ tp1, tp2 });
         return true;
     }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)

@@ -349,6 +349,29 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test if expression", "[expressions], [if-expression]") {
+    std::string source(1 + R"(
+produce: fn::<T> -> T = return;
+print_i32: fn(val: i32) = return;
+main: fn = {
+    result: mut = if(true) {
+        val := 10;
+        print_i32(val);
+        val
+    } else {
+        produce()
+    }
+}
+)");
+    Yoyo::YVMEngine engine;
+    auto test_mod = addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 //TEST_CASE("Test lambdas", "[lambda][borrow-checker]")
 //{
 //    std::string source(1 + R"(
@@ -385,39 +408,31 @@ void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph, std::unordered_map<Yoyo:
     }
 };
 
-TEST_CASE("Test CFG")
+TEST_CASE("Test CFG", "[CFG]")
 {
     char name[] = "CFG";
-    Yoyo::Parser p(1 + R"(
+    std::string src(1 + R"(
     main: fn = {
-        var1: mut = std::env::args()
-            .skip(1)
-            .next()
-            .expect("gimme a number pls")
-            .parse::<i32>()
-            .expect("that wasn't a number dumbass");
-        var2: mut = 0;
-        while (var1 > var2) {
-            temp: i32;
-            if (var1 % 2 == 0)
-                temp = var1 / 2;
-            else
-                temp = var1 * 3 + 1;
-
-            if (temp > 30 && temp < 70)
-                var1 += 1;
-            else
-                var1 = temp;
-
-            var2 += 1;
-            if(var2 > var1)
-                break;
+        var1: mut = if(true) {
+            return 10;
+        } else {
+            "Hello"
         }
-        if (var1 % 2 == 0)
-            var2 += 1 + var1 / 2;
-        println("{}", var2);
+        if({ 
+            elem.stuff();
+            if(true) {
+                return true;
+            } else { true }
+        }) { return 100; }
+        while(true) {
+            var2 := if(true) { break; } else { continue; }
+            if(b) //unreachable
+                10
+            else 20;
+        }
     }
     )");
+    Yoyo::Parser p(src);
     auto graph = agopen(name, Agdirected, nullptr);
     Yoyo::CFGNodeManager manager;
     auto tree = p.parseDeclaration();

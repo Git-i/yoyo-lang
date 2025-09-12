@@ -119,4 +119,19 @@ namespace Yoyo
         return this;
     }
 
+    ExpressionVariant BlockExpression::toVariant()
+    {
+        return this;
+    }
+
+    ExpressionVariant IfExpression::toVariant()
+    {
+        return this;
+    }
+
+    ExpressionVariant TryExpression::toVariant()
+    {
+        return this;
+    }
+
 }

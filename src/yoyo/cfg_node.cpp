@@ -10,7 +10,6 @@
 #include "statement.h"
 namespace Yoyo
 {
-
     void YOYO_API debugbreak();
     struct CFGPreparator
     {
@@ -20,37 +19,54 @@ namespace Yoyo
 
         CFGNode* break_to = nullptr;
         CFGNode* continue_to = nullptr;
-        void operator()(ExpressionStatement* stat) const{ node->statements.push_back(stat); }
-        void operator()(VariableDeclaration* decl) const{ node->statements.push_back(decl); }
-        void operator()(FunctionDeclaration* stat) const {}
-        void operator()(InterfaceDeclaration* stat) const {}
-        void operator()(ConstantDeclaration* stat) const {}
-        void operator()(UnionDeclaration* stat) const {}
-        void operator()(MacroDeclaration* stat) const {}
-        void operator()(IfStatement* stat)
+        void operator()(Expression* expr)  { node->expressions.push_back(expr); }
+        void operator()(ExpressionStatement* stat) { 
+            node->statements.push_back(stat); 
+            std::visit(*this, stat->expression->toVariant());
+        }
+        void operator()(VariableDeclaration* decl) { 
+            node->statements.push_back(decl);
+            std::visit(*this, decl->initializer->toVariant());
+        }
+        void operator()(FunctionDeclaration* stat) {}
+        void operator()(InterfaceDeclaration* stat)  {}
+        void operator()(ConstantDeclaration* stat)  {}
+        void operator()(UnionDeclaration* stat)  {}
+        void operator()(MacroDeclaration* stat)  {}
+        void operator()(IfExpression* expr)
         {
-            node->statements.push_back(stat);
+            node->expressions.push_back(expr);
+            std::visit(*this, expr->condition->toVariant());
             auto then = node->manager->newNode(depth, "if_then");
-            auto else_node = stat->else_stat ? node->manager->newNode(depth, "if_else") : nullptr;
+            auto else_node = expr->else_expr ? node->manager->newNode(depth, "if_else") : nullptr;
             auto cont = node->manager->newNode(depth, "if_cont");
             if(!else_node) node->addChild(cont);
             node->addChild(then);
-            auto then_prep = CFGPreparator{then,exit, depth};
-            std::visit(then_prep, stat->then_stat->toVariant());
-            if(then_prep.node != exit) then_prep.node->addChild(cont);
+            auto then_prep = CFGPreparator{then,exit, depth, break_to, continue_to};
+            std::visit(then_prep, expr->then_expr->toVariant());
+            if (then_prep.node != exit && then_prep.node != break_to && then_prep.continue_to) {
+                then_prep.node->addChild(cont);
+                expr->then_transfers_control = false;
+            }
+            else then->debug_name += "(surrenders control)";
             if(else_node)
             {
                 node->addChild(else_node);
-                auto else_prep = CFGPreparator{else_node,exit, depth};
-                std::visit(else_prep, stat->else_stat->toVariant());
-                if(else_prep.node != exit) else_prep.node->addChild(cont);
+                auto else_prep = CFGPreparator{else_node,exit, depth, break_to, continue_to};
+                std::visit(else_prep, expr->else_expr->toVariant());
+                if (else_prep.node != exit && else_prep.node != break_to && else_prep.node != continue_to) {
+                    else_prep.node->addChild(cont);
+                    expr->else_transfers_control = false;
+                }
+                else else_node->debug_name += "(surrenders control)";
             }
             node = cont->parents.empty() ? exit : cont;
         }
-        void operator()(UsingStatement* stat) const {}
+        void operator()(UsingStatement* stat)  {}
         void operator()(ReturnStatement* stat)
         {
             node->statements.push_back(stat);
+            if (stat->expression) std::visit(*this, stat->expression->toVariant());
             node->addChild(exit);
             node = exit;
         }
@@ -59,6 +75,7 @@ namespace Yoyo
             auto cond = node->manager->newNode(depth, "while_cond");
             auto cont = node->manager->newNode(depth, "while_cont");
             cond->addChild(cont);
+            std::visit(*this, stat->condition->toVariant());
             cond->statements.push_back(stat);
             node->addChild(cond);
             auto then = node->manager->newNode(depth, "while_then");
@@ -69,23 +86,26 @@ namespace Yoyo
             if(while_prep.node == exit) node = exit;
             else node = cont;
         }
-        void operator()(BlockStatement* stat)
+        void operator()(BlockExpression* stat)
         {
             auto body = node->manager->newNode(depth + 1, "block_body");
             node->addChild(body);
-            auto visistor = CFGPreparator{body, exit, depth + 1};
+            auto visistor = CFGPreparator{body, exit, depth + 1, break_to, continue_to};
             for(auto& sub : stat->statements)
             {
                 std::visit(visistor, sub->toVariant());
                 if(visistor.node == exit || visistor.node == break_to || visistor.node == continue_to) { node = visistor.node; return; }
             }
+            if(stat->expr) std::visit(visistor, stat->expr->toVariant());
+            if (visistor.node == exit || visistor.node == break_to || visistor.node == continue_to) { node = visistor.node; return; }
             node = visistor.node;
         }
-        void operator()(CImportDeclaration*) const {}
-        void operator()(AliasDeclaration*) const {}
-        void operator()(ClassDeclaration* stat) const {}
+        void operator()(CImportDeclaration*)  {}
+        void operator()(AliasDeclaration*) {}
+        void operator()(ClassDeclaration* stat)  {}
         void operator()(ForStatement* stat){
             node->statements.push_back(stat);
+            std::visit(*this, stat->iterable->toVariant());
             auto check = node->manager->newNode(depth, "for_check");
             auto then = node->manager->newNode(depth, "for_then");
             auto cont = node->manager->newNode(depth, "for_cont");
@@ -98,10 +118,10 @@ namespace Yoyo
             if (then_prep.node == exit) node = exit;
             else node = cont;
         }
-        void operator()(ModuleImport* stat) const {}
-        void operator()(EnumDeclaration* stat) const {}
-        void operator()(OperatorOverload*) const{}
-        void operator()(GenericFunctionDeclaration*) const{}
+        void operator()(ModuleImport* stat)  {}
+        void operator()(EnumDeclaration* stat){}
+        void operator()(OperatorOverload*) {}
+        void operator()(GenericFunctionDeclaration*) {}
         void operator()(ConditionalExtraction* stat)
         {
             node->statements.push_back(stat);
@@ -111,13 +131,13 @@ namespace Yoyo
             auto cont = node->manager->newNode(depth, "cond_extract_cont");
             if(!else_node) node->addChild(cont);
             node->addChild(then);
-            auto then_prep = CFGPreparator{then,exit, depth + 1};
+            auto then_prep = CFGPreparator{then,exit, depth + 1, break_to, continue_to};
             std::visit(then_prep, stat->body->toVariant());
             if (then_prep.node != exit) then_prep.node->addChild(cont);
             if(else_node)
             {
                 node->addChild(else_node);
-                auto else_prep = CFGPreparator{else_node, exit,depth + 1};
+                auto else_prep = CFGPreparator{else_node, exit,depth + 1, break_to, continue_to};
                 std::visit(else_prep, stat->else_body->toVariant());
                 if (else_prep.node != exit) else_prep.node->addChild(cont);
             }
@@ -128,7 +148,7 @@ namespace Yoyo
             auto with = node->manager->newNode(depth + 1, "with body");
             auto cont = node->manager->newNode(depth, "with_cont");
             node->addChild(with);
-            auto with_prep = CFGPreparator{with, exit, depth + 1};
+            auto with_prep = CFGPreparator{with, exit, depth + 1, break_to, continue_to};
             std::visit(with_prep, stat->body->toVariant());
             with_prep.node->addChild(cont);
             node = cont;
@@ -308,7 +328,7 @@ namespace Yoyo
             }
             return {};
         }
-        std::unordered_map<std::string, Expression*> operator()(IfStatement* stat)
+        std::unordered_map<std::string, Expression*> operator()(IfExpression* stat)
         {
             return std::visit(UsedVariablesExpression{is_first}, stat->condition->toVariant());
         }
@@ -335,11 +355,11 @@ namespace Yoyo
     };
     struct FirstUsedVariables : UsedVariables
     {
-        FirstUsedVariables() : UsedVariables(true){}
+        FirstUsedVariables() : UsedVariables{ true } {}
     };
     struct LastUsedVariables : UsedVariables
     {
-        LastUsedVariables() : UsedVariables(false){}
+        LastUsedVariables() : UsedVariables{ false } {}
     };
     CFGNode* CFGNode::prepareFromFunction(CFGNodeManager& mgr, FunctionDeclaration* decl)
     {

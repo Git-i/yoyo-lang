@@ -39,10 +39,8 @@ namespace Yoyo {
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
         void operator()(VariableDeclaration*);
-        void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
-        void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(EnumDeclaration*);
@@ -148,5 +146,6 @@ namespace Yoyo {
         std::vector<Type> operator()(GCNewExpression*);
         std::vector<Type> operator()(MacroInvocation*);
         std::vector<Type> operator()(SpawnExpression*);
+        std::vector<Type> operator()(Expression*) { return {}; } // TODO
     };
 }

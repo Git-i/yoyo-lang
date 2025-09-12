@@ -517,11 +517,11 @@ namespace Yoyo
         //TODO: check for capture/parameter duplicates
         auto fn_t = Type{};
         fn_t.name = "__lambda" + expr->hash;
-        if (expr->sig.returnType.name == "__inferred")
-        {
-            auto t = irgen->inferReturnType(expr->body.get());;
-            expr->sig.returnType = *t;
-        }
+        //if (expr->sig.returnType.name == "__inferred")
+        //{
+        //    auto t = irgen->inferReturnType(expr->body.get());;
+        //    expr->sig.returnType = *t;
+        //}
             
         fn_t.module = irgen->module;
         return { fn_t };

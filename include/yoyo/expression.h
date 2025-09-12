@@ -42,6 +42,9 @@ namespace Yoyo
     class GCNewExpression;
     class MacroInvocation;
     class SpawnExpression;
+    class TryExpression;
+    class BlockExpression;
+    class IfExpression;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -66,7 +69,10 @@ namespace Yoyo
         GCNewExpression*,
         AsExpression*,
         MacroInvocation*,
-        SpawnExpression*>;
+        SpawnExpression*,
+        TryExpression*,
+        BlockExpression*,
+        IfExpression*>;
     enum class Ownership { Owning = 0, NonOwning, NonOwningMut };
     class YOYO_API Expression : public ASTNode {
     public:
@@ -277,6 +283,39 @@ namespace Yoyo
         std::unique_ptr<Expression> call_expr;
         SpawnExpression(std::unique_ptr<Expression> call_expr)
             : call_expr(std::move(call_expr)) {}
+        ExpressionVariant toVariant() override;
+    };
+    // <expr>.try
+    class YOYO_API TryExpression : public Expression {
+    public:
+        std::unique_ptr<Expression> expression;
+        TryExpression(std::unique_ptr<Expression> e) : expression(std::move(e)) {}
+        ExpressionVariant toVariant() override;
+    };
+    // Migrated from statement
+    // { <statement>...; <expr> }
+    class YOYO_API BlockExpression : public Expression {
+    public:
+        std::vector<std::unique_ptr<Statement>> statements;
+        std::unique_ptr<Expression> expr;
+        BlockExpression(std::vector<std::unique_ptr<Statement>> stats, std::unique_ptr<Expression> ex)
+            : statements(std::move(stats)), expr(std::move(ex)) {}
+        ExpressionVariant toVariant() override;
+    };
+    class YOYO_API IfExpression : public Expression
+    {
+    public:
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<Expression> then_expr;
+        std::unique_ptr<Expression> else_expr;
+        // true if the "then" block does not need to return the same as else
+        // because control goes elsewhere, we set it to true becaue unreachable nodes
+        // are not visited by the CFG generator
+        bool then_transfers_control = true;
+        bool else_transfers_control = true;
+        IfExpression(std::unique_ptr<Expression> cond, std::unique_ptr<Expression> then_, std::unique_ptr<Expression> else_)
+            : condition(std::move(cond)), then_expr(std::move(then_)), else_expr(std::move(else_)) {
+        }
         ExpressionVariant toVariant() override;
     };
 }

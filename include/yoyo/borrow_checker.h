@@ -115,10 +115,8 @@ namespace Yoyo
         void operator()(FunctionDeclaration*);
         void operator()(ClassDeclaration*);
         void operator()(VariableDeclaration*);
-        void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
-        void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(EnumDeclaration*);
@@ -139,6 +137,8 @@ namespace Yoyo
         void operator()(UnionDeclaration*);
         void operator()(MacroDeclaration*);
 
+        std::string operator()(IfExpression*);
+        std::string operator()(BlockExpression*);
         std::string operator()(IntegerLiteral*);
         std::string operator()(BooleanLiteral*);
         std::string operator()(TupleLiteral*);
@@ -163,5 +163,6 @@ namespace Yoyo
         std::string operator()(GCNewExpression*);
         std::string operator()(MacroInvocation*);
         std::string operator()(SpawnExpression*);
+        std::string operator()(TryExpression*);
     };
 }

@@ -144,6 +144,10 @@ namespace Yoyo
     {
         return std::make_unique<SpawnExpression>(copy_expr(exr->call_expr));
     }
+    std::unique_ptr<Expression> ExpressionTreeCloner::operator()(TryExpression* tr)
+    {
+        return std::make_unique<TryExpression>(copy_expr(tr->expression));
+    }
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(CharLiteral* lit)
     {
         auto lt =  std::make_unique<CharLiteral>();
@@ -153,6 +157,7 @@ namespace Yoyo
 
     std::unique_ptr<Expression> ExpressionTreeCloner::copy_expr(Expression* e)
     {
+        if (e == nullptr) return nullptr;
         auto ce = std::visit(ExpressionTreeCloner{}, e->toVariant());
         ce->beg = e->beg;
         ce->end = e->end;
@@ -161,6 +166,7 @@ namespace Yoyo
 
     std::unique_ptr<Expression> ExpressionTreeCloner::copy_expr(std::unique_ptr<Expression>& e)
     {
+        if (e == nullptr) return nullptr;
         auto ce = std::visit(ExpressionTreeCloner{}, e->toVariant());
         ce->beg = e->beg;
         ce->end = e->end;
@@ -207,12 +213,12 @@ namespace Yoyo
         return std::make_unique<VariableDeclaration>(decl->identifier, decl->type,copy_expr(decl->initializer), decl->is_mut);
     }
 
-    std::unique_ptr<Statement> StatementTreeCloner::operator()(IfStatement* stat)
+    std::unique_ptr<Expression> ExpressionTreeCloner::operator()(IfExpression* stat)
     {
-        return std::make_unique<IfStatement>(
+        return std::make_unique<IfExpression>(
             copy_expr(stat->condition),
-            copy_stat(stat->then_stat),
-            copy_stat(stat->else_stat));
+            copy_expr(stat->then_expr),
+            copy_expr(stat->else_expr));
     }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(BreakStatement*)
     {
@@ -232,12 +238,12 @@ namespace Yoyo
         return std::make_unique<ForStatement>(stat->names, copy_expr(stat->iterable), copy_stat(stat->body));
     }
 
-    std::unique_ptr<Statement> StatementTreeCloner::operator()(BlockStatement* stat)
+    std::unique_ptr<Expression> ExpressionTreeCloner::operator()(BlockExpression* stat)
     {
         std::vector<std::unique_ptr<Statement>> statements;
         for(auto& stat : stat->statements)
-            statements.emplace_back(copy_stat(stat));
-        return std::make_unique<BlockStatement>(std::move(statements));
+            statements.emplace_back(StatementTreeCloner::copy_stat(stat));
+        return std::make_unique<BlockExpression>(std::move(statements), copy_expr(stat->expr));
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(ReturnStatement* stat)

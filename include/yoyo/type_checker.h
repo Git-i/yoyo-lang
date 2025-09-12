@@ -82,6 +82,12 @@ namespace Yoyo
         Type type2;
         Expression* expr;
     };
+    // enseure 2 types are equal or type1 is void
+    struct EqualOrIsVoidConstraint {
+        Type type1;
+        Type type2;
+        Expression* expr;
+    };
     // ensure type is owning
     struct OwningConstraint {
         Type type;
@@ -146,6 +152,14 @@ namespace Yoyo
         Type to;
         Expression* expr;
     };
+    struct IfStatementConstraint {
+        Type then_type;
+        Type else_type;
+        bool then_transfers_control;
+        bool else_transfers_control;
+        Type result;
+        Expression* expr;
+    };
     using TypeCheckerConstraint = std::variant<
         IsIntegerConstraint,
         CanStoreIntegerConstraint,
@@ -170,7 +184,9 @@ namespace Yoyo
         ConvertibleToConstraint,
         BinaryDotCompatibleConstraint,
         ElseExtractsToConstraint,
-        ElseRefExtractsToConstraint
+        ElseRefExtractsToConstraint,
+        IfStatementConstraint,
+        EqualOrIsVoidConstraint
     >;
     /// represents the possible types a variable can be
     class Domain {
@@ -282,6 +298,8 @@ namespace Yoyo
         bool operator()(BinaryDotCompatibleConstraint& con);
         bool operator()(ElseRefExtractsToConstraint& con);
         bool operator()(ElseExtractsToConstraint& con);
+        bool operator()(IfStatementConstraint& con);
+        bool operator()(EqualOrIsVoidConstraint& con);
         void add_new_constraint(TypeCheckerConstraint);
     };
 	struct TypeChecker
@@ -292,10 +310,8 @@ namespace Yoyo
         void operator()(FunctionDeclaration*) {}
         void operator()(ClassDeclaration*) {}
         void operator()(VariableDeclaration*);
-        void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
-        void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(EnumDeclaration*) {}
@@ -316,6 +332,9 @@ namespace Yoyo
         void operator()(UnionDeclaration*) {}
         void operator()(MacroDeclaration*) {}
 
+        FunctionType operator()(IfExpression*) const;
+        FunctionType operator()(BlockExpression*) const;
+        FunctionType operator()(TryExpression*) const;
         FunctionType operator()(IntegerLiteral*) const;
         FunctionType operator()(BooleanLiteral*) const;
         FunctionType operator()(TupleLiteral*) const;

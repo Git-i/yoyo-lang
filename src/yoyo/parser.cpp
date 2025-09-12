@@ -33,6 +33,8 @@ namespace Yoyo
         prefixParselets[TokenType::Null] = std::make_shared<NullLiteralParselet>();
         prefixParselets[TokenType::GCNew] = std::make_shared<GCNewParselet>();
         prefixParselets[TokenType::Spawn] = std::make_shared<SpawnParselet>();
+        prefixParselets[TokenType::If] = std::make_shared<IfParselet>();
+        prefixParselets[TokenType::LCurly] = std::make_shared<BlockParselet>();
 
         auto sum_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Sum);
         auto product_parselet = std::make_shared<BinaryOperationParselet>(Precedences::Product);
@@ -84,6 +86,37 @@ namespace Yoyo
         infixParselets[TokenType::DoubleColon] = std::make_shared<ScopeOperationParselet>(Precedences::ScopeResolve);
 
         infixParselets[TokenType::LSquare] = std::make_shared<SubscriptParselet>(Precedences::Call);
+    }
+    std::unique_ptr<ASTNode> Parser::parseExpressionOrDeclaration()
+    {
+        if (isTopLevelDeclaration())
+        {
+            return parseTopLevelDeclaration();
+        }
+        else if (isVarDeclaration())
+        {
+            auto iden = *Get(); std::ignore = Get(); //the ':'
+            return parseVariableDeclaration(iden);
+        }
+        auto tk = Peek();
+        if (!tk) return nullptr;
+        switch (tk->type)
+        {
+        case TokenType::Return: { Get(); return parseReturnStatement(*tk); }
+        case TokenType::While: { Get(); return parseWhileStatement(*tk); }
+        case TokenType::For: { Get(); return parseForStatement(*tk); }
+        case TokenType::With: { Get(); return parseWithStatement(*tk); }
+        case TokenType::Break: [[fallthrough]];
+        case TokenType::Continue: return parseBreakContinueStatement(*Get());
+        default: {
+            auto expr = parseExpression(0);
+            if (!discard(TokenType::SemiColon))
+                return expr;
+            return Statement::attachSLAndParent(std::make_unique<ExpressionStatement>(std::move(expr)), expr->beg,
+                discardLocation, parent);
+        }
+        }
+
     }
     PrefixParselet* Parser::GetPrefixParselet(TokenType t)
     {
@@ -679,6 +712,12 @@ namespace Yoyo
     }
 
 
+    bool Parser::canOmitSemiColon(Expression* ex)
+    {
+        return dynamic_cast<BlockExpression*>(ex) != nullptr ||
+                dynamic_cast<IfExpression*>(ex) != nullptr;
+    }
+
     std::unique_ptr<Expression> Parser::parseExpression(uint32_t precedence)
     {
         auto tk = Get();
@@ -711,7 +750,7 @@ namespace Yoyo
             Get();
             auto initializer = parseExpression(0);
             //';' is implicit if a variable is initialized with a lambda
-            if(!discard(TokenType::SemiColon) && !dynamic_cast<LambdaExpression*>(initializer.get()))
+            if(!discard(TokenType::SemiColon) && !canOmitSemiColon(initializer.get()))
                 error("Expected ';'", Peek());
             return Statement::attachSLAndParent(
                 std::make_unique<VariableDeclaration>(identifier, std::nullopt, std::move(initializer), is_mut),
@@ -1003,7 +1042,8 @@ namespace Yoyo
     std::unique_ptr<Statement> Parser::parseExpressionStatement()
     {
         auto expr = parseExpression(0);
-        if(!discard(TokenType::SemiColon)) error("Expected ';'", Peek());
+        if(!discard(TokenType::SemiColon) && !canOmitSemiColon(expr.get())) 
+            error("Expected ';'", Peek());
         return Statement::attachSLAndParent(std::make_unique<ExpressionStatement>(std::move(expr)), expr->beg,
             discardLocation, parent);
     }
@@ -1050,39 +1090,6 @@ namespace Yoyo
             std::make_unique<ConditionalExtraction>(name, is_ref, std::move(condition), std::move(then), std::move(else_stat), else_name, else_is_ref),
             tk.loc, end, parent
         );
-    }
-
-    std::unique_ptr<Statement> Parser::parseIfStatement(Token tk)
-    {
-        if(Peek() && Peek()->type == TokenType::Pipe) return parseConditionalExtraction(tk);
-        if(!discard(TokenType::LParen)) error("Expected '('", Peek());
-        auto condition = parseExpression(0);
-        if(!condition) synchronizeTo({{TokenType::RParen}});
-        if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
-        auto then = parseStatement();
-
-        std::unique_ptr<Statement> else_stat = nullptr;
-        auto else_tk = Peek();
-        if(else_tk && else_tk->type == TokenType::Else)
-        {
-            Get();
-            else_stat = parseStatement();
-        }
-        SourceLocation end = else_stat ? else_stat->end : then->end;
-        return Statement::attachSLAndParent(
-            std::make_unique<IfStatement>(std::move(condition), std::move(then), std::move(else_stat)),
-            tk.loc, end, parent);
-    }
-    std::unique_ptr<Statement> Parser::parseBlockStatement(Token tk)
-    {
-        std::vector<std::unique_ptr<Statement>> statements;
-        while(!discard(TokenType::RCurly))
-        {
-            auto decl = parseDeclaration();
-            statements.push_back(std::move(decl));
-        }
-        return Statement::attachSLAndParent(
-            std::make_unique<BlockStatement>(std::move(statements)), tk.loc, discardLocation, parent);
     }
     std::unique_ptr<Statement> Parser::parseForStatement(Token tk)
     {
@@ -1138,8 +1145,6 @@ namespace Yoyo
         switch(tk->type)
         {
         case TokenType::Return: {Get(); return parseReturnStatement(*tk);}
-        case TokenType::If: {Get(); return parseIfStatement(*tk);}
-        case TokenType::LCurly: {Get(); return parseBlockStatement(*tk);}
         case TokenType::While: {Get(); return parseWhileStatement(*tk);}
         case TokenType::For: {Get(); return parseForStatement(*tk);}
         case TokenType::With: {Get(); return parseWithStatement(*tk);}

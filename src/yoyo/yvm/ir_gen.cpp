@@ -342,7 +342,7 @@ namespace Yoyo
                         error(Error(mth.get(), "Provided function is not a valid implementation of the interface"));
                 }
                 std::unique_ptr<Statement> stat_ptr(mth.release());
-                std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), stat_ptr, block_hash }, stat_ptr->toVariant());
+                std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), block_hash }, stat_ptr->toVariant());
                 mth.reset(reinterpret_cast<FunctionDeclaration*>(stat_ptr.release()));
                 (*this)(mth.get());
             }
@@ -402,20 +402,20 @@ namespace Yoyo
         // TODO: stack addr of variables
         variables.back().emplace_back(name, VariableEntry{ VariableIndex{stack_idx, VariableIndex::Alloc}, type });
     }
-    void YVMIRGenerator::operator()(BlockStatement* stat)
-    {
-        pushScope();
-        used_types.emplace_back();
-        for(auto& sub_stat : stat->statements)
-        {
-            current_Statement = &sub_stat;
-            std::visit(*this, sub_stat->toVariant());
-            if(dynamic_cast<ReturnStatement*>(sub_stat.get()))
-                return;
-        }
-        used_types.pop_back();
-        popScope();
-    }
+    //void YVMIRGenerator::operator()(BlockStatement* stat)
+    //{
+    //    pushScope();
+    //    used_types.emplace_back();
+    //    for(auto& sub_stat : stat->statements)
+    //    {
+    //        current_Statement = &sub_stat;
+    //        std::visit(*this, sub_stat->toVariant());
+    //        if(dynamic_cast<ReturnStatement*>(sub_stat.get()))
+    //            return;
+    //    }
+    //    used_types.pop_back();
+    //    popScope();
+    //}
     void YVMIRGenerator::operator()(ForStatement* stat)
     {
         auto tye = std::visit(ExpressionTypeChecker{ this }, stat->iterable->toVariant());
@@ -685,36 +685,36 @@ namespace Yoyo
         else builder->write_1b_inst(RetVoid);
     }
 
-    void YVMIRGenerator::operator()(IfStatement* stat)
-    {
-        auto expr_type = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value_or_error();
-        if(!expr_type.is_boolean() && !expr_type.is_error_ty())
-        {
-            error(Error(stat->condition.get(), "'if' condition must evaluate to a boolean")); return;
-        }
-        std::visit(YVMExpressionEvaluator{ this }, stat->condition->toVariant());
-        auto cont_block = builder->unq_label_name("if_cont");
-        std::string else_block;
-        if (stat->else_stat) {
-            else_block = builder->unq_label_name("if_else");
-            builder->create_jump(JumpIfFalse, else_block);
-        }
-        else {
-            builder->create_jump(JumpIfFalse, cont_block);
-        }
-
-        current_Statement = &stat->then_stat;
-        std::visit(*this, stat->then_stat->toVariant());
-
-        if (stat->else_stat) {
-            builder->create_jump(Jump, cont_block);
-            builder->create_label(else_block);
-            current_Statement = &stat->else_stat;
-            std::visit(*this, stat->else_stat->toVariant());
-        }
-        
-        builder->create_label(cont_block);
-    }
+    //void YVMIRGenerator::operator()(IfStatement* stat)
+    //{
+    //    auto expr_type = std::visit(ExpressionTypeChecker{this}, stat->condition->toVariant()).value_or_error();
+    //    if(!expr_type.is_boolean() && !expr_type.is_error_ty())
+    //    {
+    //        error(Error(stat->condition.get(), "'if' condition must evaluate to a boolean")); return;
+    //    }
+    //    std::visit(YVMExpressionEvaluator{ this }, stat->condition->toVariant());
+    //    auto cont_block = builder->unq_label_name("if_cont");
+    //    std::string else_block;
+    //    if (stat->else_stat) {
+    //        else_block = builder->unq_label_name("if_else");
+    //        builder->create_jump(JumpIfFalse, else_block);
+    //    }
+    //    else {
+    //        builder->create_jump(JumpIfFalse, cont_block);
+    //    }
+    //
+    //    current_Statement = &stat->then_stat;
+    //    std::visit(*this, stat->then_stat->toVariant());
+    //
+    //    if (stat->else_stat) {
+    //        builder->create_jump(Jump, cont_block);
+    //        builder->create_label(else_block);
+    //        current_Statement = &stat->else_stat;
+    //        std::visit(*this, stat->else_stat->toVariant());
+    //    }
+    //    
+    //    builder->create_label(cont_block);
+    //}
 
     bool canReturn(Statement* stat);
 

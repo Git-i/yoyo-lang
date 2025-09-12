@@ -29,6 +29,9 @@ namespace Yoyo
         std::unique_ptr<Expression> operator()(GCNewExpression*);
         std::unique_ptr<Expression> operator()(MacroInvocation*);
         std::unique_ptr<Expression> operator()(SpawnExpression*);
+        std::unique_ptr<Expression> operator()(TryExpression*);
+        std::unique_ptr<Expression> operator()(IfExpression*);
+        std::unique_ptr<Expression> operator()(BlockExpression*);
 
         static std::unique_ptr<Expression> copy_expr(Expression*);
         static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
@@ -40,10 +43,8 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(FunctionDeclaration*);
         std::unique_ptr<Statement> operator()(ClassDeclaration*);
         std::unique_ptr<Statement> operator()(VariableDeclaration*);
-        std::unique_ptr<Statement> operator()(IfStatement*);
         std::unique_ptr<Statement> operator()(WhileStatement*);
         std::unique_ptr<Statement> operator()(ForStatement*);
-        std::unique_ptr<Statement> operator()(BlockStatement*);
         std::unique_ptr<Statement> operator()(ReturnStatement*);
         std::unique_ptr<Statement> operator()(ExpressionStatement*);
         std::unique_ptr<Statement> operator()(EnumDeclaration*);

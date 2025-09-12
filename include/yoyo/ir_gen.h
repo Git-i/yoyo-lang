@@ -132,6 +132,10 @@ namespace Yoyo
         Result operator()(GCNewExpression*);
         Result operator()(MacroInvocation*);
         Result operator()(SpawnExpression*);
+        Result operator()(Expression*) {
+            // TODO
+            return Result();
+        }
     };
     struct MacroEvaluator
     {
@@ -188,10 +192,8 @@ namespace Yoyo
         bool has_returned;
         std::vector<MapTy> variables;
         void operator()(VariableDeclaration*);
-        void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
-        void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(ConditionalExtraction*);

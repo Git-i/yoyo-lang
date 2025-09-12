@@ -187,51 +187,6 @@ namespace Yoyo
         return reinterpret_cast<FunctionDeclaration*>(parent);
     }
 
-  
-    bool canReturn(Statement* stat)
-    {
-        if(dynamic_cast<ReturnStatement*>(stat))
-            return true;
-        if(auto res = dynamic_cast<IfStatement*>(stat))
-            return canReturn(res->then_stat.get()) || (res->else_stat && canReturn(res->else_stat.get()));
-        if(auto res = dynamic_cast<WhileStatement*>(stat))
-            return canReturn(res->body.get());
-        if(auto res = dynamic_cast<ForStatement*>(stat))
-            return canReturn(res->body.get());
-        if(auto res = dynamic_cast<BlockStatement*>(stat))
-        {
-            for(auto& sub_stat : res->statements)
-            {
-                if(canReturn(sub_stat.get())) return true;
-            }
-        }
-        return false;
-    }
-
-   
-    //The resultant return type is the type of the first return statement encountered
-    std::optional<Type> IRGenerator::inferReturnType(Statement* stat)
-    {
-        if(!canReturn(stat)) return Type{.name = "void"};
-        if(auto res = dynamic_cast<ReturnStatement*>(stat))
-            return std::visit(ExpressionTypeChecker{this}, res->expression->toVariant()).to_optional();
-        if(auto res = dynamic_cast<IfStatement*>(stat))
-        {
-            if(canReturn(res->then_stat.get())) return inferReturnType(res->then_stat.get());
-            else return inferReturnType(res->else_stat.get());
-        }
-        if(auto res = dynamic_cast<WhileStatement*>(stat))
-            return inferReturnType(res->body.get());
-        if(auto res = dynamic_cast<BlockStatement*>(stat))
-        {
-            for(auto& sub_stat : res->statements)
-            {
-                if(canReturn(sub_stat.get())) return inferReturnType(sub_stat.get());
-            }
-        }
-        return std::nullopt;
-    }
-
     void IRGenerator::generateGenericFunction(ModuleBase* mod, const std::string& hash, GenericFunctionDeclaration* fn, std::span<Type> types)
     {
         for (auto& type : types) type.saturate(mod, this);
@@ -251,7 +206,7 @@ namespace Yoyo
         this->saturateSignature(new_decl->signature, mod);
         this->block_hash = hash;
 
-        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), ptr, block_hash }, new_decl->toVariant());
+        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), block_hash }, new_decl->toVariant());
         doFunction(new_decl);
 
         this->block_hash = std::move(old_hash);
@@ -278,7 +233,7 @@ namespace Yoyo
         auto old_hash = this->reset_hash();
 
         this->current_Statement = &ptr;
-        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), ptr, block_hash }, new_decl->toVariant());
+        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), block_hash }, new_decl->toVariant());
         doClass(new_decl);
 
         this->block_hash = std::move(old_hash);
@@ -319,7 +274,7 @@ namespace Yoyo
 
         this->module = md;
         this->block_hash = block + name + "::";
-        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), new_interface, block }, itf->toVariant());
+        std::visit(ForwardDeclaratorPass1{ reinterpret_cast<YVMModule*>(module), block }, itf->toVariant());
         for (auto& fn : itf->methods)
             this->saturateSignature(fn->signature, md);
         this->block_hash.swap(old_hash);

@@ -8,10 +8,8 @@ namespace Yoyo {
         void operator()(FunctionDeclaration*) {}
         void operator()(ClassDeclaration*) {}
         void operator()(VariableDeclaration*);
-        void operator()(IfStatement*);
         void operator()(WhileStatement*);
         void operator()(ForStatement*);
-        void operator()(BlockStatement*);
         void operator()(ReturnStatement*);
         void operator()(ExpressionStatement*);
         void operator()(EnumDeclaration*) {}
@@ -32,6 +30,9 @@ namespace Yoyo {
         void operator()(UnionDeclaration*){}
         void operator()(MacroDeclaration*){}
 
+        void operator()(TryExpression*) {}
+        void operator()(IfExpression*);
+        void operator()(BlockExpression*);
         void operator()(IntegerLiteral*);
         void operator()(BooleanLiteral*);
         void operator()(TupleLiteral*);
