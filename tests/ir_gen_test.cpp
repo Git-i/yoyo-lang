@@ -353,13 +353,23 @@ TEST_CASE("Test if expression", "[expressions], [if-expression]") {
     std::string source(1 + R"(
 produce: fn::<T> -> T = return;
 print_i32: fn(val: i32) = return;
-main: fn = {
+main: fn -> bool = {
     result: mut = if(true) {
         val := 10;
         print_i32(val);
         val
     } else {
         produce()
+    }
+    cond := true; cond2 := false; // they can be any bools
+    var9 := if (cond){
+        if(cond2) {
+            return false;
+        } else {
+            true
+        }
+    } else {
+        false
     }
 }
 )");

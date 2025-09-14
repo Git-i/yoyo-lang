@@ -401,10 +401,21 @@ namespace Yoyo
         state->pop_variable_block();
         return stat->evaluated_type;
     }
-    FunctionType TypeChecker::operator()(TryExpression*) const
+    FunctionType TypeChecker::operator()(TryExpression* exp) const
     {
-        // TODO
-        return FunctionType();
+        auto ret_success = state->new_type_var();
+        auto ret_fail = state->new_type_var();
+
+        exp->evaluated_type = state->new_type_var();
+        state->add_constraint(EqualConstraint{
+                Type{.name = "__res", .subtypes = {exp->evaluated_type, ret_fail }, .module = core_module},
+                std::visit(targetless(), exp->expression->toVariant())
+            });
+        state->add_constraint(EqualConstraint{
+                Type{.name = "__res", .subtypes = {ret_success, ret_fail}, .module = core_module},
+                state->return_type
+            });
+        return exp->evaluated_type;
     }
     void TypeChecker::operator()(ReturnStatement* stat)
     {
@@ -509,8 +520,43 @@ namespace Yoyo
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(ArrayLiteral* lit) const { 
-        /*TODO*/ 
-        return Type{};
+        auto sub_type = state->new_type_var();
+        uint32_t array_size = 0;
+        // [<expr>, <expr> ...]
+        if (auto exprs = std::get_if<std::vector<std::unique_ptr<Expression>>>(&lit->elements)) {
+            array_size = exprs->size();
+            for (auto& expr : *exprs) {
+                state->add_constraint(EqualConstraint{
+                        sub_type,
+                        std::visit(targetless(), expr->toVariant())
+                    });
+            }
+        }
+        // [<expr>; <size>]
+        else {
+            auto& [expr, size] = std::get<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>(lit->elements);
+            auto size_as_const = std::visit(ConstantEvaluator{ irgen }, size->toVariant());
+            if (auto as_uint = std::get_if<uint64_t>(&size_as_const.internal_repr)) {
+                if (*as_uint > std::numeric_limits<uint32_t>::max())
+                    irgen->error(Error(lit, "Array size too large", std::format("Evaluated size is {}", *as_uint)));
+                else if (*as_uint == 0)
+                    irgen->error(Error(lit, "Array size must be a positive integer", std::format("Evaluated size is {}", *as_uint)));
+                array_size = static_cast<uint32_t>(*as_uint);
+            }
+            else if (auto as_int = std::get_if<int64_t>(&size_as_const.internal_repr)) {
+                if (*as_int <= 0)
+                    irgen->error(Error(lit, "Array size must be a positive integer", std::format("Evaluated size is {}", *as_int)));
+                else if (*as_int > std::numeric_limits<uint32_t>::max())
+                    irgen->error(Error(lit, "Array size too large", std::format("Evaluated size is {}", *as_int)));
+                array_size = static_cast<uint32_t>(*as_int);
+            }
+            state->add_constraint(EqualConstraint{
+                    sub_type,
+                    std::visit(targetless(), expr->toVariant())
+                });
+            // TODO expr type must implement clone too
+        }
+        return Type{ .name = "__arr", .subtypes = {sub_type}, .module = core_module };
     }
     FunctionType TypeChecker::operator()(RealLiteral* lit) const {
         if (target)
@@ -1666,10 +1712,10 @@ namespace Yoyo
         domains.erase(findb);
         return finda;
     }
-    void TypeCheckerState::resolve_function(FunctionDeclaration* decl, IRGenerator* irgen)
+    void TypeCheckerState::resolve_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig)
     {
         push_variable_block();
-        return_type = decl->signature.returnType;
+        return_type = sig.returnType;
         write_new_constraints_to = &constraints;
         // generate constraints
         std::visit(TypeChecker{std::nullopt, irgen, this}, decl->body->toVariant());

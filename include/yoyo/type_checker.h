@@ -265,7 +265,7 @@ namespace Yoyo
         Type best_repr(const Type&);
         Domain* get_type_domain(const Type&);
 
-        void resolve_function(FunctionDeclaration* decl, IRGenerator* irgen);
+        void resolve_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature&);
         // A variation of Type::is_non_owning that is guaranteed to not instantiate generics
         bool is_non_owning(const Type&, IRGenerator*);
     };

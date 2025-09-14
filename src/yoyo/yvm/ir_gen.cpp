@@ -77,7 +77,7 @@ namespace Yoyo
         function_borrow_checkers.back().current_block = function_borrow_checkers.back().blocks[0].get();
 
         TypeCheckerState stt{};
-        stt.resolve_function(decl, this);
+        stt.resolve_function(decl, this, sig);
         // don't go further if type checking failed
         if (has_error) {
             return;
