@@ -330,18 +330,20 @@ main: fn = {
 }
 TEST_CASE("Test Results", "[type-checker], [result-type]") {
     std::string source(1 + R"(
-// test::return_result: fn -> i32 \ str;
-main: fn = {
+// test::return_result: fn -> [i64; 10] \ str;
+constant: const i32 = 10;
+main: fn -> i32 \ str = {
     result: mut = test::return_result();
-    if |as_int| (result) {
-    } else |&as_str| {
-        as_str.test::print();
+    obj := if(true) {
+        result.try
+    } else {
+        [10; constant]
     }
 }
 )");
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
-    test_mod->addFunction("-> i32 \\ str", static_cast<void(*)(void*)>([](void* in) {}), "return_result");
+    test_mod->addFunction("-> [i64; 10] \\ str", static_cast<void(*)(void*)>([](void* in) {}), "return_result");
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();

@@ -45,7 +45,8 @@ namespace Yoyo {
         {"const", TokenType::Const},
         {"macro", TokenType::Macro},
         {"spawn", TokenType::Spawn},
-        {"using", TokenType::Using}
+        {"using", TokenType::Using},
+        {"try", TokenType::Try}
     })
     {
 

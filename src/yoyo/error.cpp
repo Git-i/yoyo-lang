@@ -126,6 +126,7 @@ namespace Yoyo
 		
 		for (const auto& line : lines)
 			result.append(line);
+		result.append(description);
 		return result;
 	}
 }

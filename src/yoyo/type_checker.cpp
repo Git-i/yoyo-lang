@@ -556,7 +556,7 @@ namespace Yoyo
                 });
             // TODO expr type must implement clone too
         }
-        return Type{ .name = "__arr", .subtypes = {sub_type}, .module = core_module };
+        return Type{ .name = "__arr_s" + std::to_string(array_size), .subtypes = {sub_type}, .module = core_module};
     }
     FunctionType TypeChecker::operator()(RealLiteral* lit) const {
         if (target)

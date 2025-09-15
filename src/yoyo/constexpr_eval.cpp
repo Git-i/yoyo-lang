@@ -104,10 +104,31 @@ namespace Yoyo
         irgen->error(Error(expr, "Expression cannot be constant evaluated"));
         return Constant();
     }
-    Constant ConstantEvaluator::operator()(PrefixOperation*)
+    Constant ConstantEvaluator::operator()(PrefixOperation* op)
     {
-        debugbreak();
-        return {};
+        auto expr = std::visit(*this, op->operand->toVariant());
+        switch (op->op.type) {
+        case TokenType::Minus: {
+            if (auto as_int = std::get_if<int64_t>(&expr.internal_repr))
+                return Constant{ -*as_int };
+            else if (auto as_uint = std::get_if<uint64_t>(&expr.internal_repr))
+                if (*as_uint > std::numeric_limits<int64_t>::max() + 1) {
+                    irgen->error(Error(op, "Value too large to negate"));
+                    return Constant{ nullptr };
+                }
+                else {
+                    return Constant{ -static_cast<int64_t>(*as_uint) };
+                }
+            else if (auto as_dbl = std::get_if<double>(&expr.internal_repr))
+                return Constant{ -*as_dbl };
+            else {
+                irgen->error(Error(op, "Value can not be negated at compile time"));
+                return Constant{ nullptr };
+            }
+            break;
+        }
+        default: debugbreak();
+        }
     }
     Constant ConstantEvaluator::operator()(BinaryOperation* bop)
     {

@@ -7,6 +7,14 @@ namespace Yoyo
     std::unique_ptr<Expression> BinaryOperationParselet::parse(Parser& parser, std::unique_ptr<Expression> left, Token tk)
     {
         const auto prec_diff = is_right ? 1 : 0;
+        if (tk.type == TokenType::Dot && parser.discard(TokenType::Try)) {
+            auto bg = left->beg;
+            return Expression::attachSLAndParent(
+                std::make_unique<TryExpression>(std::move(left)),
+                bg,
+                parser.discardLocation,
+                parser.parent);
+        }
         auto fn = [&parser](std::unique_ptr<BinaryOperation>&& e)
         {
             e->lhs->parent = e.get(); e->rhs->parent = e.get(); e->parent = parser.parent;

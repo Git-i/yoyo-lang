@@ -24,7 +24,7 @@ namespace Yoyo {
         Question, BackSlash, Null, As, Fn, Alias, DoubleDot, DoubleDotEqual, Macro, SlashBrace, // \}
         AttrOpen, /// #(
         Spaceship, // <=>
-        Spawn,
+        Spawn, Try,
         Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const,
         // Only used my operator overloads
         SquarePair, // []
