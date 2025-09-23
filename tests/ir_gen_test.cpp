@@ -384,6 +384,47 @@ main: fn -> bool = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test interfaces", "[type-checker], [interfaces]") {
+    std::string source(1 + R"(
+takes_intf: fn::<T: impl Interface>(arg: T) = return;
+takes_generic_intf: fn::<O, T: impl InterfaceWrapper::<O>::Interface>(arg: T) -> O = return; 
+main: fn = {
+    obj1 := Generic1::new();
+    obj2 := Generic2::new();
+    obj3: i32 = takes_generic_intf(obj1);
+    takes_intf(obj1);
+    takes_intf(obj2);
+    obj2.take_t(obj3);
+}
+Generic1: struct::<T> = {
+    impl Interface {
+    }
+    impl InterfaceWrapper::<T>::Interface {
+    }
+    new: fn -> Generic1::<T> = return;
+}
+Generic2: struct::<T, E> = {
+    new: fn -> Generic2::<T, E> = return;
+    take_t: fn(&this, arg: T) = return;
+}
+Interface: interface = {
+    impl::<T> for Generic2::<T, f32> {
+    }
+}
+InterfaceWrapper: struct::<T> = {
+    Interface: interface = {
+    }
+}
+)");
+    Yoyo::YVMEngine engine;
+    auto test_mod = addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 //TEST_CASE("Test lambdas", "[lambda][borrow-checker]")
 //{
 //    std::string source(1 + R"(

@@ -402,6 +402,29 @@ namespace Yoyo
         {
             auto tk = Get();
             if (!tk) return nullptr;
+            // impl for T
+            if (tk->type == TokenType::Impl) {
+                auto& impl = intf->impl_fors.emplace_back();
+                if (auto generic_open = Peek(); generic_open->type == TokenType::TemplateOpen)
+                    impl.clause = parseGenericClause().value_or(GenericClause{});
+                if (!discard(TokenType::For)) {
+                    error("Expected 'for'", Peek());
+                }
+                impl.impl.impl_for = parseType(0).value_or(Type{});
+                if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
+                while (!discard(TokenType::RCurly))
+                {
+                    auto iden = Get();
+                    if (!iden) return nullptr;
+                    if (iden->type != TokenType::Identifier) error("Expected identifier", Peek());
+                    if (!discard(TokenType::Colon)) error("Expected ':'", Peek());
+                    auto stat = parseFunctionDeclaration(iden.value());
+                    if (dynamic_cast<GenericFunctionDeclaration*>(stat.get())) error("Generic not allowed here", iden);
+                    impl.impl.methods.emplace_back(reinterpret_cast<FunctionDeclaration*>(stat.release()));
+                }
+                impl.impl.location = SourceSpan{ tk->loc, discardLocation };
+                continue;
+            }
             if (tk->type != TokenType::Identifier) error("Expected identifier", tk);
             std::string name(tk->text);
             if (!discard(TokenType::Colon)) error("Expected ':'", Peek());
@@ -656,7 +679,8 @@ namespace Yoyo
         else
         {
             names.emplace_back(iden->text);
-            if (discard(TokenType::Colon)) constraints[names.back()] = 
+            if (discard(TokenType::Colon)) 
+                constraints[names.back()] = 
                 parseGenericConstraints(*this).value_or(std::vector<Constraint>{});
         }
         while(!discard(TokenType::Greater))

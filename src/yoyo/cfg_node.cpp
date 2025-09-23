@@ -44,11 +44,16 @@ namespace Yoyo
             node->addChild(then);
             auto then_prep = CFGPreparator{then,exit, depth, break_to, continue_to};
             std::visit(then_prep, expr->then_expr->toVariant());
+
+            CFGNode* goto_if_not_cont = nullptr;
             if (then_prep.node != exit && then_prep.node != break_to && then_prep.continue_to) {
                 then_prep.node->addChild(cont);
                 expr->then_transfers_control = false;
             }
-            else then->debug_name += "(surrenders control)";
+            else {
+                then->debug_name += "(surrenders control)";
+                goto_if_not_cont = then_prep.node;
+            }
             if(else_node)
             {
                 node->addChild(else_node);
@@ -58,9 +63,20 @@ namespace Yoyo
                     else_prep.node->addChild(cont);
                     expr->else_transfers_control = false;
                 }
-                else else_node->debug_name += "(surrenders control)";
+                else {
+                    else_node->debug_name += "(surrenders control)";
+                    if (goto_if_not_cont == continue_to) goto_if_not_cont = else_prep.node;
+                    else if (goto_if_not_cont == break_to) {
+                        if (else_prep.node == exit) goto_if_not_cont = exit;
+                    }
+                }
             }
-            node = cont->parents.empty() ? exit : cont;
+            node = cont->parents.empty() ?
+                    // if both branches transfer control we have a few possibilites
+                    // - one branch returns (we continue generating from the other branch)
+                    // - one branch breaks and the other continues (we continuw from the breaking branch
+                    goto_if_not_cont
+                : cont;
         }
         void operator()(UsingStatement* stat)  {}
         void operator()(ReturnStatement* stat)
@@ -365,7 +381,8 @@ namespace Yoyo
     {
         auto entry = mgr.newNode(0, "entry");
         auto exit = mgr.newNode(0, "return");
-        std::visit(CFGPreparator{entry, exit, 0}, decl->body->toVariant());
+        auto prep = CFGPreparator{ entry, exit, 0 };
+        std::visit(prep, decl->body->toVariant());
         if (entry->children.empty()) entry->addChild(exit);
         //for(auto& child : exit->children)
         //    child->parents.erase(std::ranges::find(child->parents, exit));

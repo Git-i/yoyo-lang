@@ -6,6 +6,9 @@
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo
 {
+    static bool is_type_variable(const Type& tp) {
+        return tp.name[0] == '?';
+    }
     static Statement* get_type_stat(const Type& type, const std::string& hash, ModuleBase* const md, bool add_non_generics = false) {
         if (auto [hsh, decl] = md->findGenericClass(hash, type.name); decl) {
             return decl;
@@ -24,6 +27,9 @@ namespace Yoyo
                 return decl;
             }
             else if (auto [hsh, decl] = md->findUnion(hash, type.name); decl) {
+                return decl;
+            }
+            else if (auto [hsh, decl] = md->findInterface(hash, type.name); decl) {
                 return decl;
             }
         }
@@ -130,6 +136,15 @@ namespace Yoyo
         }
         else return static_cast<GenericClause*>(nullptr);
     };
+    template<class T>
+    concept has_impl = requires(T obj) {
+        { obj.impls } -> std::same_as<std::vector<InterfaceImplementation>&>;
+    };
+    template<typename T>
+    std::vector<InterfaceImplementation>* get_impls(T* arg) {
+        if constexpr (has_impl<T>) return &arg->impls;
+        else return nullptr;
+    }
     // from type.cpp
     bool from_builtins(const Type& tp);
     bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first);
@@ -254,9 +269,16 @@ namespace Yoyo
     /// Similar to saturate but can switch to the AST for incomplete generic types
     /// also substitutes generics given an already existing context
     /// also returns the statement that the type belongs to if we followed that path
-    auto normalize_type(Type& tp, TypeCheckerState* stt, IRGenerator* irgen, std::unordered_map<std::string, Type> generic_instantiations) 
-        -> std::pair<Statement*, std::unordered_map<std::string, Type>>
+    auto normalize_type(
+        Type& tp,
+        TypeCheckerState* stt,
+        IRGenerator* irgen,
+        std::unordered_map<std::string, Type> generic_instantiations
+    ) -> std::pair<Statement*, std::unordered_map<std::string, Type>>
     {
+        if (is_type_variable(tp)) {
+            return { nullptr, generic_instantiations };
+        }
         if (tp.name == "_") {
             tp = stt->new_type_var();
             return { nullptr, generic_instantiations };
@@ -265,10 +287,13 @@ namespace Yoyo
             tp = generic_instantiations[tp.name];
             return { nullptr, generic_instantiations };
         }
+        if (tp.name == "T") debugbreak();
         ModuleBase* md = irgen->module;
         std::string hash = irgen->block_hash;
         std::string second_to_last = "";
-        auto iterator = UnsaturatedTypeIterator(tp);
+        auto iterated_type = tp;
+        iterated_type.name = iterated_type.full_name_no_generics();
+        auto iterator = UnsaturatedTypeIterator(iterated_type);
         Statement* current_stat = nullptr;
         if (iterator.is_end()) {
             //if we have no subtyes chances are that they're in the last as a string
@@ -306,6 +331,33 @@ namespace Yoyo
             if (err) {
                 irgen->error(*err);
             }
+            // add generics to the resolved name
+            Statement* current_stat = get_type_stat(type, hash, md);
+            auto clause = current_stat ? std::visit([](auto* arg) { return get_generic_clause(arg); }, current_stat->toVariant()) : nullptr;
+            // add all generic types
+            std::vector<Type> subtypes;
+            auto num_subtypes = clause ? clause->types.size() : 0;
+            if (type.subtypes.size() > num_subtypes) {
+                debugbreak();
+                irgen->error(Error(nullptr, "Provided more types than schema allows"));
+            }
+            for (auto i : std::views::iota(0u, type.subtypes.size())) {
+                normalize_type(type.subtypes[i], stt, irgen, generic_instantiations);
+                subtypes.push_back(type.subtypes[i]);
+                generic_instantiations[clause->types[i]] = type.subtypes[i];
+            }
+            for (auto i : std::views::iota(type.subtypes.size(), num_subtypes)) {
+                auto var = stt->new_type_var();
+                generic_instantiations[clause->types[i]] = subtypes.emplace_back(var);
+                //for (auto& con : clause->constraints[clause->types[i]]) {
+                //    auto& as_impl = std::get<ImplConstraint>(con);
+                //    auto tp = as_impl.other;
+                //    normalize_type(tp, state, irgen, {});
+                //    state->add_constraint(ImplInterfaceConstraint{ var, tp, scp });
+                //}
+            }
+            hash.erase(hash.size() - 2, 2);
+            hash += IRGenerator::mangleGenericArgs(subtypes) + "::";
             
             while (!iterator.is_end())
             {
@@ -318,15 +370,32 @@ namespace Yoyo
             tp.name = iterator.last().name;
             tp.block_hash = hash;
             tp.module = md;
+            // Current stat is empty but we were successful
+            current_stat = current_stat ? current_stat : get_type_stat(tp, tp.block_hash, tp.module, true);
+            if (!current_stat) {
+                debugbreak();
+            }
+            // update instantiations for last type
+            clause = std::visit([](auto* arg) { return get_generic_clause(arg);  }, current_stat->toVariant());
+            num_subtypes = clause ? clause->types.size() : 0;
+            if (tp.subtypes.size() > num_subtypes) {
+                debugbreak();
+                irgen->error(Error(nullptr, "Provided more types than schema allows"));
+            }
+            for (auto i : std::views::iota(0u, tp.subtypes.size())) {
+                normalize_type(tp.subtypes[i], stt, irgen, generic_instantiations);
+                generic_instantiations[clause->types[i]] = tp.subtypes[i];
+            }
+            for (auto i : std::views::iota(tp.subtypes.size(), num_subtypes)) {
+                generic_instantiations[clause->types[i]] = stt->new_type_var();
+            }
         }
         for (auto& sub : tp.subtypes) {
             if (sub.module && !sub.block_hash.empty()) continue;
             normalize_type(sub, stt, irgen, generic_instantiations);
         }
-        // Current stat is empty but we were successful
-        if (!current_stat) {
-            current_stat = get_type_stat(tp, tp.block_hash, tp.module, true);
-        }
+        current_stat = current_stat ? current_stat : get_type_stat(tp, tp.block_hash, tp.module, true);
+        
         return { current_stat, generic_instantiations };
     }
     void TypeChecker::operator()(VariableDeclaration* decl)
@@ -381,7 +450,8 @@ namespace Yoyo
 
         state->add_constraint(ImplInterfaceConstraint{
                 iter,
-                Type{.name = "Iterator",  .subtypes = {item}, .module = core_module, .block_hash = "core::",}
+                Type{.name = "Iterator",  .subtypes = {item}, .module = core_module, .block_hash = "core::",},
+                stat->iterable.get()
             });
 
         // new variable block
@@ -621,14 +691,29 @@ namespace Yoyo
             std::vector<Type> subtypes;
             std::unordered_map<std::string, Type> generic_instantiations;
             auto num_subtypes = clause ? clause->types.size() : 0;
+            // register all generics as type variables
             for (auto i : std::views::iota(0u, num_subtypes)) {
                 generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
+            }
+            // separate loop to apply generic constraints, because the 
+            // interface might reference other type parameters e.g ::<O, T: Iterator::<O>>
+            for (auto i : std::views::iota(0u, num_subtypes)) { // for each type
+                for (auto& con : clause->constraints[clause->types[i]]) { // for each constraint on type
+                    auto& as_impl = std::get<ImplConstraint>(con);
+                    auto tp = as_impl.other;
+                    normalize_type(tp, state, irgen, generic_instantiations);
+                    state->add_constraint(ImplInterfaceConstraint{ 
+                        generic_instantiations[clause->types[i]], 
+                        tp, 
+                        ex}
+                    );
+                }
             }
             tp.block_hash += fn->name + IRGenerator::mangleGenericArgs(subtypes) + "::";
             std::ranges::move(fn->signature.parameters | std::views::transform([&generic_instantiations, this](auto& e) {
                 Type tp = e.type;
                 normalize_type(tp, state, irgen, generic_instantiations);
-                return e.type;
+                return tp;
                 }), std::back_inserter(tp.subtypes));
             tp.subtypes.push_back(fn->signature.returnType);
             normalize_type(tp.subtypes.back(), state, irgen, generic_instantiations);
@@ -876,7 +961,14 @@ namespace Yoyo
             generic_instantiations[clause->types[i]] = type.subtypes[i];
         }
         for (auto i : std::views::iota(type.subtypes.size(), num_subtypes)) {
-            generic_instantiations[clause->types[i]] = subtypes.emplace_back(state->new_type_var());
+            auto var = state->new_type_var();
+            generic_instantiations[clause->types[i]] = subtypes.emplace_back(var);
+            for (auto& con : clause->constraints[clause->types[i]]) {
+                auto& as_impl = std::get<ImplConstraint>(con);
+                auto tp = as_impl.other;
+                normalize_type(tp, state, irgen, {});
+                state->add_constraint(ImplInterfaceConstraint{ var, tp, scp });
+            }
         }
         hash.erase(hash.size() - 2, 2);
         hash += IRGenerator::mangleGenericArgs(subtypes) + "::";
@@ -1112,13 +1204,12 @@ namespace Yoyo
         return TypeChecker{ std::nullopt, irgen, state };
     }
 
-    static bool is_type_variable(const Type& tp) {
-        return tp.name[0] == '?';
-    }
-    static bool has_type_variable(const Type& tp) {
+    
+    bool has_type_variable(const Type& tp) {
         if (is_type_variable(tp)) return true;
-        if (tp.block_hash.find('?') != std::string::npos) 
-            return true;
+        if (auto pos = tp.block_hash.find('?'); pos != std::string::npos)
+            // the "?" must be followed by a number
+            return tp.block_hash.size() > pos + 1 && std::isdigit(static_cast<unsigned char>(tp.block_hash[pos + 1]));
         for (auto& sub : tp.subtypes) {
             if (has_type_variable(sub)) return true;
         }
@@ -1214,6 +1305,9 @@ namespace Yoyo
             return true;
         }
     }
+    /// Compares 2 (possibly generic) types with (or without) type parameters
+    /// to see if they're compatible and generates equality constraints for nested type variables
+    /// the equality constraint is always ordered as "type1 elem = type2 elem"
     std::optional<Error> generic_match(Type tp1, Type tp2, Expression* loc, TypeCheckerState* solver) {
         // include the block in the name
         // because type.subtypes only occurs generics at the end ─────────────────╮
@@ -1511,49 +1605,233 @@ namespace Yoyo
     }
     bool ConstraintSolver::operator()(ImplInterfaceConstraint& con)
     {
-        // we use this to restrict the domain of a type
-        // it can also technically work for type matching but gets iffy with enable_if
-        auto type = state->best_repr(con.type);
-        auto intf = state->best_repr(con.interface);
+        using namespace std::views;
+        // An interface can be implemented in 2 places(and what it means for generics):
+        // - In the type definition:
+        // ```
+        // Generic: struct::<T, E> = {
+        //     impl Interface {
+        //         ...
+        //     }
+        // }
+        // all of Generic::<T, E> implement Interface even with enable_if and generic constraints
+        // (the easy one)
+        // 
+        // - In the interface definition
+        // Interface: interface = {
+        //     impl::<T> for Generic::<T, f32> { ... }
+        // }
+        // this is the hard one Interface is only implemented for some
+        // specializations of Generic
+        // (note that specializations are not allowed to overlap so 
+        // Generic::<T> and Generic::<i32> can not both be defined)
+        // and also Interfaces can never actually be generic directly
+        // - Interface: interface::<T> defines an interface with type parameters T
+        // (i.e a type cannot implement Interface::<i32> and Interface::<f32> because they are the same
+        // you can be generic with a bit of hackery:
+        // ```
+        // GenericInterface: struct::<T> = {
+        //     Interface: interface = {}
+        // }
+        // a type can implement 
+        // GenericInterface::<i32>::Interface and GenericInterface::<f32>::Interface
+        // ```
 
-        // intf cannot be a type variable
-
-        ClassDeclaration* decl = nullptr;
+        // The approach is:
+        // If we have a type a type variable:
+        // - Infinite Domain: return false
+        // - Finite Domain: 
+        //      remove all types that don't implement the interface,
+        //      return true (we can return true because the domain can never grow)
+        // If we have a type that doesnt have a type variable:
+        // - we check if type impl under the type (the easy implementation)
+        // - we check if interface is implemented for the type
+        // all while generating appropriate constraints
         
-        if (is_type_variable(type)) {
-            state->get_type_domain(type); // constrain to impl interface
-        }
-        else if (has_type_variable(type)) {
-            decl = dynamic_cast<ClassDeclaration*>(normalize_type(type, state, irgen, {}).first);
-        }
-        else {
-            decl = type.get_decl_if_class(irgen);
-        }
-
-        if (decl) {
-            bool did = false;
-            for (auto& impl : decl->impls) {
-                if (impl.impl_for.name == intf.name) {
-                    std::swap(irgen->block_hash, type.block_hash);
-                    auto as_sat = impl.impl_for.saturated(type.module, irgen);
-                    std::swap(irgen->block_hash, type.block_hash);
-
-                    if (as_sat.block_hash == intf.block_hash) {
-                        did = true;
-                        add_new_constraint(EqualConstraint{ std::move(as_sat), intf });
-                        break;
+        // "type" must not be a type variable
+        bool ret_val = true;
+        auto check_type_against_interface =
+            // take_action means whether to go ahead and constrain the type(s) or to just
+            // check if there's a possibility
+            [this, &con, &ret_val](Type& intf, Type& type, InterfaceDeclaration* decl, bool take_action) {
+                auto [type_decl, generics] = normalize_type(type, state, irgen, {});
+                auto impls = std::visit([](auto* arg) { return get_impls(arg);}, type_decl->toVariant());
+                std::vector<TypeCheckerConstraint> collector;
+                auto collector_ptr = &collector;
+                std::swap(state->write_new_constraints_to, collector_ptr);
+                // this is to see if we can constrain the subject type
+                // we can only constrain it if we encounter 1 valid impl (if not we may introduce false constraints)
+                std::unordered_map<uint32_t, Domain> subject_constraints;
+                uint32_t num_matches = 0;
+                // we don't intersect domains instantly, we collect all possible types into a group
+                // then intersect the domains at once
+                std::unordered_map<uint32_t, Domain::Group> itf_generic_groups;
+                // these are only used when we get exactly one match
+                std::unordered_map<uint32_t, Domain::Group> type_generic_groups;
+                // when we match itf as variable and type variable
+                std::vector<EqualConstraint> var_to_var_constraints;
+                if (impls) {
+                    for (auto& impl : *impls) {
+                        // this copy is on purpose
+                        auto impl_for = impl.impl_for;
+                        auto reference_block = type.block_hash;
+                        std::swap(irgen->block_hash, reference_block);
+                        normalize_type(impl_for, state, irgen, generics);
+                        std::swap(irgen->block_hash, reference_block);
+                        // this can actually match multiple times
+                        // Type: struct = {
+                        //     impl::<T> path::<T, i32>::Interface {}
+                        //     impl::<T> path::<T, f32>::Interface {}
+                        // }
+                        // matches with path::<?T, ?T2>::Interface twice
+                        if (auto err = generic_match(impl_for, intf, con.expr, state); !err) {
+                            if (!take_action) {
+                                std::swap(state->write_new_constraints_to, collector_ptr);
+                                return true;
+                            }
+                            num_matches++;
+                            
+                            for (auto& con : collector | transform([](auto& con) -> auto& { 
+                                return std::get<EqualConstraint>(con); 
+                            })) {
+                                // type1 is always from type and type2 is from interface
+                                // and one of either must be a type variable
+                                // if the interface is a type variable we constrain its domain
+                                // like ?T2 in the above example can be {i32, f32}
+                                // if the type is a type variable we constrain its domain to be exactly from the interface
+                                // but we can only constrain this if this is the right implementation
+                                // so we have to return false for further info
+                                if (is_type_variable(con.type2) && !is_type_variable(con.type1)) {
+                                    itf_generic_groups[state->tbl.type_to_id(con.type2)].add_type(
+                                        std::move(con.type1)
+                                    );
+                                }
+                                else if (is_type_variable(con.type1) && !is_type_variable(con.type2)) {
+                                    type_generic_groups[state->tbl.type_to_id(con.type1)].add_type(
+                                        std::move(con.type2)
+                                    );
+                                }
+                                // I don't actually know this is the right thing to do here
+                                else {
+                                    var_to_var_constraints.push_back(std::move(con));
+                                }
+                            }
+                            collector.clear();
+                        };
                     }
                 }
+                
+                // we still need to check the interface
+                std::swap(irgen->block_hash, intf.block_hash);
+                // here we check all type the interface is implemented for (2nd syntax)
+                // we normalize each of the types and check if they can match our input type
+                // if so
+                for (const auto& elem : decl->impl_fors
+                    | transform(
+                        [this](const ImplBlock& blk) {
+                            std::unordered_map<std::string, Type> substitutions = {};
+                            auto impl_for = blk.impl.impl_for;
+                            for (auto& type : blk.clause.types) {
+                                // need a way to make type vars without requiring them
+                                // to be solved
+                                substitutions[type] = state->new_type_var();
+                            }
+                            normalize_type(impl_for, state, irgen, std::move(substitutions));
+                            return impl_for;
+                        })
+                    | filter(
+                        [&type](const Type& tp) {
+                            // we get all the implemented types that can match
+                            // multiple can match but can't overlap 
+                            // e.g (Type::<?, i32> Type::<?, u32>)
+                            return can_match(type, tp);
+                        }))
+                {
+                    if (!take_action) {
+                        std::swap(irgen->block_hash, intf.block_hash);
+                        std::swap(state->write_new_constraints_to, collector_ptr);
+                        return true;
+                    }
+                    num_matches++;
+                    generic_match(type, elem, con.expr, state);
+                    for (auto& con : collector | transform([](auto& con) -> auto& {
+                        return std::get<EqualConstraint>(con);
+                        }))
+                    {
+                        if (is_type_variable(con.type2) && !is_type_variable(con.type1)) {
+                            itf_generic_groups[state->tbl.type_to_id(con.type2)].add_type(
+                                std::move(con.type1)
+                            );
+                        }
+                        else if (is_type_variable(con.type1) && !is_type_variable(con.type2)) {
+                            type_generic_groups[state->tbl.type_to_id(con.type1)].add_type(
+                                std::move(con.type2)
+                            );
+                        }
+                        else {
+                            var_to_var_constraints.push_back(std::move(con));
+                        }
+                    }
+                    collector.clear();
+                }
+                std::swap(state->write_new_constraints_to, collector_ptr);
+                std::swap(irgen->block_hash, intf.block_hash);
+                for (auto& [id, group] : itf_generic_groups) {
+                    state->get_type_domain(state->tbl.id_to_type(id))->add_and_intersect(std::move(group), state);
+                }
+                // If we have only 1 match we constrain the subject types
+                if (num_matches == 1) {
+                    for (auto& [id, group] : type_generic_groups) {
+                        subject_constraints[id].add_and_intersect(std::move(group), state);
+                    }
+                    for (auto& [id, domain] : subject_constraints) {
+                        state->get_type_domain(state->tbl.id_to_type(id))
+                            ->merge_intersect(std::move(domain), state);
+                    }
+                    for (auto& con : var_to_var_constraints) {
+                        add_new_constraint(std::move(con));
+                    }
+                }
+                else if (num_matches == 0) {
+                    irgen->error(Error(con.expr, "Type doesn not implement interface"));
+                }
+                // if we have more than one match we probably need more info (or are wrong idk)
+                else {
+                    ret_val = false;
+                }
+                return true;
+            };
+        auto type = state->best_repr(con.type);
+        auto intf = state->best_repr(con.interface);
+        // Importnat Assumption: intf cannot be a type variable
+        if (is_type_variable(intf)) return false;
+        auto [intf_decl, b] = normalize_type(intf, state, irgen, {});
+        if (intf_decl == nullptr) intf_decl = get_type_stat(intf, intf.block_hash, intf.module, true);        
+        if (intf_decl == nullptr) {
+            return true; // there was an error, but it was reported by normalize type (hopefully)
+        }
+        auto as_intf = dynamic_cast<InterfaceDeclaration*>(intf_decl);
+        if (!as_intf) {
+            irgen->error(Error(con.expr, "The type " + con.interface.full_name() + " is not an interface"));
+            return true;
+        }
+        // If its a type variable with an infinite domain we come back later
+        // other wise we prune it
+        if (is_type_variable(type)) {
+            auto domain = state->get_type_domain(type);
+            // empty domain
+            if (domain->concrete_types.types.empty()) {
+                return false;
             }
-            if (!did) {
-                irgen->error(Error(con.expr, "Type does not implement interface"));
-            }
+            std::erase_if(domain->concrete_types.types, [&intf, as_intf, &check_type_against_interface](Type& tp) { 
+                return !check_type_against_interface(intf, tp, as_intf, false); 
+                });
+            return true;
         }
         else {
-            // TODO check for automatic interfaces
-            irgen->error(Error(con.expr, "Type does not implement interface"));
+            check_type_against_interface(intf, type, as_intf, true);
         }
-        return true;
+        return ret_val;
     }
     bool ConstraintSolver::operator()(HasUnaryMinusConstraint& con) {
         auto type = state->best_repr(con.type);
@@ -1734,6 +2012,10 @@ namespace Yoyo
         }
         // not enough information given
         if (!constraints.empty()) {
+            // This is for debugging constraints that didn't resolve
+            debugbreak();
+            for (auto& con : constraints)
+                std::visit(sv, con);
             // TODO actual reporting
             irgen->error(Error(decl, "Not enough info to resolve types"));
         }

@@ -310,11 +310,22 @@ namespace Yoyo
             : name(std::move(name)), expression(std::move(exp)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
+    // I might consider making these statements
+    struct ImplBlock {
+        // impl::<...> for <Type> { }
+        InterfaceImplementation impl;
+        GenericClause clause;
+        ImplBlock(const ImplBlock&) = delete;
+        ImplBlock() = default;
+        ImplBlock(ImplBlock&&) noexcept = default;
+    };
+
     class InterfaceDeclaration : public Statement
     {
     public:
         std::string name;
         std::vector<std::unique_ptr<FunctionDeclaration>> methods;
+        std::vector<ImplBlock> impl_fors;
         StatementVariant toVariant() override;
     };
     class GenericInterfaceDeclaration : public InterfaceDeclaration

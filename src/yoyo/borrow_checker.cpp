@@ -1,7 +1,11 @@
 #include "ir_gen.h"
 #include <variant>
 #include <ranges>
-#define RE_REPR(x) x->evaluated_type = stt->best_repr(x->evaluated_type)
+namespace Yoyo { bool has_type_variable(const Yoyo::Type& tp); }
+#define RE_REPR(x) x->evaluated_type = stt->best_repr(x->evaluated_type);\
+if(has_type_variable(x->evaluated_type)) {\
+    irgen->error(Yoyo::Error(x, "Could not resolve type of this expression"));\
+}
 namespace Yoyo
 {
     std::pair<std::string, OverloadDetailsBinary*> resolveBin(const Type& lhs, const Type& rhs, TokenType t, IRGenerator* irgen);
@@ -331,7 +335,7 @@ namespace Yoyo
         case Spaceship: [[fallthrough]];
         case Greater: return do_overloadable_explicit_token(TokenType::Spaceship);
         case Dot: // return doDot(op->lhs.get(), op->rhs.get(), *left_t);
-        case DoubleDotEqual: RE_REPR(op->lhs); return ""; // TODO irgen->error(Error(op, "Not implemented yet")); return {};
+        case DoubleDotEqual: RE_REPR(op->lhs.get()); return ""; // TODO irgen->error(Error(op, "Not implemented yet")); return {};
         case DoubleDot: irgen->error(Error(op, "Not implemented yet")); return {};
         }
     }
