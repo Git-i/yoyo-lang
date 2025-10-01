@@ -84,7 +84,8 @@ namespace Yoyo
                 md->overloads.add_binary_detail_for(op->tok, OverloadDetailsBinary{
                     op->signature.parameters[0].type,
                     op->signature.parameters[1].type,
-                    op->signature.returnType
+                    op->signature.returnType,
+                    op
                 }, block);
             return true;
         }

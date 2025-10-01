@@ -306,7 +306,10 @@ namespace Yoyo
                 tp.block_hash = irgen->block_hash;
                 auto err = irgen->apply_using(tp, tp.module, tp.block_hash);
                 if (err) debugbreak();
-
+                if (auto as_alias = tp.module->findAlias(tp.block_hash, tp.name)) {
+                    tp = *as_alias;
+                };
+                // replace if its an 
                 auto hsh = tp.module->hashOf(tp.block_hash, tp.name);
                 if (hsh) tp.block_hash = std::move(hsh).value();
 
@@ -395,7 +398,16 @@ namespace Yoyo
             normalize_type(sub, stt, irgen, generic_instantiations);
         }
         current_stat = current_stat ? current_stat : get_type_stat(tp, tp.block_hash, tp.module, true);
-        
+        if (tp.name == "__arr_s_uneval") {
+            auto size_expr = reinterpret_cast<Expression*>(tp.signature.get());
+            auto size = std::visit(ConstantEvaluator{ irgen }, size_expr->toVariant());
+            if (!std::holds_alternative<uint64_t>(size.internal_repr) && !std::holds_alternative<int64_t>(size.internal_repr)) debugbreak();
+            size_t val = std::holds_alternative<uint64_t>(size.internal_repr) ? std::get<uint64_t>(size.internal_repr)
+                : std::get<int64_t>(size.internal_repr);
+            tp.name = "__arr_s" + std::to_string(val);
+            tp.signature = nullptr;
+
+        }
         return { current_stat, generic_instantiations };
     }
     void TypeChecker::operator()(VariableDeclaration* decl)
@@ -406,7 +418,11 @@ namespace Yoyo
             tp = *decl->type;
         }
         if (decl->initializer) {
-            tp = std::visit(new_target(decl->type), decl->initializer->toVariant());
+            auto init = std::visit(targetless(), decl->initializer->toVariant());
+            if (decl->type)
+                state->add_constraint(EqualConstraint{ tp, init });
+            else
+                tp = init;
         }
         tp.is_mutable = decl->is_mut;
         decl->type = tp;
@@ -596,6 +612,7 @@ namespace Yoyo
         if (auto exprs = std::get_if<std::vector<std::unique_ptr<Expression>>>(&lit->elements)) {
             array_size = exprs->size();
             for (auto& expr : *exprs) {
+                expr->evaluated_type = sub_type;
                 state->add_constraint(EqualConstraint{
                         sub_type,
                         std::visit(targetless(), expr->toVariant())
@@ -620,13 +637,15 @@ namespace Yoyo
                     irgen->error(Error(lit, "Array size too large", std::format("Evaluated size is {}", *as_int)));
                 array_size = static_cast<uint32_t>(*as_int);
             }
+            expr->evaluated_type = sub_type;
             state->add_constraint(EqualConstraint{
                     sub_type,
                     std::visit(targetless(), expr->toVariant())
                 });
             // TODO expr type must implement clone too
         }
-        return Type{ .name = "__arr_s" + std::to_string(array_size), .subtypes = {sub_type}, .module = core_module};
+        lit->evaluated_type = Type{ .name = "__arr_s" + std::to_string(array_size), .subtypes = {sub_type}, .module = core_module};
+        return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(RealLiteral* lit) const {
         if (target)
@@ -783,13 +802,13 @@ namespace Yoyo
             auto left = std::visit(targetless(), expr->lhs->toVariant());
             auto right = std::visit(targetless(), expr->rhs->toVariant());
             expr->evaluated_type = state->new_type_var();
-            state->add_constraint(BinaryOperableConstraint{ left, right, expr->evaluated_type, tk });
+            state->add_constraint(BinaryOperableConstraint{ left, right, expr->evaluated_type, tk, {}, expr });
             // constrain the return type for comparison operators
             // == and != support any return type
             if (expr->op.type == DoubleEqual || expr->op.type == BangEqual) {
                 expr->evaluated_type = Type{ .name = "bool",.module = core_module };
             }
-            else if (expr->op.type != Spaceship) {
+            else if (expr->op.type == Spaceship) {
                 state->add_constraint(ComparableConstraint{ expr->evaluated_type });
                 expr->evaluated_type = Type{ .name = "bool", .module = core_module };
             }
@@ -882,8 +901,11 @@ namespace Yoyo
     FunctionType TypeChecker::operator()(SubscriptOperation* subs) const {
         auto obj = std::visit(targetless(), subs->object->toVariant());
         auto idx = std::visit(targetless(), subs->index->toVariant());
-        // state->add_constraint();
-        return Type{};
+        subs->evaluated_type = state->new_type_var();
+        if(!in_mutable_ctx)
+            BinaryOperableConstraint{ obj, idx, subs->evaluated_type, TokenType::SquarePair };
+        else BinaryOperableConstraint{ obj, idx, subs->evaluated_type, TokenType::SquarePairMut };
+        return subs->evaluated_type;
     }
     FunctionType TypeChecker::operator()(LambdaExpression*) const { return Type{}; }
 
@@ -1134,8 +1156,24 @@ namespace Yoyo
         return scp->evaluated_type;
     }
     FunctionType TypeChecker::operator()(ObjectLiteral* lit) const {
-        auto stat = normalize_type(lit->t, state, irgen, {});
-        return Type{};
+        lit->evaluated_type = lit->t;
+        auto stat = normalize_type(lit->evaluated_type, state, irgen, {});
+        // TODO: constrain initializer
+        for (auto& [field, elem] : lit->values) {
+            Type result = state->new_type_var();
+            state->add_constraint(HasFieldConstraint{ lit->evaluated_type, field, result, lit });
+            Type other;
+            if (elem) { other = std::visit(targetless(), elem->toVariant()); }
+            else {
+                NameExpression nm(field);
+                other = targetless()(&nm);
+            }
+            state->add_constraint(EqualConstraint{ result, other, lit });
+        }
+        auto names = lit->values | std::views::keys;
+        auto fields = std::vector<std::string>{names.begin(), names.end()};
+        AllFieldsConstraint{ fields, lit->evaluated_type, lit };
+        return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(NullLiteral* lit) const {
         if (target) {
@@ -1194,14 +1232,14 @@ namespace Yoyo
         return Type{ "__error_type" };
     }
 
-    TypeChecker TypeChecker::new_target(std::optional<Type> tgt) const
+    TypeChecker TypeChecker::new_target(std::optional<Type> tgt, bool in_mutable_ctx) const
     {
-        return TypeChecker{ tgt, irgen, state };
+        return TypeChecker{ tgt, irgen, state, in_mutable_ctx };
     }
 
-    TypeChecker TypeChecker::targetless() const
+    TypeChecker TypeChecker::targetless(bool in_mutable_ctx) const
     {
-        return TypeChecker{ std::nullopt, irgen, state };
+        return TypeChecker{ std::nullopt, irgen, state, in_mutable_ctx };
     }
 
     
@@ -1254,7 +1292,7 @@ namespace Yoyo
                 state->get_type_domain(type)->constrain_to_store(*as_u64);
             else
                 state->get_type_domain(type)->constrain_to_store(std::get<int64_t>(con.value));
-            return false;
+            return true;
         }
         else {
             // TODO
@@ -1716,6 +1754,7 @@ namespace Yoyo
                                     var_to_var_constraints.push_back(std::move(con));
                                 }
                             }
+                            // TODO: see what happens if we move back up
                             collector.clear();
                         };
                     }
@@ -1852,10 +1891,17 @@ namespace Yoyo
     {
         auto type = state->best_repr(con.type);
         auto other = state->best_repr(con.other);
+        auto mutable_reference_to = [base = core_module](const Type& tp) {
+            return Type{ .name = "__ref_mut", .subtypes = {tp}, .module = base };
+            };
+        auto reference_to = [base = core_module](const Type& tp) {
+            return Type{ .name = "__ref", .subtypes = {tp}, .module = base };
+            };
+
         
         add_new_constraint(EqualConstraint{
                 type,
-                other.reference_to()
+                reference_to(other)
             });
         return true;
     }
@@ -1874,86 +1920,115 @@ namespace Yoyo
     bool ConstraintSolver::operator()(BinaryOperableConstraint& con) {
         auto left = state->best_repr(con.left);
         auto right = state->best_repr(con.right);
-        if(is_type_variable(left)) {
-            if(is_type_variable(right)) {
-                return false;
-            } else if(has_type_variable(right)) {
-                return false;
-            } else {
-                // constrain left to all possible types
-                // right has a binary operation with
-                auto grp = Domain::Group{};
-                for(auto&[hash, detail] : 
-                    right.module->overloads.binary_details_for(con.op) | 
-                    std::views::filter([&right, this](auto& elem) { 
-                        std::swap(elem.first, irgen->block_hash);
-                        elem.second.left.saturate(right.module, irgen);
-                        elem.second.right.saturate(right.module, irgen);
-                        std::swap(elem.first, irgen->block_hash);
-                        return elem.second.right.is_equal(right); 
-                    }))
-                {
-                    auto obj = detail.left;
-                    grp.add_type(std::move(obj));
-                }
-                if(auto err = state->get_type_domain(left)->add_and_intersect(std::move(grp), state))
-                    irgen->error(err.value());
-            }
-        } else if (has_type_variable(left)) {
-            if(is_type_variable(right)) {
-                return false;
-            } else if(has_type_variable(right)) {
-                // this can actually work
-                return false;
-            } else {
-                // this can also work
-                return false;
-                /*auto grp = Domain::Group{};
-                for(auto&[hash, detail] : 
-                    right.module->overloads.binary_details_for(con.op) | 
-                    std::views::filter([&right, this](auto& elem) { 
-                        std::swap(elem.first, irgen->block_hash);
-                        elem.second.left.saturate(right.module, irgen);
-                        elem.second.right.saturate(right.module, irgen);
-                        std::swap(elem.first, irgen->block_hash);
-                        return elem.second.right.is_equal(right); 
-                    }))
-                {
-                    if (can_match(detail.left, left)) {
-                        auto obj = detail.left;
-                        grp.add_type(std::move(obj));
+        auto result = state->best_repr(con.result);
+        auto is_compatible = [&left, &right, &result, this, &con](TokenType tt, bool take_action)
+            {
+                using namespace std::views;
+                std::vector<ModuleBase*> valid_modules;
+                if (left.module && right.module) {
+                    valid_modules.reserve(4);
+                    std::array<ModuleBase*, 4> modules{ left.module, left.deref().module, right.module, right.deref().module };
+                    for (auto module : modules) {
+                        auto it = std::ranges::find(valid_modules, module);
+                        if (it == valid_modules.end()) {
+                            valid_modules.push_back(module);
+                        }
                     }
                 }
-                state->get_type_domain(left)->add_and_intersect(std::move(grp));*/
-            }
-        } else {
-            //left is concrete
-            if(is_type_variable(right)) {
-                auto grp = Domain::Group{};
-                for (auto& [hash, detail] :
-                    right.module->overloads.binary_details_for(con.op) |
-                    std::views::filter([&left, this](auto& elem) {
-                        std::swap(elem.first, irgen->block_hash);
-                        elem.second.left.saturate(left.module, irgen);
-                        elem.second.right.saturate(left.module, irgen);
-                        std::swap(elem.first, irgen->block_hash);
-                        return elem.second.left.is_equal(left);
-                        }))
-                {
-                    auto obj = detail.right;
-                    grp.add_type(std::move(obj));
+                else {
+                    auto all_modules = irgen->module->engine->modules | transform([](auto& in) { return in.second.get(); });
+                    valid_modules.insert(valid_modules.end(), all_modules.begin(), all_modules.end());
                 }
-                if(auto err = state->get_type_domain(right)->add_and_intersect(std::move(grp), state))
-                    irgen->error(err.value());
-            } else if(has_type_variable(right)) {
-                // this can also work
+                std::vector<TypeCheckerConstraint> l_collector;
+                std::vector<TypeCheckerConstraint> r_collector;
+                std::vector<TypeCheckerConstraint> intermediate;
+                auto intermediate_ptr = &intermediate;
+                std::swap(state->write_new_constraints_to, intermediate_ptr);
+                std::vector<OverloadDetailsBinary*> matches;
+                for (auto module : valid_modules) {
+                    for (auto& [block, ovl] : module->overloads.binary_details_for(tt)) {
+                        std::unordered_map<std::string, Type> generic_subs;
+                        if (ovl.statement && !ovl.statement->clause.types.empty()) {
+                            if (!con.substitution_cache.contains(ovl.statement))
+                                for (auto& tp : ovl.statement->clause.types)
+                                    con.substitution_cache[ovl.statement][tp] = state->new_type_var();
+                            generic_subs = con.substitution_cache[ovl.statement];
+                        }
+                        Type expected_left = ovl.left;
+                        Type expected_right = ovl.right;
+                        irgen->block_hash.swap(block);
+                        std::swap(irgen->module, module);
+                        normalize_type(expected_left, state, irgen, generic_subs);
+                        normalize_type(expected_right, state, irgen, std::move(generic_subs));
+                        std::swap(irgen->module, module);
+                        irgen->block_hash.swap(block);
+                        // much like for interfaces, if both sides can match we take it into consideration
+                        // and if there's only one in consideration thats our answer, if there's zero its an error
+                        // and if its more than one we have to wait a bit
+                        auto left_old_size = l_collector.size();
+                        intermediate.clear();
+                        if (generic_match(left, expected_left, nullptr, state) == std::nullopt) {
+                            std::ranges::move(std::move(intermediate), std::back_inserter(l_collector));
+                        }
+                        else continue;
+                        intermediate.clear();
+                        if (generic_match(right, expected_right, nullptr, state) == std::nullopt) {
+                            // they both successfuly match
+                            std::ranges::move(std::move(intermediate), std::back_inserter(r_collector));
+                            matches.push_back(&ovl);
+                            // we found a match if we're not taking action we can abort we can return here
+                            if (!take_action) {
+                                std::swap(state->write_new_constraints_to, intermediate_ptr);
+                                return true;
+                            }
+                        }
+                        // on failure revert left to its original state
+                        else {
+                            l_collector.erase(l_collector.begin() + left_old_size, l_collector.end());
+                        }
+                    };
+                }
+                std::swap(state->write_new_constraints_to, intermediate_ptr);
+                // the correct match
+                if (matches.size() == 1) {
+                    if (take_action)
+                    {
+                        std::ranges::move(std::move(l_collector), std::back_inserter(temp_constraints));
+                        std::ranges::move(std::move(r_collector), std::back_inserter(temp_constraints));
+
+                        auto this_result = matches[0]->result;
+                        normalize_type(this_result, state, irgen, con.substitution_cache[matches[0]->statement]);
+                        auto bexpr = reinterpret_cast<BinaryOperation*>(con.expr);
+                        bexpr->selected = matches[0];
+                        add_new_constraint(EqualConstraint{ result, this_result, con.expr });
+                    }
+                    return true;
+                }
+                else if (matches.size() == 0 && take_action) {
+                    irgen->error(Error(con.expr, "Overload does not exist between types"));
+                }
                 return false;
-            } else { // both are concrete
-                auto[block, dets] = resolveBin(left, right, con.op, irgen);
-                if (!dets) {
-                    irgen->error(Error(con.expr, "No operator exists between these 2 types"));
-                }
-            }
+            };
+        if (is_type_variable(left) && is_type_variable(right)) {
+            return false;
+        }
+        // only left is a variable
+        if (is_type_variable(left)) {
+            std::erase_if(state->get_type_domain(left)->concrete_types.types, [&con, &is_compatible](const Type& tp) 
+                { 
+                    return !is_compatible(con.op, false);
+                });
+            return true;
+        }
+        else if (is_type_variable(right)) {
+            std::erase_if(state->get_type_domain(right)->concrete_types.types, [&con, &is_compatible](const Type& tp)
+                {
+                    return !is_compatible(con.op, false);
+                });
+            return true;
+        }
+        else {
+            return is_compatible(con.op, true);
         }
         return true;
     }
@@ -1993,6 +2068,9 @@ namespace Yoyo
     void TypeCheckerState::resolve_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig)
     {
         push_variable_block();
+        for (const auto& param : sig.parameters) {
+            variables.back()[param.name] = param.type;
+        }
         return_type = sig.returnType;
         write_new_constraints_to = &constraints;
         // generate constraints
@@ -2330,6 +2408,64 @@ namespace Yoyo
         add_new_constraint(EqualConstraint{ tp1, tp2 });
         return true;
     }
+    bool ConstraintSolver::operator()(IndexOperableConstraint& con)
+    {
+        // we can defer this to a binary operable constraints once were sure we don't an array
+        auto left = state->best_repr(con.left);
+        auto right = state->best_repr(con.right);
+        auto token_type = con.is_mutable ? TokenType::SquarePairMut : TokenType::SquarePair;
+        if (is_type_variable(left)) {
+            auto domain = state->get_type_domain(left);
+            if (std::ranges::any_of(domain->concrete_types.types, [](const Type& tp) { return tp.is_static_array(); })) {
+                // it could be a static array we defer
+                return false;
+            }
+            else {
+                add_new_constraint(BinaryOperableConstraint{ left, right, con.result, token_type, {}, con.expr });
+                return true;
+            }
+        }
+        else {
+            left.is_static_array();
+        }
+    }
+    bool ConstraintSolver::operator()(HasFieldConstraint& con)
+    {
+        auto subject = state->best_repr(con.subject);
+        auto result = state->best_repr(con.result);
+        if (is_type_variable(subject)) return false;
+        auto [stat, gctx] = normalize_type(subject, state, irgen, {});
+        if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
+            auto it = std::ranges::find_if(cls->vars, [con](ClassVariable& var) {
+                return var.name == con.field_name;
+                });
+            if (it != cls->vars.end()) {
+                auto type = it->type;
+                normalize_type(type, state, irgen, std::move(gctx));
+                add_new_constraint(EqualConstraint{ result, type });
+                return true;
+            }
+        }
+        irgen->error(Error(con.expr, "Type does not have field"));
+    }
+    bool ConstraintSolver::operator()(AllFieldsConstraint& con)
+    {
+        auto subject = state->best_repr(con.subject);
+        if (is_type_variable(subject)) return false;
+        auto [stat, gctx] = normalize_type(subject, state, irgen, {});
+        if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
+            auto& first_range = con.fields;
+            auto second_range = cls->vars | std::views::transform([this, &gctx](const ClassVariable& var) {
+                    return var.name;
+                });
+            auto first_set = std::set<std::string>{ first_range.begin(), first_range.end() };
+            auto second_set = std::set<std::string>{ second_range.begin(), second_range.end() };
+            if (first_set.size() != first_range.size()) irgen->error(Error(con.expr, "Duplicate entries"));
+            if (first_set != second_set) irgen->error(Error(con.expr, "All fields must be initialized"));
+            return true;
+        }
+        irgen->error(Error(con.expr, "Internal Error"));
+    }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
     {
         temp_constraints.push_back(std::move(con));
@@ -2417,6 +2553,10 @@ namespace Yoyo
             concrete_types.types = std::move(grp.types);
             return std::nullopt;
         }
+        // merge with the infinite set
+        if (grp.types.empty()) {
+            return std::nullopt;
+        }
         // We could have non concrete types so the intersection process is a bit more delicate
         std::vector<Type> out;
         std::vector<TypeCheckerConstraint> cons;
@@ -2441,6 +2581,7 @@ namespace Yoyo
             }
         }
         if (out.empty()) {
+            std::swap(state->write_new_constraints_to, cons_ptr);
             return Error(nullptr, "Constradictory type");
         }
         concrete_types.types = std::move(out);

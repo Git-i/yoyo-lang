@@ -169,9 +169,10 @@ namespace Yoyo
     public:
         FunctionSignature signature;
         TokenType tok;
+        GenericClause clause;
         std::unique_ptr<Statement> body;
-        OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body)
-            : signature(std::move(sig)), tok(ident), body(std::move(body)) {}
+        OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body, GenericClause cl)
+            : signature(std::move(sig)), tok(ident), body(std::move(body)), clause(std::move(cl)) {}
         StatementVariant toVariant() override;
     };
     class UnionDeclaration : public Statement

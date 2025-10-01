@@ -69,7 +69,6 @@ namespace Yoyo {
     class YVMExpressionEvaluator
     {
     public:
-        std::optional<Type> target;
         YVMIRGenerator* irgen;
         Type lastDeducedType;
         size_t returned_alloc_addr;
@@ -77,9 +76,7 @@ namespace Yoyo {
         {
             EQ, GT, LT, EQ_GT, EQ_LT, NE, SPACE
         };
-        explicit YVMExpressionEvaluator(YVMIRGenerator* gen, std::optional<Type> target = std::nullopt) : irgen(gen),
-            target(std::move(target)) {
-        }
+        explicit YVMExpressionEvaluator(YVMIRGenerator* gen) : irgen(gen), returned_alloc_addr(size_t(-1)) {}
         /// on_stack means to write it to a pointer on the stack top other wise put it on new `alloca`
         /// if `on_stack` is on, we except the value to be below the stack top
         /// if `on_stack` is off, we expect the value to be at the stack top
@@ -106,7 +103,7 @@ namespace Yoyo {
         std::vector<Type> doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
             const Type& right_type, const Type&);
         std::vector<Type> doSingleStringLiteral(const std::string& text, StructNativeTy* str_type);
-        std::vector<Type> fillArgs(bool, const FunctionSignature&, const std::unique_ptr<Expression>&,
+        std::vector<Type> fillArgs(bool, const std::vector<Type>&, const std::unique_ptr<Expression>&,
             std::vector<std::unique_ptr<Expression>>& exprs);
         std::vector<Type> doInvoke(CallOperation* op, const Type&);
         std::vector<Type> doUnionVar(CallOperation* op, Type&);
@@ -146,6 +143,7 @@ namespace Yoyo {
         std::vector<Type> operator()(GCNewExpression*);
         std::vector<Type> operator()(MacroInvocation*);
         std::vector<Type> operator()(SpawnExpression*);
+        std::vector<Type> operator()(BlockExpression*);
         std::vector<Type> operator()(Expression*) { return {}; } // TODO
     };
 }

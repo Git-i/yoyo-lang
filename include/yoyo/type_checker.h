@@ -63,6 +63,17 @@ namespace Yoyo
         Type right;
         Type result;
         TokenType op;
+        // we keep a constraint local cache of all substitutions we've made as they may create new type
+        // variables and we want to avoid making too many unnecesary type variables
+        std::unordered_map<OperatorOverload*, std::unordered_map<std::string, Type>> substitution_cache;
+        Expression* expr;
+    };
+    
+    struct IndexOperableConstraint {
+        Type left;
+        Type right;
+        Type result;
+        bool is_mutable;
         Expression* expr;
     };
     struct BinaryDotCompatibleConstraint {
@@ -160,6 +171,17 @@ namespace Yoyo
         Type result;
         Expression* expr;
     };
+    struct HasFieldConstraint {
+        Type subject;
+        std::string field_name;
+        Type result;
+        Expression* expr;
+    };
+    struct AllFieldsConstraint {
+        std::vector<std::string> fields;
+        Type subject;
+        Expression* expr;
+    };
     using TypeCheckerConstraint = std::variant<
         IsIntegerConstraint,
         CanStoreIntegerConstraint,
@@ -186,7 +208,10 @@ namespace Yoyo
         ElseExtractsToConstraint,
         ElseRefExtractsToConstraint,
         IfStatementConstraint,
-        EqualOrIsVoidConstraint
+        EqualOrIsVoidConstraint,
+        IndexOperableConstraint,
+        HasFieldConstraint,
+        AllFieldsConstraint
     >;
     /// represents the possible types a variable can be
     class Domain {
@@ -300,6 +325,9 @@ namespace Yoyo
         bool operator()(ElseExtractsToConstraint& con);
         bool operator()(IfStatementConstraint& con);
         bool operator()(EqualOrIsVoidConstraint& con);
+        bool operator()(IndexOperableConstraint& con);
+        bool operator()(HasFieldConstraint& con);
+        bool operator()(AllFieldsConstraint& con);
         void add_new_constraint(TypeCheckerConstraint);
     };
 	struct TypeChecker
@@ -307,6 +335,7 @@ namespace Yoyo
         std::optional<Type> target;
         IRGenerator* irgen;
         TypeCheckerState* state;
+        bool in_mutable_ctx;
         void operator()(FunctionDeclaration*) {}
         void operator()(ClassDeclaration*) {}
         void operator()(VariableDeclaration*);
@@ -361,7 +390,7 @@ namespace Yoyo
         FunctionType operator()(SpawnExpression*) const;
 
         
-        TypeChecker new_target(std::optional<Type>) const;
-        TypeChecker targetless() const;
+        TypeChecker new_target(std::optional<Type>, bool in_mutable_ctx = false) const;
+        TypeChecker targetless(bool in_mutable_ctx = false) const;
 	};
 }

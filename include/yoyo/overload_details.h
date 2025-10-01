@@ -17,6 +17,7 @@ namespace Yoyo
     struct OverloadDetailsBinary
     {
         Type left; Type right; Type result;
+        OperatorOverload* statement;
         std::string mangled_name(const TokenType t) const
         {
             std::string middle;

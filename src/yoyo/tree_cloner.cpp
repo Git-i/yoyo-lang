@@ -285,7 +285,7 @@ namespace Yoyo
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(OperatorOverload* ov)
     {
-        return std::make_unique<OperatorOverload>(ov->tok, ov->signature, copy_stat(ov->body));
+        return std::make_unique<OperatorOverload>(ov->tok, ov->signature, copy_stat(ov->body), ov->clause);
     }
 
     std::unique_ptr<Statement> StatementTreeCloner::operator()(GenericFunctionDeclaration* decl)

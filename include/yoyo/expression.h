@@ -17,6 +17,7 @@ namespace Yoyo
 
 namespace Yoyo
 {
+    struct OverloadDetailsBinary;
     class NullLiteral;
     class ObjectLiteral;
     class LogicalOperation;
@@ -168,6 +169,7 @@ namespace Yoyo
         Token op;
         std::unique_ptr<Expression> lhs;
         std::unique_ptr<Expression> rhs;
+        OverloadDetailsBinary* selected;
         BinaryOperation(const Token& op, std::unique_ptr<Expression> left, std::unique_ptr<Expression> right)
             : op(op), lhs(std::move(left)), rhs(std::move(right)) {}
         ExpressionVariant toVariant() override;

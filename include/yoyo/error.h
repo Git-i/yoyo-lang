@@ -33,7 +33,7 @@ namespace Yoyo
 			summary(std::move(sum)),
 			description(std::move(desc)) {}
 		Error(ASTNode* node, std::string sum, std::string desc = "") :
-			span{ node->beg, node->end },
+			span(node == nullptr ? SourceSpan{} : SourceSpan{node->beg, node->end}),
 			summary(std::move(sum)),
 			description(std::move(desc)) {}
 		std::string to_string(const SourceView& view, bool enable_color) const;

@@ -80,7 +80,7 @@ Yoyo::YVMAppModule* addTestModule(Yoyo::YVMEngine* eng) {
     md->addFunction("(x: &str, y: &str) -> void", test_str_cmp, "str_cmp");
     return md;
 }
-constexpr bool emit_ir = false;
+constexpr bool emit_ir = true;
 TEST_CASE("Test IR") 
 {
     std::ifstream ifs("source.yoyo");
@@ -418,6 +418,36 @@ InterfaceWrapper: struct::<T> = {
 )");
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test operator overloading", "[type-checker][operator-overloading]")
+{
+    std::string source(1 + R"(
+// dot product
+operator: *::<T>(a: Vec2::<T>, b: Vec2::<T>) -> T = {
+    return a.x * b.x + a.y * b.y;
+}
+main: fn = {
+    veci1 := Vec2::<i32>::new(10, 20);
+    veci2 := Vec2::new(20, 30);
+    vecf1 := Vec2::<f32>::new(30.0, 10.0);
+    vecf2 := Vec2::new(100.0, 20.0);
+
+    "${veci2 * veci1}".test::print();
+    "${vecf1 * vecf2}".test::print();
+}
+Vec2: struct::<T> = {
+    x: T, y: T,
+    new: fn(x: T, y: T) -> Vec2::<T> = return Vec2::<T>{ .x, .y };
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();

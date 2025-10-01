@@ -159,6 +159,23 @@ namespace Yoyo {
 		stream << std::format("{}[scope| path: {}]\n", prefix, op->evaluated_type.pretty_name(""));
 	}
 
+	void ASTPrinter::operator()(ObjectLiteral* obj)
+	{
+		stream << std::format("{}[object| type: {}]\n", prefix, obj->evaluated_type.pretty_name(""));
+		prefix += "    ";
+		for (auto& [field, expr] : obj->values) {
+			stream << std::format("{}[field| name: {}]\n", prefix, field);
+			prefix += "    ";
+			if (expr) std::visit(*this, expr->toVariant());
+			else {
+				NameExpression nm(field);
+				(*this)(&nm);
+			}
+			prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
+		}
+		prefix.erase(prefix.begin() + prefix.size() - 4, prefix.end());
+	}
+
 	void ASTPrinter::operator()(AsExpression* as_expr)
 	{
 		stream << std::format("{}[as| type: {}]\n", prefix, as_expr->evaluated_type.pretty_name(""));

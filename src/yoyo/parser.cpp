@@ -198,11 +198,14 @@ namespace Yoyo
             op->type = TokenType::SquarePairMut;
         }
         else if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());
+        GenericClause clause;
+        if (auto generic_open = Peek(); generic_open->type == TokenType::TemplateOpen)
+            clause = parseGenericClause().value_or(GenericClause{});
         auto sig = parseFunctionSignature();
         if(sig->returnType.name == "__inferred") sig->returnType.name = "void";
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         auto body = parseStatement();
-        auto return_val = std::make_unique<OperatorOverload>(op->type, std::move(sig).value_or(FunctionSignature{}), std::move(body));
+        auto return_val = std::make_unique<OperatorOverload>(op->type, std::move(sig).value_or(FunctionSignature{}), std::move(body), std::move(clause));
         return_val->body->parent = return_val.get();
         return Statement::attachSLAndParent(std::move(return_val), tok.loc, return_val->body->end, parent);
     }

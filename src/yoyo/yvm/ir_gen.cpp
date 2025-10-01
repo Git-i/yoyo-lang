@@ -79,9 +79,9 @@ namespace Yoyo
         TypeCheckerState stt{};
         stt.resolve_function(decl, this, sig);
         // don't go further if type checking failed
-        //if (has_error) {
-        //    return;
-        //}
+        if (has_error) {
+            return;
+        }
         std::visit(BorrowCheckerEmitter{ this, &stt }, decl->body->toVariant());
         std::visit(ASTPrinter{ std::cout }, decl->body->toVariant());
         function_borrow_checkers.back().check_and_report(this);
@@ -150,7 +150,7 @@ namespace Yoyo
     void YVMIRGenerator::operator()(ExpressionStatement* stat)
     {
         auto as_var = stat->expression->toVariant();
-        auto ty = std::visit(ExpressionTypeChecker{this}, as_var).value_or_error();
+        auto& ty = stat->expression->evaluated_type;
         auto eval = YVMExpressionEvaluator{this};
         std::visit(eval, as_var);
         if(!ty.is_lvalue)
@@ -361,7 +361,7 @@ namespace Yoyo
             error(Error(decl, "The name '" + name + "' already exists")); return;
         }
         if(decl->type) decl->type->saturate(module, this);
-        FunctionType type = decl->type ? decl->type.value() : std::visit(ExpressionTypeChecker{this}, decl->initializer->toVariant()).value_or_error();
+        Type& type = decl->type.value();
         if(!type.can_be_stored()) { error(Error(decl, "The type tp cannot be stored")); return; }
         if(type.is_non_owning(this)) { error(Error(decl, "Variable types must not be non-owning")); return; }
         type.is_mutable = decl->is_mut;
@@ -371,8 +371,8 @@ namespace Yoyo
         size_t stack_idx = 0;
         if(decl->initializer)
         {
-            auto expr_type = std::visit(ExpressionTypeChecker{this, type}, decl->initializer->toVariant()).value_or_error();
-            auto eval = YVMExpressionEvaluator{this, type};
+            auto& expr_type = decl->initializer->evaluated_type;
+            auto eval = YVMExpressionEvaluator{this};
             std::visit(eval, decl->initializer->toVariant());
             stack_idx = eval.returned_alloc_addr;
             // TODO: reduce literal
@@ -418,11 +418,7 @@ namespace Yoyo
     //}
     void YVMIRGenerator::operator()(ForStatement* stat)
     {
-        auto tye = std::visit(ExpressionTypeChecker{ this }, stat->iterable->toVariant());
-        if (!tye) {
-            error(tye.error()); return;
-        }
-        auto& ty = *tye;
+        auto& ty = stat->iterable->evaluated_type;
         if (!ty.is_mutable && ty.is_lvalue) error(Error(stat->iterable.get(), "Iterator object must be mutable or a temporary"));
         //check if it implements iterator interface
         if (ty.is_error_ty()) std::visit(YVMExpressionEvaluator{ this }, stat->iterable->toVariant());
@@ -512,13 +508,6 @@ namespace Yoyo
     }
     void YVMIRGenerator::operator()(WhileStatement* expr)
     {
-        auto cond_ty = std::visit(ExpressionTypeChecker{ this }, expr->condition->toVariant());
-        if (!cond_ty) error(cond_ty.error());
-        if(cond_ty && !cond_ty->is_boolean() && !cond_ty->is_error_ty())
-        {
-            error(Error(expr->condition.get(), "Condition in 'while' must evaluate to a boolean"));
-            return;
-        }
         auto while_bb = builder->create_label("while_begin");
         auto while_cont = builder->unq_label_name("while_cont");
         
@@ -540,18 +529,14 @@ namespace Yoyo
     {
         // since we're in a statement the current stack offset is guaranteed to be
         // number of fn params + number of allocas
-        auto tp_e = std::visit(ExpressionTypeChecker{ this }, stat->condition->toVariant());
-        if (!tp_e) {
-            error(tp_e.error()); return;
-        }
-        if (!tp_e->is_optional() && !tp_e->is_conversion_result()) { error(Error(stat->condition.get(), "Expression cannot be extracted")); return; }
+        auto tp_e = stat->condition->evaluated_type;
         if (!stat->else_capture.empty()) { debugbreak(); return; }
-        if (stat->is_ref && tp_e->is_value_conversion_result()) { error(Error(stat->condition.get(), "Expanded expression cannot be borrowed", "")); return; }
+        if (stat->is_ref && tp_e.is_value_conversion_result()) { error(Error(stat->condition.get(), "Expanded expression cannot be borrowed", "")); return; }
 
         if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
 
         // all conditional extracntion types (optional types) all have a valid flag as thier second field
-        auto as_native = reinterpret_cast<StructNativeTy*>(toNativeType(*tp_e));
+        auto as_native = reinterpret_cast<StructNativeTy*>(toNativeType(tp_e));
         auto expr_eval = YVMExpressionEvaluator{ this };
         
         auto extensions = std::visit(expr_eval, stat->condition->toVariant());
@@ -574,16 +559,16 @@ namespace Yoyo
 
         builder->write_ptr_off(NativeType::getElementOffset(as_native, 0));
         // if its not a ref we have to clone it
-        if (!tp_e->is_value_conversion_result() && !stat->is_ref) {
-            if (tp_e->is_ref_conversion_result())
+        if (!tp_e.is_value_conversion_result() && !stat->is_ref) {
+            if (tp_e.is_ref_conversion_result())
                 builder->write_2b_inst(Load, Yvm::Type::ptr);
-            if (!tp_e->subtypes[0].should_sret())
-                builder->write_2b_inst(Load, toTypeEnum(tp_e->subtypes[0]));
-            expr_eval.clone(stat->condition.get(), tp_e->subtypes[0], false, false);
+            if (!tp_e.subtypes[0].should_sret())
+                builder->write_2b_inst(Load, toTypeEnum(tp_e.subtypes[0]));
+            expr_eval.clone(stat->condition.get(), tp_e.subtypes[0], false, false);
         }
         Type variable_type = stat->is_ref ?
-            Type{ tp_e->is_mutable ? "__ref_mut" : "__ref", {tp_e->subtypes[0]} } :
-            tp_e->subtypes[0];
+            Type{ tp_e.is_mutable ? "__ref_mut" : "__ref", {tp_e.subtypes[0]} } :
+            tp_e.subtypes[0];
         variable_type.saturate(module, this);
         variables.back().emplace_back(stat->captured_name, VariableEntry{ VariableIndex{builder->checkpoint(), VariableIndex::Checkpoint}, std::move(variable_type) });
         current_Statement = &stat->body;
@@ -610,8 +595,10 @@ namespace Yoyo
     {
         if (ovl->signature.parameters.size() == 2)
         {
+            if (!ovl->clause.types.empty()) return;
             ovl->signature.parameters[0].type.saturate(module, this);
             ovl->signature.parameters[1].type.saturate(module, this);
+            ovl->signature.returnType.saturate(module, this);
 
             // Validate the overloads
 
@@ -666,11 +653,7 @@ namespace Yoyo
     {
         if (stat->expression)
         {
-            auto t = std::visit(ExpressionTypeChecker{ this, return_t }, stat->expression->toVariant()).value_or_error();
-            if (!return_t.is_assignable_from(t, this)) { error(Error(stat, "Type is not convertible to return type")); return; }
-            if (return_t.is_non_owning(this))
-                if (false /*!std::visit(LifetimeExceedsFunctionChecker{this}, stat->expression->toVariant())*/) debugbreak();
-            std::visit(YVMExpressionEvaluator{ this, return_t }, stat->expression->toVariant());
+            auto& t = stat->expression->evaluated_type;
             if (!return_t.should_sret())
             {
                 YVMExpressionEvaluator{ this }.implicitConvert(stat->expression.get(), t, return_t, false, true);

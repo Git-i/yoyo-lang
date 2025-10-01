@@ -50,7 +50,7 @@ namespace Yoyo {
         void operator()(SubscriptOperation*) {}
         void operator()(LambdaExpression*) {}
         void operator()(ScopeOperation*);
-        void operator()(ObjectLiteral*) {}
+        void operator()(ObjectLiteral*);
         void operator()(NullLiteral*) {}
         void operator()(AsExpression*);
         void operator()(CharLiteral*) {}
