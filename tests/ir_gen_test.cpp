@@ -437,13 +437,15 @@ main: fn = {
     veci2 := Vec2::new(20, 30);
     vecf1 := Vec2::<f32>::new(30.0, 10.0);
     vecf2 := Vec2::new(100.0, 20.0);
-
+    
+    veci1.to_str().test::print();
     "${veci2 * veci1}".test::print();
     "${vecf1 * vecf2}".test::print();
 }
 Vec2: struct::<T> = {
     x: T, y: T,
     new: fn(x: T, y: T) -> Vec2::<T> = return Vec2::<T>{ .x, .y };
+    to_str: fn(&this) -> str = return "{ ${this.x}, ${this.y} }";
 }
 )");
     Yoyo::YVMEngine engine;

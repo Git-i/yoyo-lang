@@ -324,8 +324,8 @@ namespace Yoyo
         for (auto& t : types) {
             auto mangled_name_for = [&t](const std::string& op_name)
                 {
-                    // __operator_<name>__<type_lhs>__<type_rhs>
-                    return "__operator__" + op_name + "__" + t.name + "__" + t.name;
+                    // operator<name><type_lhs>&&<type_rhs>
+                    return "core::operator" + op_name + t.name + "&&" + t.name;
                 };
             operators.add_binary_detail_for(TokenType::Plus, t, t, t, "");
             operators.add_binary_detail_for(TokenType::Minus, t, t, t, "");
@@ -334,24 +334,24 @@ namespace Yoyo
 
             em.write_1b_inst(add_for.at(t.name));
             em.write_1b_inst(Yvm::OpCode::Ret);
-            em.close_function(&mod->code, mangled_name_for("plus"));
+            em.close_function(&mod->code, mangled_name_for("+"));
 
             em.write_1b_inst(sub_for.at(t.name));
             em.write_1b_inst(Yvm::OpCode::Ret);
-            em.close_function(&mod->code, mangled_name_for("minus"));
+            em.close_function(&mod->code, mangled_name_for("-"));
 
             em.write_1b_inst(mul_for.at(t.name));
             em.write_1b_inst(Yvm::OpCode::Ret);
-            em.close_function(&mod->code, mangled_name_for("mul"));
+            em.close_function(&mod->code, mangled_name_for("*"));
 
             em.write_1b_inst(div_for.at(t.name));
             em.write_1b_inst(Yvm::OpCode::Ret);
-            em.close_function(&mod->code, mangled_name_for("div"));
+            em.close_function(&mod->code, mangled_name_for("/"));
         }
         // all the integral types
         for (auto& t : std::ranges::subrange(types.begin() + 2, types.end())) {
             Type result{ .name = "CmpOrd", .module = mod, .block_hash = mod->module_hash };
-            std::string mangled_name = "__operator__cmp__" + t.name + "__" + t.name;
+            std::string mangled_name = "core::operator<=>" + t.name + "&&" + t.name;
 
             em.write_2b_inst(Yvm::OpCode::StackAddr, 0);
             em.write_2b_inst(Yvm::OpCode::StackAddr, 1);

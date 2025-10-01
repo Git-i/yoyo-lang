@@ -23,19 +23,19 @@ namespace Yoyo
             std::string middle;
             switch (t)
             {
-            case TokenType::Plus: middle = "plus__"; break;
-            case TokenType::Minus: middle = "minus__"; break;
-            case TokenType::Star: middle = "mul__"; break;
-            case TokenType::Slash: middle = "div__"; break;
-            case TokenType::Spaceship: middle = "cmp__"; break;
-            case TokenType::Percent: middle = "mod__"; break;
-            case TokenType::DoubleGreater: middle = "shr__"; break;
-            case TokenType::DoubleLess: middle = "shl__"; break;
-            case TokenType::SquarePair: middle = "idx__"; break;
-            case TokenType::SquarePairMut: middle = "idx_mut__"; break;
+            case TokenType::Plus: middle = "+"; break;
+            case TokenType::Minus: middle = "-"; break;
+            case TokenType::Star: middle = "*"; break;
+            case TokenType::Slash: middle = "/"; break;
+            case TokenType::Spaceship: middle = "<=>"; break;
+            case TokenType::Percent: middle = "%"; break;
+            case TokenType::DoubleGreater: middle = ">>"; break;
+            case TokenType::DoubleLess: middle = "<<"; break;
+            case TokenType::SquarePair: middle = "[]"; break;
+            case TokenType::SquarePairMut: middle = "[mut]"; break;
             default: debugbreak();
             }
-            return "__operator__" + middle + left.full_name() + "__" + right.full_name();
+            return "operator" + middle + left.full_name() + "&&" + right.full_name();
         }
     };
 

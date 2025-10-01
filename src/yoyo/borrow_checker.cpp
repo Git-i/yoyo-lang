@@ -168,8 +168,11 @@ namespace Yoyo
         // TODO
         return "";
     }
-    void BorrowCheckerEmitter::operator()(ReturnStatement*) {
-    // TODO
+    void BorrowCheckerEmitter::operator()(ReturnStatement* stat) {
+        if (stat->expression) {
+            auto& checker = irgen->function_borrow_checkers.back();
+            checker.drop_object(std::visit(*this, stat->expression->toVariant()), stat);
+        }
     }
     void BorrowCheckerEmitter::operator()(ExpressionStatement* stat) {
         auto& checker = irgen->function_borrow_checkers.back();
@@ -303,6 +306,12 @@ namespace Yoyo
     }
     std::string BorrowCheckerEmitter::operator()(BinaryOperation* op) {
         RE_REPR(op);
+        for (auto& sub : op->subtypes) {
+            sub = stt->best_repr(sub);
+            if (has_type_variable(sub)) {
+                irgen->error(Error(op, "Could not resolve all generics for this operation"));
+            }
+        }
         using enum TokenType;
         auto do_overloadable_explicit_token = [op, this](TokenType tk) {
             auto& checker = irgen->function_borrow_checkers.back();
@@ -334,7 +343,15 @@ namespace Yoyo
         case DoubleEqual: [[fallthrough]];
         case Spaceship: [[fallthrough]];
         case Greater: return do_overloadable_explicit_token(TokenType::Spaceship);
-        case Dot: // return doDot(op->lhs.get(), op->rhs.get(), *left_t);
+        case Dot: {
+            if (op->evaluated_type.name == "__bound_fn") {
+                std::visit(*this, op->lhs->toVariant());
+            }
+            // field borrow TODO
+            else {
+                std::visit(*this, op->lhs->toVariant());
+            }
+        }
         case DoubleDotEqual: RE_REPR(op->lhs.get()); return ""; // TODO irgen->error(Error(op, "Not implemented yet")); return {};
         case DoubleDot: irgen->error(Error(op, "Not implemented yet")); return {};
         }
@@ -393,8 +410,8 @@ namespace Yoyo
         auto obj = checker.make_object();
         for (auto& [name, elem] : lit->values) {
             auto elem_eval = std::visit(*this, elem->toVariant());
-            auto type = std::visit(ExpressionTypeChecker{ irgen }, elem->toVariant());
-            clone_into(checker, elem_eval, obj, *type, lit, irgen);
+            auto& type = elem->evaluated_type;
+            clone_into(checker, elem_eval, obj, type, lit, irgen);
         }
         return obj;
     }

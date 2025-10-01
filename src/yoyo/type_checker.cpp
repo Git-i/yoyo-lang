@@ -287,7 +287,6 @@ namespace Yoyo
             tp = generic_instantiations[tp.name];
             return { nullptr, generic_instantiations };
         }
-        if (tp.name == "T") debugbreak();
         ModuleBase* md = irgen->module;
         std::string hash = irgen->block_hash;
         std::string second_to_last = "";
@@ -1165,8 +1164,8 @@ namespace Yoyo
             Type other;
             if (elem) { other = std::visit(targetless(), elem->toVariant()); }
             else {
-                NameExpression nm(field);
-                other = targetless()(&nm);
+                elem = std::make_unique<NameExpression>(field);
+                other = std::visit(targetless(), elem->toVariant());
             }
             state->add_constraint(EqualConstraint{ result, other, lit });
         }
@@ -1944,7 +1943,7 @@ namespace Yoyo
                 std::vector<TypeCheckerConstraint> intermediate;
                 auto intermediate_ptr = &intermediate;
                 std::swap(state->write_new_constraints_to, intermediate_ptr);
-                std::vector<OverloadDetailsBinary*> matches;
+                std::vector<std::pair<ModuleBase*, OverloadDetailsBinary*>> matches;
                 for (auto module : valid_modules) {
                     for (auto& [block, ovl] : module->overloads.binary_details_for(tt)) {
                         std::unordered_map<std::string, Type> generic_subs;
@@ -1975,7 +1974,7 @@ namespace Yoyo
                         if (generic_match(right, expected_right, nullptr, state) == std::nullopt) {
                             // they both successfuly match
                             std::ranges::move(std::move(intermediate), std::back_inserter(r_collector));
-                            matches.push_back(&ovl);
+                            matches.emplace_back(module, &ovl);
                             // we found a match if we're not taking action we can abort we can return here
                             if (!take_action) {
                                 std::swap(state->write_new_constraints_to, intermediate_ptr);
@@ -1996,10 +1995,18 @@ namespace Yoyo
                         std::ranges::move(std::move(l_collector), std::back_inserter(temp_constraints));
                         std::ranges::move(std::move(r_collector), std::back_inserter(temp_constraints));
 
-                        auto this_result = matches[0]->result;
-                        normalize_type(this_result, state, irgen, con.substitution_cache[matches[0]->statement]);
+                        auto this_result = matches[0].second->result;
+                        normalize_type(this_result, state, irgen, con.substitution_cache[matches[0].second->statement]);
                         auto bexpr = reinterpret_cast<BinaryOperation*>(con.expr);
-                        bexpr->selected = matches[0];
+                        bexpr->selected = matches[0].second;
+                        bexpr->module = matches[0].first;
+                        // write the subtypes if any
+                        if (matches[0].second->statement) {
+                            for (auto& generic : matches[0].second->statement->clause.types) {
+                                auto& subs = con.substitution_cache[matches[0].second->statement];
+                                bexpr->subtypes.push_back(subs[generic]);
+                            }
+                        }
                         add_new_constraint(EqualConstraint{ result, this_result, con.expr });
                     }
                     return true;
@@ -2260,7 +2267,7 @@ namespace Yoyo
                 if (!fn->signature.parameters.empty() && fn->signature.parameters[0].name == "this") {
                     // correct the right type
                     con.right->evaluated_type.name = "__fn";
-                    con.right->evaluated_type.block_hash = left.block_hash + as_name->text + "::";
+                    con.right->evaluated_type.block_hash = left.block_hash + left.name + "::" + as_name->text + "::";
                     con.right->evaluated_type.module = left.module;
                     std::ranges::copy(fn->signature.parameters |
                         std::views::transform([](auto& param) { return param.type; }) |

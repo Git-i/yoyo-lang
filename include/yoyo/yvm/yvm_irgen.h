@@ -92,16 +92,16 @@ namespace Yoyo {
         
         void destroy(const Type& type) const;
         std::vector<Type> doDot(Expression* lhs, Expression* rhs, const Type& left_type, bool load_prim = true);
-        std::vector<Type> doAddition(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doShl(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doShr(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doMinus(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doMult(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doDiv(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doRem(Expression*, Expression*, const Type&, const Type&);
-        std::vector<Type> doRange(Expression*, Expression*, const Type&, const Type&, const Type&);
+        std::vector<Type> doAddition(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doShl(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doShr(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doMinus(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doMult(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doDiv(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doRem(Expression*, Expression*, const Type&, const Type&, OverloadDetailsBinary*);
+        std::vector<Type> doRange(Expression*, Expression*, const Type&, const Type&, const Type&, OverloadDetailsBinary*);
         std::vector<Type> doCmp(ComparisonPredicate p, Expression*, Expression*, const Type& left_type,
-            const Type& right_type, const Type&);
+            const Type& right_type, const Type&, OverloadDetailsBinary*);
         std::vector<Type> doSingleStringLiteral(const std::string& text, StructNativeTy* str_type);
         std::vector<Type> fillArgs(bool, const std::vector<Type>&, const std::unique_ptr<Expression>&,
             std::vector<std::unique_ptr<Expression>>& exprs);

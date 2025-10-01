@@ -169,7 +169,10 @@ namespace Yoyo
         Token op;
         std::unique_ptr<Expression> lhs;
         std::unique_ptr<Expression> rhs;
-        OverloadDetailsBinary* selected;
+        // populated by the type checker
+        OverloadDetailsBinary* selected = nullptr;
+        std::vector<Type> subtypes;
+        ModuleBase* module;
         BinaryOperation(const Token& op, std::unique_ptr<Expression> left, std::unique_ptr<Expression> right)
             : op(op), lhs(std::move(left)), rhs(std::move(right)) {}
         ExpressionVariant toVariant() override;

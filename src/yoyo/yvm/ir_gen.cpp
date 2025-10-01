@@ -83,6 +83,7 @@ namespace Yoyo
             return;
         }
         std::visit(BorrowCheckerEmitter{ this, &stt }, decl->body->toVariant());
+        std::cout << "[" << fn_name << "]" << '\n';
         std::visit(ASTPrinter{ std::cout }, decl->body->toVariant());
         function_borrow_checkers.back().check_and_report(this);
 
@@ -656,12 +657,16 @@ namespace Yoyo
             auto& t = stat->expression->evaluated_type;
             if (!return_t.should_sret())
             {
-                YVMExpressionEvaluator{ this }.implicitConvert(stat->expression.get(), t, return_t, false, true);
+                auto eval = YVMExpressionEvaluator{ this };
+                std::visit(eval, stat->expression->toVariant());
+                eval.implicitConvert(stat->expression.get(), t, return_t, false, true);
                 builder->write_1b_inst(Ret);
             }
             else {
+                auto eval = YVMExpressionEvaluator{ this };
+                std::visit(eval, stat->expression->toVariant());
                 builder->write_2b_inst(StackAddr, 0);
-                YVMExpressionEvaluator{ this }.implicitConvert(stat->expression.get(), t, return_t, true, false);
+                eval.implicitConvert(stat->expression.get(), t, return_t, true, false);
                 builder->write_1b_inst(RetVoid);
             }
         }
