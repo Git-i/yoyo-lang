@@ -129,25 +129,32 @@ TEST_CASE("Test IR")
     auto fib2 = engine.createFiber(fn2);
     engine.execute();
 }
-TEST_CASE("Index Operator", "[operators][array][static_array]")
+TEST_CASE("Index Operator", "[operators][array][static-array]")
 {
     std::string source(1 + R"(
-I32_Index: struct = {}
-operator: [](obj: &I32_Index, arg: i32) -> i32 = return arg;
-func: fn(idx: &mut I32_Index, idx_o: I32_Index) = return;
+ColorType: enum = { Red, Green, Blue }
+ColorValue: struct = {
+    red_val: i32,
+    green_val: i32,
+    blue_val: i32
+}
+operator: [](obj: &ColorValue, arg: ColorType) -> &i32 = return &obj.red_val;
 main: fn(inp: i32) = {
-    a : mut = I32_Index{};
-    test::assert(a[inp] == inp, &"a[inp] == inp");
+    a : mut = ColorValue{
+        .red_val = inp,
+        .green_val = 100,
+        .blue_val = 50
+    };
+    test::assert(a[ColorType::Red] == inp, &"a[inp] == inp");
 
     //arrays have special index operators that must be tested separately
     arr: [i32; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    test::assert(*arr[test::i32_to_u32(inp)] == inp, &"arr[inp] == inp");
-    func(&mut a, a);
+    test::assert(arr[test::i32_to_u64(inp)] == inp, &"arr[inp] == inp");
 }
 )");
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
-    test_mod->addFunction("(x: i32) -> u32", static_cast<uint32_t(*)(int32_t)>([](int32_t x) -> uint32_t { return x; }), "i32_to_u32");
+    test_mod->addFunction("(x: i32) -> u64", static_cast<uint64_t(*)(int32_t)>([](int32_t x) -> uint64_t { return x; }), "i32_to_u64");
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile());
     engine.prepareForExecution();
@@ -353,26 +360,29 @@ main: fn -> i32 \ str = {
 }
 TEST_CASE("Test if expression", "[expressions], [if-expression]") {
     std::string source(1 + R"(
-produce: fn::<T> -> T = return;
-print_i32: fn(val: i32) = return;
+produce: fn::<T>(val: T) -> T = return val; 
+print_i32: fn(val: i32) = "${val}".test::print();
 main: fn -> bool = {
     result: mut = if(true) {
         val := 10;
         print_i32(val);
         val
     } else {
-        produce()
+        produce(10)
     }
     cond := true; cond2 := false; // they can be any bools
     var9 := if (cond){
         if(cond2) {
             return false;
         } else {
-            true
+            "true and false"
         }
     } else {
-        false
-    }
+        "false and false"
+    };
+    var9.test::print();
+    print_i32(result);
+    return true;
 }
 )");
     Yoyo::YVMEngine engine;

@@ -20,6 +20,12 @@ namespace Yoyo
         CFGNode* break_to = nullptr;
         CFGNode* continue_to = nullptr;
         void operator()(Expression* expr)  { node->expressions.push_back(expr); }
+        void operator()(GroupingExpression* expr) {
+            std::visit(*this, expr->expr->toVariant());
+        }
+        void operator()(AsExpression* expr) {
+            std::visit(*this, expr->expr->toVariant());
+        }
         void operator()(ExpressionStatement* stat) { 
             node->statements.push_back(stat); 
             std::visit(*this, stat->expression->toVariant());

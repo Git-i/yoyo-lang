@@ -1056,13 +1056,11 @@ namespace Yoyo
                 return {};
             }
         }
-        ModuleBase* module = irgen->module;
-        std::string hash = irgen->block_hash;
-        Type tp{ .name = nm->text };
-        irgen->apply_using(tp, module, hash);
-        if(auto [name_prefix, fn] = module->findFunction(hash, nm->text); fn)
-        {
-            irgen->builder->write_fn_addr(name_prefix + nm->text);
+        if (type.name == "__fn") {
+            type.desaturate().saturate(type.module, irgen);
+            auto fn_name = type.block_hash;
+            fn_name.pop_back(); fn_name.pop_back();
+            irgen->builder->write_fn_addr(fn_name);
             return {};
         }
         auto cnst = ConstantEvaluator{ irgen }(nm);
@@ -1593,6 +1591,37 @@ namespace Yoyo
         irgen->popScope();
         return ret;
     }
+    std::vector<Type> YVMExpressionEvaluator::operator()(IfExpression* expr)
+    {
+        std::visit(*this, expr->condition->toVariant());
+        std::string else_block;
+        auto cont = irgen->builder->unq_label_name("if_cont");
+        if (expr->else_expr) {
+            else_block = irgen->builder->unq_label_name("if_else");
+            irgen->builder->create_jump(OpCode::JumpIfFalse, else_block);
+        }
+        else {
+            irgen->builder->create_jump(OpCode::JumpIfFalse, cont);
+        }
+        if (!std::visit(*this, expr->then_expr->toVariant()).empty()) {
+            irgen->error(Error(expr->then_expr.get(), "Lifetime extensions are not allowed in if expressions"));
+        };
+        if (expr->else_expr) {
+            irgen->builder->create_jump(OpCode::Jump, cont);
+            irgen->builder->create_label(else_block);
+            if (!std::visit(*this, expr->else_expr->toVariant()).empty()) {
+                irgen->error(Error(expr->else_expr.get(), "Lifetime extensions are not allowed in if expressions"));
+            }
+        }
+        else if(!expr->then_expr->evaluated_type.is_void()) {
+            // if there's no "else" block we drop the if value
+            destroy(expr->then_expr->evaluated_type);
+        }
+        irgen->builder->create_label(cont);
+        returned_alloc_addr = irgen->builder->checkpoint();
+        returned_alloc_is_checkpoint = true;
+        return {};
+    }
     std::vector<Type> YVMExpressionEvaluator::operator()(LambdaExpression* expr)
     {
         // for lambda expressions, every lambda has a different type this generates the type name
@@ -1620,6 +1649,7 @@ namespace Yoyo
     std::vector<Type> YVMExpressionEvaluator::operator()(ScopeOperation* op)
     {
         auto& ty = op->evaluated_type;
+        ty.desaturate().saturate(ty.module, irgen);
         if(ty.is_function())
         {
             std::string mangled_name = ty.block_hash;

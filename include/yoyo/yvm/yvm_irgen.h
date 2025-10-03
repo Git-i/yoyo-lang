@@ -72,6 +72,7 @@ namespace Yoyo {
         YVMIRGenerator* irgen;
         Type lastDeducedType;
         size_t returned_alloc_addr;
+        bool returned_alloc_is_checkpoint = false;
         enum ComparisonPredicate
         {
             EQ, GT, LT, EQ_GT, EQ_LT, NE, SPACE
@@ -144,6 +145,7 @@ namespace Yoyo {
         std::vector<Type> operator()(MacroInvocation*);
         std::vector<Type> operator()(SpawnExpression*);
         std::vector<Type> operator()(BlockExpression*);
+        std::vector<Type> operator()(IfExpression*);
         std::vector<Type> operator()(Expression*) { return {}; } // TODO
     };
 }

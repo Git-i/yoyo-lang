@@ -581,8 +581,9 @@ namespace Yoyo
         state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text)});
         return lit->evaluated_type;
     }
-    FunctionType TypeChecker::operator()(BooleanLiteral*) const {
-        return Type{ .name = "bool", .module = core_module };
+    FunctionType TypeChecker::operator()(BooleanLiteral* lit) const {
+        lit->evaluated_type = Type{ .name = "bool", .module = core_module };
+        return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(TupleLiteral* lit) const {
         if (target) {
@@ -694,7 +695,8 @@ namespace Yoyo
         {
             irgen->saturateSignature(fn->sig, irgen->module);
             tp.name = "__fn";
-            tp.block_hash = name_prefix + ex->text;
+            tp.block_hash = name_prefix + ex->text + "::";
+            tp.module = module;
             std::ranges::copy(fn->sig.parameters | std::views::transform([](auto& e) { return e.type; }), std::back_inserter(tp.subtypes));
             tp.subtypes.push_back(fn->sig.returnType);
             ex->evaluated_type = tp;
@@ -901,9 +903,7 @@ namespace Yoyo
         auto obj = std::visit(targetless(), subs->object->toVariant());
         auto idx = std::visit(targetless(), subs->index->toVariant());
         subs->evaluated_type = state->new_type_var();
-        if(!in_mutable_ctx)
-            BinaryOperableConstraint{ obj, idx, subs->evaluated_type, TokenType::SquarePair };
-        else BinaryOperableConstraint{ obj, idx, subs->evaluated_type, TokenType::SquarePairMut };
+        state->add_constraint(IndexOperableConstraint{ obj, idx, subs->evaluated_type, in_mutable_ctx, subs });
         return subs->evaluated_type;
     }
     FunctionType TypeChecker::operator()(LambdaExpression*) const { return Type{}; }
@@ -1061,6 +1061,7 @@ namespace Yoyo
             if (auto fn = dynamic_cast<FunctionDeclaration*>(next_stat)) {
                 scp->evaluated_type.name = "__fn";
                 scp->evaluated_type.block_hash = hash + fn->name + "::";
+                scp->evaluated_type.module = md;
                 // function may be generic so we add its types to our generic instantiations
                 if (auto generic = dynamic_cast<GenericFunctionDeclaration*>(fn)) {
                     for (auto i : std::views::iota(0u, last.subtypes.size())) {
@@ -1171,7 +1172,7 @@ namespace Yoyo
         }
         auto names = lit->values | std::views::keys;
         auto fields = std::vector<std::string>{names.begin(), names.end()};
-        AllFieldsConstraint{ fields, lit->evaluated_type, lit };
+        state->add_constraint(AllFieldsConstraint{ fields, lit->evaluated_type, lit });
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(NullLiteral* lit) const {
@@ -1997,16 +1998,19 @@ namespace Yoyo
 
                         auto this_result = matches[0].second->result;
                         normalize_type(this_result, state, irgen, con.substitution_cache[matches[0].second->statement]);
-                        auto bexpr = reinterpret_cast<BinaryOperation*>(con.expr);
-                        bexpr->selected = matches[0].second;
-                        bexpr->module = matches[0].first;
-                        // write the subtypes if any
-                        if (matches[0].second->statement) {
-                            for (auto& generic : matches[0].second->statement->clause.types) {
-                                auto& subs = con.substitution_cache[matches[0].second->statement];
-                                bexpr->subtypes.push_back(subs[generic]);
+                        std::visit([&matches, &con]<typename T>(T * expr) {
+                            if constexpr (std::same_as<T, BinaryOperation> || std::same_as<T, SubscriptOperation>) {
+                                expr->selected = matches[0].second;
+                                expr->module = matches[0].first;
+                                if (matches[0].second->statement) {
+                                    for (auto& generic : matches[0].second->statement->clause.types) {
+                                        auto& subs = con.substitution_cache[matches[0].second->statement];
+                                        expr->subtypes.push_back(subs[generic]);
+                                    }
+                                }
                             }
-                        }
+                        }, con.expr->toVariant());
+                        
                         add_new_constraint(EqualConstraint{ result, this_result, con.expr });
                     }
                     return true;
@@ -2021,14 +2025,20 @@ namespace Yoyo
         }
         // only left is a variable
         if (is_type_variable(left)) {
-            std::erase_if(state->get_type_domain(left)->concrete_types.types, [&con, &is_compatible](const Type& tp) 
+            auto domain = state->get_type_domain(left);
+            // we should probably generate all possible types to populate the domain
+            if (domain->concrete_types.types.empty()) return false;
+            std::erase_if(domain->concrete_types.types, [&con, &is_compatible](const Type& tp) 
                 { 
                     return !is_compatible(con.op, false);
                 });
             return true;
         }
         else if (is_type_variable(right)) {
-            std::erase_if(state->get_type_domain(right)->concrete_types.types, [&con, &is_compatible](const Type& tp)
+            auto domain = state->get_type_domain(right);
+            // we should probably generate all possible types to populate the domain (TODO)
+            if (domain->concrete_types.types.empty()) return false;
+            std::erase_if(domain->concrete_types.types, [&con, &is_compatible](const Type& tp)
                 {
                     return !is_compatible(con.op, false);
                 });
@@ -2417,23 +2427,64 @@ namespace Yoyo
     }
     bool ConstraintSolver::operator()(IndexOperableConstraint& con)
     {
-        // we can defer this to a binary operable constraints once were sure we don't an array
+        // We need to check the special case of static arrays ([T; n])
+        // they aren't registered with the default operator registry so
+        // if it can be a static array and the right can be a u64
+        // we defer to make sure, before sending off
         auto left = state->best_repr(con.left);
         auto right = state->best_repr(con.right);
         auto token_type = con.is_mutable ? TokenType::SquarePairMut : TokenType::SquarePair;
-        if (is_type_variable(left)) {
-            auto domain = state->get_type_domain(left);
-            if (std::ranges::any_of(domain->concrete_types.types, [](const Type& tp) { return tp.is_static_array(); })) {
-                // it could be a static array we defer
-                return false;
-            }
-            else {
-                add_new_constraint(BinaryOperableConstraint{ left, right, con.result, token_type, {}, con.expr });
+        bool can_be_is_concrete = true;
+        auto can_be = [this, &can_be_is_concrete](const Type& type, auto pred) {
+                if (is_type_variable(type)) {
+                    auto domain = state->get_type_domain(type);
+                    // if we get here it might be a different overload
+                    can_be_is_concrete = false;
+                    // infinite domain or one element satisfies the constraint
+                    return domain->concrete_types.types.empty() || std::ranges::any_of(domain->concrete_types.types, pred);
+                }
+                return pred(type);
+            };
+        if (
+            can_be(left, [&can_be](const Type& tp) { return
+                tp.is_static_array() ||
+                (tp.is_reference() && can_be(tp.subtypes[0], [](const Type& tp2) { return tp2.is_static_array();  }));
+                }) &&
+            can_be(right, [](const Type& tp) { return tp.is_unsigned_integral() && tp.integer_width() == 64; })
+                    )
+        {
+            if (can_be_is_concrete) {
+                // the expression evaluator should already have a special case for this
+                add_new_constraint(
+                    EqualConstraint{ left.deref().subtypes[0], con.result, con.expr }
+                );
                 return true;
             }
+            else return false;
         }
         else {
-            left.is_static_array();
+            // for index operations left is valid as T or &T so we need to stall until we can tell its not a reference
+            if (is_type_variable(left)) return false;
+            Type new_left = Type{ .subtypes = {left.deref()}, .module = core_module };
+            if (token_type == TokenType::SquarePair) new_left.name = "__ref";
+            else {
+                if (!(left.is_mutable_reference() || left.is_mutable)) {
+                    irgen->error(Error(con.expr, std::format("{} is immutable but used in mutable context", left.pretty_name(irgen->block_hash))));
+                }
+                new_left.name = "__ref_mut";
+            }
+            // automatic dereference by matching it to a reference to the result
+            Type new_result = Type{
+                .name = token_type == TokenType::SquarePair ? "__ref" : "__ref_mut",
+                .subtypes = { state->best_repr(con.result) },
+                .module = core_module
+            };
+            add_new_constraint(BinaryOperableConstraint{ 
+                new_left, 
+                right, 
+                new_result, 
+                token_type, {}, con.expr });
+            return true;
         }
     }
     bool ConstraintSolver::operator()(HasFieldConstraint& con)

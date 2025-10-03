@@ -401,6 +401,7 @@ namespace Yoyo
             tp.is_str() ||
             tp.name == "__called_fn" ||
             tp.name == "impl" ||
+            tp.name == "__fn" ||
             tp.is_opaque_pointer() ||
             tp.is_optional() ||
             tp.is_variant() ||
@@ -505,6 +506,10 @@ namespace Yoyo
             signature->returnType.saturate(src, irgen, do_verify);
             for (auto& tp : signature->parameters) tp.type.saturate(src, irgen, do_verify);
         }
+    }
+    Type Type::desaturate()
+    {
+        return Type{ .name = full_name_no_generics(), .subtypes = subtypes };
     }
     bool Type::verify() const {
         if (from_builtins(*this)) return true;

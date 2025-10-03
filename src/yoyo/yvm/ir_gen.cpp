@@ -370,22 +370,31 @@ namespace Yoyo
         decl->type = type;
         uint32_t type_size = NativeType::get_size(toNativeType(type));
         size_t stack_idx = 0;
+        auto index_type = VariableIndex::Alloc;
         if(decl->initializer)
         {
             auto& expr_type = decl->initializer->evaluated_type;
             auto eval = YVMExpressionEvaluator{this};
             std::visit(eval, decl->initializer->toVariant());
             stack_idx = eval.returned_alloc_addr;
+            if (eval.returned_alloc_is_checkpoint)
+                index_type = VariableIndex::Checkpoint;
+            eval.returned_alloc_is_checkpoint = false;
+            eval.returned_alloc_addr = size_t(-1);
             // TODO: reduce literal
             if(!type.should_sret())
             {
                 builder->write_alloca(type_size);
-                eval.implicitConvert(decl->initializer.get(), expr_type, type, true, false);
                 stack_idx = builder->last_alloc_addr();
+                index_type = VariableIndex::Alloc;
+                eval.implicitConvert(decl->initializer.get(), expr_type, type, true, false);
             }
             else {
                 eval.implicitConvert(decl->initializer.get(), expr_type, type, false, false);
-                if (eval.returned_alloc_addr != 0) stack_idx = eval.returned_alloc_addr;
+                if (eval.returned_alloc_addr != size_t(-1)) {
+                    stack_idx = eval.returned_alloc_addr;
+                    index_type = VariableIndex::Alloc;
+                }
             }
             if (!type.is_trivially_destructible(this))
             {
@@ -401,7 +410,7 @@ namespace Yoyo
             stack_idx = builder->last_alloc_addr();
         }
         // TODO: stack addr of variables
-        variables.back().emplace_back(name, VariableEntry{ VariableIndex{stack_idx, VariableIndex::Alloc}, type });
+        variables.back().emplace_back(name, VariableEntry{ VariableIndex{stack_idx, index_type}, type });
     }
     //void YVMIRGenerator::operator()(BlockStatement* stat)
     //{

@@ -60,6 +60,7 @@ namespace Yoyo
         [[nodiscard]] Type mutable_reference_to() const;
         [[nodiscard]] Type gc_reference_to() const;
         void saturate(ModuleBase* src, IRGenerator* irgen, bool do_verify = true);
+        Type desaturate();
         [[nodiscard]] bool verify() const;
         [[nodiscard]] bool is_shallow_equal(const Type& other) const
         {

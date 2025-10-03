@@ -205,6 +205,10 @@ namespace Yoyo
     public:
         std::unique_ptr<Expression> object;
         std::unique_ptr<Expression> index;
+        // populated by the type checker
+        OverloadDetailsBinary* selected = nullptr;
+        std::vector<Type> subtypes;
+        ModuleBase* module;
         SubscriptOperation(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> idx)
             : object(std::move(obj)), index(std::move(idx)) {}
         ExpressionVariant toVariant() override;
