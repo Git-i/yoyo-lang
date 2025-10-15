@@ -1,0 +1,13 @@
+/*
+Old View syntax
+Array Views: [T]:& (non owning), [T]:&mut (non owning mut), [T]:^ gc view
+Same for string and interface views
+*/
+// New Syntax 1
+// all views are of the form [T]:. then they can be borrowed like &[T]:.
+// so the type [T]:. would exist as a non concrete type (similarly to interfaces)
+// this would allow universal constraints for operation like borrow
+operator: &(obj: &T) -> &R
+operator: &mut (obj: &mut T) -> &mut R
+// as opposed to
+operator: &(obj: &T) -> (&R or [R]:&)

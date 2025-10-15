@@ -197,6 +197,13 @@ namespace Yoyo
             if (!rbrace || rbrace->type != TokenType::RSquare) error("Operator cannot be overloaded", op);
             op->type = TokenType::SquarePairMut;
         }
+        else if (op->type == TokenType::Ampersand) {
+            if (auto next = Peek(); next && next->type == TokenType::Mut) {
+                Get();
+                // mutable borrow overload
+                op->type == TokenType::RefMut;
+            }
+        }
         else if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());
         GenericClause clause;
         if (auto generic_open = Peek(); generic_open->type == TokenType::TemplateOpen)
@@ -1195,31 +1202,30 @@ namespace Yoyo
         auto end = stat->body->end;
         return Statement::attachSLAndParent(std::move(stat), tk.loc, end, parent);
     }
-
+    // [T] -> slice
+    // [T; <expr>] -> static array
+    // [T; *] -> dynammic array
     std::optional<Type> parseArrayType(Token t, Parser& parser)
     {
         auto next = parser.parseType(0);
         if(!next) parser.synchronizeTo({{TokenType::RSquare}});
-        bool is_static = false;
+        std::string name = "__slice";
         std::shared_ptr<FunctionSignature> sig;
         if(parser.discard(TokenType::SemiColon))
         {
-            auto size = parser.parseExpression(0);
-            //this is really dirty and bad code don't learn from this
-            struct Deleter { void operator()(FunctionSignature* ptr) { delete (Expression*)ptr; } };
-            sig.reset(reinterpret_cast<FunctionSignature*>(size.release()), Deleter{});
-            is_static = true;
+            if (parser.discard(TokenType::Star) && parser.Peek() && parser.Peek()->type == TokenType::RSquare) {
+                name = "__arr_s_uneval";
+            }
+            else {
+                auto size = parser.parseExpression(0);
+                //this is really dirty and bad code don't learn from this
+                struct Deleter { void operator()(FunctionSignature* ptr) { delete (Expression*)ptr; } };
+                sig.reset(reinterpret_cast<FunctionSignature*>(size.release()), Deleter{});
+                name = "__arr_d";
+            }
         }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
-        std::string name = is_static ? "__arr_s_uneval" : "__arr_d";
-        return Type{ .name = name, .subtypes = { std::move(next).value_or(Type{}) }, .signature = sig };
-    }
-    std::optional<Type> parseTypeGroup(Token t, Parser& parser)
-    {
-        auto next = parser.parseType(0);
-        if(!next) parser.synchronizeTo({{TokenType::RCurly}});
-        if(!parser.discard(TokenType::RCurly)) parser.error("Expected '}'", parser.Peek());
-        return std::move(next).value_or(Type{});
+        return Type{ .name = std::move(name), .subtypes = { std::move(next).value_or(Type{}) }, .signature = sig };
     }
     //TODO reconsider this table
     static constexpr uint32_t PipePrecedence = 1;
@@ -1236,20 +1242,9 @@ namespace Yoyo
         case TokenType::TemplateOpen: return TemplatePrecedence;
         case TokenType::DoubleColon: return ScopePrecedence;
         case TokenType::Question: return OptionalPreference;
-        case TokenType::Colon: return OptionalPreference;
         case TokenType::BackSlash: return OptionalPreference;
         default: return 0;
         }
-    }
-    std::optional<Type> parsePipeTypeExpr(Parser& p, Type left)
-    {
-        auto t = p.parseType(PipePrecedence);
-        if(left.name == "__var")
-        {
-            left.subtypes.push_back(std::move(t).value_or(Type{}));
-            return left;
-        }
-        return Type("__var", {left, std::move(t).value_or(Type{})});
     }
     std::optional<Type> parseTemplateTypeExpr(Parser& p, Type left)
     {
@@ -1272,6 +1267,15 @@ namespace Yoyo
             p.error("Expected '>'", p.Peek());
         }
         return left;
+    }
+    std::optional<Type> parseViewType(Token t, Parser& p) {
+        if (auto pk = p.Peek(); pk && pk->type == TokenType::Identifier && pk->text == "str") {
+            return Type{ .name = "__str_view" };
+        }
+        // similar to dyn Trait in rust
+        return Type{ .name = "__view", .subtypes = {
+            p.parseType(0).value()
+        } };
     }
     std::optional<Type> parsePostfixTypeExpr(Parser& p, Type left, Token t)
     {
@@ -1329,18 +1333,6 @@ namespace Yoyo
         else if(seperator && *seperator == TokenType::Comma) t.name = "__tup";
 
         return t;
-    }
-    std::optional<Type> parseViewTypeExpr(Parser& p, Type left)
-    {
-        if (p.discard(TokenType::Ampersand))
-        {
-            bool is_mut = p.discard(TokenType::Mut);
-            if (left.name == "__arr_d")
-                return Type(is_mut ? "__slice_mut" : "__slice", { left.subtypes[0] });
-            return Type{ is_mut ? "__view_mut" : "__view", {std::move(left)} };
-        }
-        if (!p.discard(TokenType::Caret)) p.error("Expected '^' or '&'", p.Peek());
-        return Type{ "__view_gc", {std::move(left)} };
     }
     std::optional<Type> parseCalledFnType(Token tk, Parser& p)
     {
@@ -1427,6 +1419,7 @@ namespace Yoyo
         case TokenType::Caret: Get(); t = parseGCRefType(*tk, *this); break;
         case TokenType::Called: Get(); t = parseCalledFnType(*tk, *this); break;
         case TokenType::Underscore: Get(); t = Type("_"); break;
+        case TokenType::View: Get(); t = parseViewType(*tk, *this); break;
         default: t = std::nullopt;
         }
         while(precedence < GetNextTypePrecedence())
@@ -1445,8 +1438,7 @@ namespace Yoyo
                     t = std::move(tp);
                     break;
                 }
-            case TokenType::Colon: t = parseViewTypeExpr(*this, std::move(t).value()); break;
-            default: /*unreachable*/;
+            default: /*unreachable*/; break;
             }
         }
         return t;

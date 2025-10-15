@@ -317,9 +317,13 @@ namespace Yoyo
                 if (current_stat) {
                     auto clause = std::visit([](auto* a) { return get_generic_clause(a); }, current_stat->toVariant());
                     if (clause) {
-                        for (auto i : std::views::iota(0u, clause->types.size())) {
+                        for (auto i : std::views::iota(0u, tp.subtypes.size())) {
                             normalize_type(tp.subtypes[i], stt, irgen, generic_instantiations);
                             generic_instantiations[clause->types[i]] = tp.subtypes[i];
+                        }
+                        for (auto i : std::views::iota(tp.subtypes.size(), clause->types.size())) {
+                            auto var = stt->new_type_var();
+                            generic_instantiations[clause->types[i]] = tp.subtypes.emplace_back(var);
                         }
                     }
                 }

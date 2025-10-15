@@ -167,6 +167,7 @@ main: fn(inp: i32) = {
 }
 TEST_CASE("Mutable Index Operator", "[operators]")
 {
+    // This test case is wrong, TODO
     std::string source(1 + R"(
 Indexer: struct = { val: u32 }
 operator: mut [](obj: &mut u32, arg: Indexer) = *obj = arg.val;

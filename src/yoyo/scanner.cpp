@@ -46,7 +46,8 @@ namespace Yoyo {
         {"macro", TokenType::Macro},
         {"spawn", TokenType::Spawn},
         {"using", TokenType::Using},
-        {"try", TokenType::Try}
+        {"try", TokenType::Try},
+        {"view", TokenType::View }
     })
     {
 

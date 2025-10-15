@@ -25,7 +25,7 @@ namespace Yoyo {
         AttrOpen, /// #(
         Spaceship, // <=>
         Spawn, Try,
-        Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const,
+        Underscore, Mut, RefMut, GCNew, Impl, Break, Continue, Directive, Const, View,
         // Only used my operator overloads
         SquarePair, // []
         SquarePairMut, //mut []
@@ -53,7 +53,8 @@ namespace Yoyo {
                 || type == TokenType::Caret
                 || type == TokenType::Spaceship
                 || type == TokenType::DoubleGreater
-                || type == TokenType::DoubleLess;
+                || type == TokenType::DoubleLess
+                || type == TokenType::Ampersand;
         }
         [[nodiscard]] bool can_be_overloaded_binary_only() const
         {
