@@ -11,3 +11,15 @@ operator: &(obj: &T) -> &R
 operator: &mut (obj: &mut T) -> &mut R
 // as opposed to
 operator: &(obj: &T) -> (&R or [R]:&)
+
+Type: struct::<T> = {
+
+}
+
+operator: &(obj: &Type::<i32>) -> &i32;
+operator: &(obj: &Type::<f32>) -> &f32;
+
+main: fn = {
+    a := Type{};
+    b := &a; // &i32 &f32
+}

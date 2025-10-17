@@ -10,52 +10,52 @@ namespace Yoyo
     // type must be an integer i8-i64/u8-u64
     struct IsIntegerConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type must be able to store a given value (i8 cannot store 1000)
     struct CanStoreIntegerConstraint {
         Type type;
         std::variant<uint64_t, int64_t> value;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type must be a floating point value (f32/f64)
     struct IsFloatConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type must be able to store a given real value
     struct CanStoreRealConstraint {
         Type type;
         double value;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type can be converted to string
     struct ToStringConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type has unary minus returning ret
     struct HasUnaryMinusConstraint {
         Type type;
         Type ret;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type has unary not returning ret
     struct HasUnaryNotConstraint {
         Type type;
         Type ret;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type is &other or &mut other
     struct IsReferenceToConstraint {
         Type type;
         Type other;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type is not a reference
     struct IsNotReferenceConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // the binary expression is <left> <op> <right> defined and returns result
     struct BinaryOperableConstraint {
@@ -66,7 +66,7 @@ namespace Yoyo
         // we keep a constraint local cache of all substitutions we've made as they may create new type
         // variables and we want to avoid making too many unnecesary type variables
         std::unordered_map<OperatorOverload*, std::unordered_map<std::string, Type>> substitution_cache;
-        Expression* expr;
+        ASTNode* expr;
     };
     
     struct IndexOperableConstraint {
@@ -74,94 +74,94 @@ namespace Yoyo
         Type right;
         Type result;
         bool is_mutable;
-        Expression* expr;
+        ASTNode* expr;
     };
     struct BinaryDotCompatibleConstraint {
         Type tp;
         Expression* right;
         Type result;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type is either CmpOrd or CmpPartOrd
     struct ComparableConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // ensure 2 types are equal
     struct EqualConstraint {
         Type type1;
         Type type2;
-        Expression* expr;
+        ASTNode* expr;
     };
     // enseure 2 types are equal or type1 is void
     struct EqualOrIsVoidConstraint {
         Type type1;
         Type type2;
-        Expression* expr;
+        ASTNode* expr;
     };
     // ensure type is owning
     struct OwningConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     struct NonOwningConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type can be called (a function or lambda)
     struct IsInvocableConstraint {
         Type type;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type can be put in the function as arg number
     struct ValidAsFunctionArgConstraint {
         Type type;
         Type function;
         uint32_t arg_no;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type is the return value of the given function
     struct IsReturnOfConstraint {
         Type type;
         Type function;
-        Expression* expr;
+        ASTNode* expr;
     };
     // Type must implement specified interface
     struct ImplInterfaceConstraint {
         Type type;
         Type interface;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type can be used in conditional extraction
     // i.e if |value| (object as type) { ... }
     struct ExtractsToConstraint {
         Type type;
         Type dst;
-        Expression* expr;
+        ASTNode* expr;
     };
     // type can be used in else block of conditional extraction
     // if |_| (object as type) else |value: dst| {}
     struct ElseExtractsToConstraint {
         Type type;
         Type dst;
-        Expression* expr;
+        ASTNode* expr;
     };
     // Similar to extracts to but when the extraction results borrows
     struct RefExtractsToConstraint {
         Type type;
         Type dst;
-        Expression* expr;
+        ASTNode* expr;
     };
     // Similar to else extracts to but the result borrows
     struct ElseRefExtractsToConstraint {
         Type type;
         Type dst;
-        Expression* expr;
+        ASTNode* expr;
     };
     struct ConvertibleToConstraint {
         Type from;
         Type to;
-        Expression* expr;
+        ASTNode* expr;
     };
     struct IfStatementConstraint {
         Type then_type;
@@ -169,20 +169,45 @@ namespace Yoyo
         bool then_transfers_control;
         bool else_transfers_control;
         Type result;
-        Expression* expr;
+        ASTNode* expr;
     };
     struct HasFieldConstraint {
         Type subject;
         std::string field_name;
         Type result;
-        Expression* expr;
+        ASTNode* expr;
     };
     struct AllFieldsConstraint {
         std::vector<std::string> fields;
         Type subject;
-        Expression* expr;
+        ASTNode* expr;
     };
-    using TypeCheckerConstraint = std::variant<
+    struct BorrowResultConstraint {
+        Type subject;
+        Type result;
+        ASTNode* expr;
+
+        // see binary operator constraint for why this exists
+        std::unordered_map<OperatorOverload*, std::unordered_map<std::string, Type>> substitution_cache;
+    };
+    struct BorrowResultMutConstraint {
+        Type subject;
+        Type result;
+        ASTNode* expr;
+        // see binary operator constraint for why this exists
+        std::unordered_map<OperatorOverload*, std::unordered_map<std::string, Type>> substitution_cache;
+    };
+    // This is technically not a constraint
+    // its just a way to conditionally apply constraints
+    struct TypeCheckerConstraint;
+    struct IfEqualThenConstrain {
+        Type type1;
+        Type type2;
+        // have to use std::vector like this because I can't
+        // forward declare using
+        std::vector<TypeCheckerConstraint> apply_if_true;
+    };
+    using TypeCheckerConstraintUnderlyingType = std::variant<
         IsIntegerConstraint,
         CanStoreIntegerConstraint,
         IsFloatConstraint,
@@ -211,8 +236,16 @@ namespace Yoyo
         EqualOrIsVoidConstraint,
         IndexOperableConstraint,
         HasFieldConstraint,
-        AllFieldsConstraint
+        AllFieldsConstraint,
+        BorrowResultConstraint,
+        BorrowResultMutConstraint,
+        IfEqualThenConstrain
     >;
+    struct TypeCheckerConstraint : public TypeCheckerConstraintUnderlyingType {
+        template<typename T>
+        TypeCheckerConstraint(T&& t) noexcept : TypeCheckerConstraintUnderlyingType(t) {}
+    };
+    
     /// represents the possible types a variable can be
     class Domain {
         bool is_infinite = true;
@@ -247,7 +280,8 @@ namespace Yoyo
         uint32_t type_to_id(const Type& tp) {
             // type variables are types but in the form "?<num>"
             uint32_t res;
-            std::from_chars(tp.name.c_str() + 1, tp.name.c_str() + tp.name.size(), res);
+            auto [ptr, ec] = std::from_chars(tp.name.c_str() + 1, tp.name.c_str() + tp.name.size(), res);
+            if (ec != std::errc{}) __debugbreak();
             return res;
         }
         Type id_to_type(uint32_t id) {
@@ -328,6 +362,9 @@ namespace Yoyo
         bool operator()(IndexOperableConstraint& con);
         bool operator()(HasFieldConstraint& con);
         bool operator()(AllFieldsConstraint& con);
+        bool operator()(BorrowResultConstraint& con);
+        bool operator()(BorrowResultMutConstraint& con);
+        bool operator()(IfEqualThenConstrain& con);
         void add_new_constraint(TypeCheckerConstraint);
     };
 	struct TypeChecker

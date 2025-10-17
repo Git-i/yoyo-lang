@@ -201,7 +201,7 @@ namespace Yoyo
             if (auto next = Peek(); next && next->type == TokenType::Mut) {
                 Get();
                 // mutable borrow overload
-                op->type == TokenType::RefMut;
+                op->type = TokenType::RefMut;
             }
         }
         else if(!op->can_be_overloaded()) error("Operator cannot be overloaded", Peek());

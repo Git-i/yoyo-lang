@@ -240,6 +240,29 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test borrow operator", "[operator][type-checker]")
+{
+    std::string source(1 + R"(
+IntWrapper: struct = {
+    x: i32
+}
+operator: &(obj: &IntWrapper) -> &i32 = {
+    return &obj.x;
+}
+main: fn = {
+    a := IntWrapper{ .x = 10 };
+    b: &i32 = &a;
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(

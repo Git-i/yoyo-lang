@@ -42,12 +42,13 @@ namespace Yoyo
     struct OverloadDetailsUnary
     {
         Type obj_type; Type result;
+        OperatorOverload* statement;
     };
 
     struct ModuleOverloadDetails
     {
         std::vector<std::pair<std::string, OverloadDetailsBinary>> bin_overloads;
-        std::vector<OverloadDetailsUnary> un_overloads;
+        std::vector<std::pair<std::string, OverloadDetailsUnary>> un_overloads;
         // offset order
         //minus;
         //mul;
@@ -64,7 +65,17 @@ namespace Yoyo
         //spaceship;
         //equal;
         std::array<size_t, 12> offsets;
-        std::array<size_t, 1> un_offsets;
+        std::array<size_t, 3> un_offsets;
+        void add_unary_detail_for(TokenType t, OverloadDetailsUnary un, std::string block_hash) {
+            size_t off = 0;
+            switch (t) {
+            case TokenType::Ampersand: break;
+            case TokenType::RefMut: off = 1; break;
+            }
+            size_t actual_off = off == 0 ? 0 : un_offsets[off];
+            un_overloads.insert(un_overloads.begin() + actual_off, { std::move(block_hash), std::move(un) });
+            for (auto& elem : std::ranges::subrange(un_offsets.begin() + off, un_offsets.end())) elem++;
+        }
         void add_binary_detail_for(TokenType t, OverloadDetailsBinary bin, std::string block_hash)
         {
             size_t off = 0;
@@ -104,6 +115,13 @@ namespace Yoyo
             size_t actual_off = off == 0 ? 0 : offsets[off];
             bin_overloads.emplace(bin_overloads.begin() + actual_off, std::move(block_hash), OverloadDetailsBinary{ std::move(l), std::move(r), std::move(res) });
             for (auto& elem : std::ranges::subrange(offsets.begin() + off, offsets.end())) elem++;
+        }
+        std::span<std::pair<std::string, OverloadDetailsUnary>> unary_datails_for(TokenType t) {
+            switch (t) {
+            case TokenType::Ampersand: return std::span{ un_overloads.begin(), un_overloads.begin() + un_offsets[0] };
+            case TokenType::RefMut: return std::span{ un_overloads.begin() + un_offsets[0], un_overloads.begin() + un_offsets[1]};
+            default: return {};
+            }
         }
         std::span<std::pair<std::string, OverloadDetailsBinary>> binary_details_for(TokenType t)
         {

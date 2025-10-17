@@ -429,6 +429,7 @@ namespace Yoyo
         }
         tp.is_mutable = decl->is_mut;
         decl->type = tp;
+        state->add_constraint(OwningConstraint{tp, decl});
         state->create_variable(std::string(decl->identifier.text), tp);
     }
     FunctionType TypeChecker::operator()(IfExpression* stat) const
@@ -781,15 +782,15 @@ namespace Yoyo
         {
             // `&<expr>` is defined for every type except for references
             auto inner = std::visit(targetless(), op->operand->toVariant());
-            op->evaluated_type = Type{ .name = "__ref", .subtypes = { inner }, .module = core_module };
-            state->add_constraint(IsNotReferenceConstraint{ std::move(inner) });
+            op->evaluated_type = state->new_type_var();
+            state->add_constraint(BorrowResultConstraint{ std::move(inner), op->evaluated_type });
             break;
         }
         case RefMut:
         {
             auto inner = std::visit(targetless(), op->operand->toVariant());
-            op->evaluated_type = Type{ .name = "__ref_mut", .subtypes = { inner }, .module = core_module };
-            state->add_constraint(IsNotReferenceConstraint{ std::move(inner) });
+            op->evaluated_type = state->new_type_var();
+            state->add_constraint(BorrowResultMutConstraint{ std::move(inner), op->evaluated_type });
             break;
         }
         default: break; // unreachable
@@ -1350,7 +1351,7 @@ namespace Yoyo
     /// Compares 2 (possibly generic) types with (or without) type parameters
     /// to see if they're compatible and generates equality constraints for nested type variables
     /// the equality constraint is always ordered as "type1 elem = type2 elem"
-    std::optional<Error> generic_match(Type tp1, Type tp2, Expression* loc, TypeCheckerState* solver) {
+    std::optional<Error> generic_match(Type tp1, Type tp2, ASTNode* loc, TypeCheckerState* solver) {
         // include the block in the name
         // because type.subtypes only occurs generics at the end ─────────────────╮
         // so we can check cases where the generic occurs earlier ──╮             │
@@ -2013,7 +2014,8 @@ namespace Yoyo
                                     }
                                 }
                             }
-                        }, con.expr->toVariant());
+                            // this can probably be replaced with reinterpret_cast
+                        }, dynamic_cast<Expression*>(con.expr)->toVariant());
                         
                         add_new_constraint(EqualConstraint{ result, this_result, con.expr });
                     }
@@ -2527,6 +2529,141 @@ namespace Yoyo
             return true;
         }
         irgen->error(Error(con.expr, "Internal Error"));
+    }
+    bool ConstraintSolver::operator()(BorrowResultConstraint& con)
+    {
+        // Borrowing a type can lead to multiple outcomes
+        // the first being (T -> &T) and the second being defined by operator&
+        // str -> &str, &view str
+        // [T; N] -> &[T; N], &[T]
+        // [T; *] -> &[T; *], &[T]
+        // T -> &T, &view (Interfaces implemented by T), & (Borrow operator result(if defined))
+        auto subject = state->best_repr(con.subject);
+        auto result = state->best_repr(con.result);
+        // maybe we should tell the domain to default to *result
+        if (is_type_variable(subject) && is_type_variable(result)) {
+            return false;
+        }
+        else if (is_type_variable(result)) {
+            Domain::Group possible_types;
+            //------------The base T -> &T mapping-------------
+            possible_types.add_type(Type{ .name = "__ref", .subtypes = {subject}, .module = core_module });
+            //--------------operator&-------------------
+            if (subject.is_str()) possible_types.add_type(Type{ .name = "__ref", .subtypes = {
+                Type{.name = "__string_view", .module = core_module}
+                }, .module = core_module });
+            else if (subject.is_static_array() || subject.is_dynamic_array()) possible_types.add_type(Type{ .name = "__ref", .subtypes = {
+                Type{.name = "__slice", .subtypes = { subject.subtypes[0] }, .module = core_module} },
+                .module = core_module
+                });
+            else {
+                // operator& can be defined at most once per type
+                // and it must be done so in the type's module
+                std::vector<TypeCheckerConstraint> collector;
+                std::vector<OverloadDetailsUnary*> matches;
+                Type result_type;
+                for (auto& [blk, ovl] : subject.module->overloads.unary_datails_for(TokenType::Ampersand)) {
+                    Type ovl_subject = ovl.obj_type;
+                    Type ovl_result = ovl.result;
+                    std::unordered_map<std::string, Type> generic_subs;
+                    if (ovl.statement && !ovl.statement->clause.types.empty()) {
+                        if (!con.substitution_cache.contains(ovl.statement))
+                            for (auto& tp : ovl.statement->clause.types)
+                                con.substitution_cache[ovl.statement][tp] = state->new_type_var();
+                        generic_subs = con.substitution_cache[ovl.statement];
+                    }
+                    irgen->block_hash.swap(blk);
+                    normalize_type(ovl_subject, state, irgen, generic_subs);
+                    normalize_type(ovl_result, state, irgen, generic_subs);
+                    irgen->block_hash.swap(blk);
+
+                    auto collector_ptr = &collector;
+                    std::swap(collector_ptr, state->write_new_constraints_to);
+                    // if we see more than one we should break out
+                    // we .deref() because the operator is defined &T
+                    if (generic_match(subject, ovl_subject.deref(), nullptr, state) == std::nullopt) {
+                        matches.push_back(&ovl);
+                        result_type = std::move(ovl_result);
+                    }
+                    std::swap(collector_ptr, state->write_new_constraints_to);
+                }
+                // exactly one match means we add it
+                if (matches.size() == 1) {
+                    possible_types.add_type(Type(result_type));
+                    // if result evaluated the operator& result we apply the other generated constraints
+                    if(!collector.empty())
+                        add_new_constraint(IfEqualThenConstrain{
+                            std::move(result_type),
+                            result,
+                            std::move(collector),
+                        });
+                }
+                else if (matches.size() > 1) {
+                    return false; // come back later
+                }
+                else if (matches.size() == 0) {
+                    // no matches we proceed to interface views
+                }
+
+            }
+            if (auto error = state->get_type_domain(result)->add_and_intersect(std::move(possible_types), state)) {
+                irgen->error(error.value());
+            }
+            return true;
+        }
+        else if (is_type_variable(subject)) {
+            if (result.name != "__ref") {
+                irgen->error(Error(con.expr, "Operator & always yields a reference"));
+            }
+            // filter the domain of "subject"
+            if (auto domain = state->get_type_domain(subject); !domain->concrete_types.types.empty()) {
+                std::erase_if(domain->concrete_types.types, [&result](const Type& type) {
+                    if (can_match(type, result.deref())) return false;
+                    if (result.deref().name == "__string_view" && type.is_str()) return false;
+                    if (result.deref().name == "__slice" && type.is_array()) return false;
+                    // check if it can match
+                });
+            }
+            else {
+                // many types can return &T as thier borrow result
+                // we don't want to have to check all modules for that
+                // this means code like this will fail to typecheck
+                // Source: struct = {
+                //     x: f32,
+                //     perform: fn(&this) -> i32 = { return 10; }
+                // }
+                // produce: fn::<T> -> T = { /* get the value somehow */ }
+                // operator: &(obj: &Struct) -> &f32 = { return &obj.x; }
+                // main: fn = {
+                //     b := produce();
+                //     with(a: &f32 as &b) {
+                //         b.perform();
+                //     }
+                // }
+                return false;
+            }
+            
+        }
+
+        
+    }
+    bool ConstraintSolver::operator()(BorrowResultMutConstraint& con)
+    {
+        return false;
+    }
+    bool ConstraintSolver::operator()(IfEqualThenConstrain& con)
+    {
+        auto type1 = state->best_repr(con.type1);
+        auto type2 = state->best_repr(con.type2);
+        // have to revise this equality scheme but it should
+        // be sufficient for normalized types
+        if (has_type_variable(type1) || has_type_variable(type2)) {
+            return false;
+        }
+        if (type1.full_name() == type2.full_name()) {
+            std::ranges::move(std::move(con.apply_if_true), std::back_inserter(temp_constraints));
+        } 
+        return true;
     }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
     {

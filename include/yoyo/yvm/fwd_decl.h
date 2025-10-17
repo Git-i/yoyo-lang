@@ -80,10 +80,16 @@ namespace Yoyo
             return true;
         }
         bool operator()(OperatorOverload* op) {
-            if(op->signature.parameters.size() == 2)
+            if (op->signature.parameters.size() == 2)
                 md->overloads.add_binary_detail_for(op->tok, OverloadDetailsBinary{
                     op->signature.parameters[0].type,
                     op->signature.parameters[1].type,
+                    op->signature.returnType,
+                    op
+                    }, block);
+            else if (op->signature.parameters.size() == 1)
+                md->overloads.add_unary_detail_for(op->tok, OverloadDetailsUnary{
+                    op->signature.parameters[0].type,
                     op->signature.returnType,
                     op
                 }, block);
