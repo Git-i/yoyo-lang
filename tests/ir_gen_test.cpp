@@ -243,15 +243,23 @@ main: fn = {
 TEST_CASE("Test borrow operator", "[operator][type-checker]")
 {
     std::string source(1 + R"(
-IntWrapper: struct = {
-    x: i32
+Struct: struct = {
+    func: fn(&this) = return;
 }
-operator: &(obj: &IntWrapper) -> &i32 = {
-    return &obj.x;
+Struct2: struct = {
+    func2: fn(&this) = return;
+}
+Wrapper: struct::<T> = {
+    data: T
+}
+operator: &::<T>(input: &Wrapper::<T>) -> &T = {
+    return &input.data;
 }
 main: fn = {
-    a := IntWrapper{ .x = 10 };
-    b: &i32 = &a;
+    a := Wrapper{ .data = Struct{} };
+    a.func();
+    b := Wrapper{ .data = Struct2{} };
+    b.func2();
 }
 )");
     Yoyo::YVMEngine engine;

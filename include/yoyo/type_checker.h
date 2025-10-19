@@ -81,6 +81,8 @@ namespace Yoyo
         Expression* right;
         Type result;
         ASTNode* expr;
+        std::unordered_map<OperatorOverload*, std::unordered_map<std::string, Type>> substitution_cache;
+        std::optional<Type> deref_result_opt;
     };
     // type is either CmpOrd or CmpPartOrd
     struct ComparableConstraint {

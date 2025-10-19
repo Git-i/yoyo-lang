@@ -446,9 +446,9 @@ namespace Yoyo
             ModuleBase* md = src;
             std::string hash = irgen ? irgen->block_hash : src->module_hash;
             auto type = it.next();
-            auto err = irgen->apply_using(type, md, hash);
-            if (err) {
-                debugbreak();
+            if (irgen) {
+                auto err = irgen->apply_using(type, md, hash);
+                if (err) debugbreak();
             }
             while(!it.is_end())
             {

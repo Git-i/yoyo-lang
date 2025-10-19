@@ -60,9 +60,9 @@ namespace Yoyo
         }
         return "__not_a_declaration__";
     }
-    Statement* get_next_stat(Statement* stat, const std::string& name) {
+    Statement* get_next_stat(Statement* stat, const std::string_view name) {
         if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) { // Class and generic class declarations
-            auto it = std::ranges::find_if(cls->stats, [&name](auto& elem) {
+            auto it = std::ranges::find_if(cls->stats, [name](auto& elem) {
                 return std::visit([](auto* arg) { return get_decl_name(arg); }, elem->toVariant()) == name;
                 });
             if (it != cls->stats.end()) {
@@ -73,7 +73,7 @@ namespace Yoyo
             return get_next_stat(fn->body.get(), name); // maybe its defined in the function body
         }
         else if (auto enm = dynamic_cast<EnumDeclaration*>(stat)) {
-            auto it = std::ranges::find_if(enm->stats, [&name](auto& elem) {
+            auto it = std::ranges::find_if(enm->stats, [name](auto& elem) {
                 return std::visit([](auto* arg) { return get_decl_name(arg); }, elem->toVariant()) == name;
                 });
             if (it != enm->stats.end()) {
@@ -82,7 +82,7 @@ namespace Yoyo
         }
         // interfaces cannot have sub-definitions (i.e cant define struct within interface)
         else if (auto unn = dynamic_cast<UnionDeclaration*>(stat)) {
-            auto it = std::ranges::find_if(unn->sub_stats, [&name](auto& elem) {
+            auto it = std::ranges::find_if(unn->sub_stats, [name](auto& elem) {
                 return std::visit([](auto* arg) { return get_decl_name(arg); }, elem->toVariant()) == name;
                 });
             if (it != unn->sub_stats.end()) {
@@ -413,6 +413,74 @@ namespace Yoyo
         }
         return { current_stat, generic_instantiations };
     }
+    enum class NoOperatorReason {
+        MulipleMatches,
+        NoMatches
+    };
+    std::optional<Error> generic_match(Type tp1, Type tp2, ASTNode* loc, TypeCheckerState* solver);
+    // The return value is a pair if the match was found and if not its either that
+    // there's multiple matches or no match at all (indicated by NoOperatorReason)
+    std::variant<
+        std::pair<Type, std::vector<TypeCheckerConstraint>>,
+        NoOperatorReason
+    > unary_operator_result(
+        TokenType op, 
+        const Type& subject, 
+        // this not necessary but it can help prevent redundant work
+        std::unordered_map<OperatorOverload*, std::unordered_map<std::string, Type>>& substitution_cache,
+        TypeCheckerState* state, IRGenerator* irgen
+    ) {
+        // unary operators can be defined at most once per type
+        // and it must be done so in the type's module
+        std::vector<TypeCheckerConstraint> collector;
+        std::vector<OverloadDetailsUnary*> matches;
+        Type result_type;
+        // we can safely deref here because references don't have any unary operators defined on them by default
+        // and some operators allow &T while being defined in T's module
+        for (auto& [blk, ovl] : subject.deref().module->overloads.unary_datails_for(op)) {
+            Type ovl_subject = ovl.obj_type;
+            Type ovl_result = ovl.result;
+            std::unordered_map<std::string, Type> generic_subs;
+            if (ovl.statement && !ovl.statement->clause.types.empty()) {
+                if (!substitution_cache.contains(ovl.statement))
+                    for (auto& tp : ovl.statement->clause.types)
+                        substitution_cache[ovl.statement][tp] = state->new_type_var();
+                generic_subs = substitution_cache[ovl.statement];
+            }
+            irgen->block_hash.swap(blk);
+            normalize_type(ovl_subject, state, irgen, generic_subs);
+            normalize_type(ovl_result, state, irgen, generic_subs);
+            irgen->block_hash.swap(blk);
+
+            auto collector_ptr = &collector;
+            std::swap(collector_ptr, state->write_new_constraints_to);
+            // if we see more than one we should break out
+            // we .deref() because the operator is defined &T
+            if (generic_match(subject, ovl_subject, nullptr, state) == std::nullopt) {
+                matches.push_back(&ovl);
+                result_type = std::move(ovl_result);
+            }
+            std::swap(collector_ptr, state->write_new_constraints_to);
+        }
+        // exactly one match means we add it
+        if (matches.size() == 1) {
+            return std::make_pair(std::move(result_type), std::move(collector));
+        }
+        else if (matches.size() > 1) {
+            return NoOperatorReason::MulipleMatches;
+        }
+        else if (matches.size() == 0) {
+            return NoOperatorReason::NoMatches;
+        }
+    }
+    Type mutable_reference_to (const Type& tp, IRGenerator* irgen) {
+        return Type{ .name = "__ref_mut", .subtypes = {tp}, .module = core_module };
+    };
+    Type reference_to(const Type& tp, IRGenerator* irgen) {
+        return Type{ .name = "__ref", .subtypes = {tp}, .module = core_module };
+    };
+    // This is like half the type checker, the explanation is in the definition
+    
     void TypeChecker::operator()(VariableDeclaration* decl)
     {
         Type tp;
@@ -1163,7 +1231,7 @@ namespace Yoyo
     FunctionType TypeChecker::operator()(ObjectLiteral* lit) const {
         lit->evaluated_type = lit->t;
         auto stat = normalize_type(lit->evaluated_type, state, irgen, {});
-        // TODO: constrain initializer
+        
         for (auto& [field, elem] : lit->values) {
             Type result = state->new_type_var();
             state->add_constraint(HasFieldConstraint{ lit->evaluated_type, field, result, lit });
@@ -1896,17 +1964,9 @@ namespace Yoyo
     {
         auto type = state->best_repr(con.type);
         auto other = state->best_repr(con.other);
-        auto mutable_reference_to = [base = core_module](const Type& tp) {
-            return Type{ .name = "__ref_mut", .subtypes = {tp}, .module = base };
-            };
-        auto reference_to = [base = core_module](const Type& tp) {
-            return Type{ .name = "__ref", .subtypes = {tp}, .module = base };
-            };
-
-        
         add_new_constraint(EqualConstraint{
                 type,
-                reference_to(other)
+                reference_to(other, irgen)
             });
         return true;
     }
@@ -2232,17 +2292,42 @@ namespace Yoyo
         }
         return false;
     }
+    /// What exactly does
+    /// <expr1>.<expr2>
+    /// mean / do?
+    /// 
+    /// It evaluates to the first one of these that is satisfied:
+    /// 1 - if <expr1> is (functionally equivalent to) a tuple and <expr2> is an integer constant expression
+    /// then the expression is a tuple access
+    /// 
+    /// 2 - if <expr1> is a struct type and <expr2> is one of the field names of that class, then the expression is
+    /// a struct field access
+    /// 
+    /// 3 - if <expr2> is one of the inherent methods of <expr1> the expression is binding <expr1> to the first arg of
+    /// the function call
+    /// 
+    /// 4 - if <expr2> is one of the inherent methods of operator&(<expr>) the expression is binding operator&(<expr1>) to the first
+    /// arg of the function call
+    /// 
+    /// 5 - if <expr2> is a method of an interface that is implemented by <expr1>, the expression is binding <expr1> to the interface
+    /// function call
+    /// 
+    /// 6 - if <expr2> evaluates to a function, the expression binds <expr1> as the first arg of that function call
+    /// 
+    /// The expression is ill-formed
     bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con)
     {
         auto left = state->best_repr(con.tp);
         auto result = state->best_repr(con.result);
         auto as_name = dynamic_cast<NameExpression*>(con.right);
         // if left is type variable and right is name, we could have ambiguity
-        if (is_type_variable(left) && as_name) {
+        if ((is_type_variable(left) || is_type_variable(left.deref())) && as_name) {
             return false;
         }
-        // check tuple member access <tuple>.<number>
+        // check tuple member access <tuple>.<number> [case 1]
         if (left.deref().is_tuple()) {
+            // this should Ideally be any integer constant expression
+            // we can use the conditional constraint do some magic here
             if (auto as_int = dynamic_cast<IntegerLiteral*>(con.right)) {
                 auto return_type = left
                     .deref() // remove reference to get the underlying tuple
@@ -2256,7 +2341,7 @@ namespace Yoyo
         // TODO probably remove this functionality from normalize_type and change it to something else
         auto [stat, gctx] = normalize_type(no_reference, state, irgen, {});
         if (as_name) {
-            // check class member access
+            // check class member access [case 2]
             if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
                 auto it = std::ranges::find_if(cls->vars, [as_name](ClassVariable& var) {
                     return var.name == as_name->text;
@@ -2270,44 +2355,147 @@ namespace Yoyo
                     return true;
                 }
             }
-            // if the right is a name it could also be a function binding i.e `vec.push`
-            // we check the type for subfunctions whose first parameter is `this`, `&this`, or `&mut this`
-            // then we evaluate right hand as normal and bind as a last option
-            // (we need a custom operator. that will be checked first but it doesn't exist)
-            // so the flow looks like ( 
-            // > check for submethod
-            // > convert to operator. result and check for submethod (useful for methods static and dynamic arrays have in common)
-            // > evaluate right as usual and perform binding (done outside here)
-            auto sub_stat = get_next_stat(stat, as_name->text);
-            if (auto fn = dynamic_cast<FunctionDeclaration*>(sub_stat)) {
-                if (!fn->signature.parameters.empty() && fn->signature.parameters[0].name == "this") {
-                    // correct the right type
-                    con.right->evaluated_type.name = "__fn";
-                    con.right->evaluated_type.block_hash = left.block_hash + left.name + "::" + as_name->text + "::";
-                    con.right->evaluated_type.module = left.module;
-                    std::ranges::copy(fn->signature.parameters |
-                        std::views::transform([](auto& param) { return param.type; }) |
-                        std::views::transform([this, gctx](Type param) { normalize_type(param, state, irgen, gctx); return param; }),
-                        std::back_inserter(con.right->evaluated_type.subtypes));
-                    auto& first_type = con.right->evaluated_type.subtypes[0];
-                    // first_type name is This we edit it to left
-                    if (!first_type.is_reference()) first_type = left;
-                    else first_type.subtypes[0] = left;
-                    con.right->evaluated_type.subtypes.push_back(fn->signature.returnType);
-                    normalize_type(con.right->evaluated_type.subtypes.back(), state, irgen, gctx);
-                    auto result_type = Type{
-                            .name = "__bound_fn", // the first parameter
-                            .subtypes = con.right->evaluated_type.subtypes,
-                            .module = left.module,
-                            .block_hash = con.right->evaluated_type.block_hash
-                    };
-                    add_new_constraint(EqualConstraint{ result, result_type, con.expr });
+            auto check_inherent_submethod = [this, &result](
+                //--gotten from normalize_type--
+                std::remove_cvref_t<decltype(gctx)> const& gctx,
+                Statement* stat,
+                //------------------------------
+                const Type& type, std::string_view name, Type& right,
+                ASTNode* expr
+                ) {
+                    const Type& no_reference = type.deref();
+                    // in checking subfunctions, if the type is not generic we can search the module directly
+                    // in the block of the type
+                    if (gctx.empty()) {
+                        std::string function_block = no_reference.full_name() + "::";
+                        // we could use "findFunction" but we know the exact block
+                        if (no_reference.module->functions.contains(function_block)) {
+                            auto& funs = no_reference.module->functions.at(function_block);
+                            if (auto it = std::ranges::find_if(funs,
+                                [name](ModuleBase::FunctionDetails& dets) {
+                                    return dets.name == name;
+                                }); it != funs.end())
+                            {
+                                if (!it->sig.parameters.empty() && it->sig.parameters[0].name == "this") {
+                                    right.name = "__fn";
+                                    right.block_hash = function_block + std::string(name) + "::";
+                                    right.module = type.module;
 
-                    add_new_constraint(ValidAsFunctionArgConstraint{ left, std::move(result_type), uint32_t(-1), con.expr });
+                                    irgen->block_hash.swap(function_block);
+                                    std::ranges::copy(it->sig.parameters |
+                                        std::views::transform([](auto& param) { return param.type; }) |
+                                        std::views::transform([this, gctx](Type param) { normalize_type(param, state, irgen, {}); return param; }),
+                                        std::back_inserter(right.subtypes));
+                                    right.subtypes.push_back(it->sig.returnType);
+                                    normalize_type(right.subtypes.back(), state, irgen, gctx);
+                                    irgen->block_hash.swap(function_block);
+
+                                    auto& first_type = right.subtypes[0];
+                                    // first_type name is "This" we edit it to left.deref()
+                                    if (!first_type.is_reference()) first_type = no_reference;
+                                    else first_type.subtypes[0] = no_reference;
+
+                                    auto result_type = Type{
+                                            .name = "__bound_fn", // the first parameter
+                                            .subtypes = right.subtypes,
+                                            .module = type.module,
+                                            .block_hash = right.block_hash
+                                    };
+                                    add_new_constraint(EqualConstraint{ result, result_type, expr });
+                                    add_new_constraint(ValidAsFunctionArgConstraint{ type, std::move(result_type), uint32_t(-1), expr });
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    // For generic types we search the AST directly because they don't exist yet
+                    else if (auto fn = dynamic_cast<FunctionDeclaration*>(get_next_stat(stat, name))) {
+                        if (!fn->signature.parameters.empty() && fn->signature.parameters[0].name == "this") {
+                            // correct the right type
+                            right.name = "__fn";
+                            right.block_hash = type.block_hash + type.name + "::" + std::string(name) + "::";
+                            right.module = type.module;
+                            std::ranges::copy(fn->signature.parameters |
+                                std::views::transform([](auto& param) { return param.type; }) |
+                                std::views::transform([this, gctx](Type param) { normalize_type(param, state, irgen, gctx); return param; }),
+                                std::back_inserter(right.subtypes));
+                            auto& first_type = right.subtypes[0];
+                            // first_type name is This we edit it to left
+                            if (!first_type.is_reference()) first_type = no_reference;
+                            else first_type.subtypes[0] = no_reference;
+                            right.subtypes.push_back(fn->signature.returnType);
+                            normalize_type(right.subtypes.back(), state, irgen, gctx);
+                            auto result_type = Type{
+                                    .name = "__bound_fn", // the first parameter
+                                    .subtypes = right.subtypes,
+                                    .module = type.module,
+                                    .block_hash = right.block_hash
+                            };
+                            add_new_constraint(EqualConstraint{ result, result_type, expr });
+                            add_new_constraint(ValidAsFunctionArgConstraint{ type, std::move(result_type), uint32_t(-1), expr });
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                // [case 3]
+                // if the right is a name it could also be a function binding i.e `vec.push`
+                // we check the type for subfunctions whose first parameter is `this`, `&this`, or `&mut this`
+
+                // the type itslef has a inherent method named "<expr2>"
+                if (check_inherent_submethod(gctx, stat, left, as_name->text, con.right->evaluated_type, con.expr))
                     return true;
+                // else we check the types "deref" [case 4]
+                // worth noting that they type may not be fully resolved so the deref may have multiple results
+                // in that case we exit and also operator &mut and operator & must return the same thing
+
+                // if weve already checked before and had a result don't check again
+                if (!con.deref_result_opt) {
+                    auto op_result = unary_operator_result(TokenType::RefMut, mutable_reference_to(no_reference, irgen), con.substitution_cache, state, irgen);
+                    if (auto invalid = std::get_if<NoOperatorReason>(&op_result)) {
+                        // in this case we can't be sure
+                        if (*invalid == NoOperatorReason::MulipleMatches) return false;
+                        // if there's no &mut we check for &
+                        else if (*invalid == NoOperatorReason::NoMatches) {
+                            auto op_result_immutable = unary_operator_result(TokenType::Ampersand, reference_to(no_reference, irgen), con.substitution_cache, state, irgen);
+                            if (auto invalid_immutable = std::get_if<NoOperatorReason>(&op_result_immutable)) {
+                                if (*invalid == NoOperatorReason::MulipleMatches) return false;
+                                else if (*invalid_immutable == NoOperatorReason::NoMatches); // fall through to UCFS
+                            }
+                            else {
+                                auto& [result_tp, constraints] = std::get<0>(op_result_immutable);
+                                // we cache this incase we have to revisit this constraint
+                                con.deref_result_opt = std::move(result_tp);
+                                std::ranges::move(std::move(constraints), std::back_inserter(temp_constraints));
+                            }
+                        }
+                    }
+                    else {
+                        auto& [result_tp, constraints] = std::get<0>(op_result);
+                        con.deref_result_opt = std::move(result_tp);
+                        std::ranges::move(std::move(constraints), std::back_inserter(temp_constraints));
+                    }
                 }
-            }
+                else { con.deref_result_opt = state->best_repr(con.deref_result_opt.value()); }
+
+                // deref_result might be a type variable here 
+                if (con.deref_result_opt) {
+                    auto& deref_result = con.deref_result_opt.value();
+
+                    // come back later this should be relatively cheap because the result is cached
+                    if (is_type_variable(deref_result.deref())) return false;
+
+                    auto [stat2, gctx2] = normalize_type(deref_result, state, irgen, {});
+                    if (check_inherent_submethod(gctx2, stat2, deref_result, as_name->text, con.right->evaluated_type, con.expr))
+                        return true;
+                }
+                
+                
+
+                // case 5 todo
+            
         }
+        // [case 6]
         auto right_t = std::visit(TypeChecker{ std::nullopt, irgen, state }, con.right->toVariant());
         auto right = state->best_repr(right_t);
         if (right.name != "__fn") {
@@ -2557,54 +2745,22 @@ namespace Yoyo
                 .module = core_module
                 });
             else {
-                // operator& can be defined at most once per type
-                // and it must be done so in the type's module
-                std::vector<TypeCheckerConstraint> collector;
-                std::vector<OverloadDetailsUnary*> matches;
-                Type result_type;
-                for (auto& [blk, ovl] : subject.module->overloads.unary_datails_for(TokenType::Ampersand)) {
-                    Type ovl_subject = ovl.obj_type;
-                    Type ovl_result = ovl.result;
-                    std::unordered_map<std::string, Type> generic_subs;
-                    if (ovl.statement && !ovl.statement->clause.types.empty()) {
-                        if (!con.substitution_cache.contains(ovl.statement))
-                            for (auto& tp : ovl.statement->clause.types)
-                                con.substitution_cache[ovl.statement][tp] = state->new_type_var();
-                        generic_subs = con.substitution_cache[ovl.statement];
-                    }
-                    irgen->block_hash.swap(blk);
-                    normalize_type(ovl_subject, state, irgen, generic_subs);
-                    normalize_type(ovl_result, state, irgen, generic_subs);
-                    irgen->block_hash.swap(blk);
-
-                    auto collector_ptr = &collector;
-                    std::swap(collector_ptr, state->write_new_constraints_to);
-                    // if we see more than one we should break out
-                    // we .deref() because the operator is defined &T
-                    if (generic_match(subject, ovl_subject.deref(), nullptr, state) == std::nullopt) {
-                        matches.push_back(&ovl);
-                        result_type = std::move(ovl_result);
-                    }
-                    std::swap(collector_ptr, state->write_new_constraints_to);
+                auto op_result = unary_operator_result(TokenType::Ampersand, reference_to(subject, irgen), con.substitution_cache, state, irgen);
+                if (auto invalid = std::get_if<NoOperatorReason>(&op_result)) {
+                    if (*invalid == NoOperatorReason::MulipleMatches) return false;
+                    else if (*invalid == NoOperatorReason::NoMatches); 
                 }
-                // exactly one match means we add it
-                if (matches.size() == 1) {
-                    possible_types.add_type(Type(result_type));
-                    // if result evaluated the operator& result we apply the other generated constraints
-                    if(!collector.empty())
+                else {
+                    auto& [type, extra_constraints] = std::get<0>(op_result);
+                    possible_types.add_type(Type(type));
+                    if (!extra_constraints.empty()) {
                         add_new_constraint(IfEqualThenConstrain{
-                            std::move(result_type),
+                            std::move(type),
                             result,
-                            std::move(collector),
-                        });
+                            std::move(extra_constraints)
+                         });
+                    }
                 }
-                else if (matches.size() > 1) {
-                    return false; // come back later
-                }
-                else if (matches.size() == 0) {
-                    // no matches we proceed to interface views
-                }
-
             }
             if (auto error = state->get_type_domain(result)->add_and_intersect(std::move(possible_types), state)) {
                 irgen->error(error.value());
