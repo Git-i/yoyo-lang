@@ -1341,7 +1341,7 @@ namespace Yoyo
         if (sig->returnType.name == "__inferred") sig->returnType.name = "void";
         return Type{ .name = "__called_fn", .signature = std::make_shared<FunctionSignature>(std::move(sig).value()) };
     }
-    UsingStatement::ContentTy Parser::parseUsingContent() {
+    UsingStatement::ContentTy Parser::parseUsingContent(uint32_t generic_num) {
         using UsingAll = UsingStatement::UsingAll;
         using UsingSingle = UsingStatement::UsingSingle;
         using UsingMultiple = UsingStatement::UsingMultiple;
@@ -1359,7 +1359,8 @@ namespace Yoyo
         }
 
         block += std::string(tk->text) + "::";
-
+        // newly encountered generics
+        uint32_t new_generic_nums = 0;
         while (true) {
             tk = Get();
 
@@ -1368,7 +1369,7 @@ namespace Yoyo
                 if (discard(TokenType::LCurly)) {
                     std::vector<UsingStatement::ContentTy> entities;
                     while (!discard(TokenType::RCurly)) {
-                        entities.emplace_back(parseUsingContent());
+                        entities.emplace_back(parseUsingContent(generic_num + new_generic_nums));
                         if (!discard(TokenType::Comma)) {
                             if (!discard(TokenType::RCurly)) { error("Expected '}'", Peek()); return {}; }
                             else break;
@@ -1381,11 +1382,49 @@ namespace Yoyo
                 }
                 // ::* Using All
                 if (discard(TokenType::Star)) {
+                    // if we are in a generic using statement (i.e Type::<?1>::{ ... }
+                    // we don't support using all
+                    if (generic_num + new_generic_nums > 0) 
+                        error("...::* is not supported in generic using declaration", Token{.type = TokenType::Star, .loc = discardLocation, .text = "*" });
                     return UsingAll{ .block = std::move(block) };
                 }
                 tk = Get();
                 if (!tk || tk->type != TokenType::Identifier) { error("Expected identifier", tk); return {}; }
                 if (discard(TokenType::TemplateOpen)) {
+                    block += "::<";
+                    while (true)
+                    {
+                        // I don't think its possible to encounter the ">>" case here
+                        if (discard(TokenType::Greater)) {
+                            // remove trailing comma
+                            if (block.back() == ',') block.pop_back();
+                            // there were no generics so we error (we could just proceed but idk
+                            if (block.ends_with("::<")) error("Empty generics not allowed", Token{.type = TokenType::Greater, .loc = discardLocation, .text = ">"});
+                            block += '>';
+                            break; 
+                        }
+                        // ?n is used to introduce a new generic parameter
+                        if (discard(TokenType::Question)) {
+                            auto num_tk = Get();
+                            new_generic_nums++;
+                            auto expected_num = std::to_string(new_generic_nums + generic_num);
+                            if (num_tk->type == TokenType::IntegerLiteral && num_tk->text == expected_num) {
+                                // valid
+                            }
+                            else error("Expected " + expected_num, num_tk);
+                            block += "?" + expected_num;
+                        }
+                        // a concrete generic type
+                        else {
+                            block += parseType(0).value().full_name();
+                        }
+                        // try to discard "," if not there must be a ">"
+                        if (!discard(TokenType::Comma)) {
+                            // will be handled by the loop beginning
+                            if (Peek() && Peek()->type == TokenType::Greater) continue;
+                            error("Expected ',' or '>'", Peek());
+                        }
+                    }
                     auto t = parseTemplateTypeExpr(*this, Type{.name = std::string(tk->text)});
                     block += t->full_name() + "::";
                     if (!Peek() || Peek()->type != TokenType::DoubleColon) { error("Expected '::'", tk); return {}; }
@@ -1394,6 +1433,7 @@ namespace Yoyo
                 else {
                     auto peek_tk = Peek();
                     if (!peek_tk || peek_tk->type != TokenType::DoubleColon) {
+                        // all "UsingSingle" must be aliased when generics exist
                         return UsingSingle{
                             .block = std::move(block),
                             .entity = std::string(tk->text)

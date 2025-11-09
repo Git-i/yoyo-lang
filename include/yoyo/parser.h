@@ -25,6 +25,7 @@ namespace Yoyo
         std::unique_ptr<Statement> parseInterfaceDeclaration(Token identifier);
         std::unique_ptr<Statement> parseUnionDeclaration(Token identifier);
         std::unique_ptr<Statement> parseMacroDeclaration(Token identifier);
+
         std::unique_ptr<Statement> parseUsingDeclaration(Token);
         std::unordered_map<std::string, std::unique_ptr<Expression>> parseObjectLiteral();
         std::unique_ptr<Statement> parseDeclaration();
@@ -39,7 +40,12 @@ namespace Yoyo
         uint32_t GetNextTypePrecedence();
         std::vector<std::unique_ptr<Statement>> parseProgram();
         std::optional<Type> parseType(uint32_t precedence);
-        UsingStatement::ContentTy parseUsingContent();
+        // I'm being experimental with using syntax to support nexted generics
+        // so one can write:
+        // using Type::Type2::<?1> as Alias::<?1>;
+        // using Type::<?1>::{ Type2::<?2>::Type3::<?3> as Alias1::<?1, ?2, ?3>, Type2Alt::<?2> as AliasAlt::<?1, ?2> }
+        // so the number trackes what generic we're on
+        UsingStatement::ContentTy parseUsingContent(uint32_t);
         [[nodiscard]] bool discard(TokenType t);
         [[nodiscard]] bool failed() const {return has_error;};
         void pushToken(Token t, SourceLocation loc);
