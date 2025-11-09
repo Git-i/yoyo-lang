@@ -2,105 +2,110 @@
 #include <string>
 namespace Yoyo
 {
-    struct BorrowCheckerBlock;
-    struct TypeCheckerState;
-    struct Instruction {
-        struct BorrowInstruction { std::string into; std::string operand; };
-        std::variant<
-            BorrowInstruction, // borrow, borrow mut and borrow temp
-            std::string, // drop
-            BorrowCheckerBlock*, // br
-            std::pair<BorrowCheckerBlock*, BorrowCheckerBlock*>, // cond_br
-            std::optional<std::string>, // ret
-            std::pair<std::string, std::string> //move
-        > data;
-        enum {
-            Borrow,
-            BorrowMut,
-            Move,
-            Br,
-            CondBr,
-            Ret,
-            Drop,
-            BorrowTemp,
-        } type;
-        ASTNode* expr; // the ast expression corresponding to this instruction
+    // The IR is SSA based and the only values either:
+    // - variable names
+    // - field accesses
+    class Value {
+        std::string base_name;
+        // we could do with one name separated by .
+        // but I feel this would be easier to process
+        std::vector<std::string> subpaths;
+    public:
+        static Value from(std::string&& name) {
+            Value val;
+            val.base_name = name;
+            return val;
+        }
+        Value& member(std::string&& member_name) & {
+            subpaths.push_back(member_name);
+            return *this;
+        }
+        Value member(std::string&& member_name) && {
+            subpaths.push_back(member_name);
+            return std::move(*this);
+        }
+        static Value empty() { return Value(); }
+        bool is_empty() { return base_name.empty();  }
     };
-    enum class BorrowType {
-        Const, Mut
+    class Instruction {
+    public:
+        ASTNode* origin;
+        virtual ~Instruction() = default;
+        virtual bool is_terminator() { return false; }
     };
-    struct BorrowState {
-        std::unordered_map<std::string, std::set<Instruction*>> immutable_borrows;
-        std::unordered_map<std::string, Instruction*> mutable_borrow;
-
-        std::unordered_map<std::string,
-            std::vector<std::tuple<std::string, BorrowType, Instruction*>>
-        > is_borrowing;
-
-        std::unordered_map<std::string, std::string> temporary_holders;
-
-        static BorrowState aggregate(std::ranges::input_range auto&& range)
-            requires std::same_as<std::ranges::range_value_t<decltype(range)>, BorrowState>
-        {
-            BorrowState result;
-            for (BorrowState&& st : range) {
-                // merge in immutable borrows
-                for (auto& [var, borrows] : st.immutable_borrows) {
-                    // given a var, we don't merge it in if there is already a mutable one
-                    if (result.mutable_borrow.contains(var)) continue;
-                    result.immutable_borrows[var].merge(borrows);
-                }
-                // merge in mutable borrows
-                for (auto& [var, borrow] : st.mutable_borrow) {
-                    if (result.immutable_borrows.contains(var)) {
-                        result.immutable_borrows.erase(var);
-                    }
-                    result.mutable_borrow[var] = borrow;
-                }
-                // merge in is_borrowing
-                for (auto& [var, other] : st.is_borrowing) {
-                    result.is_borrowing[var].insert(result.is_borrowing[var].end(), other.begin(), other.end());
-                }
-
-                for (auto& [holdee, holder] : st.temporary_holders) {
-                    if (result.temporary_holders.contains(holdee)) debugbreak();
-                    result.temporary_holders[holdee] = holder;
-                }
-            }
-            return result;
+    class BasicBlock {
+        std::vector<std::unique_ptr<Instruction>> instructions;
+    public:
+        void add_instruction(Instruction* inst) {
+            instructions.emplace_back(inst);
+        }
+        bool is_terminated() const {
+            return !instructions.empty() && instructions.back()->is_terminator();
         }
     };
-    struct BorrowCheckerBlock {
-        std::list<Instruction> insts;
-        std::unordered_map<BorrowCheckerBlock*, std::optional<BorrowState>> preds;
-        bool is_checked = false;
+
+    // most instruction bind thier result into a variable, hence the into parameter
+
+    // Create a new primitive object
+    class NewPrimitiveInstruction : public Instruction {
+    public:
+        std::string into;
+        NewPrimitiveInstruction(std::string&& into): into(into) {};
     };
-    struct BorrowChecker {
-        size_t counter = 0;
-        /// Represents a variable
-        struct Object : public std::string {
-        };
-        Object make_object();
-        Object make_external_object();
-        BorrowCheckerBlock* make_block();
-        void drop_object(const std::string&, ASTNode* expr);
-        void set_block(BorrowCheckerBlock*);
-        std::string borrow_values(std::span<const std::pair<std::string, BorrowType>>, Expression*);
-        std::vector<std::unique_ptr<BorrowCheckerBlock>> blocks;
-        void check_and_report(IRGenerator* irgen);
-        void create_cond_br(BorrowCheckerBlock*, BorrowCheckerBlock*);
-        void create_br(BorrowCheckerBlock*);
-        void make_preds();
-        std::string move_object(const std::string&, Expression*);
-        /// move one object into another composite object
-        /// this transfers all borrows and drops the original
-        void move_into(const std::string&, const std::string&, Expression*);
-        /// borrow an object and register it as a temporary
-        /// meaning it will be dropped once the borrow is dropped
-        std::string borrow_as_temporary(const std::string& val, Expression*);
-        BorrowCheckerBlock* current_block;
+    // borrow a value
+    class BorrowValueInstruction : public Instruction {
+    public:
+        Value val;
+        std::string into;
+        BorrowValueInstruction(Value&& val, std::string&& into) : val(val), into(into) {};
     };
-    // emits borrow checker IR for statements and expressions
+    class RelocateValueInstruction : public Instruction {
+        Value val;
+        std::string into;
+    };
+    class CallFunctionInstruction : public Instruction {
+    public:
+        std::vector<Value> val;
+        std::string function_name;
+        std::string into;
+        CallFunctionInstruction(std::string&& function_name, std::string&& into, std::vector<Value>&& val)
+            : val(val), function_name(function_name), into(into) {}
+    };
+    class AssignInstruction : public Instruction {
+        Value lhs;
+        Value rhs;
+    };
+    class PhiInstruction : public Instruction {
+    public:
+        std::vector<Value> args;
+        std::string into;
+        PhiInstruction(std::vector<Value>&& args, std::string&& into) : args(args), into(into) {};
+
+    };
+    // These instructions must be at the end of each basic block
+    class RetInstruction : public Instruction {
+        std::optional<Value> ret_val;
+        bool is_terminator() override { return true; }
+    };
+    class BrInstruction : public Instruction {
+    public:
+        BasicBlock* next;
+        BrInstruction(BasicBlock* next) : next(next) {};
+        bool is_terminator() override { return true;  }
+    };
+    class CondBrInstruction : public Instruction {
+    public:
+        std::vector<BasicBlock*> options;
+        Value br_on;
+        bool is_terminator() override { return true; }
+        CondBrInstruction(std::vector<BasicBlock*>&& options, Value&& br_on) : options(options), br_on(br_on) {};
+    };
+
+    struct BorrowCheckerFunction {
+        std::vector<std::unique_ptr<BasicBlock>> blocks;
+        BasicBlock* new_block(std::string debug_name);
+    };
+
     class BorrowCheckerEmitter {
         IRGenerator* irgen;
         TypeCheckerState* stt;
@@ -110,6 +115,9 @@ namespace Yoyo
         //            std::string -- variable name
         //            std::string -- borrow checker id
         std::vector<std::vector<std::pair<std::string, std::string>>> variables;
+        BorrowCheckerFunction* function;
+        BasicBlock* current_block;
+        std::string temporary_name();
     public:
         BorrowCheckerEmitter(IRGenerator* irgen, TypeCheckerState* stt) : irgen(irgen), variables(1), stt(stt) {}
         void operator()(FunctionDeclaration*);
@@ -137,32 +145,32 @@ namespace Yoyo
         void operator()(UnionDeclaration*);
         void operator()(MacroDeclaration*);
 
-        std::string operator()(IfExpression*);
-        std::string operator()(BlockExpression*);
-        std::string operator()(IntegerLiteral*);
-        std::string operator()(BooleanLiteral*);
-        std::string operator()(TupleLiteral*);
-        std::string operator()(ArrayLiteral*);
-        std::string operator()(RealLiteral*);
-        std::string operator()(StringLiteral*);
-        std::string operator()(NameExpression*);
-        std::string operator()(GenericNameExpression*);
-        std::string operator()(PrefixOperation*);
-        std::string operator()(BinaryOperation*);
-        std::string operator()(GroupingExpression*);
-        std::string operator()(LogicalOperation*);
-        std::string operator()(PostfixOperation*);
-        std::string operator()(CallOperation*);
-        std::string operator()(SubscriptOperation*);
-        std::string operator()(LambdaExpression*);
-        std::string operator()(ScopeOperation*);
-        std::string operator()(ObjectLiteral*);
-        std::string operator()(NullLiteral*);
-        std::string operator()(AsExpression*);
-        std::string operator()(CharLiteral*);
-        std::string operator()(GCNewExpression*);
-        std::string operator()(MacroInvocation*);
-        std::string operator()(SpawnExpression*);
-        std::string operator()(TryExpression*);
+        Value operator()(IfExpression*);
+        Value operator()(BlockExpression*);
+        Value operator()(IntegerLiteral*);
+        Value operator()(BooleanLiteral*);
+        Value operator()(TupleLiteral*);
+        Value operator()(ArrayLiteral*);
+        Value operator()(RealLiteral*);
+        Value operator()(StringLiteral*);
+        Value operator()(NameExpression*);
+        Value operator()(GenericNameExpression*);
+        Value operator()(PrefixOperation*);
+        Value operator()(BinaryOperation*);
+        Value operator()(GroupingExpression*);
+        Value operator()(LogicalOperation*);
+        Value operator()(PostfixOperation*);
+        Value operator()(CallOperation*);
+        Value operator()(SubscriptOperation*);
+        Value operator()(LambdaExpression*);
+        Value operator()(ScopeOperation*);
+        Value operator()(ObjectLiteral*);
+        Value operator()(NullLiteral*);
+        Value operator()(AsExpression*);
+        Value operator()(CharLiteral*);
+        Value operator()(GCNewExpression*);
+        Value operator()(MacroInvocation*);
+        Value operator()(SpawnExpression*);
+        Value operator()(TryExpression*);
     };
 }
