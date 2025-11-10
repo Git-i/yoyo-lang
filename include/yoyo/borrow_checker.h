@@ -26,6 +26,15 @@ namespace Yoyo
         }
         static Value empty() { return Value(); }
         bool is_empty() { return base_name.empty();  }
+        // verified by the type system to never be borrowed immutably
+        // so we don't need much wrt to borrow checking these
+        static Value constant() { return Value::from("__constant__"); }
+        static Value function(std::string&& func_name) { return Value::from("__constant__fn__" + func_name); }
+        std::optional<std::string> function_name() {
+            using namespace std::literals::string_view_literals;
+            if (!base_name.starts_with("__constant__fn__")) return std::nullopt;
+            return std::string(base_name.begin() + "__constant__fn__"sv.size(), base_name.end());
+        }
     };
     class Instruction {
     public:
@@ -52,6 +61,13 @@ namespace Yoyo
         std::string into;
         NewPrimitiveInstruction(std::string&& into): into(into) {};
     };
+    class NewArrayInstruction : public Instruction {
+    public:
+        std::vector<Value> values;
+        std::string into;
+        NewArrayInstruction(std::vector<Value>&& values, std::string&& into):
+            values(values), into(into) {}
+    };
     // borrow a value
     class BorrowValueInstruction : public Instruction {
     public:
@@ -60,8 +76,10 @@ namespace Yoyo
         BorrowValueInstruction(Value&& val, std::string&& into) : val(val), into(into) {};
     };
     class RelocateValueInstruction : public Instruction {
+    public:
         Value val;
         std::string into;
+        RelocateValueInstruction(Value&& val, std::string&& into) : val(val), into(into) {};
     };
     class CallFunctionInstruction : public Instruction {
     public:
@@ -84,7 +102,11 @@ namespace Yoyo
     };
     // These instructions must be at the end of each basic block
     class RetInstruction : public Instruction {
+    public:
         std::optional<Value> ret_val;
+        RetInstruction() : ret_val(std::nullopt) {}
+        RetInstruction(Value&& val) : ret_val(val) {}
+        RetInstruction(std::optional<Value>&& val) : ret_val(val) {}
         bool is_terminator() override { return true; }
     };
     class BrInstruction : public Instruction {
@@ -118,6 +140,8 @@ namespace Yoyo
         BorrowCheckerFunction* function;
         BasicBlock* current_block;
         std::string temporary_name();
+        std::string name_based_on(std::string_view other);
+        void drop_object(Value&& val);
     public:
         BorrowCheckerEmitter(IRGenerator* irgen, TypeCheckerState* stt) : irgen(irgen), variables(1), stt(stt) {}
         void operator()(FunctionDeclaration*);

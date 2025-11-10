@@ -26,78 +26,51 @@ namespace Yoyo
     void BorrowCheckerEmitter::operator()(UnionDeclaration*) {}
     void BorrowCheckerEmitter::operator()(MacroDeclaration*) {}
     void BorrowCheckerEmitter::operator()(WhileStatement* stat) {
-        auto& checker = irgen->function_borrow_checkers.back();
-        auto while_cond = checker.make_block();
-        auto while_body = checker.make_block();
-        auto while_exit = checker.make_block();
+        auto while_cond = function->new_block("while_cond");
+        auto while_body = function->new_block("while_body");
+        auto while_exit = function->new_block("while_exit");
 
-        checker.create_br(while_cond);
-        checker.set_block(while_cond);
-        checker.drop_object(std::visit(*this, stat->condition->toVariant()), stat->condition.get());
-        checker.create_cond_br(while_body, while_exit);
+        current_block->add_instruction(new BrInstruction(while_cond));
+        current_block = while_cond;
+        
+        current_block->add_instruction(new CondBrInstruction(
+            { while_body, while_exit },
+            std::visit(*this, stat->condition->toVariant())
+        ));
 
-        checker.set_block(while_body);
+        current_block = while_body;
         std::visit(*this, stat->body->toVariant());
-        checker.create_br(while_cond);
+        if(!while_body->is_terminated()) {
+            current_block->add_instruction(new BrInstruction(while_cond));
+        }
 
-        checker.set_block(while_cond);
+        current_block = while_exit;
     }
     void BorrowCheckerEmitter::operator()(VariableDeclaration* decl) {
         decl->type = stt->best_repr(*decl->type);
-        auto& checker = irgen->function_borrow_checkers.back();
-        if (decl->initializer) std::visit(*this, decl->initializer->toVariant());
-        // variables have to be fully owning so we don't need to worry about moving
-        variables.back().emplace_back(std::string(decl->identifier.text), checker.make_object());
+        auto variable_name = name_based_on(decl->identifier.text);
+        if (decl->initializer) current_block->add_instruction(new RelocateValueInstruction(
+            std::visit(*this, decl->initializer->toVariant()), std::string(variable_name)));
+        // maybe we need an unitiailized value instruction??
+        variables.back().emplace_back(std::string(decl->identifier.text),std::move(variable_name));
     }
     void BorrowCheckerEmitter::operator()(ForStatement*) {
         // TODO
     }
     void BorrowCheckerEmitter::operator()(ReturnStatement* stat) {
-        if (stat->expression) {
-            auto& checker = irgen->function_borrow_checkers.back();
-            checker.drop_object(std::visit(*this, stat->expression->toVariant()), stat);
-        }
+        current_block->add_instruction(stat->expression ? 
+            new RetInstruction(std::visit(*this, stat->expression->toVariant())) :
+            new RetInstruction);
+        // Drop all the valid variables (TODO)
     }
     void BorrowCheckerEmitter::operator()(ExpressionStatement* stat) {
-        auto& checker = irgen->function_borrow_checkers.back();
-        checker.drop_object(std::visit(*this, stat->expression->toVariant()), stat->expression.get());
+        drop_object(std::visit(*this, stat->expression->toVariant()));
     }
     void BorrowCheckerEmitter::operator()(ConditionalExtraction* stat) {
-        auto& checker = irgen->function_borrow_checkers.back();
-        auto cond = std::visit(*this, stat->condition->toVariant());
-
-        auto if_stat = checker.make_block();
-        auto if_cont = checker.make_block();
-        auto else_stat = stat->else_body ? checker.make_block() : nullptr;
-
-        checker.create_cond_br(if_stat, else_stat ? else_stat : if_cont);
-        checker.set_block(if_stat);
-        variables.emplace_back();
-        variables.back().emplace_back(stat->captured_name, stat->is_ref ? cond : checker.make_object());
-        std::visit(*this, stat->body->toVariant());
-        variables.pop_back();
-        checker.drop_object(cond, stat->condition.get());
-        checker.create_br(if_cont);
-
-        if (else_stat) {
-            checker.set_block(else_stat);
-            checker.drop_object(cond, stat->condition.get());
-            std::visit(*this, stat->else_body->toVariant());
-            checker.create_br(if_cont);
-        }
-
-        checker.set_block(if_cont);
-        checker.drop_object(cond, stat->condition.get());
+        // TODO
     }
     void BorrowCheckerEmitter::operator()(WithStatement* stat) {
-        auto& checker = irgen->function_borrow_checkers.back();
-        auto expr = std::visit(*this, stat->expression->toVariant());
-        auto new_expr = checker.move_object(expr, stat->expression.get());
-        variables.emplace_back();
-        variables.back().emplace_back(stat->name, new_expr);
-        std::visit(*this, stat->body->toVariant());
-        checker.drop_object(expr, stat);
-        variables.pop_back();
+        // This statement might just be dying
     }
     Value BorrowCheckerEmitter::operator()(IfExpression* expr) {
         RE_REPR(expr);
@@ -171,6 +144,7 @@ namespace Yoyo
     Value BorrowCheckerEmitter::operator()(TupleLiteral* exp) {
         RE_REPR(exp);
         std::vector<Value> args;
+        args.reserve(exp->elements.size());
         std::ranges::transform(exp->elements, std::back_inserter(args), [this](auto& expr)
             {
                 return std::visit(*this, expr->toVariant());
@@ -180,25 +154,26 @@ namespace Yoyo
         current_block->add_instruction(new CallFunctionInstruction("__builtin_make_tuple", std::string(name), std::move(args)));
         return Value::from(std::move(name));
     }
-    std::string BorrowCheckerEmitter::operator()(ArrayLiteral* lit) {
+    Value BorrowCheckerEmitter::operator()(ArrayLiteral* lit) {
         RE_REPR(lit);
         auto& checker = irgen->function_borrow_checkers.back();
-        auto array = checker.make_object();
+        auto array_obj = temporary_name();
         // [<expr>, <expr>, ... ]
-        if (std::holds_alternative<std::vector<std::unique_ptr<Expression>>>(lit->elements)) {
-            auto& array_elems = std::get<std::vector<std::unique_ptr<Expression>>>(lit->elements);
-            for (auto& elem : array_elems) {
-                auto elem_eval = std::visit(*this, elem->toVariant());
-                clone_into(checker, elem_eval, array, elem->evaluated_type, lit, irgen); // TODO: update when type system is better
-            }
+        if (auto elems = std::get_if<std::vector<std::unique_ptr<Expression>>>(&lit->elements); elems) {
+            std::vector<Value> values;
+            values.reserve(elems->size());
+            std::ranges::transform(*elems, std::back_inserter(values), [this](auto& expr)
+                {
+                    return std::visit(*this, expr->toVariant());
+                });
+            current_block->add_instruction(new NewArrayInstruction(std::move(values), std::string(array_obj)));
         }
         // [<expr>; <expr>] repeat first <expr>, sencond <expr> times (second expr is a constant)
         else {
             auto& elem_size = std::get<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>(lit->elements);
-            auto elem_eval = std::visit(*this, elem_size.first->toVariant());
-            clone_into(checker, elem_eval, array, elem_size.first->evaluated_type, lit, irgen);
+            // TODO
         }
-        return array;
+        return Value::from(std::move(array_obj));
     }
     Value BorrowCheckerEmitter::operator()(RealLiteral* lit) {
         RE_REPR(lit);
@@ -206,50 +181,59 @@ namespace Yoyo
         current_block->add_instruction(new NewPrimitiveInstruction(std::string(name)));
         return Value::from(std::move(name));
     }
-    std::string BorrowCheckerEmitter::operator()(StringLiteral* lit) {
+    Value BorrowCheckerEmitter::operator()(StringLiteral* lit) {
         RE_REPR(lit);
         auto& checker = irgen->function_borrow_checkers.back();
         for (auto& entry : lit->literal) {
             if (std::holds_alternative<std::unique_ptr<Expression>>(entry)) {
                 auto& capture = std::get<std::unique_ptr<Expression>>(entry);
-                // evaluate the expression
-                // borrow it to convert to string
-                // drop the borrow
-                checker.drop_object(
-                    checker.borrow_values({ {
-                        { std::visit(*this, capture->toVariant()), BorrowType::Const }
-                    } }, lit), lit
-                );
+                
+                auto arg = temporary_name();
+                current_block->add_instruction(new BorrowValueInstruction(
+                    std::visit(*this, capture->toVariant()),
+                    std::string(arg)
+                ));
+
+                current_block->add_instruction(new CallFunctionInstruction(
+                    "__builtin_to_string_for_" + capture->evaluated_type.full_name(),
+                    // drop the string or not, it doesn't really matter string is fully owning
+                    temporary_name(),
+                    { Value::from(std::move(arg)) }
+                ));
+
             }
         }
-        return "__literal";
+        return Value::from(temporary_name());
     }
     Value BorrowCheckerEmitter::operator()(NameExpression* name) {
         RE_REPR(name);
+        if (name->evaluated_type.name == "__fn") return Value::function(std::string(name->evaluated_type.block_hash));
         for (auto& block : variables | std::views::reverse) {
             for (auto& [var_name, id] : block) {
                 if (var_name == name->text) return Value::from(std::string(id));
             }
         }
-        return "__literal";
+        return Value::constant();
     }
-    std::string BorrowCheckerEmitter::operator()(GenericNameExpression* name) {
+    Value BorrowCheckerEmitter::operator()(GenericNameExpression* name) {
         RE_REPR(name);
-        // this is probably a function
-        // need to actually check tho so TODO
-        return "__literal";
+        return Value::constant();
     }
-    std::string BorrowCheckerEmitter::operator()(PrefixOperation* pfx) {
+    Value BorrowCheckerEmitter::operator()(PrefixOperation* pfx) {
         RE_REPR(pfx);
-        auto& checker = irgen->function_borrow_checkers.back();
         auto this_eval = std::visit(*this, pfx->operand->toVariant());
         switch (pfx->op.type) {
+            // BIG TODO regarding moving from behind references and all that
         case TokenType::Star: return this_eval; // borrows are checked at creation time
-        case TokenType::Ampersand: return checker.borrow_values({ {{this_eval, BorrowType::Const}} }, pfx);
-        case TokenType::RefMut: return checker.borrow_values({ {{this_eval, BorrowType::Mut}} }, pfx);
+        case TokenType::Ampersand: [[fallthrough]]
+        case TokenType::RefMut: {
+            auto result = temporary_name();
+            current_block->add_instruction(new BorrowValueInstruction(std::move(this_eval), std::string(result)));
+            return Value::from(std::move(result));
+        }
         }
     }
-    std::string BorrowCheckerEmitter::operator()(BinaryOperation* op) {
+    Value BorrowCheckerEmitter::operator()(BinaryOperation* op) {
         RE_REPR(op);
         for (auto& sub : op->subtypes) {
             sub = stt->best_repr(sub);
@@ -257,121 +241,109 @@ namespace Yoyo
                 irgen->error(Error(op, "Could not resolve all generics for this operation"));
             }
         }
+        auto token_tp = op->op.type;
+        switch (token_tp) {
         using enum TokenType;
-        auto do_overloadable_explicit_token = [op, this](TokenType tk) {
-            auto& checker = irgen->function_borrow_checkers.back();
-            auto res = do_call_like({ {
-                op->lhs.get(),
-                op->rhs.get()
-            } }, irgen, op, *this);
-            if (stt->is_non_owning(op->evaluated_type, irgen)) return res;
-            else {
-                checker.drop_object(res, op);
-                return (std::string)checker.make_object();
-            }
-            };
-        auto do_overloadable = [op, this, &do_overloadable_explicit_token]() {
-            return do_overloadable_explicit_token(op->op.type);
-            };
-        switch (op->op.type) {
-        case Minus: [[fallthrough]];
-        case Star: [[fallthrough]];
-        case Slash: [[fallthrough]];
-        case Percent: [[fallthrough]];
-        case DoubleGreater: [[fallthrough]];
-        case DoubleLess: [[fallthrough]];
-        case Plus: return do_overloadable();
-        case Less: [[fallthrough]];
         case GreaterEqual: [[fallthrough]];
         case LessEqual: [[fallthrough]];
         case BangEqual: [[fallthrough]];
         case DoubleEqual: [[fallthrough]];
         case Spaceship: [[fallthrough]];
-        case Greater: return do_overloadable_explicit_token(TokenType::Spaceship);
-        case Dot: {
-            if (op->evaluated_type.name == "__bound_fn") {
-                std::visit(*this, op->lhs->toVariant());
-            }
-            // field borrow TODO
-            else {
-                std::visit(*this, op->lhs->toVariant());
-            }
+        case Greater: token_tp = TokenType::Spaceship; break;
+        default: break;
         }
-        case DoubleDotEqual: RE_REPR(op->lhs.get()); return ""; // TODO irgen->error(Error(op, "Not implemented yet")); return {};
-        case DoubleDot: irgen->error(Error(op, "Not implemented yet")); return {};
+        if (token_tp != TokenType::Dot && token_tp != TokenType::Equal) {
+            auto result = temporary_name();
+            current_block->add_instruction(new CallFunctionInstruction(
+                op->selected->mangled_name(token_tp),
+                std::string(result),
+                { std::visit(*this, op->lhs->toVariant()), std::visit(*this, op->rhs->toVariant()) }
+            ));
+            return Value::from(std::move(result));
+        } 
+        else {
+            // TODO
+            // could be member access, function binding or assignment
         }
     }
     Value BorrowCheckerEmitter::operator()(GroupingExpression* grp) {
         RE_REPR(grp);
         return std::visit(*this, grp->expr->toVariant());
     }
-    std::string BorrowCheckerEmitter::operator()(LogicalOperation* lg) {
+    Value BorrowCheckerEmitter::operator()(LogicalOperation* lg) {
         RE_REPR(lg);
+        // We could do a branch here to represent short circuiting
+        // but I don't feel its necessary
+        
+        // these two must return bools so there's no need to drop them
+        std::visit(*this, lg->lhs->toVariant());
+        std::visit(*this, lg->rhs->toVariant());
 
-        return "__literal";
+        std::string result = temporary_name();
+        current_block->add_instruction(new NewPrimitiveInstruction(std::string(result)));
+        return Value::from(std::move(result));
     }
-    std::string BorrowCheckerEmitter::operator()(PostfixOperation*) { return ""; }
-    std::string BorrowCheckerEmitter::operator()(CallOperation* op) {
+    Value BorrowCheckerEmitter::operator()(PostfixOperation*) { return Value::empty(); }
+    Value BorrowCheckerEmitter::operator()(CallOperation* op) {
         RE_REPR(op);
-        auto& checker = irgen->function_borrow_checkers.back();
-        auto& callee = op->evaluated_type;
-        if (callee.name.starts_with("__union_var"))
-        {
-            irgen->error(Error(op, "Not implemented"));
-            return "";
+        auto callee_val = std::visit(*this, op->callee->toVariant());
+        auto& callee_type = op->callee->evaluated_type;
+        if (callee_type.name == "__bound_fn") {
+            // TODO
         }
-
-        //if (callee.is_bound) {
-        //    irgen->error(Error(op, "Not implemented"));
-        //    return "";
-        //}
-        std::vector<Expression*> input_types;
-        input_types.push_back(op->callee.get());
-        for (auto i : std::views::iota(0u, op->arguments.size())) {
-            input_types.emplace_back(op->arguments[i].get());
-        }
-
-        auto res = do_call_like(input_types, irgen, op, *this);
-        if (stt->is_non_owning(op->evaluated_type, irgen)) return res;
-        else {
-            checker.drop_object(res, op);
-            return (std::string)checker.make_object();
-        }
+        auto result = temporary_name();
+        std::vector<Value> args;
+        args.reserve(op->arguments.size());
+        std::ranges::transform(op->arguments, std::back_inserter(args), [this](auto& arg)
+            {
+                return std::visit(*this, arg->toVariant());
+            });
+        current_block->add_instruction(new CallFunctionInstruction(
+            callee_val.function_name().value(),
+            std::string(result),
+            std::move(args)
+        ));
+        return Value::from(std::move(result));
     }
-    std::string BorrowCheckerEmitter::operator()(SubscriptOperation* op) {
+    Value BorrowCheckerEmitter::operator()(SubscriptOperation* op) {
         RE_REPR(op);
-        irgen->error(Error(op, "Not implemented yet")); return "";
+        auto object = std::visit(*this, op->object->toVariant());
+        auto index = std::visit(*this, op->index->toVariant());
+        auto& idx_type = op->index->evaluated_type;
+        if (
+            op->object->evaluated_type.deref().is_static_array() && 
+            idx_type.is_unsigned_integral() && 
+            idx_type.integer_width() == 64
+        ) {
+            // array element access (member access is not fully resolved wrt to refernces)
+            return std::move(object).member("[*]");
+        }
+        
+
     }
-    std::string BorrowCheckerEmitter::operator()(LambdaExpression*) { return ""; }
-    std::string BorrowCheckerEmitter::operator()(TryExpression*) { return ""; }
-    std::string BorrowCheckerEmitter::operator()(ScopeOperation* scp) {
+    Value BorrowCheckerEmitter::operator()(LambdaExpression*) { return Value::empty(); }
+    Value BorrowCheckerEmitter::operator()(TryExpression*) { return Value::empty(); }
+    Value BorrowCheckerEmitter::operator()(ScopeOperation* scp) {
         RE_REPR(scp);
-        // either function, enum or constant
-        return "__literal";
-    }
-    std::string BorrowCheckerEmitter::operator()(ObjectLiteral* lit) {
-        RE_REPR(lit);
-        auto& checker = irgen->function_borrow_checkers.back();
-        // implicit conversion can happen here but they don't involve borrows
-        auto obj = checker.make_object();
-        for (auto& [name, elem] : lit->values) {
-            auto elem_eval = std::visit(*this, elem->toVariant());
-            auto& type = elem->evaluated_type;
-            clone_into(checker, elem_eval, obj, type, lit, irgen);
+        if (scp->evaluated_type.name == "__fn") {
+            return Value::function(std::string(scp->evaluated_type.block_hash));
         }
-        return obj;
+        // either function, enum or constant (TODO)
+        return Value::constant();
     }
-    std::string BorrowCheckerEmitter::operator()(NullLiteral* lit) {
+    Value BorrowCheckerEmitter::operator()(ObjectLiteral* lit) {
         RE_REPR(lit);
-        return "__literal";
+        // TODO aggregate types
+        return Value::empty();
     }
-    std::string BorrowCheckerEmitter::operator()(AsExpression* ss) {
+    Value BorrowCheckerEmitter::operator()(NullLiteral* lit) {
+        RE_REPR(lit);
+        return Value::empty();
+    }
+    Value BorrowCheckerEmitter::operator()(AsExpression* ss) {
         RE_REPR(ss);
-        auto& checker = irgen->function_borrow_checkers.back();
-        auto src = std::visit(*this, ss->expr->toVariant());
-        auto res = checker.make_object();
-        convert_into(checker, src, res, ss->expr->evaluated_type, ss->evaluated_type, ss, irgen);
-        return res;
+        // TODO
+        return Value::empty();
     }
     Value BorrowCheckerEmitter::operator()(CharLiteral* lit) {
         RE_REPR(lit);
@@ -379,9 +351,10 @@ namespace Yoyo
         current_block->add_instruction(new NewPrimitiveInstruction(std::string(name)));
         return Value::from(std::move(name));
     }
-    std::string BorrowCheckerEmitter::operator()(GCNewExpression* gcn) {
+    Value BorrowCheckerEmitter::operator()(GCNewExpression* gcn) {
         RE_REPR(gcn);
-        return "__no_borrow";
+        // TODO
+        return Value::empty();
     }
     Value BorrowCheckerEmitter::operator()(MacroInvocation* ivc) {
         RE_REPR(ivc);
