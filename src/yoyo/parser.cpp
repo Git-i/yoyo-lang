@@ -514,7 +514,7 @@ namespace Yoyo
     std::unique_ptr<Statement> Parser::parseUsingDeclaration(Token using_tok)
     {
         // modify the behaviour of the type parser to allow for ::{...} and ::*
-        auto tp = parseUsingContent();
+        auto tp = parseUsingContent(0);
         if (!discard(TokenType::SemiColon)) { error("Expected ';'", Peek()); return nullptr; }
         
         return Statement::attachSLAndParent(std::make_unique<UsingStatement>(std::move(tp)), using_tok.loc, discardLocation);
@@ -1214,14 +1214,14 @@ namespace Yoyo
         if(parser.discard(TokenType::SemiColon))
         {
             if (parser.discard(TokenType::Star) && parser.Peek() && parser.Peek()->type == TokenType::RSquare) {
-                name = "__arr_s_uneval";
+                name = "__arr_d";
             }
             else {
                 auto size = parser.parseExpression(0);
                 //this is really dirty and bad code don't learn from this
                 struct Deleter { void operator()(FunctionSignature* ptr) { delete (Expression*)ptr; } };
                 sig.reset(reinterpret_cast<FunctionSignature*>(size.release()), Deleter{});
-                name = "__arr_d";
+                name = "__arr_s_uneval";
             }
         }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());

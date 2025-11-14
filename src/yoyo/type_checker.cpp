@@ -497,7 +497,7 @@ namespace Yoyo
         }
         tp.is_mutable = decl->is_mut;
         decl->type = tp;
-        state->add_constraint(OwningConstraint{tp, decl});
+        //state->add_constraint(OwningConstraint{tp, decl});
         state->create_variable(std::string(decl->identifier.text), tp);
     }
     FunctionType TypeChecker::operator()(IfExpression* stat) const
@@ -919,7 +919,15 @@ namespace Yoyo
                 expr
                 });
             return expr->evaluated_type;
-        }   
+        }
+        case Equal: {
+            state->add_constraint(EqualConstraint{
+                std::visit(targetless(true), expr->lhs->toVariant()),
+                std::visit(targetless(), expr->rhs->toVariant())
+                });
+            expr->evaluated_type = Type{ .name = "void", .module = core_module };
+            return expr->evaluated_type;
+        }
         case DoubleDotEqual: irgen->error(Error(expr, "Not implemented yet")); return {};
         case DoubleDot: irgen->error(Error(expr, "Not implemented yet")); return {};
         }
@@ -1986,7 +1994,7 @@ namespace Yoyo
         auto left = state->best_repr(con.left);
         auto right = state->best_repr(con.right);
         auto result = state->best_repr(con.result);
-        auto is_compatible = [&left, &right, &result, this, &con](TokenType tt, bool take_action)
+        auto is_compatible = [&result, this, &con](const Type& left, const Type& right, TokenType tt, bool take_action)
             {
                 using namespace std::views;
                 std::vector<ModuleBase*> valid_modules;
@@ -2094,24 +2102,24 @@ namespace Yoyo
             auto domain = state->get_type_domain(left);
             // we should probably generate all possible types to populate the domain
             if (domain->concrete_types.types.empty()) return false;
-            std::erase_if(domain->concrete_types.types, [&con, &is_compatible](const Type& tp) 
+            std::erase_if(domain->concrete_types.types, [&con, &is_compatible, &right](const Type& tp) 
                 { 
-                    return !is_compatible(con.op, false);
+                    return !is_compatible(tp, right, con.op, false);
                 });
-            return true;
+            return false;
         }
         else if (is_type_variable(right)) {
             auto domain = state->get_type_domain(right);
             // we should probably generate all possible types to populate the domain (TODO)
             if (domain->concrete_types.types.empty()) return false;
-            std::erase_if(domain->concrete_types.types, [&con, &is_compatible](const Type& tp)
+            std::erase_if(domain->concrete_types.types, [&con, &is_compatible, &left](const Type& tp)
                 {
-                    return !is_compatible(con.op, false);
+                    return !is_compatible(left, tp, con.op, false);
                 });
-            return true;
+            return false;
         }
         else {
-            return is_compatible(con.op, true);
+            return is_compatible(left, right, con.op, true);
         }
         return true;
     }
@@ -2777,8 +2785,11 @@ namespace Yoyo
                     if (can_match(type, result.deref())) return false;
                     if (result.deref().name == "__string_view" && type.is_str()) return false;
                     if (result.deref().name == "__slice" && type.is_array()) return false;
+                    return true;
                     // check if it can match
                 });
+                if (domain->is_solved()) return true;
+                return false;
             }
             else {
                 // many types can return &T as thier borrow result

@@ -28,10 +28,7 @@ namespace Yoyo
         ModuleBase* module;
         std::vector<std::vector<UsingStatement*>> used_types;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
-        //std::unordered_map<std::string, BorrowResult::borrow_result_t> lifetimeExtensions;
-        //std::unordered_map<std::string, BorrowResult::borrow_result_t> lambda_borrows;
         std::vector<CFGNodeManager> function_cfgs;
-        std::vector<BorrowChecker> function_borrow_checkers;
         std::string block_hash;
         bool has_error = false;
 

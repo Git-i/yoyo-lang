@@ -274,10 +274,26 @@ main: fn = {
 TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(
-LEN: const u32 = 5;
+read_value: fn(val: &u32) = return;
+something: fn -> bool = return true;
 main: fn = {
-    arr: [i32; LEN * 2] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    test::check_array(&arr);
+    x: mut = 22;
+    y: mut = 44;
+    p: mut &u32 = &x;
+    y = y + 1;                 
+    q: mut &u32 = &y;
+    if(something()) {
+        p = q;              
+        x = x + 1;             
+    } else {
+        y = y + 1;             
+    }               
+    read_value(p);
+    
+    array := [p, q];
+    array2 := [];
+
+    array_ref := if(something()) { &array } else { &array2 };
 }
 )");
     Yoyo::YVMEngine engine;
