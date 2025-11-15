@@ -9,7 +9,10 @@ namespace Yoyo {
         // The IR is SSA based and the only values either:
         // - variable names
         // - field accesses
-        struct Domain;
+        struct Domain {
+            std::string name;
+            std::string to_string() const { return name; }
+        };
         class Value {
             std::string base_name;
             // we could do with one name separated by .
@@ -45,7 +48,13 @@ namespace Yoyo {
                 for (auto& path : subpaths) result += "." + path;
                 return result;
             }
-            Domain as_domain();
+            Domain as_domain() {
+                auto final_str = base_name;
+                for (auto& subpath : subpaths) {
+                    final_str += "." + subpath;
+                }
+                return Domain{ std::move(final_str) };
+            }
         };
         class InstructionVariant;
         class Instruction {
@@ -278,10 +287,7 @@ namespace Yoyo {
             Value operator()(TryExpression*);
         };
         struct DomainCheckerState;
-        struct Domain {
-            std::string name;
-            std::string to_string() { return name; }
-        };
+        
         struct BorrowCheckerType {
             enum TypeType {
                 Primitive = 0, // Unit type cant be divided any further (stability doesn't matter)
@@ -293,21 +299,71 @@ namespace Yoyo {
                 RefPtr, // Non owning pointer type
             };
             struct PrimitiveDetails {};
+            // because std::map is wierd
+            struct FieldMap: std::map<std::string, BorrowCheckerType> {
+                FieldMap(const FieldMap&) = delete;
+                FieldMap() = default;
+                FieldMap(FieldMap&&) noexcept = default;
+            };
             struct AggregateDetails {
-                std::map<std::string, BorrowCheckerType> fields;
+                AggregateDetails() = default;
+                AggregateDetails(AggregateDetails&&) noexcept = default;
+                AggregateDetails& operator=(AggregateDetails&&) noexcept = default;
+
+                AggregateDetails(const AggregateDetails&) = delete;
+                AggregateDetails& operator=(const AggregateDetails&) = delete;
+
+                AggregateDetails(FieldMap&& fields) : fields(std::move(fields)) {}
+                FieldMap fields;
             };
             struct UnionDetails {
-                std::map<std::string, BorrowCheckerType> fields;
+                UnionDetails() = default;
+                UnionDetails(const UnionDetails&) = delete;
+                UnionDetails& operator=(const UnionDetails&) = delete;
+
+                UnionDetails(UnionDetails&&) noexcept = default;
+                UnionDetails& operator=(UnionDetails&&) noexcept = default;
+
+                UnionDetails(FieldMap&& fields) : fields(std::move(fields)) {}
+                FieldMap fields;
             };
             struct UniquePtrDetails {
+                UniquePtrDetails() = default;
+                UniquePtrDetails(const UniquePtrDetails&) = delete;
+                UniquePtrDetails& operator=(const UniquePtrDetails&) = delete;
+
+                UniquePtrDetails(UniquePtrDetails&&) noexcept = default;
+                UniquePtrDetails& operator=(UniquePtrDetails&&) noexcept = default;
+
+                UniquePtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
             };
             struct ArrayDetails {
+                ArrayDetails() = default;
+                ArrayDetails(const ArrayDetails&) = delete;
+                ArrayDetails& operator=(const ArrayDetails&) = delete;
+
+                ArrayDetails& operator=(ArrayDetails&&) noexcept = default;
+                ArrayDetails(ArrayDetails&&) noexcept = default;
+
+                ArrayDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
             };
             struct RefPtrDetails {
+                RefPtrDetails() = default;
+                RefPtrDetails(const RefPtrDetails&) = delete;
+                RefPtrDetails& operator=(const RefPtrDetails&) = delete;
+
+                RefPtrDetails(RefPtrDetails&&) noexcept = default;
+                RefPtrDetails& operator=(RefPtrDetails&&) noexcept = default;
+                RefPtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
             };
+            BorrowCheckerType() = default;
+            BorrowCheckerType(const BorrowCheckerType&) = delete;
+            BorrowCheckerType(BorrowCheckerType&&) noexcept = default;
+            BorrowCheckerType& operator=(BorrowCheckerType&&) noexcept = default;
+            BorrowCheckerType& operator=(const BorrowCheckerType&) = delete;
             std::variant<
                 PrimitiveDetails,
                 AggregateDetails,
@@ -324,9 +380,9 @@ namespace Yoyo {
             // Bring up all nexted domains
             void normalize();
             // Get a borrowed version of a type into the specified domain
-            BorrowCheckerType borrowed(Domain&&) const {}
+            BorrowCheckerType borrowed(Domain&&) const;
             // Make a new type with fresh domains
-            BorrowCheckerType cloned(DomainCheckerState*) const {}
+            BorrowCheckerType cloned(DomainCheckerState*) const;
             // create a new primitive type
             static BorrowCheckerType new_primitive();
             static BorrowCheckerType new_array_of(BorrowCheckerType&&);
@@ -341,10 +397,10 @@ namespace Yoyo {
         public:
             // insert instructions to satisfy domain relationships when left is assiged right
             void add_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
-            DomainCheckerState* state;
             using InstructionListTy = decltype(BasicBlock::instructions);
             using BlockIteratorTy = InstructionListTy::iterator;
 
+            DomainCheckerState* state;
             InstructionListTy& instructions;
             BlockIteratorTy current_position;
 
@@ -358,11 +414,15 @@ namespace Yoyo {
             BlockIteratorTy operator()(NewArrayInstruction*);
             BlockIteratorTy operator()(NewPrimitiveInstruction*);
             BlockIteratorTy operator()(BorrowValueInstruction*);
+            BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
+            BlockIteratorTy operator()(DomainEqualityConstraint*) { debugbreak(); return current_position; }
         };
         struct DomainCheckerState {
             Domain new_domain_var();
             void register_value_base_type(const std::string& value, BorrowCheckerType&&);
             const BorrowCheckerType& get_value_type(const Value&);
+
+            std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
         };
     }
 }

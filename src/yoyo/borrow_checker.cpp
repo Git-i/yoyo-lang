@@ -3,6 +3,7 @@
 #include <ranges>
 #include <algorithm>
 #include <numeric>
+#include <iostream>
 namespace Yoyo { bool has_type_variable(const Yoyo::Type& tp);}
 #define RE_REPR(x) x->evaluated_type = stt->best_repr(x->evaluated_type);\
 if(has_type_variable(x->evaluated_type)) {\
@@ -22,6 +23,8 @@ namespace Yoyo{
         InstructionVariant NewArrayInstruction::to_variant() { return this; }
         InstructionVariant NewPrimitiveInstruction::to_variant() { return this; }
         InstructionVariant BorrowValueInstruction::to_variant() { return this; }
+        InstructionVariant DomainSubsetConstraint::to_variant() { return this; }
+        InstructionVariant DomainEqualityConstraint::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -455,7 +458,140 @@ namespace Yoyo{
 
             return std::format("{}:\n{}", debug_name, instructions_string);
         }
-    }
+        std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
+            FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt)
+        {
+            auto function = std::make_unique<BorrowCheckerFunction>();
+            auto entry_block = function->new_block("entry");
+            std::visit(BorrowCheckerEmitter{ irgen, stt, &*function, entry_block }, decl->body->toVariant());
+            std::cout << "Phase 1\n" << function->to_string() << std::endl;
+            for (auto& block : function->blocks) {
+                for (auto it = block->instructions.begin(); it != block->instructions.end(); ++it) {
+                    it = std::visit(DomainVariableInserter{this, block->instructions, it}, (*it)->to_variant());
+                }
+            }
+            std::cout << "Phase 2\n" << function->to_string() << std::endl;
+            return function;
+        }
+        static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType
+        {
+            using enum BorrowCheckerType::TypeType;
+            switch (type.details.index()) {
+            case Primitive: return BorrowCheckerType::new_primitive();
+            case Aggregate: {
+                auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
+                BorrowCheckerType::FieldMap fmap;
+                for (auto& [fname, ftype] : std::get<Aggregate>(type.details).fields)
+                    fmap.emplace(fname, clone_type(ftype));
+                ntype.details.emplace<Aggregate>(std::move(fmap));
+                return ntype;
+            }
+            case Union: {
+                auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
+                BorrowCheckerType::FieldMap fmap;
+                for (auto& [fname, ftype] : std::get<Union>(type.details).fields)
+                    fmap.emplace(fname, clone_type(ftype));
+                ntype.details.emplace<Union>(std::move(fmap));
+                return ntype;
+            }
+            case UniquePtr: {
+                auto ntype = BorrowCheckerType();
+                ntype.details.emplace<UniquePtr>(std::make_unique<BorrowCheckerType>(clone_type(
+                    *std::get<UniquePtr>(type.details).subtype
+                )));
+                return ntype;
+            }
+            case Array: {
+                auto ntype = BorrowCheckerType();
+                ntype.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(
+                    *std::get<Array>(type.details).subtype
+                )));
+                return ntype;
+            }
+            case RefPtr: {
+                auto ntype = BorrowCheckerType();
+                ntype.details.emplace<RefPtr>(std::make_unique<BorrowCheckerType>(clone_type(
+                    *std::get<RefPtr>(type.details).subtype
+                )));
+                return ntype;
+            }
+            default: debugbreak();
+            }
+        };
+        BorrowCheckerType BorrowCheckerType::cloned(DomainCheckerState* stt) const
+        {
+            std::unordered_map<std::string, Domain> old_to_new_map;
+            BorrowCheckerType new_type;
+            for (auto& [domain, is_bidr] : domains) {
+                if (!is_bidr) {
+                    old_to_new_map[domain.to_string()] = stt->new_domain_var();
+                }
+            }
+            
+            auto substitute_domains = [&old_to_new_map](BorrowCheckerType& type, const auto& self) -> void
+                {
+                    for (auto& [domain, is_bidr] : type.domains) {
+                        if (!is_bidr) domain = old_to_new_map[domain.to_string()];
+                    }
+                    switch (type.details.index()) {
+                    case Primitive: break;
+                    case Aggregate: {
+                        auto& fmap = std::get<Aggregate>(type.details);
+                        for (auto& [_, ftype] : fmap.fields) self(ftype, self);
+                        break;
+                    }
+                    case Union: {
+                        auto& fmap = std::get<Union>(type.details);
+                        for (auto& [_, ftype] : fmap.fields) self(ftype, self);
+                        break;
+                    }
+                    case UniquePtr: {
+                        auto& dets = std::get<UniquePtr>(type.details);
+                        self(*dets.subtype, self);
+                        break;
+                    }
+                    case Array: {
+                        auto& dets = std::get<Array>(type.details);
+                        self(*dets.subtype, self);
+                        break;
+                    }
+                    case RefPtr: {
+                        auto& dets = std::get<RefPtr>(type.details);
+                        self(*dets.subtype, self);
+                        break;
+                    }
+                    default: debugbreak();
+                    }
+                };
+            
+            
+            if (auto aggrg = std::get_if<Aggregate>(&details); aggrg) {
+                decltype(aggrg->fields) new_fields;
+                for (auto& [fname, ftype] : aggrg->fields) new_fields.emplace(fname, clone_type(ftype));
+                new_type.details.emplace<Aggregate>(std::move(new_fields));
+            }
+            else if (auto unn = std::get_if<Union>(&details); unn) {
+                decltype(unn->fields) new_fields;
+                for (auto& [fname, ftype] : unn->fields) new_fields.emplace(fname, clone_type(ftype));
+                new_type.details.emplace<Union>(std::move(new_fields));
+            }
+            else if (auto arr = std::get_if<Array>(&details); arr) {
+                new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(*arr->subtype)));
+            }
+            else if (auto unq = std::get_if<UniquePtr>(&details); unq) {
+                new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(*unq->subtype)));
+            }
+            else if (auto ref = std::get_if<UniquePtr>(&details); unq) {
+                new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(*ref->subtype)));
+            }
+            else { debugbreak(); }
+
+            substitute_domains(new_type, substitute_domains);
+            return new_type;
+        }
+}
 }
 namespace Yoyo {
     namespace BorrowChecker {
@@ -481,13 +617,16 @@ namespace Yoyo {
             auto& left_type = state->get_value_type(inst->lhs);
             auto& right_type = state->get_value_type(inst->rhs);
             add_constraints_between_types(left_type, right_type);
+            return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(CallFunctionInstruction*) {
             // literally magic
+            return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(RelocateValueInstruction* inst) {
             // no difference between assign tbh
             state->register_value_base_type(inst->into, state->get_value_type(inst->val).cloned(state));
+            return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewArrayInstruction* inst) {
             // TODO handle zero length arrays
@@ -501,6 +640,7 @@ namespace Yoyo {
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewPrimitiveInstruction* inst) {
             state->register_value_base_type(inst->into, BorrowCheckerType::new_primitive());
+            return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(BorrowValueInstruction* inst) {
             // Introduces a new domain

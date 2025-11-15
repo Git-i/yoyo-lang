@@ -73,18 +73,19 @@ namespace Yoyo
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(), decl);
         function_cfgs.back().annotate();
 
-        BorrowCheckerFunction current_function;
-        auto entry_block = current_function.new_block("entry");
+        
         TypeCheckerState stt{};
         stt.resolve_function(decl, this, sig);
         // don't go further if type checking failed
         if (has_error) {
             return;
         }
-        std::visit(BorrowCheckerEmitter{ this, &stt, &current_function, entry_block }, decl->body->toVariant());
+        BorrowChecker::DomainCheckerState dm_stt{};
+        auto current_function = dm_stt.check_function(decl, this, sig, &stt);
+        
         std::cout << "[" << fn_name << "]" << '\n';
         std::visit(ASTPrinter{ std::cout }, decl->body->toVariant());
-        std::cout << current_function.to_string() << std::endl;
+        
 
 
         decltype(this->variables) new_fn_vars;

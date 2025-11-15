@@ -15,7 +15,6 @@
 #include "type_checker.h"
 namespace Yoyo
 {
-    struct BorrowChecker;
     class IRGenerator
     {
     public:
