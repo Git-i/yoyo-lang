@@ -280,20 +280,20 @@ main: fn = {
     x: mut = 22;
     y: mut = 44;
     p: mut &u32 = &x;
-    y = y + 1;                 
+    //y = y + 1;                 
     q: mut &u32 = &y;
     if(something()) {
         p = q;              
-        x = x + 1;             
+        //x = x + 1;             
     } else {
-        y = y + 1;             
+        //y = y + 1;             
     }               
     read_value(p);
     
     array := [p, q];
-    array2 := [];
+    array2: [&u32; 2] = [&0, &1];
 
-    array_ref := if(something()) { &array } else { &array2 };
+    array_ref: &[ &u32; 2 ] = if(something()) { &array } else { &array2 };
 }
 )");
     Yoyo::YVMEngine engine;

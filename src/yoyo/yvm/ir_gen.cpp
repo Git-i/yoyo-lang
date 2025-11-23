@@ -80,9 +80,9 @@ namespace Yoyo
         if (has_error) {
             return;
         }
+        
         BorrowChecker::DomainCheckerState dm_stt{};
         auto current_function = dm_stt.check_function(decl, this, sig, &stt);
-        
         std::cout << "[" << fn_name << "]" << '\n';
         std::visit(ASTPrinter{ std::cout }, decl->body->toVariant());
         

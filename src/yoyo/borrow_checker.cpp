@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <numeric>
 #include <iostream>
+#include "borrow_checker.h"
 namespace Yoyo { bool has_type_variable(const Yoyo::Type& tp);}
 #define RE_REPR(x) x->evaluated_type = stt->best_repr(x->evaluated_type);\
 if(has_type_variable(x->evaluated_type)) {\
@@ -24,7 +25,8 @@ namespace Yoyo{
         InstructionVariant NewPrimitiveInstruction::to_variant() { return this; }
         InstructionVariant BorrowValueInstruction::to_variant() { return this; }
         InstructionVariant DomainSubsetConstraint::to_variant() { return this; }
-        InstructionVariant DomainEqualityConstraint::to_variant() { return this; }
+        InstructionVariant DomainDependenceEdgeConstraint::to_variant() { return this; }
+        InstructionVariant DomainExtensionConstraint::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -67,8 +69,9 @@ namespace Yoyo{
         void BorrowCheckerEmitter::operator()(VariableDeclaration * decl) {
             decl->type = stt->best_repr(*decl->type);
             auto variable_name = name_based_on(decl->identifier.text);
+            auto value = std::visit(*this, decl->initializer->toVariant());
             if (decl->initializer) current_block->add_instruction(new RelocateValueInstruction(
-                std::visit(*this, decl->initializer->toVariant()), std::string(variable_name)));
+                std::move(value), std::string(variable_name)));
             // maybe we need an unitiailized value instruction??
             variables.back().emplace_back(std::string(decl->identifier.text), std::move(variable_name));
         }
@@ -95,9 +98,9 @@ namespace Yoyo{
             auto cond = std::visit(*this, expr->condition->toVariant());
 
             auto then_block = function->new_block("if_then");
-            auto cont_block = function->new_block("if_cont");
 
             auto else_block = expr->else_expr ? function->new_block("if_else") : nullptr;
+            auto cont_block = function->new_block("if_cont");
 
             current_block->add_instruction(new CondBrInstruction(
                 { then_block, else_block ? else_block : cont_block },
@@ -443,10 +446,16 @@ namespace Yoyo{
                     return std::format("%{} = borrow {}", inst->into, inst->val.to_string());
                 }
                 if constexpr (std::is_same_v<T, DomainSubsetConstraint>) {
-                    return std::format("{} ⊆ {}", inst->sub.to_string(), inst->super.to_string());
+                    return std::format("{} ⊇ {}", inst->super.to_string(), inst->sub.to_string());
                 }
-                if constexpr (std::is_same_v<T, DomainEqualityConstraint>) {
-                    return std::format("{} <=> {}", inst->d1.to_string(), inst->d2.to_string());
+                if constexpr (std::is_same_v<T, DomainExtensionConstraint>) {
+                    return std::format("{} ⊇ {} ∪ {}", inst->super.to_string(), 
+                        inst->old_super.to_string().empty() ?
+                            inst->super.to_string() :
+                            inst->old_super.to_string(), inst->sub.to_string());
+                }
+                if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
+                    return std::format("{} => {}", inst->d1.to_string(), inst->d2.to_string());
                 }
                 return "not implemented";
             };
@@ -458,11 +467,26 @@ namespace Yoyo{
 
             return std::format("{}:\n{}", debug_name, instructions_string);
         }
+        Domain DomainCheckerState::new_domain_var()
+        {
+            return Domain{ .name = "'?" + std::to_string(last_id++) };
+        }
+        void DomainCheckerState::register_value_base_type(const std::string& value, BorrowCheckerType&& type)
+        {
+            type_mapping.emplace(value, std::move(type));
+        }
+        const BorrowCheckerType& DomainCheckerState::get_value_type(const Value& value)
+        {
+            if (!value.subpaths.empty()) debugbreak();
+            if (!type_mapping.contains(value.base_name)) debugbreak();
+            return type_mapping.at(value.base_name);
+        }
         std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
             FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt)
         {
             auto function = std::make_unique<BorrowCheckerFunction>();
-            auto entry_block = function->new_block("entry");
+            func = &*function;
+            entry_block = function->new_block("entry");
             std::visit(BorrowCheckerEmitter{ irgen, stt, &*function, entry_block }, decl->body->toVariant());
             std::cout << "Phase 1\n" << function->to_string() << std::endl;
             for (auto& block : function->blocks) {
@@ -470,8 +494,154 @@ namespace Yoyo{
                     it = std::visit(DomainVariableInserter{this, block->instructions, it}, (*it)->to_variant());
                 }
             }
-            std::cout << "Phase 2\n" << function->to_string() << std::endl;
+            std::cout << "Phase 2\n" << type_mapping.to_string() << "\n\n" <<  function->to_string() << std::endl;
+            calc_block_preds();
+            transform_to_ssa();
+            std::cout << "Phase 3\n" << type_mapping.to_string() << "\n\n" << function->to_string() << std::endl;
             return function;
+        }
+        void DomainCheckerState::build_dominators()
+        {
+            // Incomplete on purpose
+            dominators.register_for(entry_block, entry_block);
+            bool should_loop = true;
+            // the order should not matter
+            auto reverse_post_order = [](BasicBlock* block) 
+                {
+
+                    for (auto child : block->instructions.back()->children()) {
+                        
+                    }
+                };
+            while (should_loop) {
+                should_loop = false;
+
+            }
+        }
+        void DomainCheckerState::calc_block_preds()
+        {
+            
+        }
+        // produces unique names for each variable instance
+        struct ValueProducer {
+            std::unordered_map<std::string, size_t> var_map;
+            std::string name_for(const std::string& val) {
+                if (!var_map.contains(val)) 
+                    var_map[val] = 0;
+                return std::format("{}__{}", val, ++var_map[val]);
+            }
+        };
+        using UseStorageTy = std::unordered_map<
+            BasicBlock*,
+            std::unordered_map<std::string, std::string>>;
+        void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer);
+        std::optional<std::string> lookup_var_recursive(const std::string& arg, BasicBlock* start_at, UseStorageTy& storage, ValueProducer& producer) {
+            if (start_at->preds.size() == 1) {
+                auto pred = start_at->preds[0];
+                if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+
+                if (storage[pred].contains(arg)) return storage[pred][arg];
+                else return lookup_var_recursive(arg, pred, storage, producer);
+            }
+            else {
+                auto new_name = producer.name_for(arg);
+                auto phi = std::unique_ptr<DomainPhiInstruction>(new DomainPhiInstruction({}, std::string(new_name)));
+                // if the assignment is downward exposed we add it to our latest instances
+                if (!storage[start_at].contains(arg)) storage[start_at][arg] = new_name;
+                
+
+                for (auto& pred : start_at->preds) {
+                    if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+
+                    if (storage[pred].contains(arg)) phi->args.push_back(Domain(storage[pred][arg]));
+                    else {
+                        if (auto val = lookup_var_recursive(arg, pred, storage, producer)) phi->args.push_back(Domain(*val));
+                        else return std::nullopt;
+                    }
+                }
+                //TODO: delete the phi if its not trivial
+                start_at->instructions.emplace(start_at->instructions.begin(), std::move(phi));
+                return new_name;
+            }
+        }
+        void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer) {
+            if (storage.contains(block)) return;
+            auto& storage_entry = storage[block];
+            // perform local value numbering for everything in this block
+            // and collect un-numbered uses into this vector
+            std::vector<std::reference_wrapper<std::string>> unfound_uses;
+            for (auto& inst : block->instructions) {
+                std::visit(
+                    [&]<typename T>(T* tp)
+                    {
+                        if constexpr (std::is_same_v<T, DomainExtensionConstraint>) {
+                            if (!tp->super.is_var()) debugbreak();
+
+                            if (!storage_entry.contains(tp->super.name))
+                                unfound_uses.push_back(std::ref(tp->super.name));
+                            else tp->old_super.name = storage_entry[tp->super.name];
+
+                            auto new_name = producer.name_for(tp->super.name);
+                            storage_entry[tp->super.name] = new_name;
+                            tp->super.name = new_name;
+                        }
+                        if constexpr (std::is_same_v<T, DomainSubsetConstraint>) {
+                            if (!tp->super.is_var()) debugbreak();
+                            auto new_name = producer.name_for(tp->super.name);
+                            storage_entry[tp->super.name] = new_name;
+                            tp->super.name = new_name;
+                        }
+                    }, 
+                    inst->to_variant());
+            }
+            // perform global value numbering
+            if (block->preds.size() == 1) {
+                std::erase_if(unfound_uses, [&, pred = block->preds[0]](std::reference_wrapper<std::string> arg)
+                    {
+                        if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+
+                        if (storage[pred].contains(arg)) arg.get() = storage[pred][arg];
+                        else {
+                            if (auto val = lookup_var_recursive(arg, pred, storage, producer)) arg.get() = *val;
+                            else return false;
+                        }
+                        return true;
+                    });
+                
+            }
+            else {
+                std::erase_if(unfound_uses, [&](std::reference_wrapper<std::string> arg)
+                    {
+                        auto new_name = producer.name_for(arg);
+                        auto phi = std::unique_ptr<DomainPhiInstruction>(new DomainPhiInstruction({}, std::string(new_name)));
+                        // if the assignment is downward exposed we add it to our latest instances
+                        if (!storage_entry.contains(arg)) storage_entry[arg] = new_name;
+
+                        for (auto& pred : block->preds) {
+                            if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+
+                            if (storage[pred].contains(arg)) phi->args.push_back(Domain(storage[pred][arg]));
+                            else {
+                                if (auto val = lookup_var_recursive(arg, pred, storage, producer)) phi->args.push_back(Domain(*val));
+                                else return false;
+                            }
+                        }
+                        //TODO: delete the phi if its not trivial
+                        block->instructions.emplace(block->instructions.begin(), std::move(phi));
+                        arg.get() = new_name;
+                        return true;
+                    });
+            }
+            if (!unfound_uses.empty()) debugbreak();
+        }
+        void DomainCheckerState::transform_to_ssa()
+        {
+            ValueProducer producer;
+            UseStorageTy latest_variables;
+            // this is not post order, its just kinda close to it
+            for (auto& block : func->blocks) {
+                ssa_transform_do_block(block.get(), latest_variables, producer);
+            }
         }
         static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType
         {
@@ -498,6 +668,7 @@ namespace Yoyo{
             }
             case UniquePtr: {
                 auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
                 ntype.details.emplace<UniquePtr>(std::make_unique<BorrowCheckerType>(clone_type(
                     *std::get<UniquePtr>(type.details).subtype
                 )));
@@ -505,6 +676,7 @@ namespace Yoyo{
             }
             case Array: {
                 auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
                 ntype.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(
                     *std::get<Array>(type.details).subtype
                 )));
@@ -512,6 +684,7 @@ namespace Yoyo{
             }
             case RefPtr: {
                 auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
                 ntype.details.emplace<RefPtr>(std::make_unique<BorrowCheckerType>(clone_type(
                     *std::get<RefPtr>(type.details).subtype
                 )));
@@ -520,20 +693,32 @@ namespace Yoyo{
             default: debugbreak();
             }
         };
+        BorrowCheckerType BorrowCheckerType::borrowed(Domain&& dom) const
+        {
+            BorrowCheckerType new_type;
+            new_type.domains.emplace_back(dom, false);
+            // all child domains become bidirectional
+            for (auto& [domain, _] : domains) new_type.domains.emplace_back(domain, true);
+            new_type.details.emplace<RefPtr>(std::make_unique<BorrowCheckerType>(
+                clone_type(*this)
+            ));
+            return new_type;
+        }
         BorrowCheckerType BorrowCheckerType::cloned(DomainCheckerState* stt) const
         {
             std::unordered_map<std::string, Domain> old_to_new_map;
             BorrowCheckerType new_type;
+            new_type.domains = domains;
             for (auto& [domain, is_bidr] : domains) {
-                if (!is_bidr) {
+                
                     old_to_new_map[domain.to_string()] = stt->new_domain_var();
-                }
+                
             }
             
             auto substitute_domains = [&old_to_new_map](BorrowCheckerType& type, const auto& self) -> void
                 {
                     for (auto& [domain, is_bidr] : type.domains) {
-                        if (!is_bidr) domain = old_to_new_map[domain.to_string()];
+                        domain = old_to_new_map[domain.to_string()];
                     }
                     switch (type.details.index()) {
                     case Primitive: break;
@@ -581,21 +766,116 @@ namespace Yoyo{
                 new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(*arr->subtype)));
             }
             else if (auto unq = std::get_if<UniquePtr>(&details); unq) {
-                new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(*unq->subtype)));
+                new_type.details.emplace<UniquePtr>(std::make_unique<BorrowCheckerType>(clone_type(*unq->subtype)));
             }
-            else if (auto ref = std::get_if<UniquePtr>(&details); unq) {
-                new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(clone_type(*ref->subtype)));
+            else if (auto ref = std::get_if<RefPtr>(&details); ref) {
+                new_type.details.emplace<RefPtr>(std::make_unique<BorrowCheckerType>(clone_type(*ref->subtype)));
+            }
+            else if (auto prim = std::get_if<Primitive>(&details); prim) {
+                new_type.details.emplace<Primitive>();
             }
             else { debugbreak(); }
 
             substitute_domains(new_type, substitute_domains);
             return new_type;
         }
+        BorrowCheckerType BorrowCheckerType::new_primitive()
+        {
+            BorrowCheckerType new_type;
+            new_type.details.emplace<Primitive>();
+            return new_type;
+        }
+        BorrowCheckerType BorrowCheckerType::new_array_of(BorrowCheckerType&& tp)
+        {
+            BorrowCheckerType new_type;
+            // domains retain thier bidirectionality
+            for (auto& [domain, bidr] : tp.domains) new_type.domains.emplace_back(domain, bidr);
+            new_type.details.emplace<Array>(std::make_unique<BorrowCheckerType>(
+                clone_type(tp)
+            ));
+            return new_type;
+        }
+        std::string BorrowCheckerType::to_string() const
+        {
+            std::string result;
+            switch (details.index()) {
+            case Primitive: return "primitive";
+            case Aggregate: {
+                auto& fmap = std::get<Aggregate>(details);
+                result += "struct { ";
+                for (auto& [fname, ftype] : fmap.fields)
+                    result += std::format("{}: {}, ", fname, ftype.to_string());
+                result += "}";
+                break;
+            }
+            case Union: {
+                auto& fmap = std::get<Union>(details);
+                result += "union { ";
+                for (auto& [fname, ftype] : fmap.fields)
+                    result += std::format("{}: {}, ", fname, ftype.to_string());
+                result += "}";
+                break;
+            }
+            case UniquePtr: {
+                auto& dets = std::get<UniquePtr>(details);
+                result = std::format("UniquePtr<{}>", dets.subtype->to_string());
+                break;
+            }
+            case Array: {
+                auto& dets = std::get<Array>(details);
+                result = std::format("[{}]", dets.subtype->to_string());
+                break;
+            }
+            case RefPtr: {
+                auto& dets = std::get<RefPtr>(details);
+                result = std::format("&{} {}", domains[0].first.to_string(), dets.subtype->to_string());
+                break;
+            }
+            default: debugbreak();
+            }
+            return result;
+        }
+        std::string ValueTypeMapping::to_string()
+        {
+            std::string result = "Value - Type mapping:\n";
+            for (auto& [value, type] : *this) {
+                result += "%" + value + " => " + type.to_string() + "\n";
+            }
+            return result;
+        }
 }
 }
 namespace Yoyo {
     namespace BorrowChecker {
         using BlockIteratorTy = DomainVariableInserter::BlockIteratorTy;
+        void DomainVariableInserter::add_assign_constraints_between_types(const BorrowCheckerType& left, const BorrowCheckerType& right)
+        {
+            for (auto i : std::views::iota(0u, left.domains.size())) {
+                const auto& ldom = left.domains[i];
+                const auto& rdom = right.domains[i];
+
+                if (ldom.second != rdom.second) debugbreak();
+
+                if(ldom.second == true)
+                    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
+                else
+                    current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(ldom.first), Domain(rdom.first)));
+            }
+        }
+        void DomainVariableInserter::add_extend_constraints_between_types(const BorrowCheckerType& left, const BorrowCheckerType& right)
+        {
+            for (auto i : std::views::iota(0u, left.domains.size())) {
+                const auto& ldom = left.domains[i];
+                const auto& rdom = right.domains[i];
+
+                if (ldom.second != rdom.second) debugbreak();
+
+                if (ldom.second == true)
+                    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
+                else
+                    current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
+            }
+        }
         BlockIteratorTy DomainVariableInserter::operator()(CondBrInstruction*) {
             // there's no domain thing going on here
             return current_position;
@@ -608,7 +888,7 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(PhiInstruction* inst) {
             auto result = state->get_value_type(inst->args[0]).cloned(state);
             for (auto& elem : inst->args) {
-                add_constraints_between_types(result, state->get_value_type(elem));
+                add_assign_constraints_between_types(result, state->get_value_type(elem));
             }
             state->register_value_base_type(inst->into, std::move(result));
             return current_position;
@@ -616,7 +896,7 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(AssignInstruction* inst) {
             auto& left_type = state->get_value_type(inst->lhs);
             auto& right_type = state->get_value_type(inst->rhs);
-            add_constraints_between_types(left_type, right_type);
+            add_assign_constraints_between_types(left_type, right_type);
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(CallFunctionInstruction*) {
@@ -625,7 +905,10 @@ namespace Yoyo {
         }
         BlockIteratorTy DomainVariableInserter::operator()(RelocateValueInstruction* inst) {
             // no difference between assign tbh
-            state->register_value_base_type(inst->into, state->get_value_type(inst->val).cloned(state));
+            auto& original = state->get_value_type(inst->val);
+            auto new_tp = original.cloned(state);
+            add_assign_constraints_between_types(new_tp, original);
+            state->register_value_base_type(inst->into, std::move(new_tp));
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewArrayInstruction* inst) {
@@ -633,7 +916,7 @@ namespace Yoyo {
             auto& first_elem = state->get_value_type(inst->values[0]);
             auto subtype = first_elem.cloned(state);
             for (auto& elem : inst->values) {
-                add_constraints_between_types(subtype, state->get_value_type(elem));
+                add_extend_constraints_between_types(subtype, state->get_value_type(elem));
             }
             state->register_value_base_type(inst->into, BorrowCheckerType::new_array_of(std::move(subtype)));
             return current_position;
@@ -645,7 +928,7 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(BorrowValueInstruction* inst) {
             // Introduces a new domain
             auto domain = state->new_domain_var();
-            instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(domain), inst->val.as_domain()));
+            current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(domain), inst->val.as_domain()));
             state->register_value_base_type(inst->into, state->get_value_type(inst->val).borrowed(std::move(domain)));
             return current_position;
         }

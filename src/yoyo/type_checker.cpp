@@ -2621,7 +2621,14 @@ namespace Yoyo
         auto tp2 = state->best_repr(con.type2);
 
         if (is_type_variable(tp1)) {
-            return false;
+            auto domain = state->get_type_domain(tp1);
+            // if tp1 cannot be void we can go ahead and add the equal constraint
+
+            if (domain->concrete_types.types.empty()) return false;
+            for (auto& type : domain->concrete_types.types) {
+                if (type.is_void()) return false;
+            }
+            add_new_constraint(EqualConstraint{ tp1, tp2 });
         }
         if (tp1.is_void()) return true;
         add_new_constraint(EqualConstraint{ tp1, tp2 });

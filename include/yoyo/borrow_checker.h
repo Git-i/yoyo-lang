@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
 #include <map>
+#include <vector>
+#include <optional>
 namespace Yoyo {
     class IRGenerator;
     class TypeCheckerState;
@@ -12,13 +14,14 @@ namespace Yoyo {
         struct Domain {
             std::string name;
             std::string to_string() const { return name; }
+            bool is_var() const { return name.starts_with("'?"); };
         };
         class Value {
+        public:
             std::string base_name;
             // we could do with one name separated by .
             // but I feel this would be easier to process
             std::vector<std::string> subpaths;
-        public:
             static Value from(std::string&& name) {
                 Value val;
                 val.base_name = name;
@@ -62,11 +65,13 @@ namespace Yoyo {
             ASTNode* origin;
             virtual ~Instruction() = default;
             virtual bool is_terminator() { return false; }
+            virtual std::span<BasicBlock*> children() { return {}; };
             virtual InstructionVariant to_variant() = 0;
         };
         struct BasicBlock {
             std::string debug_name;
             std::vector<std::unique_ptr<Instruction>> instructions;
+            std::vector<BasicBlock*> preds;
             std::string to_string();
             void add_instruction(Instruction* inst) {
                 instructions.emplace_back(inst);
@@ -132,6 +137,13 @@ namespace Yoyo {
             PhiInstruction(std::vector<Value>&& args, std::string&& into) : args(args), into(into) {};
 
         };
+        class DomainPhiInstruction : public Instruction {
+        public:
+            std::vector<Domain> args;
+            std::string into;
+            InstructionVariant to_variant() override;
+            DomainPhiInstruction(std::vector<Domain>&& args, std::string&& into) : args(args), into(into) {};
+        };
         // These instructions must be at the end of each basic block
         class RetInstruction : public Instruction {
         public:
@@ -148,6 +160,7 @@ namespace Yoyo {
             InstructionVariant to_variant() override;
             BrInstruction(BasicBlock* next) : next(next) {};
             bool is_terminator() override { return true; }
+            std::span<BasicBlock*> children() override { return std::span{ &next, 1 }; };
         };
         class CondBrInstruction : public Instruction {
         public:
@@ -155,6 +168,7 @@ namespace Yoyo {
             Value br_on;
             InstructionVariant to_variant() override;
             bool is_terminator() override { return true; }
+            std::span<BasicBlock*> children() override { return options; };
             CondBrInstruction(std::vector<BasicBlock*>&& options, Value&& br_on) : options(options), br_on(br_on) {};
         };
         class DomainSubsetConstraint : public Instruction {
@@ -164,11 +178,20 @@ namespace Yoyo {
             DomainSubsetConstraint(Domain&& super, Domain&& sub) : super(super), sub(sub) {}
             InstructionVariant to_variant() override;
         };
-        class DomainEqualityConstraint : public Instruction {
+        class DomainDependenceEdgeConstraint : public Instruction {
         public:
             Domain d1;
             Domain d2;
-            DomainEqualityConstraint(Domain&& d1, Domain&& d2) : d1(d1), d2(d2) {}
+            DomainDependenceEdgeConstraint(Domain&& d1, Domain&& d2) : d1(std::move(d1)), d2(std::move(d2)) {}
+            InstructionVariant to_variant() override;
+        };
+        class DomainExtensionConstraint : public Instruction {
+        public:
+            Domain super;
+            Domain sub;
+            // only used in the SSA phase
+            Domain old_super;
+            DomainExtensionConstraint(Domain&& super, Domain&& sub) : super(super), sub(sub) {}
             InstructionVariant to_variant() override;
         };
         using InstructionVariantBase = std::variant<
@@ -183,7 +206,8 @@ namespace Yoyo {
             NewPrimitiveInstruction*,
             BorrowValueInstruction*,
             DomainSubsetConstraint*,
-            DomainEqualityConstraint*
+            DomainDependenceEdgeConstraint*,
+            DomainExtensionConstraint*
         >;
         class InstructionVariant : public InstructionVariantBase {
         public:
@@ -193,8 +217,9 @@ namespace Yoyo {
 
         struct BorrowCheckerFunction {
             std::vector<std::unique_ptr<BasicBlock>> blocks;
+            size_t idx = 0;
             BasicBlock* new_block(std::string debug_name) {
-                return blocks.emplace_back(new BasicBlock{ .debug_name = debug_name }).get();
+                return blocks.emplace_back(new BasicBlock{ .debug_name = debug_name + std::to_string(idx++) }).get();
             }
             std::string to_string() {
                 std::string out;
@@ -385,18 +410,24 @@ namespace Yoyo {
             BorrowCheckerType cloned(DomainCheckerState*) const;
             // create a new primitive type
             static BorrowCheckerType new_primitive();
+            // does not change domains of the provided type
             static BorrowCheckerType new_array_of(BorrowCheckerType&&);
+            std::string to_string() const;
         };
         // Maps "Value"s to types
-        struct ValueTypeMapping {
-            // maps base values to thier type
-            std::unordered_map<std::string, BorrowCheckerType> map;
+        struct ValueTypeMapping: std::unordered_map<std::string, BorrowCheckerType> {
+            ValueTypeMapping(const ValueTypeMapping&) = delete;
+            ValueTypeMapping() = default;
+            ValueTypeMapping(ValueTypeMapping&&) noexcept = default;
+            std::string to_string();
         };
         // Types the CFG and inserts domains
         class DomainVariableInserter {
         public:
             // insert instructions to satisfy domain relationships when left is assiged right
-            void add_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
+            void add_assign_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
+            // insert instructions to satisfy domain relationships when left is extended to store right (like array push)
+            void add_extend_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
             using InstructionListTy = decltype(BasicBlock::instructions);
             using BlockIteratorTy = InstructionListTy::iterator;
 
@@ -415,14 +446,34 @@ namespace Yoyo {
             BlockIteratorTy operator()(NewPrimitiveInstruction*);
             BlockIteratorTy operator()(BorrowValueInstruction*);
             BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
-            BlockIteratorTy operator()(DomainEqualityConstraint*) { debugbreak(); return current_position; }
+            BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
+            BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
+        };
+        struct DominatorList {
+            // stores pairs (a, b) where b = idom(a)
+            // we can probably find all d
+            std::unordered_map<BasicBlock*, BasicBlock*> idoms;
+            std::vector<BasicBlock*> get_all_dominators_of(BasicBlock* input) const;
+            void register_for(BasicBlock* node, BasicBlock* dominator) {
+                if (idoms.contains(node)) debugbreak();
+                idoms[node] = dominator;
+            }
         };
         struct DomainCheckerState {
+            // TODO make the union find
+            size_t last_id = 0;
+            ValueTypeMapping type_mapping;
             Domain new_domain_var();
             void register_value_base_type(const std::string& value, BorrowCheckerType&&);
             const BorrowCheckerType& get_value_type(const Value&);
+            DominatorList dominators;
+            BorrowCheckerFunction* func;
+            BasicBlock* entry_block;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
+            void build_dominators();
+            void calc_block_preds();
+            void transform_to_ssa();
         };
     }
 }
