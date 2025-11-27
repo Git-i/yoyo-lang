@@ -12,7 +12,6 @@ sources = [
     'src/yoyo/parselets/prefix_parselets.cpp',
     'src/yoyo/engine.cpp',
     'src/yoyo/module.cpp',
-    'src/yoyo/lifetime.cpp',
     'src/yoyo/cfg_node.cpp',
     'src/yoyo/overload_resolve.cpp',
     'src/yoyo/tree_cloner.cpp',

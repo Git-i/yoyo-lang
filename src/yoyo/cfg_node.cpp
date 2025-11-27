@@ -20,6 +20,10 @@ namespace Yoyo
         CFGNode* break_to = nullptr;
         CFGNode* continue_to = nullptr;
         void operator()(Expression* expr)  { node->expressions.push_back(expr); }
+        void operator()(BinaryOperation* expr) {
+            std::visit(*this, expr->rhs->toVariant());
+            std::visit(*this, expr->lhs->toVariant());
+        }
         void operator()(GroupingExpression* expr) {
             std::visit(*this, expr->expr->toVariant());
         }
@@ -52,7 +56,7 @@ namespace Yoyo
             std::visit(then_prep, expr->then_expr->toVariant());
 
             CFGNode* goto_if_not_cont = nullptr;
-            if (then_prep.node != exit && then_prep.node != break_to && then_prep.continue_to) {
+            if (then_prep.node != exit && then_prep.node != break_to && then_prep.node != continue_to) {
                 then_prep.node->addChild(cont);
                 expr->then_transfers_control = false;
             }

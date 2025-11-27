@@ -1,4 +1,5 @@
 #include "ir_gen.h"
+#include <type_traits>
 #include <variant>
 #include <ranges>
 #include <algorithm>
@@ -27,6 +28,7 @@ namespace Yoyo{
         InstructionVariant DomainSubsetConstraint::to_variant() { return this; }
         InstructionVariant DomainDependenceEdgeConstraint::to_variant() { return this; }
         InstructionVariant DomainExtensionConstraint::to_variant() { return this; }
+        InstructionVariant DomainPhiInstruction::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -273,9 +275,12 @@ namespace Yoyo{
             }
             // extend to all assignments
             if (token_tp == TokenType::Equal) {
+                // we need to evaluate the rhs first
+                auto rhs = std::visit(*this, op->rhs->toVariant());
+                auto lhs = std::visit(*this, op->lhs->toVariant());
                 current_block->add_instruction(new AssignInstruction(
-                    std::visit(*this, op->lhs->toVariant()),
-                    std::visit(*this, op->rhs->toVariant())));
+                    std::move(lhs),
+                    std::move(rhs)));
                 return Value::empty();
             }
             else if (token_tp != TokenType::Dot && token_tp != TokenType::Equal) {
@@ -457,6 +462,15 @@ namespace Yoyo{
                 if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
                     return std::format("{} => {}", inst->d1.to_string(), inst->d2.to_string());
                 }
+                if constexpr (std::is_same_v<T, DomainPhiInstruction>) {
+                    std::string input;
+                    if (!inst->args.empty()) {
+                        input = inst->args[0].to_string();
+                        for (auto& arg : std::ranges::subrange(std::next(inst->args.begin()), inst->args.end()))
+                            input += ", " + arg.to_string();
+                    }
+                    return std::format("{} = domain phi({})", inst->into, input);
+                }
                 return "not implemented";
             };
             std::string instructions_string;
@@ -465,7 +479,14 @@ namespace Yoyo{
             }
             instructions_string.pop_back(); // remove the trailing \n
 
-            return std::format("{}:\n{}", debug_name, instructions_string);
+            std::string preds_string;
+            if (!preds.empty()) {
+                preds_string = "preds(" + preds[0]->debug_name;
+                for (auto pred : std::ranges::subrange(std::next(preds.begin()), preds.end()))
+                    preds_string += ", " + pred->debug_name;
+                preds_string += ")";
+            }
+            return std::format("{} {}:\n{}", debug_name, preds_string, instructions_string);
         }
         Domain DomainCheckerState::new_domain_var()
         {
@@ -498,6 +519,7 @@ namespace Yoyo{
             calc_block_preds();
             transform_to_ssa();
             std::cout << "Phase 3\n" << type_mapping.to_string() << "\n\n" << function->to_string() << std::endl;
+            clear_dependencies();
             return function;
         }
         void DomainCheckerState::build_dominators()
@@ -520,20 +542,16 @@ namespace Yoyo{
         }
         void DomainCheckerState::calc_block_preds()
         {
-            
-        }
-        // produces unique names for each variable instance
-        struct ValueProducer {
-            std::unordered_map<std::string, size_t> var_map;
-            std::string name_for(const std::string& val) {
-                if (!var_map.contains(val)) 
-                    var_map[val] = 0;
-                return std::format("{}__{}", val, ++var_map[val]);
+            for (auto& block : func->blocks) {
+                for (auto child : block->instructions.back()->children())
+                    child->preds.push_back(block.get());
             }
-        };
-        using UseStorageTy = std::unordered_map<
-            BasicBlock*,
-            std::unordered_map<std::string, std::string>>;
+        }
+        std::string ValueProducer::name_for(const std::string& val) {
+            if (!var_map.contains(val)) 
+                var_map[val] = 0;
+            return std::format("{}__{}", val, ++var_map[val]);
+        }
         void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer);
         std::optional<std::string> lookup_var_recursive(const std::string& arg, BasicBlock* start_at, UseStorageTy& storage, ValueProducer& producer) {
             if (start_at->preds.size() == 1) {
@@ -559,9 +577,22 @@ namespace Yoyo{
                         else return std::nullopt;
                     }
                 }
-                //TODO: delete the phi if its not trivial
-                start_at->instructions.emplace(start_at->instructions.begin(), std::move(phi));
-                return new_name;
+                if (phi->args.empty())
+                    storage[start_at][arg] = "null";
+                else {
+                    bool is_trivial_phi = true;
+                    for (auto& elem : phi->args) {
+                        if (elem.name != phi->args[0].name) {
+                            is_trivial_phi = false;
+                            break;
+                        }
+                    }
+                    if (is_trivial_phi)
+                        storage[start_at][arg] = phi->args[0].name;
+                    else
+                        start_at->instructions.emplace(start_at->instructions.begin(), std::move(phi));
+                }
+                return storage[start_at][arg];
             }
         }
         void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer) {
@@ -578,8 +609,15 @@ namespace Yoyo{
                             if (!tp->super.is_var()) debugbreak();
 
                             if (!storage_entry.contains(tp->super.name))
-                                unfound_uses.push_back(std::ref(tp->super.name));
+                            {
+                                tp->old_super.name = tp->super.name;
+                                unfound_uses.push_back(std::ref(tp->old_super.name));
+                            }
                             else tp->old_super.name = storage_entry[tp->super.name];
+
+                            if (tp->sub.is_var())
+                                if (storage_entry.contains(tp->sub.name)) tp->sub.name = storage_entry[tp->sub.name];
+                                else unfound_uses.push_back(std::ref(tp->sub.name));
 
                             auto new_name = producer.name_for(tp->super.name);
                             storage_entry[tp->super.name] = new_name;
@@ -590,6 +628,15 @@ namespace Yoyo{
                             auto new_name = producer.name_for(tp->super.name);
                             storage_entry[tp->super.name] = new_name;
                             tp->super.name = new_name;
+
+                            if (tp->sub.is_var())
+                                if (storage_entry.contains(tp->sub.name)) tp->sub.name = storage_entry[tp->sub.name];
+                                else unfound_uses.push_back(std::ref(tp->sub.name));
+                        }
+                        if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
+                            if (tp->d1.is_var())
+                                if (storage_entry.contains(tp->d1.name)) tp->d1.name = storage_entry[tp->d1.name];
+                                else unfound_uses.push_back(std::ref(tp->d1.name));
                         }
                     }, 
                     inst->to_variant());
@@ -626,9 +673,24 @@ namespace Yoyo{
                                 else return false;
                             }
                         }
-                        //TODO: delete the phi if its not trivial
-                        block->instructions.emplace(block->instructions.begin(), std::move(phi));
-                        arg.get() = new_name;
+                        if (phi->args.empty()) {
+                            storage_entry[arg] = "null";
+                        }
+                        else {
+                            bool is_trivial_phi = true;
+                            for (auto& elem : phi->args) {
+                                if (elem.name != phi->args[0].name) {
+                                    is_trivial_phi = false;
+                                    break;
+                                }
+                            }
+                            if (is_trivial_phi)
+                                storage_entry[arg] = phi->args[0].name;
+                            else
+                                block->instructions.emplace(block->instructions.begin(), std::move(phi));
+                        }
+                        
+                        arg.get() = storage_entry[arg];
                         return true;
                     });
             }
@@ -642,6 +704,29 @@ namespace Yoyo{
             for (auto& block : func->blocks) {
                 ssa_transform_do_block(block.get(), latest_variables, producer);
             }
+        }
+        void DomainCheckerState::clear_dependencies() {
+            std::vector<std::pair<std::string, std::string>> dependence_edges;
+            auto add_dependencies_in_block = [&dependence_edges](BasicBlock* blk)
+            {
+                for(auto& inst : blk->instructions) {
+                    std::visit([&dependence_edges]<typename T>(T* inst)
+                        {
+                            if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>)
+                                dependence_edges.emplace_back(inst->d1.name, inst->d2.name);
+                        }, inst->to_variant());
+                }
+            };
+            for(auto& block : func->blocks) {
+                add_dependencies_in_block(block.get());
+            }
+            // write this to graphviz for visualization
+            std::string gvz_content;
+            for(const auto&[from, to] : dependence_edges) {
+                gvz_content += std::format("    \"{}\" -> \"{}\";\n", from, to);
+            }
+            auto final_graph = std::format("digraph G {{\n{}}}", gvz_content);
+            std::cout << final_graph << std::endl;
         }
         static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType
         {
@@ -707,8 +792,8 @@ namespace Yoyo{
         BorrowCheckerType BorrowCheckerType::cloned(DomainCheckerState* stt) const
         {
             std::unordered_map<std::string, Domain> old_to_new_map;
-            BorrowCheckerType new_type;
-            new_type.domains = domains;
+            
+            auto new_type = moved(stt);
             for (auto& [domain, is_bidr] : domains) {
                 
                     old_to_new_map[domain.to_string()] = stt->new_domain_var();
@@ -752,6 +837,14 @@ namespace Yoyo{
                 };
             
             
+
+            substitute_domains(new_type, substitute_domains);
+            return new_type;
+        }
+        BorrowCheckerType BorrowCheckerType::moved(DomainCheckerState*) const
+        {
+            BorrowCheckerType new_type;
+            new_type.domains = domains;
             if (auto aggrg = std::get_if<Aggregate>(&details); aggrg) {
                 decltype(aggrg->fields) new_fields;
                 for (auto& [fname, ftype] : aggrg->fields) new_fields.emplace(fname, clone_type(ftype));
@@ -775,8 +868,6 @@ namespace Yoyo{
                 new_type.details.emplace<Primitive>();
             }
             else { debugbreak(); }
-
-            substitute_domains(new_type, substitute_domains);
             return new_type;
         }
         BorrowCheckerType BorrowCheckerType::new_primitive()
@@ -839,7 +930,7 @@ namespace Yoyo{
         {
             std::string result = "Value - Type mapping:\n";
             for (auto& [value, type] : *this) {
-                result += "%" + value + " => " + type.to_string() + "\n";
+                result += "%" + value + " :: " + type.to_string() + "\n";
             }
             return result;
         }
@@ -876,6 +967,12 @@ namespace Yoyo {
                     current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
             }
         }
+        void DomainVariableInserter::initialize_domains_to_null(const BorrowCheckerType& type) {
+            for (auto& dom : type.domains) {
+                
+                current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(dom.first), Domain("null")));
+            }
+        }
         BlockIteratorTy DomainVariableInserter::operator()(CondBrInstruction*) {
             // there's no domain thing going on here
             return current_position;
@@ -887,8 +984,9 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(RetInstruction*) { return current_position; }
         BlockIteratorTy DomainVariableInserter::operator()(PhiInstruction* inst) {
             auto result = state->get_value_type(inst->args[0]).cloned(state);
+            initialize_domains_to_null(result);
             for (auto& elem : inst->args) {
-                add_assign_constraints_between_types(result, state->get_value_type(elem));
+                add_extend_constraints_between_types(result, state->get_value_type(elem));
             }
             state->register_value_base_type(inst->into, std::move(result));
             return current_position;
@@ -906,8 +1004,7 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(RelocateValueInstruction* inst) {
             // no difference between assign tbh
             auto& original = state->get_value_type(inst->val);
-            auto new_tp = original.cloned(state);
-            add_assign_constraints_between_types(new_tp, original);
+            auto new_tp = original.moved(state);
             state->register_value_base_type(inst->into, std::move(new_tp));
             return current_position;
         }
@@ -915,6 +1012,7 @@ namespace Yoyo {
             // TODO handle zero length arrays
             auto& first_elem = state->get_value_type(inst->values[0]);
             auto subtype = first_elem.cloned(state);
+            initialize_domains_to_null(subtype);
             for (auto& elem : inst->values) {
                 add_extend_constraints_between_types(subtype, state->get_value_type(elem));
             }

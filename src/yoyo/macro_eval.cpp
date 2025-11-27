@@ -166,9 +166,10 @@ namespace Yoyo
 							auto& expr = std::get<Expr>(objs[0]);
 							auto as_expr = dynamic_cast<Expression*>(expr.get());
 
-							if (!as_expr)
+							if (!as_expr) {
 								if (!expr) irgen->error(Error(nullptr, "Expression is empty"));
 								else irgen->error(Error(nullptr, "Arg must be an expression"));
+							}
 							expr.release();
 							ptr->literal.push_back(std::unique_ptr<Expression>{ as_expr });
 							return { std::monostate{} };

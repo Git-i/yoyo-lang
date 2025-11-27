@@ -293,7 +293,12 @@ main: fn = {
     array := [p, q];
     array2: [&u32; 2] = [&0, &1];
 
-    array_ref: &[ &u32; 2 ] = if(something()) { &array } else { &array2 };
+    array_ref: mut &[ &u32; 2 ] = if(something()) { &array } else { &array2 };
+
+    snd_array_red := if(something()) { array_ref } else { &array };
+    
+    array_ref = &array2;
+    array_ref = if(something()) { &array } else { &array2 };
 }
 )");
     Yoyo::YVMEngine engine;

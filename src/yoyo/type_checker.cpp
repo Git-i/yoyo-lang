@@ -2595,23 +2595,23 @@ namespace Yoyo
         auto result = state->best_repr(con.result);
         if (con.then_transfers_control && con.else_transfers_control) {
             // no constraints they're free to be any valid type
-            add_new_constraint(EqualConstraint{ result, Type{.name = "void", .module = core_module} });
+            add_new_constraint(EqualConstraint{ result, Type{.name = "void", .module = core_module}, con.expr });
         }
         else if (!con.then_transfers_control && con.else_transfers_control) {
             // (then = else) or (else is void) and (result = then)
-            add_new_constraint(EqualConstraint{ then_tp, result });
-            add_new_constraint(EqualOrIsVoidConstraint{ else_tp, then_tp });
+            add_new_constraint(EqualConstraint{ then_tp, result, con.expr });
+            add_new_constraint(EqualOrIsVoidConstraint{ else_tp, then_tp, con.expr });
         }
         else if (con.then_transfers_control && !con.else_transfers_control) {
             // (then = else) or (then is void) and (result = else)
-            add_new_constraint(EqualConstraint{ else_tp, result });
-            add_new_constraint(EqualOrIsVoidConstraint{ then_tp, else_tp });
+            add_new_constraint(EqualConstraint{ else_tp, result, con.expr });
+            add_new_constraint(EqualOrIsVoidConstraint{ then_tp, else_tp, con.expr });
         }
         // they both don't transfer control
         else {
             //(then = else) and result = then(or else)
-            add_new_constraint(EqualConstraint{ else_tp, then_tp });
-            add_new_constraint(EqualConstraint{ else_tp, result });
+            add_new_constraint(EqualConstraint{ else_tp, then_tp, con.expr });
+            add_new_constraint(EqualConstraint{ else_tp, result, con.expr });
         }
         return true;
     }
@@ -2628,10 +2628,10 @@ namespace Yoyo
             for (auto& type : domain->concrete_types.types) {
                 if (type.is_void()) return false;
             }
-            add_new_constraint(EqualConstraint{ tp1, tp2 });
+            add_new_constraint(EqualConstraint{ tp1, tp2, con.expr });
         }
         if (tp1.is_void()) return true;
-        add_new_constraint(EqualConstraint{ tp1, tp2 });
+        add_new_constraint(EqualConstraint{ tp1, tp2, con.expr });
         return true;
     }
     bool ConstraintSolver::operator()(IndexOperableConstraint& con)

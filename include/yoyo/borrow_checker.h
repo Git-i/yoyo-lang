@@ -1,11 +1,17 @@
 #pragma once
+#include "statement.h"
 #include <string>
-#include <map>
+#include <memory>
+#include <span>
 #include <vector>
 #include <optional>
+#include <variant>
+#include <map>
 namespace Yoyo {
+    void debugbreak(); // in src/yoyo/irgen.cpp
     class IRGenerator;
-    class TypeCheckerState;
+    struct TypeCheckerState;
+    class ASTNode;
     namespace BorrowChecker
     {
         // The IR is SSA based and the only values either:
@@ -60,6 +66,7 @@ namespace Yoyo {
             }
         };
         class InstructionVariant;
+        struct BasicBlock;
         class Instruction {
         public:
             ASTNode* origin;
@@ -207,7 +214,8 @@ namespace Yoyo {
             BorrowValueInstruction*,
             DomainSubsetConstraint*,
             DomainDependenceEdgeConstraint*,
-            DomainExtensionConstraint*
+            DomainExtensionConstraint*,
+            DomainPhiInstruction*
         >;
         class InstructionVariant : public InstructionVariantBase {
         public:
@@ -408,6 +416,8 @@ namespace Yoyo {
             BorrowCheckerType borrowed(Domain&&) const;
             // Make a new type with fresh domains
             BorrowCheckerType cloned(DomainCheckerState*) const;
+            // Duplicate a type with the same domains
+            BorrowCheckerType moved(DomainCheckerState*) const;
             // create a new primitive type
             static BorrowCheckerType new_primitive();
             // does not change domains of the provided type
@@ -428,6 +438,7 @@ namespace Yoyo {
             void add_assign_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
             // insert instructions to satisfy domain relationships when left is extended to store right (like array push)
             void add_extend_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
+            void initialize_domains_to_null(const BorrowCheckerType&);
             using InstructionListTy = decltype(BasicBlock::instructions);
             using BlockIteratorTy = InstructionListTy::iterator;
 
@@ -448,6 +459,7 @@ namespace Yoyo {
             BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
+            BlockIteratorTy operator()(DomainPhiInstruction*) { debugbreak(); return current_position; }
         };
         struct DominatorList {
             // stores pairs (a, b) where b = idom(a)
@@ -459,6 +471,15 @@ namespace Yoyo {
                 idoms[node] = dominator;
             }
         };
+        // produces unique names for each variable instance
+        // used solely for the ssa related stuff
+        struct ValueProducer {
+            std::unordered_map<std::string, size_t> var_map;
+            std::string name_for(const std::string& val);
+        };
+        using UseStorageTy = std::unordered_map<
+            BasicBlock*,
+            std::unordered_map<std::string, std::string>>;
         struct DomainCheckerState {
             // TODO make the union find
             size_t last_id = 0;
@@ -471,9 +492,15 @@ namespace Yoyo {
             BasicBlock* entry_block;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
+            // doesn't do anything for now
             void build_dominators();
+            // assigns predecessors to blocks
             void calc_block_preds();
+            // transforms domain-related code to SSA
             void transform_to_ssa();
+            // remove all "DomainDependenceEdge" constraints
+            // and add new assignments 
+            void clear_dependencies();
         };
     }
 }
