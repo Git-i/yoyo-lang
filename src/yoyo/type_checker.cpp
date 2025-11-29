@@ -2823,7 +2823,85 @@ namespace Yoyo
     }
     bool ConstraintSolver::operator()(BorrowResultMutConstraint& con)
     {
-        return false;
+        // I need an abstraction for this this and the immutable borrow result
+
+        auto subject = state->best_repr(con.subject);
+        auto result = state->best_repr(con.result);
+        // maybe we should tell the domain to default to *result
+        if (is_type_variable(subject) && is_type_variable(result)) {
+            return false;
+        }
+        else if (is_type_variable(result)) {
+            Domain::Group possible_types;
+            //------------The base T -> &T mapping-------------
+            possible_types.add_type(Type{ .name = "__ref_mut", .subtypes = {subject}, .module = core_module });
+            //--------------operator&-------------------
+            if (subject.is_str()) possible_types.add_type(Type{ .name = "__ref_mut", .subtypes = {
+                Type{.name = "__string_view", .module = core_module}
+                }, .module = core_module });
+            else if (subject.is_static_array() || subject.is_dynamic_array()) possible_types.add_type(Type{ .name = "__ref_mut", .subtypes = {
+                Type{.name = "__slice", .subtypes = { subject.subtypes[0] }, .module = core_module} },
+                .module = core_module
+                });
+            else {
+                auto op_result = unary_operator_result(TokenType::RefMut, mutable_reference_to(subject, irgen), con.substitution_cache, state, irgen);
+                if (auto invalid = std::get_if<NoOperatorReason>(&op_result)) {
+                    if (*invalid == NoOperatorReason::MulipleMatches) return false;
+                    else if (*invalid == NoOperatorReason::NoMatches);
+                }
+                else {
+                    auto& [type, extra_constraints] = std::get<0>(op_result);
+                    possible_types.add_type(Type(type));
+                    if (!extra_constraints.empty()) {
+                        add_new_constraint(IfEqualThenConstrain{
+                            std::move(type),
+                            result,
+                            std::move(extra_constraints)
+                            });
+                    }
+                }
+            }
+            if (auto error = state->get_type_domain(result)->add_and_intersect(std::move(possible_types), state)) {
+                irgen->error(error.value());
+            }
+            return true;
+        }
+        else if (is_type_variable(subject)) {
+            if (result.name != "__ref_mut") {
+                irgen->error(Error(con.expr, "Operator &mut always yields a mutable reference"));
+            }
+            // filter the domain of "subject"
+            if (auto domain = state->get_type_domain(subject); !domain->concrete_types.types.empty()) {
+                std::erase_if(domain->concrete_types.types, [&result](const Type& type) {
+                    if (can_match(type, result.deref())) return false;
+                    if (result.deref().name == "__string_view" && type.is_str()) return false;
+                    if (result.deref().name == "__slice" && type.is_array()) return false;
+                    return true;
+                    // check if it can match
+                    });
+                if (domain->is_solved()) return true;
+                return false;
+            }
+            else {
+                // many types can return &T as thier borrow result
+                // we don't want to have to check all modules for that
+                // this means code like this will fail to typecheck
+                // Source: struct = {
+                //     x: f32,
+                //     perform: fn(&this) -> i32 = { return 10; }
+                // }
+                // produce: fn::<T> -> T = { /* get the value somehow */ }
+                // operator: &(obj: &Struct) -> &f32 = { return &obj.x; }
+                // main: fn = {
+                //     b := produce();
+                //     with(a: &f32 as &b) {
+                //         b.perform();
+                //     }
+                // }
+                return false;
+            }
+
+        }
     }
     bool ConstraintSolver::operator()(IfEqualThenConstrain& con)
     {

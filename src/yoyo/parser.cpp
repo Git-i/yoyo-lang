@@ -1293,7 +1293,6 @@ namespace Yoyo
     {
         auto is_mut = p.discard(TokenType::Mut);
         auto t = *p.parseType(0);
-        if(t.is_reference()) p.error("Double reference not allowed", tk);
         if(is_mut) return Type{"__ref_mut", {std::move(t)}};
         return Type("__ref", {std::move(t)});
     }

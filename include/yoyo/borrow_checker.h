@@ -7,6 +7,7 @@
 #include <optional>
 #include <variant>
 #include <map>
+#include <ranges>
 namespace Yoyo {
     void debugbreak(); // in src/yoyo/irgen.cpp
     class IRGenerator;
@@ -413,7 +414,7 @@ namespace Yoyo {
             // Bring up all nexted domains
             void normalize();
             // Get a borrowed version of a type into the specified domain
-            BorrowCheckerType borrowed(Domain&&) const;
+            BorrowCheckerType borrowed(DomainCheckerState*) const;
             // Make a new type with fresh domains
             BorrowCheckerType cloned(DomainCheckerState*) const;
             // Duplicate a type with the same domains
@@ -438,6 +439,7 @@ namespace Yoyo {
             void add_assign_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
             // insert instructions to satisfy domain relationships when left is extended to store right (like array push)
             void add_extend_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
+            void add_extend_constraints_between_multiple_types(const BorrowCheckerType&, std::ranges::input_range auto const&);
             void initialize_domains_to_null(const BorrowCheckerType&);
             using InstructionListTy = decltype(BasicBlock::instructions);
             using BlockIteratorTy = InstructionListTy::iterator;

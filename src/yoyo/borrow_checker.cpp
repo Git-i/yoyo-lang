@@ -778,14 +778,15 @@ namespace Yoyo{
             default: debugbreak();
             }
         };
-        BorrowCheckerType BorrowCheckerType::borrowed(Domain&& dom) const
+        BorrowCheckerType BorrowCheckerType::borrowed(DomainCheckerState* stt) const
         {
             BorrowCheckerType new_type;
-            new_type.domains.emplace_back(dom, false);
+            new_type.domains.emplace_back(stt->new_domain_var(), false);
             // all child domains become bidirectional
-            for (auto& [domain, _] : domains) new_type.domains.emplace_back(domain, true);
+            auto inner = cloned(stt);
+            for (auto& [domain, _] : inner.domains) new_type.domains.emplace_back(domain, true);
             new_type.details.emplace<RefPtr>(std::make_unique<BorrowCheckerType>(
-                clone_type(*this)
+                std::move(inner)
             ));
             return new_type;
         }
@@ -945,11 +946,13 @@ namespace Yoyo {
                 const auto& ldom = left.domains[i];
                 const auto& rdom = right.domains[i];
 
-                if (ldom.second != rdom.second) debugbreak();
+                //if (ldom.second != rdom.second) debugbreak();
 
-                if(ldom.second == true)
-                    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
-                else
+                //if (ldom.second == true) {
+                //    current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(ldom.first), Domain(rdom.first)));
+                //    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
+                //}
+                //else
                     current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(ldom.first), Domain(rdom.first)));
             }
         }
@@ -959,14 +962,46 @@ namespace Yoyo {
                 const auto& ldom = left.domains[i];
                 const auto& rdom = right.domains[i];
 
-                if (ldom.second != rdom.second) debugbreak();
+                //if (ldom.second != rdom.second) debugbreak();
 
-                if (ldom.second == true)
-                    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
-                else
+                //if (ldom.second == true) {
+                //    current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
+                //    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
+                //}
+                //else
                     current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
             }
         }
+
+        void DomainVariableInserter::add_extend_constraints_between_multiple_types(const BorrowCheckerType& left, std::ranges::input_range auto const& right)
+        {
+            // this is the case for array literals with a bidirectional domain
+            std::vector<std::unique_ptr<DomainDependenceEdgeConstraint>> edge_constraints;
+            
+            for (auto i : std::views::iota(0u, left.domains.size())) {
+                const auto& ldom = left.domains[i];
+
+                for(const BorrowCheckerType& type : right)
+                {
+                    const auto& rdom = type.domains[i];
+                    //if (ldom.second == true) {
+                    //    current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
+                    //    edge_constraints.emplace_back(new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
+                    //}
+                    //else
+                        current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
+                }
+            }
+            if(!edge_constraints.empty())
+            {
+                current_position = instructions.insert(++current_position,
+                    std::make_move_iterator(edge_constraints.begin()),
+                    std::make_move_iterator(edge_constraints.end())
+                );
+                current_position += edge_constraints.size() - 1;
+            }
+        }
+        
         void DomainVariableInserter::initialize_domains_to_null(const BorrowCheckerType& type) {
             for (auto& dom : type.domains) {
                 
@@ -985,9 +1020,10 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(PhiInstruction* inst) {
             auto result = state->get_value_type(inst->args[0]).cloned(state);
             initialize_domains_to_null(result);
-            for (auto& elem : inst->args) {
-                add_extend_constraints_between_types(result, state->get_value_type(elem));
-            }
+            add_extend_constraints_between_multiple_types(result, inst->args | std::views::transform([this](const auto& val)
+                {
+                    return std::cref(state->get_value_type(val));
+                }));
             state->register_value_base_type(inst->into, std::move(result));
             return current_position;
         }
@@ -1013,9 +1049,10 @@ namespace Yoyo {
             auto& first_elem = state->get_value_type(inst->values[0]);
             auto subtype = first_elem.cloned(state);
             initialize_domains_to_null(subtype);
-            for (auto& elem : inst->values) {
-                add_extend_constraints_between_types(subtype, state->get_value_type(elem));
-            }
+            add_extend_constraints_between_multiple_types(subtype, inst->values | std::views::transform([this](const auto& val)
+                {
+                    return std::cref(state->get_value_type(val));
+                }));
             state->register_value_base_type(inst->into, BorrowCheckerType::new_array_of(std::move(subtype)));
             return current_position;
         }
@@ -1025,9 +1062,19 @@ namespace Yoyo {
         }
         BlockIteratorTy DomainVariableInserter::operator()(BorrowValueInstruction* inst) {
             // Introduces a new domain
-            auto domain = state->new_domain_var();
-            current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(domain), inst->val.as_domain()));
-            state->register_value_base_type(inst->into, state->get_value_type(inst->val).borrowed(std::move(domain)));
+            auto& og_type = state->get_value_type(inst->val);
+            auto new_type = og_type.borrowed(state);
+            current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(new_type.domains[0].first), inst->val.as_domain()));
+            auto dummy_type_with_bidr_domains = [](const BorrowCheckerType& in)
+                {
+                    auto t = BorrowCheckerType::new_primitive();
+                    for (auto& [domain, _] : in.domains) t.domains.emplace_back(domain, true);
+                    return t;
+                };
+            add_assign_constraints_between_types(
+                dummy_type_with_bidr_domains(*std::get<BorrowCheckerType::RefPtr>(new_type.details).subtype), 
+                og_type);
+            state->register_value_base_type(inst->into, std::move(new_type));
             return current_position;
         }
     }

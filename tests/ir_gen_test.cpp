@@ -282,12 +282,16 @@ main: fn = {
     p: mut &u32 = &x;
     //y = y + 1;                 
     q: mut &u32 = &y;
+
+    int_ref_ref: &mut &u32 = &mut p;
+    
     if(something()) {
         p = q;              
         //x = x + 1;             
     } else {
         //y = y + 1;             
-    }               
+    }       
+    int_ref_ref = &mut q;        
     read_value(p);
     
     array := [p, q];
