@@ -3,7 +3,6 @@
 #include <variant>
 #include <ranges>
 #include <algorithm>
-#include <numeric>
 #include <iostream>
 #include "borrow_checker.h"
 namespace Yoyo { bool has_type_variable(const Yoyo::Type& tp);}
@@ -29,6 +28,7 @@ namespace Yoyo{
         InstructionVariant DomainDependenceEdgeConstraint::to_variant() { return this; }
         InstructionVariant DomainExtensionConstraint::to_variant() { return this; }
         InstructionVariant DomainPhiInstruction::to_variant() { return this; }
+        InstructionVariant DerefOperation::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -245,7 +245,11 @@ namespace Yoyo{
             auto this_eval = std::visit(*this, pfx->operand->toVariant());
             switch (pfx->op.type) {
                 // BIG TODO regarding moving from behind references and all that
-            case TokenType::Star: return this_eval; // borrows are checked at creation time
+            case TokenType::Star: {
+                auto result = temporary_name();
+                current_block->add_instruction(new DerefOperation(std::move(this_eval), std::string(result)));
+                return Value::from(std::move(result));
+            }
             case TokenType::Ampersand: [[fallthrough]];
             case TokenType::RefMut: {
                 auto result = temporary_name();
@@ -471,6 +475,9 @@ namespace Yoyo{
                     }
                     return std::format("{} = domain phi({})", inst->into, input);
                 }
+                if constexpr (std::is_same_v<T, DerefOperation>) {
+                    return std::format("%{} = deref {}", inst->into, inst->reference.to_string());
+                }
                 return "not implemented";
             };
             std::string instructions_string;
@@ -512,14 +519,27 @@ namespace Yoyo{
             std::cout << "Phase 1\n" << function->to_string() << std::endl;
             for (auto& block : function->blocks) {
                 for (auto it = block->instructions.begin(); it != block->instructions.end(); ++it) {
-                    it = std::visit(DomainVariableInserter{this, block->instructions, it}, (*it)->to_variant());
+                    it = std::visit(DomainVariableInserter{ this, block->instructions, it }, (*it)->to_variant());
                 }
             }
             std::cout << "Phase 2\n" << type_mapping.to_string() << "\n\n" <<  function->to_string() << std::endl;
+            using namespace std::ranges;
+            using namespace std::views;
+            PointsToGraph gph;
+            bool has_change = true;
+            while (has_change) {
+                has_change = false;
+                for (auto& block: function->blocks) {
+                    for (auto& inst : block->instructions)
+                        has_change = std::visit(InclusionPointerAnalyser{ gph, this }, inst->to_variant()) || has_change;
+                }
+            }
+            std::cout << gph.to_graphviz() << std::endl;
+            /*
             calc_block_preds();
             transform_to_ssa();
             std::cout << "Phase 3\n" << type_mapping.to_string() << "\n\n" << function->to_string() << std::endl;
-            clear_dependencies();
+            clear_dependencies();*/
             return function;
         }
         void DomainCheckerState::build_dominators()
@@ -552,14 +572,14 @@ namespace Yoyo{
                 var_map[val] = 0;
             return std::format("{}__{}", val, ++var_map[val]);
         }
-        void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer);
-        std::optional<std::string> lookup_var_recursive(const std::string& arg, BasicBlock* start_at, UseStorageTy& storage, ValueProducer& producer) {
+        void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer, DomainCheckerState*);
+        std::optional<std::string> lookup_var_recursive(const std::string& arg, BasicBlock* start_at, UseStorageTy& storage, ValueProducer& producer, DomainCheckerState* state) {
             if (start_at->preds.size() == 1) {
                 auto pred = start_at->preds[0];
-                if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+                if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer, state);
 
                 if (storage[pred].contains(arg)) return storage[pred][arg];
-                else return lookup_var_recursive(arg, pred, storage, producer);
+                else return lookup_var_recursive(arg, pred, storage, producer, state);
             }
             else {
                 auto new_name = producer.name_for(arg);
@@ -569,11 +589,11 @@ namespace Yoyo{
                 
 
                 for (auto& pred : start_at->preds) {
-                    if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+                    if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer, state);
 
                     if (storage[pred].contains(arg)) phi->args.push_back(Domain(storage[pred][arg]));
                     else {
-                        if (auto val = lookup_var_recursive(arg, pred, storage, producer)) phi->args.push_back(Domain(*val));
+                        if (auto val = lookup_var_recursive(arg, pred, storage, producer, state)) phi->args.push_back(Domain(*val));
                         else return std::nullopt;
                     }
                 }
@@ -595,12 +615,13 @@ namespace Yoyo{
                 return storage[start_at][arg];
             }
         }
-        void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer) {
+        void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage, ValueProducer& producer, DomainCheckerState* state) {
             if (storage.contains(block)) return;
             auto& storage_entry = storage[block];
             // perform local value numbering for everything in this block
             // and collect un-numbered uses into this vector
             std::vector<std::reference_wrapper<std::string>> unfound_uses;
+            std::vector<std::pair<AssignInstruction*, size_t>> deferred_assignments;
             for (auto& inst : block->instructions) {
                 std::visit(
                     [&]<typename T>(T* tp)
@@ -622,11 +643,18 @@ namespace Yoyo{
                             auto new_name = producer.name_for(tp->super.name);
                             storage_entry[tp->super.name] = new_name;
                             tp->super.name = new_name;
+
+                            state->pgraph.add_edge(new_name, Domain(tp->sub));
+                            state->pgraph.add_edge(new_name, Domain(tp->old_super));
                         }
                         if constexpr (std::is_same_v<T, DomainSubsetConstraint>) {
                             if (!tp->super.is_var()) debugbreak();
                             auto new_name = producer.name_for(tp->super.name);
                             storage_entry[tp->super.name] = new_name;
+
+                            if (tp->sub.is_null()) state->pgraph.initialize(new_name);
+                            else state->pgraph.add_edge(new_name, Domain(tp->sub));
+
                             tp->super.name = new_name;
 
                             if (tp->sub.is_var())
@@ -638,6 +666,13 @@ namespace Yoyo{
                                 if (storage_entry.contains(tp->d1.name)) tp->d1.name = storage_entry[tp->d1.name];
                                 else unfound_uses.push_back(std::ref(tp->d1.name));
                         }
+                        if constexpr (std::is_same_v<T, AssignInstruction>) {
+                            AssignInstruction* inst = tp;
+                            auto& type = state->get_value_type(inst->lhs);
+                            auto as_lval = std::get_if<BorrowCheckerType::LValue>(&type.details);
+                            if (!as_lval) return;
+
+                        }
                     }, 
                     inst->to_variant());
             }
@@ -645,11 +680,11 @@ namespace Yoyo{
             if (block->preds.size() == 1) {
                 std::erase_if(unfound_uses, [&, pred = block->preds[0]](std::reference_wrapper<std::string> arg)
                     {
-                        if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+                        if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer, state);
 
                         if (storage[pred].contains(arg)) arg.get() = storage[pred][arg];
                         else {
-                            if (auto val = lookup_var_recursive(arg, pred, storage, producer)) arg.get() = *val;
+                            if (auto val = lookup_var_recursive(arg, pred, storage, producer, state)) arg.get() = *val;
                             else return false;
                         }
                         return true;
@@ -665,11 +700,11 @@ namespace Yoyo{
                         if (!storage_entry.contains(arg)) storage_entry[arg] = new_name;
 
                         for (auto& pred : block->preds) {
-                            if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer);
+                            if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer, state);
 
                             if (storage[pred].contains(arg)) phi->args.push_back(Domain(storage[pred][arg]));
                             else {
-                                if (auto val = lookup_var_recursive(arg, pred, storage, producer)) phi->args.push_back(Domain(*val));
+                                if (auto val = lookup_var_recursive(arg, pred, storage, producer, state)) phi->args.push_back(Domain(*val));
                                 else return false;
                             }
                         }
@@ -702,7 +737,7 @@ namespace Yoyo{
             UseStorageTy latest_variables;
             // this is not post order, its just kinda close to it
             for (auto& block : func->blocks) {
-                ssa_transform_do_block(block.get(), latest_variables, producer);
+                ssa_transform_do_block(block.get(), latest_variables, producer, this);
             }
         }
         void DomainCheckerState::clear_dependencies() {
@@ -871,6 +906,19 @@ namespace Yoyo{
             else { debugbreak(); }
             return new_type;
         }
+        BorrowCheckerType BorrowCheckerType::deref() const
+        {
+            // deref can be called on RefPtr<T> or LValue<RefPtr<T>> to yield LValue<T>
+            auto ref_ptr_type = this;
+            if (auto as_lval = std::get_if<LValue>(&details); as_lval) {
+                ref_ptr_type = as_lval->subtype.get();
+            }
+            auto& ref_ptr = std::get<RefPtr>(ref_ptr_type->details);
+            auto new_type = BorrowCheckerType{};
+            new_type.domains = ref_ptr_type->domains;
+            new_type.details.emplace<LValue>(std::make_unique<BorrowCheckerType>(clone_type(*ref_ptr.subtype)));
+            return new_type;
+        }
         BorrowCheckerType BorrowCheckerType::new_primitive()
         {
             BorrowCheckerType new_type;
@@ -923,6 +971,11 @@ namespace Yoyo{
                 result = std::format("&{} {}", domains[0].first.to_string(), dets.subtype->to_string());
                 break;
             }
+            case LValue: {
+                auto& dets = std::get<LValue>(details);
+                result = std::format("lvalue<({}), {}>", domains[0].first.to_string(), dets.subtype->to_string());
+                break;
+            }
             default: debugbreak();
             }
             return result;
@@ -935,42 +988,37 @@ namespace Yoyo{
             }
             return result;
         }
-}
+        bool InclusionPointerAnalyser::operator()(DomainSubsetConstraint* con) {
+            // p > q
+            if (con->sub.is_var()) {
+                bool has_change = false;
+                for (auto& pointee : ptg.get_pointees_of(con->sub.to_string())) {
+                    has_change = ptg.add_edge(con->super.to_string(), pointee) || has_change;
+                }
+                return has_change;
+            }
+            // p > {q}
+            else if(!con->sub.is_null()) {
+                return ptg.add_edge(con->super.to_string(), con->sub.to_string());
+            }
+            return false;
+        }
+    }
 }
 namespace Yoyo {
     namespace BorrowChecker {
         using BlockIteratorTy = DomainVariableInserter::BlockIteratorTy;
         void DomainVariableInserter::add_assign_constraints_between_types(const BorrowCheckerType& left, const BorrowCheckerType& right)
         {
-            for (auto i : std::views::iota(0u, left.domains.size())) {
-                const auto& ldom = left.domains[i];
-                const auto& rdom = right.domains[i];
-
-                //if (ldom.second != rdom.second) debugbreak();
-
-                //if (ldom.second == true) {
-                //    current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(ldom.first), Domain(rdom.first)));
-                //    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
-                //}
-                //else
-                    current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(ldom.first), Domain(rdom.first)));
-            }
+            if (left.domains.empty()) return;
+            // change this for structural types, but single types can only have one domain
+            current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(left.domains[0].first), Domain(right.domains[0].first)));
+            
         }
         void DomainVariableInserter::add_extend_constraints_between_types(const BorrowCheckerType& left, const BorrowCheckerType& right)
         {
-            for (auto i : std::views::iota(0u, left.domains.size())) {
-                const auto& ldom = left.domains[i];
-                const auto& rdom = right.domains[i];
-
-                //if (ldom.second != rdom.second) debugbreak();
-
-                //if (ldom.second == true) {
-                //    current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
-                //    current_position = instructions.emplace(++current_position, new DomainDependenceEdgeConstraint(Domain(ldom.first), Domain(rdom.first)));
-                //}
-                //else
-                    current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(ldom.first), Domain(rdom.first)));
-            }
+            if (left.domains.empty()) return;
+            current_position = instructions.emplace(++current_position, new DomainExtensionConstraint(Domain(left.domains[0].first), Domain(right.domains[0].first)));
         }
 
         void DomainVariableInserter::add_extend_constraints_between_multiple_types(const BorrowCheckerType& left, std::ranges::input_range auto const& right)
@@ -1029,6 +1077,8 @@ namespace Yoyo {
         }
         BlockIteratorTy DomainVariableInserter::operator()(AssignInstruction* inst) {
             auto& left_type = state->get_value_type(inst->lhs);
+            // lvalue assignments are handled in phase 3
+            if (left_type.details.index() == BorrowCheckerType::LValue) return current_position;
             auto& right_type = state->get_value_type(inst->rhs);
             add_assign_constraints_between_types(left_type, right_type);
             return current_position;
@@ -1065,16 +1115,12 @@ namespace Yoyo {
             auto& og_type = state->get_value_type(inst->val);
             auto new_type = og_type.borrowed(state);
             current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(new_type.domains[0].first), inst->val.as_domain()));
-            auto dummy_type_with_bidr_domains = [](const BorrowCheckerType& in)
-                {
-                    auto t = BorrowCheckerType::new_primitive();
-                    for (auto& [domain, _] : in.domains) t.domains.emplace_back(domain, true);
-                    return t;
-                };
-            add_assign_constraints_between_types(
-                dummy_type_with_bidr_domains(*std::get<BorrowCheckerType::RefPtr>(new_type.details).subtype), 
-                og_type);
             state->register_value_base_type(inst->into, std::move(new_type));
+            return current_position;
+        }
+        BlockIteratorTy DomainVariableInserter::operator()(DerefOperation* op)
+        {
+            state->register_value_base_type(op->into, state->get_value_type(op->reference).deref());
             return current_position;
         }
     }

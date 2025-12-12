@@ -1972,10 +1972,12 @@ namespace Yoyo
     {
         auto type = state->best_repr(con.type);
         auto other = state->best_repr(con.other);
-        add_new_constraint(EqualConstraint{
-                type,
-                reference_to(other, irgen)
-            });
+        // type = &other or type = &mut other
+        if (is_type_variable(type)) {
+            return false;
+        }
+        if (!type.is_reference()) irgen->error(Error(con.expr, "Cannot derefernce non-reference"));
+        else add_new_constraint(EqualConstraint{ type.subtypes[0], other, con.expr });
         return true;
     }
     bool ConstraintSolver::operator()(IsNotReferenceConstraint& con)

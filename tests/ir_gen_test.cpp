@@ -291,7 +291,8 @@ main: fn = {
     } else {
         //y = y + 1;             
     }       
-    int_ref_ref = &mut q;        
+    int_ref_ref = &mut q;    
+    *int_ref_ref = &x;    
     read_value(p);
     
     array := [p, q];

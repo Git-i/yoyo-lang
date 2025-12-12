@@ -1,4 +1,4 @@
-project('yoyo-lang','cpp', default_options: ['cpp_std=c++20', 'b_sanitize=address'])
+project('yoyo-lang','cpp', default_options: ['cpp_std=c++20'])
 
 sources = [
     'src/yoyo/scanner.cpp',
@@ -100,15 +100,20 @@ if backend == 'yvm' or backend == 'both'
         sources += ['src/yoyo/yvm/windows_native_module.cpp']
     endif
 endif
-yoyo_args = ['-DYOYO_DLL']
+yoyo_args = []
+dependency_args = []
+if get_option('default_library') == 'shared'
+    yoyo_args += ['-DYOYO_DLL', '-DYOYO_SHARED']
+    dependency_args += ['-DYOYO_SHARED']
+endif
 yoyo_lib = library(
     'yoyo', 
     sources, 
     include_directories: ['include/yoyo', 'subprojects/minicoro'],
     dependencies: deps,
     cpp_args: yoyo_args)
-yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)
-parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
+yoyo_dep = declare_dependency(compile_args: dependency_args, include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)
+#parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
 irgen_deps = [
     yoyo_dep,
     dependency('catch2-with-main'),

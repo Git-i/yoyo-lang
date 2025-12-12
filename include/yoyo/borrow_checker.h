@@ -22,6 +22,13 @@ namespace Yoyo {
             std::string name;
             std::string to_string() const { return name; }
             bool is_var() const { return name.starts_with("'?"); };
+            bool is_null() const { return name == "null"; }
+            bool operator==(const Domain& other) const { return name == other.name;  }
+        };
+        struct DomainHasher {
+            size_t operator()(const Domain& dom) const {
+                return std::hash<std::string>{}(dom.to_string());
+            }
         };
         class Value {
         public:
@@ -202,6 +209,13 @@ namespace Yoyo {
             DomainExtensionConstraint(Domain&& super, Domain&& sub) : super(super), sub(sub) {}
             InstructionVariant to_variant() override;
         };
+        class DerefOperation : public Instruction {
+        public:
+            Value reference;
+            std::string into;
+            DerefOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
+            InstructionVariant to_variant() override;
+        };
         using InstructionVariantBase = std::variant<
             CondBrInstruction*,
             BrInstruction*,
@@ -216,7 +230,8 @@ namespace Yoyo {
             DomainSubsetConstraint*,
             DomainDependenceEdgeConstraint*,
             DomainExtensionConstraint*,
-            DomainPhiInstruction*
+            DomainPhiInstruction*,
+            DerefOperation*
         >;
         class InstructionVariant : public InstructionVariantBase {
         public:
@@ -331,6 +346,7 @@ namespace Yoyo {
                 UniquePtr, // Owning poiner type
                 Array, // Owning Heap type with many elems
                 RefPtr, // Non owning pointer type
+                LValue
             };
             struct PrimitiveDetails {};
             // because std::map is wierd
@@ -393,6 +409,16 @@ namespace Yoyo {
                 RefPtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
             };
+            struct LValueDetails {
+                LValueDetails() = default;
+                LValueDetails(const LValueDetails&) = delete;
+                LValueDetails& operator=(const LValueDetails&) = delete;
+
+                LValueDetails(LValueDetails&&) noexcept = default;
+                LValueDetails& operator=(LValueDetails&&) noexcept = default;
+                LValueDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
+                std::unique_ptr<BorrowCheckerType> subtype;
+            };
             BorrowCheckerType() = default;
             BorrowCheckerType(const BorrowCheckerType&) = delete;
             BorrowCheckerType(BorrowCheckerType&&) noexcept = default;
@@ -404,7 +430,8 @@ namespace Yoyo {
                 UnionDetails,
                 UniquePtrDetails,
                 ArrayDetails,
-                RefPtrDetails> details;
+                RefPtrDetails,
+                LValueDetails> details;
             // the "bool" field marks if the domain is bidirectional
             // for example &'a &'b i32, 'a is not bidirectional because
             // if the reference were to be duplicated the new 'a can expand freely
@@ -419,10 +446,12 @@ namespace Yoyo {
             BorrowCheckerType cloned(DomainCheckerState*) const;
             // Duplicate a type with the same domains
             BorrowCheckerType moved(DomainCheckerState*) const;
+            BorrowCheckerType deref() const;
             // create a new primitive type
             static BorrowCheckerType new_primitive();
             // does not change domains of the provided type
             static BorrowCheckerType new_array_of(BorrowCheckerType&&);
+
             std::string to_string() const;
         };
         // Maps "Value"s to types
@@ -458,10 +487,59 @@ namespace Yoyo {
             BlockIteratorTy operator()(NewArrayInstruction*);
             BlockIteratorTy operator()(NewPrimitiveInstruction*);
             BlockIteratorTy operator()(BorrowValueInstruction*);
+            BlockIteratorTy operator()(DerefOperation*);
             BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainPhiInstruction*) { debugbreak(); return current_position; }
+        };
+        struct PointsToGraph {
+            std::unordered_map<std::string, std::unordered_set<std::string>> pointee_pairs;
+            bool add_edge(std::string domain, std::string pointee) {
+                if (pointee_pairs[domain].contains(pointee)) return false;
+                pointee_pairs[domain].insert(std::move(pointee));
+                return true;
+            }
+            std::unordered_set<std::string>& get_pointees_of(std::string domain) {
+                return pointee_pairs[domain];
+            }
+            std::string to_graphviz() {
+                std::ostringstream out;
+                out << "digraph PointeeGraph " << " {\n";
+                for (const auto& [src, targets] : pointee_pairs) {
+                    if (targets.empty()) {
+                        out << "    \"" << src << "\";\n";
+                    }
+                    else {
+                        for (const auto& dst : targets) {
+                            out << "    \"" << src << "\" -> \"" << dst << "\";\n";
+                        }
+                    }
+                }
+                out << "}\n";
+                return out.str();
+            }
+        };
+        class InclusionPointerAnalyser {
+        public:
+            PointsToGraph& ptg;
+            DomainCheckerState* state;
+
+            bool operator()(CondBrInstruction*) { return false; }
+            bool operator()(BrInstruction*) { return false; }
+            bool operator()(RetInstruction*) { return false; }
+            bool operator()(PhiInstruction*) { return false; }
+            bool operator()(AssignInstruction*) { return false; }
+            bool operator()(CallFunctionInstruction*) { return false; }
+            bool operator()(RelocateValueInstruction*) { return false; }
+            bool operator()(NewArrayInstruction*) { return false; }
+            bool operator()(NewPrimitiveInstruction*) { return false; }
+            bool operator()(BorrowValueInstruction*) { return false; }
+            bool operator()(DerefOperation*) { return false; }
+            bool operator()(DomainSubsetConstraint* con);
+            bool operator()(DomainDependenceEdgeConstraint*) { return false; }
+            bool operator()(DomainExtensionConstraint*) { return false; }
+            bool operator()(DomainPhiInstruction*) { return false; }
         };
         struct DominatorList {
             // stores pairs (a, b) where b = idom(a)
@@ -482,6 +560,19 @@ namespace Yoyo {
         using UseStorageTy = std::unordered_map<
             BasicBlock*,
             std::unordered_map<std::string, std::string>>;
+        // Represents the results of our points to analysis
+        struct PointeeGraph {
+            std::unordered_map<std::string, std::unordered_set<Domain, DomainHasher>> edges;
+            void add_edge(const std::string& edge, Domain&& dom) {
+                edges[edge].insert(std::move(dom));
+            }
+            void initialize(const std::string& edge) {
+                edges[edge];
+            }
+            std::unordered_set<Domain, DomainHasher>& pointees_of(const std::string& dom) {
+                return edges.at(dom);
+            }
+        };
         struct DomainCheckerState {
             // TODO make the union find
             size_t last_id = 0;
@@ -492,6 +583,7 @@ namespace Yoyo {
             DominatorList dominators;
             BorrowCheckerFunction* func;
             BasicBlock* entry_block;
+            PointeeGraph pgraph;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
@@ -506,3 +598,4 @@ namespace Yoyo {
         };
     }
 }
+

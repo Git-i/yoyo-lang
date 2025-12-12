@@ -1,9 +1,13 @@
 #ifdef _MSC_VER
-#ifdef YOYO_DLL
-#define YOYO_API __declspec(dllexport)
+  #ifdef YOYO_SHARED
+    #ifdef YOYO_DLL
+      #define YOYO_API __declspec(dllexport)
+    #else
+      #define YOYO_API __declspec(dllimport)
+    #endif
+  #else
+    #define YOYO_API
+  #endif
 #else
-#define YOYO_API __declspec(dllimport)
-#endif
-#else
-#define YOYO_API
+  #define YOYO_API
 #endif
