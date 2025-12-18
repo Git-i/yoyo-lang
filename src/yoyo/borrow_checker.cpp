@@ -29,6 +29,8 @@ namespace Yoyo{
         InstructionVariant DomainExtensionConstraint::to_variant() { return this; }
         InstructionVariant DomainPhiInstruction::to_variant() { return this; }
         InstructionVariant DerefOperation::to_variant() { return this; }
+        InstructionVariant MayStoreOperation::to_variant() { return this; }
+        InstructionVariant MayLoadOperation::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -473,10 +475,13 @@ namespace Yoyo{
                         for (auto& arg : std::ranges::subrange(std::next(inst->args.begin()), inst->args.end()))
                             input += ", " + arg.to_string();
                     }
-                    return std::format("{} = domain phi({})", inst->into, input);
+                    return std::format("{} = domain φ({})", inst->into, input);
                 }
                 if constexpr (std::is_same_v<T, DerefOperation>) {
                     return std::format("%{} = deref {}", inst->into, inst->reference.to_string());
+                }
+                if constexpr (std::is_same_v<T, MayStoreOperation>) {
+                    return std::format("{} = χ({})", inst->new_domain.to_string(), inst->old_domain.to_string());
                 }
                 return "not implemented";
             };
@@ -525,21 +530,21 @@ namespace Yoyo{
             std::cout << "Phase 2\n" << type_mapping.to_string() << "\n\n" <<  function->to_string() << std::endl;
             using namespace std::ranges;
             using namespace std::views;
-            PointsToGraph gph;
+            
             bool has_change = true;
             while (has_change) {
                 has_change = false;
                 for (auto& block: function->blocks) {
                     for (auto& inst : block->instructions)
-                        has_change = std::visit(InclusionPointerAnalyser{ gph, this }, inst->to_variant()) || has_change;
+                        has_change = std::visit(InclusionPointerAnalyser{ ptgraph, this }, inst->to_variant()) || has_change;
                 }
             }
-            std::cout << gph.to_graphviz() << std::endl;
-            /*
+            std::cout << ptgraph.to_graphviz() << std::endl;
+            
             calc_block_preds();
             transform_to_ssa();
             std::cout << "Phase 3\n" << type_mapping.to_string() << "\n\n" << function->to_string() << std::endl;
-            clear_dependencies();*/
+            clear_dependencies();
             return function;
         }
         void DomainCheckerState::build_dominators()
@@ -622,7 +627,7 @@ namespace Yoyo{
             // and collect un-numbered uses into this vector
             std::vector<std::reference_wrapper<std::string>> unfound_uses;
             std::vector<std::pair<AssignInstruction*, size_t>> deferred_assignments;
-            for (auto& inst : block->instructions) {
+            for (auto it = block->instructions.begin(); it != block->instructions.end(); ++it) {
                 std::visit(
                     [&]<typename T>(T* tp)
                     {
@@ -644,16 +649,16 @@ namespace Yoyo{
                             storage_entry[tp->super.name] = new_name;
                             tp->super.name = new_name;
 
-                            state->pgraph.add_edge(new_name, Domain(tp->sub));
-                            state->pgraph.add_edge(new_name, Domain(tp->old_super));
+                            //state->pgraph.add_edge(new_name, Domain(tp->sub));
+                            //state->pgraph.add_edge(new_name, Domain(tp->old_super));
                         }
                         if constexpr (std::is_same_v<T, DomainSubsetConstraint>) {
                             if (!tp->super.is_var()) debugbreak();
                             auto new_name = producer.name_for(tp->super.name);
                             storage_entry[tp->super.name] = new_name;
 
-                            if (tp->sub.is_null()) state->pgraph.initialize(new_name);
-                            else state->pgraph.add_edge(new_name, Domain(tp->sub));
+                            //if (tp->sub.is_null()) state->pgraph.initialize(new_name);
+                            //else state->pgraph.add_edge(new_name, Domain(tp->sub));
 
                             tp->super.name = new_name;
 
@@ -672,9 +677,28 @@ namespace Yoyo{
                             auto as_lval = std::get_if<BorrowCheckerType::LValue>(&type.details);
                             if (!as_lval) return;
 
+                            // if its a pointer to pointer we need to add may store instruction(s)
+
+                            if (!as_lval->subtype->domains.empty()) {
+                                for (auto pointee : state->ptgraph.get_pointees_of(type.domains[0].first.to_string())) {
+                                    auto& type = state->get_value_type(Value::from(std::move(pointee)));
+                                    auto new_name = producer.name_for(type.domains[0].first.name);
+                                    auto op = new MayStoreOperation(tp, Domain(), Domain(new_name));
+                                    
+                                    if (storage_entry.contains(type.domains[0].first.name))
+                                        op->old_domain.name = storage_entry.at(type.domains[0].first.name);
+                                    else
+                                        unfound_uses.push_back(std::ref(op->old_domain.name));
+
+                                    storage_entry[type.domains[0].first.name] = new_name;
+                                    
+                                    it = block->instructions.emplace(++it, op);
+                                }
+                            }
+                            
                         }
                     }, 
-                    inst->to_variant());
+                    (*it)->to_variant());
             }
             // perform global value numbering
             if (block->preds.size() == 1) {
@@ -999,6 +1023,22 @@ namespace Yoyo{
             }
             // p > {q}
             else if(!con->sub.is_null()) {
+                return ptg.add_edge(con->super.to_string(), con->sub.to_string());
+            }
+            return false;
+        }
+        bool InclusionPointerAnalyser::operator()(DomainExtensionConstraint* con)
+        {
+            // p > p + q
+            if (con->sub.is_var()) {
+                bool has_change = false;
+                for (auto& pointee : ptg.get_pointees_of(con->sub.to_string())) {
+                    has_change = ptg.add_edge(con->super.to_string(), pointee) || has_change;
+                }
+                return has_change;
+            }
+            // p > p + {q}
+            else if (!con->sub.is_null()) {
                 return ptg.add_edge(con->super.to_string(), con->sub.to_string());
             }
             return false;

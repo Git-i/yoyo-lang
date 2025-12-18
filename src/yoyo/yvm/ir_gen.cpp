@@ -364,7 +364,7 @@ namespace Yoyo
         if(decl->type) decl->type->saturate(module, this);
         Type& type = decl->type.value();
         if(!type.can_be_stored()) { error(Error(decl, "The type tp cannot be stored")); return; }
-        if(type.is_non_owning(this)) { error(Error(decl, "Variable types must not be non-owning")); return; }
+        
         type.is_mutable = decl->is_mut;
         type.is_lvalue = true;
         decl->type = type;

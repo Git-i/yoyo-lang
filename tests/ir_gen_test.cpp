@@ -277,33 +277,15 @@ TEST_CASE("Test static array", "[array][static_array]")
 read_value: fn(val: &u32) = return;
 something: fn -> bool = return true;
 main: fn = {
-    x: mut = 22;
-    y: mut = 44;
-    p: mut &u32 = &x;
-    //y = y + 1;                 
-    q: mut &u32 = &y;
-
-    int_ref_ref: &mut &u32 = &mut p;
+    x: i32 = 10;
+    y: i32 = 10;
+    z: i32 = 30;
     
-    if(something()) {
-        p = q;              
-        //x = x + 1;             
-    } else {
-        //y = y + 1;             
-    }       
-    int_ref_ref = &mut q;    
-    *int_ref_ref = &x;    
-    read_value(p);
-    
-    array := [p, q];
-    array2: [&u32; 2] = [&0, &1];
+    ref1: mut &mut i32 = &mut x;
+    ref2: mut &mut i32 = &mut y;
 
-    array_ref: mut &[ &u32; 2 ] = if(something()) { &array } else { &array2 };
-
-    snd_array_red := if(something()) { array_ref } else { &array };
-    
-    array_ref = &array2;
-    array_ref = if(something()) { &array } else { &array2 };
+    ref3 := if(something()) { &mut ref1 } else { &mut ref2 };
+    *ref3 = &mut z;
 }
 )");
     Yoyo::YVMEngine engine;

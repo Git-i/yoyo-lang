@@ -216,6 +216,28 @@ namespace Yoyo {
             DerefOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
             InstructionVariant to_variant() override;
         };
+        class MayStoreOperation : public Instruction {
+        public:
+            Instruction* origin;
+            Domain old_domain;
+            Domain new_domain;
+            MayStoreOperation(Instruction* origin, Domain&& old_domain, Domain&& new_domain)
+                : origin(origin),
+                old_domain(std::move(old_domain)),
+                new_domain(std::move(new_domain)) {}
+            InstructionVariant to_variant() override;
+        };
+        class MayLoadOperation : public Instruction {
+        public:
+            Instruction* origin;
+            Domain old_domain;
+            Domain new_domain;
+            MayLoadOperation(Instruction* origin, Domain&& old_domain, Domain&& new_domain) 
+                : origin(origin), 
+                old_domain(std::move(old_domain)),
+                new_domain(std::move(new_domain)) {}
+            InstructionVariant to_variant() override;
+        };
         using InstructionVariantBase = std::variant<
             CondBrInstruction*,
             BrInstruction*,
@@ -231,7 +253,9 @@ namespace Yoyo {
             DomainDependenceEdgeConstraint*,
             DomainExtensionConstraint*,
             DomainPhiInstruction*,
-            DerefOperation*
+            DerefOperation*,
+            MayStoreOperation*,
+            MayLoadOperation*
         >;
         class InstructionVariant : public InstructionVariantBase {
         public:
@@ -492,6 +516,8 @@ namespace Yoyo {
             BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainPhiInstruction*) { debugbreak(); return current_position; }
+            BlockIteratorTy operator()(MayStoreOperation*) { debugbreak(); return current_position; }
+            BlockIteratorTy operator()(MayLoadOperation*) { debugbreak(); return current_position; }
         };
         struct PointsToGraph {
             std::unordered_map<std::string, std::unordered_set<std::string>> pointee_pairs;
@@ -517,7 +543,8 @@ namespace Yoyo {
                     }
                 }
                 out << "}\n";
-                return out.str();
+                auto out_str = out.str();
+                return out_str;
             }
         };
         class InclusionPointerAnalyser {
@@ -529,7 +556,7 @@ namespace Yoyo {
             bool operator()(BrInstruction*) { return false; }
             bool operator()(RetInstruction*) { return false; }
             bool operator()(PhiInstruction*) { return false; }
-            bool operator()(AssignInstruction*) { return false; }
+            bool operator()(AssignInstruction*);
             bool operator()(CallFunctionInstruction*) { return false; }
             bool operator()(RelocateValueInstruction*) { return false; }
             bool operator()(NewArrayInstruction*) { return false; }
@@ -538,8 +565,10 @@ namespace Yoyo {
             bool operator()(DerefOperation*) { return false; }
             bool operator()(DomainSubsetConstraint* con);
             bool operator()(DomainDependenceEdgeConstraint*) { return false; }
-            bool operator()(DomainExtensionConstraint*) { return false; }
+            bool operator()(DomainExtensionConstraint*);
             bool operator()(DomainPhiInstruction*) { return false; }
+            bool operator()(MayStoreOperation*) { return false; }
+            bool operator()(MayLoadOperation*) { return false; }
         };
         struct DominatorList {
             // stores pairs (a, b) where b = idom(a)
@@ -583,7 +612,7 @@ namespace Yoyo {
             DominatorList dominators;
             BorrowCheckerFunction* func;
             BasicBlock* entry_block;
-            PointeeGraph pgraph;
+            PointsToGraph ptgraph;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
