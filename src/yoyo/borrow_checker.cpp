@@ -1012,6 +1012,23 @@ namespace Yoyo{
             }
             return result;
         }
+        bool InclusionPointerAnalyser::operator()(AssignInstruction* inst) {
+            auto& type = state->get_value_type(inst->lhs);
+            auto as_lval = std::get_if<BorrowCheckerType::LValue>(&type.details);
+            if (!as_lval) return false;
+            // pointer to primitive isn't special
+            if (as_lval->subtype->domains.empty()) return false;
+            auto& right_dom = state->get_value_type(inst->rhs).domains[0].first;
+            bool has_change = false;
+            for (auto pointee : ptg.get_pointees_of(type.domains[0].first.to_string())) {
+                // TODO rhs as lvalue
+                DomainSubsetConstraint con(Domain(
+                    state->get_value_type(Value::from(std::move(pointee))).domains[0].first
+                ), Domain(right_dom));
+                has_change = (*this)(&con) || has_change;
+            }
+            return has_change;
+        }
         bool InclusionPointerAnalyser::operator()(DomainSubsetConstraint* con) {
             // p > q
             if (con->sub.is_var()) {
