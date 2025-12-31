@@ -65,7 +65,7 @@ namespace Yoyo{
 
             current_block = while_body;
             std::visit(*this, stat->body->toVariant());
-            if (!while_body->is_terminated()) {
+            if (!current_block->is_terminated()) {
                 current_block->add_instruction(new BrInstruction(while_cond));
             }
 
@@ -1271,8 +1271,15 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(RelocateValueInstruction* inst) {
             // no difference between assign tbh
             auto& original = state->get_value_type(inst->val);
-            auto new_tp = original.moved(state);
-            state->register_value_base_type(inst->into, std::move(new_tp));
+            if (inst->val.base_name.starts_with("__tmp")) {
+                // we just steal everything in this case, else we do a proper copy
+                auto new_tp = original.moved(state);
+                state->register_value_base_type(inst->into, std::move(new_tp));
+            } else {
+                auto new_tp = original.cloned(state);
+                add_assign_constraints_between_types(new_tp, original);
+                state->register_value_base_type(inst->into, std::move(new_tp));
+            }
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewArrayInstruction* inst) {

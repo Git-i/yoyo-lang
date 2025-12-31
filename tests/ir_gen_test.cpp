@@ -283,7 +283,7 @@ main: fn = {
     q: mut &mut i32 = &mut b;
     
     i: mut i32 = 0;
-    while(i < 10) {
+    while(i == 10) {
         *p = 100; 
         temp := p; 
         p = q;       
@@ -293,7 +293,6 @@ main: fn = {
             p = &mut c;
         }
 
-        i = i + 1;
     }
 
     val_p := *p;
