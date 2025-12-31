@@ -216,6 +216,13 @@ namespace Yoyo {
             DerefOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
             InstructionVariant to_variant() override;
         };
+        class DerefLoadOperation : public Instruction {
+        public:
+            Value reference;
+            std::string into;
+            DerefLoadOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
+            InstructionVariant to_variant() override;
+        };
         class MayStoreOperation : public Instruction {
         public:
             Instruction* origin;
@@ -230,12 +237,10 @@ namespace Yoyo {
         class MayLoadOperation : public Instruction {
         public:
             Instruction* origin;
-            Domain old_domain;
-            Domain new_domain;
-            MayLoadOperation(Instruction* origin, Domain&& old_domain, Domain&& new_domain) 
+            Domain domain;
+            MayLoadOperation(Instruction* origin, Domain&& domain) 
                 : origin(origin), 
-                old_domain(std::move(old_domain)),
-                new_domain(std::move(new_domain)) {}
+                domain(std::move(domain)) {}
             InstructionVariant to_variant() override;
         };
         using InstructionVariantBase = std::variant<
@@ -253,6 +258,7 @@ namespace Yoyo {
             DomainDependenceEdgeConstraint*,
             DomainExtensionConstraint*,
             DomainPhiInstruction*,
+            DerefLoadOperation*,
             DerefOperation*,
             MayStoreOperation*,
             MayLoadOperation*
@@ -278,6 +284,7 @@ namespace Yoyo {
             }
         };
         
+        
         class BorrowCheckerEmitter {
             IRGenerator* irgen;
             TypeCheckerState* stt;
@@ -295,6 +302,7 @@ namespace Yoyo {
             std::string name_based_on(std::string_view other) { return std::to_string(counter++) + std::string(other); }
             void drop_object(Value&& val) { /* TODO */ }
         public:
+            friend class LValueEmitter;
             BorrowCheckerEmitter(
                 IRGenerator* irgen,
                 TypeCheckerState* stt,
@@ -358,6 +366,11 @@ namespace Yoyo {
             Value operator()(MacroInvocation*);
             Value operator()(SpawnExpression*);
             Value operator()(TryExpression*);
+        };
+        class LValueEmitter {
+        public:
+            BorrowCheckerEmitter& em;
+            Value do_expr(Expression* expr);
         };
         struct DomainCheckerState;
         
@@ -512,6 +525,7 @@ namespace Yoyo {
             BlockIteratorTy operator()(NewPrimitiveInstruction*);
             BlockIteratorTy operator()(BorrowValueInstruction*);
             BlockIteratorTy operator()(DerefOperation*);
+            BlockIteratorTy operator()(DerefLoadOperation*);
             BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
@@ -563,6 +577,7 @@ namespace Yoyo {
             bool operator()(NewPrimitiveInstruction*) { return false; }
             bool operator()(BorrowValueInstruction*) { return false; }
             bool operator()(DerefOperation*) { return false; }
+            bool operator()(DerefLoadOperation*) { return false; }
             bool operator()(DomainSubsetConstraint* con);
             bool operator()(DomainDependenceEdgeConstraint*) { return false; }
             bool operator()(DomainExtensionConstraint*);
@@ -602,6 +617,21 @@ namespace Yoyo {
                 return edges.at(dom);
             }
         };
+        
+
+        struct DefUseGraph {
+            struct ElemHash {
+            public:
+                std::size_t operator()(const std::pair<Instruction*, std::string>& x) const
+                {
+                    return std::hash<Instruction*>()(x.first) ^ std::hash<std::string>()(x.second);
+                }
+            };
+            std::unordered_map<
+                Instruction*,
+                std::unordered_set<std::pair<Instruction*, std::string>, ElemHash>> edges;
+            std::string to_graphviz();
+        };
         struct DomainCheckerState {
             // TODO make the union find
             size_t last_id = 0;
@@ -613,6 +643,7 @@ namespace Yoyo {
             BorrowCheckerFunction* func;
             BasicBlock* entry_block;
             PointsToGraph ptgraph;
+            DefUseGraph def_use_graph;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
@@ -624,6 +655,7 @@ namespace Yoyo {
             // remove all "DomainDependenceEdge" constraints
             // and add new assignments 
             void clear_dependencies();
+            void build_dug();
         };
     }
 }

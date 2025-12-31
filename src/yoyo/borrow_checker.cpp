@@ -29,6 +29,7 @@ namespace Yoyo{
         InstructionVariant DomainExtensionConstraint::to_variant() { return this; }
         InstructionVariant DomainPhiInstruction::to_variant() { return this; }
         InstructionVariant DerefOperation::to_variant() { return this; }
+        InstructionVariant DerefLoadOperation::to_variant() { return this; }
         InstructionVariant MayStoreOperation::to_variant() { return this; }
         InstructionVariant MayLoadOperation::to_variant() { return this; }
         //=======================================================
@@ -249,7 +250,7 @@ namespace Yoyo{
                 // BIG TODO regarding moving from behind references and all that
             case TokenType::Star: {
                 auto result = temporary_name();
-                current_block->add_instruction(new DerefOperation(std::move(this_eval), std::string(result)));
+                current_block->add_instruction(new DerefLoadOperation(std::move(this_eval), std::string(result)));
                 return Value::from(std::move(result));
             }
             case TokenType::Ampersand: [[fallthrough]];
@@ -283,7 +284,7 @@ namespace Yoyo{
             if (token_tp == TokenType::Equal) {
                 // we need to evaluate the rhs first
                 auto rhs = std::visit(*this, op->rhs->toVariant());
-                auto lhs = std::visit(*this, op->lhs->toVariant());
+                auto lhs = LValueEmitter{ *this }.do_expr(op->lhs.get());
                 current_block->add_instruction(new AssignInstruction(
                     std::move(lhs),
                     std::move(rhs)));
@@ -406,88 +407,94 @@ namespace Yoyo{
             return Value::from("__literal");
         }
 
-
-        std::string BasicBlock::to_string()
+        template<typename T> static std::string instruction_to_string(T* inst)
         {
-            auto instruction_to_string = []<typename T>(T * inst) -> std::string
-            {
-                if constexpr (std::is_same_v<T, CondBrInstruction>) {
-                    auto first_name = inst->options[0]->debug_name;
-                    for (auto block : std::ranges::subrange(std::next(inst->options.begin()), inst->options.end()))
-                        first_name += ", " + block->debug_name;
-                    return std::format("cond br {} [{}]", inst->br_on.to_string(), first_name);
+            if constexpr (std::is_same_v<T, CondBrInstruction>) {
+                auto first_name = inst->options[0]->debug_name;
+                for (auto block : std::ranges::subrange(std::next(inst->options.begin()), inst->options.end()))
+                    first_name += ", " + block->debug_name;
+                return std::format("cond br {} [{}]", inst->br_on.to_string(), first_name);
+            }
+            if constexpr (std::is_same_v<T, BrInstruction>) {
+                return std::format("br {}", inst->next->debug_name);
+            }
+            if constexpr (std::is_same_v<T, RetInstruction>) {
+                return std::format("ret {}", inst->ret_val ? inst->ret_val->to_string() : "void");
+            }
+            if constexpr (std::is_same_v<T, PhiInstruction>) {
+                std::string input = inst->args[0].to_string();
+                for (auto& arg : std::ranges::subrange(std::next(inst->args.begin()), inst->args.end()))
+                    input += ", " + arg.to_string();
+                return std::format("%{} = phi({})", inst->into, input);
+            }
+            if constexpr (std::is_same_v<T, AssignInstruction>) {
+                return std::format("{} = {}", inst->lhs.to_string(), inst->rhs.to_string());
+            }
+            if constexpr (std::is_same_v<T, CallFunctionInstruction>) {
+                std::string input;
+                if (!inst->val.empty()) {
+                    input = inst->val[0].to_string();
+                    for (auto& arg : std::ranges::subrange(std::next(inst->val.begin()), inst->val.end()))
+                        input += ", " + arg.to_string();
                 }
-                if constexpr (std::is_same_v<T, BrInstruction>) {
-                    return std::format("br {}", inst->next->debug_name);
-                }
-                if constexpr (std::is_same_v<T, RetInstruction>) {
-                    return std::format("ret {}", inst->ret_val ? inst->ret_val->to_string() : "void");
-                }
-                if constexpr (std::is_same_v<T, PhiInstruction>) {
-                    std::string input = inst->args[0].to_string();
+                return std::format("%{} = call {}({})", inst->into, inst->function_name, input);
+            }
+            if constexpr (std::is_same_v<T, RelocateValueInstruction>) {
+                return std::format("%{} = {}", inst->into, inst->val.to_string());
+            }
+            if constexpr (std::is_same_v<T, NewArrayInstruction>) {
+                std::string input = inst->values[0].to_string();
+                for (auto& arg : std::ranges::subrange(std::next(inst->values.begin()), inst->values.end()))
+                    input += ", " + arg.to_string();
+                return std::format("%{} = [{}]", inst->into, input);
+            }
+            if constexpr (std::is_same_v<T, NewPrimitiveInstruction>) {
+                return std::format("%{} = primitive", inst->into);
+            }
+            if constexpr (std::is_same_v<T, BorrowValueInstruction>) {
+                return std::format("%{} = borrow {}", inst->into, inst->val.to_string());
+            }
+            if constexpr (std::is_same_v<T, DomainSubsetConstraint>) {
+                return std::format("{} ⊇ {}", inst->super.to_string(), inst->sub.to_string());
+            }
+            if constexpr (std::is_same_v<T, DomainExtensionConstraint>) {
+                return std::format("{} ⊇ {} ∪ {}", inst->super.to_string(),
+                    inst->old_super.to_string().empty() ?
+                    inst->super.to_string() :
+                    inst->old_super.to_string(), inst->sub.to_string());
+            }
+            if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
+                return std::format("{} => {}", inst->d1.to_string(), inst->d2.to_string());
+            }
+            if constexpr (std::is_same_v<T, DomainPhiInstruction>) {
+                std::string input;
+                if (!inst->args.empty()) {
+                    input = inst->args[0].to_string();
                     for (auto& arg : std::ranges::subrange(std::next(inst->args.begin()), inst->args.end()))
                         input += ", " + arg.to_string();
-                    return std::format("%{} = phi({})", inst->into, input);
                 }
-                if constexpr (std::is_same_v<T, AssignInstruction>) {
-                    return std::format("{} = {}", inst->lhs.to_string(), inst->rhs.to_string());
-                }
-                if constexpr (std::is_same_v<T, CallFunctionInstruction>) {
-                    std::string input;
-                    if (!inst->val.empty()) {
-                        input = inst->val[0].to_string();
-                        for (auto& arg : std::ranges::subrange(std::next(inst->val.begin()), inst->val.end()))
-                            input += ", " + arg.to_string();
-                    }
-                    return std::format("%{} = call {}({})", inst->into, inst->function_name, input);
-                }
-                if constexpr (std::is_same_v<T, RelocateValueInstruction>) {
-                    return std::format("%{} = {}", inst->into, inst->val.to_string());
-                }
-                if constexpr (std::is_same_v<T, NewArrayInstruction>) {
-                    std::string input = inst->values[0].to_string();
-                    for (auto& arg : std::ranges::subrange(std::next(inst->values.begin()), inst->values.end()))
-                        input += ", " + arg.to_string();
-                    return std::format("%{} = [{}]", inst->into, input);
-                }
-                if constexpr (std::is_same_v<T, NewPrimitiveInstruction>) {
-                    return std::format("%{} = primitive", inst->into);
-                }
-                if constexpr (std::is_same_v<T, BorrowValueInstruction>) {
-                    return std::format("%{} = borrow {}", inst->into, inst->val.to_string());
-                }
-                if constexpr (std::is_same_v<T, DomainSubsetConstraint>) {
-                    return std::format("{} ⊇ {}", inst->super.to_string(), inst->sub.to_string());
-                }
-                if constexpr (std::is_same_v<T, DomainExtensionConstraint>) {
-                    return std::format("{} ⊇ {} ∪ {}", inst->super.to_string(), 
-                        inst->old_super.to_string().empty() ?
-                            inst->super.to_string() :
-                            inst->old_super.to_string(), inst->sub.to_string());
-                }
-                if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
-                    return std::format("{} => {}", inst->d1.to_string(), inst->d2.to_string());
-                }
-                if constexpr (std::is_same_v<T, DomainPhiInstruction>) {
-                    std::string input;
-                    if (!inst->args.empty()) {
-                        input = inst->args[0].to_string();
-                        for (auto& arg : std::ranges::subrange(std::next(inst->args.begin()), inst->args.end()))
-                            input += ", " + arg.to_string();
-                    }
-                    return std::format("{} = domain φ({})", inst->into, input);
-                }
-                if constexpr (std::is_same_v<T, DerefOperation>) {
-                    return std::format("%{} = deref {}", inst->into, inst->reference.to_string());
-                }
-                if constexpr (std::is_same_v<T, MayStoreOperation>) {
-                    return std::format("{} = χ({})", inst->new_domain.to_string(), inst->old_domain.to_string());
-                }
-                return "not implemented";
-            };
+                return std::format("{} = domain φ({})", inst->into, input);
+            }
+            if constexpr (std::is_same_v<T, DerefOperation>) {
+                return std::format("%{} = deref {}", inst->into, inst->reference.to_string());
+            }
+            if constexpr (std::is_same_v<T, MayStoreOperation>) {
+                return std::format("{} = χ({}) [may store]", inst->new_domain.to_string(), inst->old_domain.to_string());
+            }
+            if constexpr (std::is_same_v<T, MayLoadOperation>) {
+                return std::format("µ({}) [may load]", inst->domain.to_string());
+            }
+            if constexpr (std::is_same_v<T, DerefLoadOperation>) {
+                return std::format("%{} = deref load {}", inst->into, inst->reference.to_string());
+            }
+            return "not implemented";
+        };
+        std::string BasicBlock::to_string()
+        {
+            
             std::string instructions_string;
             for (auto& inst : instructions) {
-                instructions_string += std::visit(instruction_to_string, inst->to_variant()) + '\n';
+                instructions_string += std::visit([](auto* inst) { return instruction_to_string(inst); }, inst->to_variant()) + '\n';
             }
             instructions_string.pop_back(); // remove the trailing \n
 
@@ -545,6 +552,10 @@ namespace Yoyo{
             transform_to_ssa();
             std::cout << "Phase 3\n" << type_mapping.to_string() << "\n\n" << function->to_string() << std::endl;
             clear_dependencies();
+
+            // build DUG
+            build_dug();
+            std::cout << def_use_graph.to_graphviz() << std::endl;
             return function;
         }
         void DomainCheckerState::build_dominators()
@@ -683,7 +694,7 @@ namespace Yoyo{
                                 for (auto pointee : state->ptgraph.get_pointees_of(type.domains[0].first.to_string())) {
                                     auto& type = state->get_value_type(Value::from(std::move(pointee)));
                                     auto new_name = producer.name_for(type.domains[0].first.name);
-                                    auto op = new MayStoreOperation(tp, Domain(), Domain(new_name));
+                                    auto op = new MayStoreOperation(tp, Domain(type.domains[0].first.name), Domain(new_name));
                                     
                                     if (storage_entry.contains(type.domains[0].first.name))
                                         op->old_domain.name = storage_entry.at(type.domains[0].first.name);
@@ -696,6 +707,24 @@ namespace Yoyo{
                                 }
                             }
                             
+                        }
+                        if constexpr (std::is_same_v<T, DerefLoadOperation>) {
+                            // if its a reference to reference add may load instructions
+                            auto& pointer_type = state->get_value_type(tp->reference);
+                            auto& pointer_details = std::get<BorrowCheckerType::RefPtr>(pointer_type.details);
+                            if (!pointer_details.subtype->domains.empty()) {
+                                for (auto pointee : state->ptgraph.get_pointees_of(pointer_type.domains[0].first.to_string())) {
+                                    auto& type = state->get_value_type(Value::from(std::move(pointee)));
+                                    auto op = new MayLoadOperation(tp, Domain(type.domains[0].first));
+
+                                    if (storage_entry.contains(type.domains[0].first.name))
+                                        op->domain.name = storage_entry.at(type.domains[0].first.name);
+                                    else
+                                        unfound_uses.push_back(std::ref(op->domain.name));
+
+                                    it = block->instructions.emplace(++it, op);
+                                }
+                            }
                         }
                     }, 
                     (*it)->to_variant());
@@ -786,6 +815,66 @@ namespace Yoyo{
             }
             auto final_graph = std::format("digraph G {{\n{}}}", gvz_content);
             std::cout << final_graph << std::endl;
+        }
+        void DomainCheckerState::build_dug()
+        {
+            struct DUGEdgeInserter {
+                DomainCheckerState* state;
+                // points to the instruction that defines a variable
+                std::unordered_map<std::string, Instruction*> defining_instruction;
+                // uses of a variable where the definition isn't found yet
+                std::unordered_map<std::string, std::vector<Instruction*>> delayed_uses;
+                void add_definition(const std::string& var, Instruction* inst) {
+                    defining_instruction[var] = inst;
+                    if (delayed_uses.contains(var)) {
+                        auto node = delayed_uses.extract(var);
+                        for (auto& elem : node.mapped()) {
+                            state->def_use_graph.edges[inst].emplace(elem, var);
+                        }
+                    }
+                }
+                void add_use(const std::string& var, Instruction* inst) {
+                    if (defining_instruction.contains(var)) {
+                        state->def_use_graph.edges[
+                            defining_instruction[var]
+                        ].emplace(inst, var);
+                    }
+                    else {
+                        // I honestly don't know that it is possible to use a variable
+                        // before definition, maybe in loops or depending on the order we walk the cfg
+                        delayed_uses[var].emplace_back(inst);
+                    }
+                }
+                void operator()(DomainSubsetConstraint* con) {
+                    add_definition(con->super.to_string(), con);
+                    if (con->sub.is_var()) add_use(con->sub.to_string(), con);
+                }
+                void operator()(DomainExtensionConstraint* con) {
+                    add_definition(con->super.to_string(), con);
+                    if (con->sub.is_var()) add_use(con->sub.to_string(), con);
+                    if (con->old_super.is_var()) add_use(con->old_super.to_string(), con);
+                }
+                void operator()(DomainPhiInstruction* op) {
+                    add_definition(op->into, op);
+                    for (auto& operand : op->args) {
+                        if (operand.is_var()) add_use(operand.to_string(), op);
+                    }
+                }
+                void operator()(MayStoreOperation* op) {
+                    add_definition(op->new_domain.to_string(), op->origin);
+                    add_use(op->old_domain.to_string(), op->origin);
+                }
+                void operator()(MayLoadOperation* op) {
+                    add_use(op->domain.to_string(), op->origin);
+                }
+                void operator()(Instruction*) {}
+            };
+            DUGEdgeInserter edge_inserter{ this };
+            for (auto& block : func->blocks) {
+                for (auto& inst : block->instructions) {
+                    std::visit(edge_inserter, inst->to_variant());
+                }
+            }
         }
         static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType
         {
@@ -1060,7 +1149,42 @@ namespace Yoyo{
             }
             return false;
         }
-    }
+        Value LValueEmitter::do_expr(Expression* expr)
+        {
+            if (auto px = dynamic_cast<PrefixOperation*>(expr)) {
+                if (px->op.type == TokenType::Star) {
+                    auto this_eval = std::visit(em, px->operand->toVariant());
+                    auto result = em.temporary_name();
+                    em.current_block->add_instruction(new DerefOperation(std::move(this_eval), std::string(result)));
+                    return Value::from(std::move(result));
+                }
+            }
+            return std::visit(em, expr->toVariant());
+        }
+        std::string DefUseGraph::to_graphviz()
+        {
+            auto inst_to_string = [](Instruction* inst) {
+                auto ret_val = std::visit([](auto* inst) { return instruction_to_string(inst); }, inst->to_variant());
+                if (ret_val.starts_with("%")) ret_val.insert(ret_val.begin(), '\\');
+                return ret_val;
+            };
+            std::ostringstream out;
+            out << "digraph DefUseGraph " << " {\n";
+            for (const auto& [src, targets] : edges) {
+                if (targets.empty()) {
+                    out << "    \"" << inst_to_string(src) << "\";\n";
+                }
+                else {
+                    for (const auto& dst : targets) {
+                        out << "    \"" << inst_to_string(src)<< "\" -> \"" << inst_to_string(dst.first) << "\" [label=\"" << dst.second << "\"]" << ";\n";
+                    }
+                }
+            }
+            out << "}\n";
+            auto out_str = out.str();
+            return out_str;
+        }
+}
 }
 namespace Yoyo {
     namespace BorrowChecker {
@@ -1178,6 +1302,13 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(DerefOperation* op)
         {
             state->register_value_base_type(op->into, state->get_value_type(op->reference).deref());
+            return current_position;
+        }
+        BlockIteratorTy DomainVariableInserter::operator()(DerefLoadOperation* op)
+        {
+            // load does not return an lvalue
+            state->register_value_base_type(op->into, 
+                std::get<BorrowCheckerType::RefPtr>(state->get_value_type(op->reference).details).subtype->cloned(state));
             return current_position;
         }
     }
