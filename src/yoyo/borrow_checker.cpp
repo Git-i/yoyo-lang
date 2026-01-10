@@ -1,5 +1,7 @@
 #include "ir_gen.h"
+#include "overload_details.h"
 #include <type_traits>
+#include <unordered_set>
 #include <variant>
 #include <ranges>
 #include <algorithm>
@@ -10,7 +12,7 @@ namespace Yoyo { bool has_type_variable(const Yoyo::Type& tp);}
 if(has_type_variable(x->evaluated_type)) {\
     irgen->error(Yoyo::Error(x, "Could not resolve type of this expression"));\
 }
-namespace Yoyo{ 
+namespace Yoyo{
     namespace BorrowChecker
     {
         //======================================================
@@ -485,13 +487,13 @@ namespace Yoyo{
                 return std::format("µ({}) [may load]", inst->domain.to_string());
             }
             if constexpr (std::is_same_v<T, DerefLoadOperation>) {
-                return std::format("%{} = deref load {}", inst->into, inst->reference.to_string());
+                return std::format("%{} = deref load {} from domain {}", inst->into, inst->reference.to_string(), inst->ref_domain.to_string());
             }
             return "not implemented";
         };
         std::string BasicBlock::to_string()
         {
-            
+
             std::string instructions_string;
             for (auto& inst : instructions) {
                 instructions_string += std::visit([](auto* inst) { return instruction_to_string(inst); }, inst->to_variant()) + '\n';
@@ -537,7 +539,7 @@ namespace Yoyo{
             std::cout << "Phase 2\n" << type_mapping.to_string() << "\n\n" <<  function->to_string() << std::endl;
             using namespace std::ranges;
             using namespace std::views;
-            
+
             bool has_change = true;
             while (has_change) {
                 has_change = false;
@@ -547,7 +549,7 @@ namespace Yoyo{
                 }
             }
             std::cout << ptgraph.to_graphviz() << std::endl;
-            
+
             calc_block_preds();
             transform_to_ssa();
             std::cout << "Phase 3\n" << type_mapping.to_string() << "\n\n" << function->to_string() << std::endl;
@@ -556,7 +558,165 @@ namespace Yoyo{
             // build DUG
             build_dug();
             std::cout << def_use_graph.to_graphviz() << std::endl;
+
+            do_primary_analysis();
+            std::cout << final_ptg.to_graphviz();
             return function;
+        }
+        void DomainCheckerState::do_primary_analysis() {
+            std::set<Instruction*> worklist;
+            // initialize worklist to contain all instructions that induce new domains (deref load and subset constraint)
+            for(auto&[def, uses] : def_use_graph.edges) {
+                if(dynamic_cast<DomainSubsetConstraint*>(def) || dynamic_cast<DerefLoadOperation*>(def))
+                    worklist.insert(def);
+                for(auto& [use, domain] : uses) {
+                    if(dynamic_cast<DomainSubsetConstraint*>(use) || dynamic_cast<DerefLoadOperation*>(def))
+                        worklist.insert(use);
+                }
+            }
+            while(!worklist.empty()) {
+                using enum TopLevelPointsToGraph::AdditionStatus;
+
+                auto inst_to_string = [](Instruction* inst) {
+                    auto ret_val = std::visit([](auto* inst) { return instruction_to_string(inst); }, inst->to_variant());
+                    if (ret_val.starts_with("%")) ret_val.insert(ret_val.begin(), '\\');
+                    return ret_val;
+                    };
+
+                std::cout << "\nWorklist:\n";
+                for(auto inst : worklist)
+                    std::cout << inst_to_string(inst) << std::endl;
+
+                auto node = *worklist.begin();
+                worklist.erase(worklist.begin());
+
+                if(auto inst = dynamic_cast<DomainSubsetConstraint*>(node)) {
+                    // p > q
+                    bool has_change = false;
+                    if (inst->sub.is_var()) {
+                        for (auto& pointee : final_ptg.get_pointees_of(inst->sub.to_string())) {
+                            has_change =
+                                (final_ptg.add_new_relation(inst->super.to_string(), pointee) == Changed)
+                                || has_change;
+                        }
+                    }
+                    // p > {q}
+                    else if(!inst->sub.is_null()) {
+                        has_change =
+                            final_ptg.add_new_relation(inst->super.to_string(), inst->sub.to_string()) == Changed;
+                    }
+
+                    if(has_change) {
+                        for (auto [use, domain] : def_use_graph.edges[node])
+                            worklist.insert(use);
+                    }
+                }
+                else if(auto inst = dynamic_cast<DomainExtensionConstraint*>(node)) {
+                    __debugbreak();
+                }
+                else if(auto inst = dynamic_cast<DomainPhiInstruction*>(node)) {
+                    bool has_change = false;
+
+                    for (auto& domain : inst->args) {
+                        for (auto& pointee : final_ptg.get_pointees_of(domain.to_string())) {
+                            has_change =
+                                (final_ptg.add_new_relation(inst->into, pointee) == Changed)
+                                || has_change;
+                        }
+                    }
+
+                    if (has_change) {
+                        for (auto [use, domain] : def_use_graph.edges[node])
+                            worklist.insert(use);   
+                    }
+                }
+                else if(auto inst = dynamic_cast<AssignInstruction*>(node)) {
+                    // assign instructions only get added here if they have associated "may store"
+                    // i.e its a write into an lvalue
+                    
+                    // a domain points to a single concrete memory location we strong update else we weak update
+                    auto& pts_lhs = final_ptg.get_pointees_of(inst->lhs_domain.to_string());
+                    bool is_single_update = pts_lhs.size() == 1;
+
+                    bool has_change = false;
+                    for (auto& elem : pts_lhs) {
+                        // every element of pts_lhs is updated in the may store operation
+                        auto& type = get_value_type(Value::from(std::string(elem)));
+                        if (type.domains.empty()) break; // update does not change any domains
+                        // lookup the type's old and new domains in the may store operations;
+                        // old_domain is useful for weak update
+                        Domain old_domain, new_domain = type.domains[0].first;
+                        for (auto ms_op : inst->may_stores) {
+                            if (ms_op->new_domain.name.starts_with(new_domain.name)) {
+                                old_domain = ms_op->old_domain;
+                                new_domain = ms_op->new_domain;
+                                break;
+                            }
+                        }
+
+                        if (is_single_update /* && domain is concrete (not shared)*/) {
+                            // strong update
+                            for (auto& pts_rhs : final_ptg.get_pointees_of(inst->rhs_domain.to_string())) {
+                                has_change =
+                                    final_ptg.add_new_relation(new_domain.name, pts_rhs) == Changed
+                                    || has_change;
+                            }
+                        }
+                        else {
+                            // weak update (add new ones and preserve old ones)
+                            for (auto& pts_rhs : final_ptg.get_pointees_of(inst->rhs_domain.to_string())) {
+                                has_change =
+                                    final_ptg.add_new_relation(new_domain.name, pts_rhs) == Changed
+                                    || has_change;
+                            }
+                            for (auto& pts_rhs : final_ptg.get_pointees_of(old_domain.to_string())) {
+                                has_change =
+                                    final_ptg.add_new_relation(new_domain.name, pts_rhs) == Changed
+                                    || has_change;
+                            }
+                        }
+                    }
+                    
+                    if (has_change) {
+                        for (auto [use, domain] : def_use_graph.edges[node])
+                            worklist.insert(use);
+                    }
+                }
+                else if(auto inst = dynamic_cast<DerefLoadOperation*>(node)) {
+                    // val = *pointer, pts(v) = pts(pts(pointer))
+                    auto& target_t = get_value_type(Value::from(std::string(inst->into)));
+                    if (target_t.domains.empty()) continue;
+
+                    // we can safely assume this is version 1 of the domain, because this instruction creates a new domain
+                    auto target = target_t.domains[0].first;
+                    target.name += "__1";
+
+                    bool has_change = false;
+                    for(auto& pts_reference : final_ptg.get_pointees_of(inst->ref_domain.to_string())) {
+                        // every reference here has an associated may load operation, we use that to get the
+                        // versioned name
+                        auto domain = get_value_type(Value::from(std::string(pts_reference))).domains[0].first;
+                        for(auto ml_op : inst->may_loads) { 
+                            if (ml_op->domain.name.starts_with(domain.name)) {
+                                domain = ml_op->domain;
+                                break;
+                            }
+                        }
+                        for (auto& pts_pts : final_ptg.get_pointees_of(domain.to_string())) {
+                            has_change = 
+                                final_ptg.add_new_relation(target.name, pts_pts) == Changed
+                                || has_change;
+                        }
+                    }
+
+                    // deref load operation can't define anything so they use a definer ( the subset null constraint inserted after them)
+                    if (has_change) {
+                        for (auto [use, domain] : def_use_graph.edges[inst])
+                            worklist.insert(use);
+                    }
+                }
+                else debugbreak();
+            }
         }
         void DomainCheckerState::build_dominators()
         {
@@ -564,11 +724,11 @@ namespace Yoyo{
             dominators.register_for(entry_block, entry_block);
             bool should_loop = true;
             // the order should not matter
-            auto reverse_post_order = [](BasicBlock* block) 
+            auto reverse_post_order = [](BasicBlock* block)
                 {
 
                     for (auto child : block->instructions.back()->children()) {
-                        
+
                     }
                 };
             while (should_loop) {
@@ -584,7 +744,7 @@ namespace Yoyo{
             }
         }
         std::string ValueProducer::name_for(const std::string& val) {
-            if (!var_map.contains(val)) 
+            if (!var_map.contains(val))
                 var_map[val] = 0;
             return std::format("{}__{}", val, ++var_map[val]);
         }
@@ -602,7 +762,7 @@ namespace Yoyo{
                 auto phi = std::unique_ptr<DomainPhiInstruction>(new DomainPhiInstruction({}, std::string(new_name)));
                 // if the assignment is downward exposed we add it to our latest instances
                 if (!storage[start_at].contains(arg)) storage[start_at][arg] = new_name;
-                
+
 
                 for (auto& pred : start_at->preds) {
                     if (!storage.contains(pred)) ssa_transform_do_block(pred, storage, producer, state);
@@ -689,34 +849,50 @@ namespace Yoyo{
                             if (!as_lval) return;
 
                             // if its a pointer to pointer we need to add may store instruction(s)
-
                             if (!as_lval->subtype->domains.empty()) {
+                                // write the rhs_domain and lhs_domain as they're uses for the DUG
+                                // lhs is used to read its pointees for update
+                                // rhs is used, because obviously (in future these may become multiple for struct assignment)
+                                inst->lhs_domain = type.domains[0].first;
+                                inst->rhs_domain = state->get_value_type(inst->rhs).domains[0].first;
+
+                                if (storage_entry.contains(inst->lhs_domain.name)) inst->lhs_domain.name = storage_entry[inst->lhs_domain.name];
+                                else unfound_uses.push_back(std::ref(inst->lhs_domain.name));
+
+                                if (storage_entry.contains(inst->rhs_domain.name)) inst->rhs_domain.name = storage_entry[inst->rhs_domain.name];
+                                else unfound_uses.push_back(std::ref(inst->rhs_domain.name));
+
                                 for (auto pointee : state->ptgraph.get_pointees_of(type.domains[0].first.to_string())) {
                                     auto& type = state->get_value_type(Value::from(std::move(pointee)));
                                     auto new_name = producer.name_for(type.domains[0].first.name);
                                     auto op = new MayStoreOperation(tp, Domain(type.domains[0].first.name), Domain(new_name));
-                                    
+                                    inst->may_stores.push_back(op);
+
                                     if (storage_entry.contains(type.domains[0].first.name))
                                         op->old_domain.name = storage_entry.at(type.domains[0].first.name);
                                     else
                                         unfound_uses.push_back(std::ref(op->old_domain.name));
 
                                     storage_entry[type.domains[0].first.name] = new_name;
-                                    
+
                                     it = block->instructions.emplace(++it, op);
                                 }
                             }
-                            
+
                         }
                         if constexpr (std::is_same_v<T, DerefLoadOperation>) {
                             // if its a reference to reference add may load instructions
+
+                            if (storage_entry.contains(tp->ref_domain.name)) tp->ref_domain.name = storage_entry[tp->ref_domain.name];
+                            else unfound_uses.push_back(std::ref(tp->ref_domain.name));
+
                             auto& pointer_type = state->get_value_type(tp->reference);
                             auto& pointer_details = std::get<BorrowCheckerType::RefPtr>(pointer_type.details);
                             if (!pointer_details.subtype->domains.empty()) {
                                 for (auto pointee : state->ptgraph.get_pointees_of(pointer_type.domains[0].first.to_string())) {
                                     auto& type = state->get_value_type(Value::from(std::move(pointee)));
                                     auto op = new MayLoadOperation(tp, Domain(type.domains[0].first));
-
+                                    tp->may_loads.push_back(op);
                                     if (storage_entry.contains(type.domains[0].first.name))
                                         op->domain.name = storage_entry.at(type.domains[0].first.name);
                                     else
@@ -726,7 +902,7 @@ namespace Yoyo{
                                 }
                             }
                         }
-                    }, 
+                    },
                     (*it)->to_variant());
             }
             // perform global value numbering
@@ -742,7 +918,7 @@ namespace Yoyo{
                         }
                         return true;
                     });
-                
+
             }
             else {
                 std::erase_if(unfound_uses, [&](std::reference_wrapper<std::string> arg)
@@ -777,7 +953,7 @@ namespace Yoyo{
                             else
                                 block->instructions.emplace(block->instructions.begin(), std::move(phi));
                         }
-                        
+
                         arg.get() = storage_entry[arg];
                         return true;
                     });
@@ -818,13 +994,16 @@ namespace Yoyo{
         }
         void DomainCheckerState::build_dug()
         {
+            std::unordered_set<Instruction*> skip_instruction;
             struct DUGEdgeInserter {
                 DomainCheckerState* state;
+                std::unordered_set<Instruction*>& skip;
                 // points to the instruction that defines a variable
                 std::unordered_map<std::string, Instruction*> defining_instruction;
                 // uses of a variable where the definition isn't found yet
                 std::unordered_map<std::string, std::vector<Instruction*>> delayed_uses;
                 void add_definition(const std::string& var, Instruction* inst) {
+                    if(defining_instruction.contains(var)) return;
                     defining_instruction[var] = inst;
                     if (delayed_uses.contains(var)) {
                         auto node = delayed_uses.extract(var);
@@ -864,14 +1043,35 @@ namespace Yoyo{
                     add_definition(op->new_domain.to_string(), op->origin);
                     add_use(op->old_domain.to_string(), op->origin);
                 }
+                void operator()(AssignInstruction* op) {
+                    if (op->may_stores.empty()) return;
+
+                    // we use the domain of the pointer we dereferenced to get this lvalue
+                    add_use(op->lhs_domain.to_string(), op);
+                    // we use the domain we're copying into here
+                    add_use(op->rhs_domain.to_string(), op);
+                }
                 void operator()(MayLoadOperation* op) {
                     add_use(op->domain.to_string(), op->origin);
+                    auto parent = dynamic_cast<DerefLoadOperation*>(op->origin);
+                    auto& type = state->get_value_type(Value::from(std::string(parent->into)));
+                    if(!type.domains.empty())
+                        add_definition(type.domains[0].first.to_string(), parent);
+                }
+                void operator()(DerefLoadOperation* op) {
+                    add_use(op->ref_domain.to_string(), op);
+                    for (auto inst : op->definer) {
+                        auto as_sub_constraint = dynamic_cast<DomainSubsetConstraint*>(inst);
+                        skip.insert(as_sub_constraint);
+                        add_definition(as_sub_constraint->super.to_string(), op);
+                    }
                 }
                 void operator()(Instruction*) {}
             };
-            DUGEdgeInserter edge_inserter{ this };
+            DUGEdgeInserter edge_inserter{ this, skip_instruction };
             for (auto& block : func->blocks) {
                 for (auto& inst : block->instructions) {
+                    if (skip_instruction.contains(inst.get())) continue;
                     std::visit(edge_inserter, inst->to_variant());
                 }
             }
@@ -941,14 +1141,14 @@ namespace Yoyo{
         BorrowCheckerType BorrowCheckerType::cloned(DomainCheckerState* stt) const
         {
             std::unordered_map<std::string, Domain> old_to_new_map;
-            
+
             auto new_type = moved(stt);
             for (auto& [domain, is_bidr] : domains) {
-                
+
                     old_to_new_map[domain.to_string()] = stt->new_domain_var();
-                
+
             }
-            
+
             auto substitute_domains = [&old_to_new_map](BorrowCheckerType& type, const auto& self) -> void
                 {
                     for (auto& [domain, is_bidr] : type.domains) {
@@ -984,8 +1184,8 @@ namespace Yoyo{
                     default: debugbreak();
                     }
                 };
-            
-            
+
+
 
             substitute_domains(new_type, substitute_domains);
             return new_type;
@@ -1118,6 +1318,22 @@ namespace Yoyo{
             }
             return has_change;
         }
+        bool InclusionPointerAnalyser::operator()(DerefLoadOperation* op)
+        {
+            bool has_change = false;
+            auto& out_t = state->get_value_type(Value::from(std::string(op->into)));
+            if (out_t.domains.empty()) return false;
+            auto out_domain = out_t.domains[0].first;
+            // if its a pointer-to-pointer load, the result introduces a new domain
+            for (auto pointee : ptg.get_pointees_of(op->ref_domain.to_string())) {
+                // all the pointees of the pointees of the references are pointees of the output domain
+                DomainSubsetConstraint con(Domain(out_domain), Domain(
+                    state->get_value_type(Value::from(std::move(pointee))).domains[0].first
+                ));
+                has_change = (*this)(&con) || has_change;
+            }
+            return has_change;
+        }
         bool InclusionPointerAnalyser::operator()(DomainSubsetConstraint* con) {
             // p > q
             if (con->sub.is_var()) {
@@ -1184,6 +1400,24 @@ namespace Yoyo{
             auto out_str = out.str();
             return out_str;
         }
+        std::string TopLevelPointsToGraph::to_graphviz()
+        {
+            std::ostringstream out;
+            out << "digraph FlowGraph" << " {\n";
+            for (const auto& [src, targets] : domain_to_node) {
+                if (targets.empty()) {
+                    out << "    \"" << src << "\";\n";
+                }
+                else {
+                    for (const auto& dst : targets) {
+                        out << "    \"" << src << "\" -> \"" << dst << "\";\n";
+                    }
+                }
+            }
+            out << "}\n";
+            auto out_str = out.str();
+            return out_str;
+        }
 }
 }
 namespace Yoyo {
@@ -1194,7 +1428,7 @@ namespace Yoyo {
             if (left.domains.empty()) return;
             // change this for structural types, but single types can only have one domain
             current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(left.domains[0].first), Domain(right.domains[0].first)));
-            
+
         }
         void DomainVariableInserter::add_extend_constraints_between_types(const BorrowCheckerType& left, const BorrowCheckerType& right)
         {
@@ -1206,7 +1440,7 @@ namespace Yoyo {
         {
             // this is the case for array literals with a bidirectional domain
             std::vector<std::unique_ptr<DomainDependenceEdgeConstraint>> edge_constraints;
-            
+
             for (auto i : std::views::iota(0u, left.domains.size())) {
                 const auto& ldom = left.domains[i];
 
@@ -1230,10 +1464,10 @@ namespace Yoyo {
                 current_position += edge_constraints.size() - 1;
             }
         }
-        
+
         void DomainVariableInserter::initialize_domains_to_null(const BorrowCheckerType& type) {
             for (auto& dom : type.domains) {
-                
+
                 current_position = instructions.emplace(++current_position, new DomainSubsetConstraint(Domain(dom.first), Domain("null")));
             }
         }
@@ -1314,8 +1548,19 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(DerefLoadOperation* op)
         {
             // load does not return an lvalue
-            state->register_value_base_type(op->into, 
-                std::get<BorrowCheckerType::RefPtr>(state->get_value_type(op->reference).details).subtype->cloned(state));
+            auto& reference_type = state->get_value_type(op->reference);
+            op->ref_domain = reference_type.domains[0].first;
+
+            auto new_type = std::get<BorrowCheckerType::RefPtr>(reference_type.details).subtype->cloned(state);
+            // we insert a subset to null instruction to indicate a definition of a new domain
+            // the actual points-to information will be resolved correctly later
+            for (auto& [domain, _] : new_type.domains) {
+                auto inst = new DomainSubsetConstraint(Domain(domain), Domain("null"));
+                current_position = instructions.emplace(++current_position, inst);
+                op->definer.emplace_back(inst);
+            }
+            state->register_value_base_type(op->into,
+                std::move(new_type));
             return current_position;
         }
     }

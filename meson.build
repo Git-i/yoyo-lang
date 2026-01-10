@@ -22,7 +22,7 @@ sources = [
     'src/yoyo/borrow_checker.cpp',
     'src/yoyo/type_checker.cpp',
     'src/yoyo/ast_print.cpp',
-    
+
     'include/yoyo/ast_node.h',
     'include/yoyo/cfg_node.h',
     'include/yoyo/class_entry.h',
@@ -94,7 +94,7 @@ if backend == 'yvm' or backend == 'both'
         'src/yoyo/yvm/unique_type_selector.cpp',
         'src/yoyo/yvm/app_module.cpp',
 
-        
+
     ]
     if target_machine.system() == 'windows'
         sources += ['src/yoyo/yvm/windows_native_module.cpp']
@@ -107,8 +107,8 @@ if get_option('default_library') == 'shared'
     dependency_args += ['-DYOYO_SHARED']
 endif
 yoyo_lib = library(
-    'yoyo', 
-    sources, 
+    'yoyo',
+    sources,
     include_directories: ['include/yoyo', 'subprojects/minicoro'],
     dependencies: deps,
     cpp_args: yoyo_args)

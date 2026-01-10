@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <span>
+#include <unordered_set>
 #include <vector>
 #include <optional>
 #include <variant>
@@ -137,10 +138,17 @@ namespace Yoyo {
                 : val(val), function_name(function_name), into(into) {
             }
         };
+        class MayStoreOperation;
         class AssignInstruction : public Instruction {
         public:
             Value lhs;
             Value rhs;
+
+            //used for lvalue assign (aka store)
+            Domain lhs_domain;
+            std::vector<MayStoreOperation*> may_stores;
+            Domain rhs_domain;
+
             AssignInstruction(Value&& lhs, Value&& rhs) : lhs(lhs), rhs(rhs) {}
             InstructionVariant to_variant() override;
         };
@@ -216,9 +224,13 @@ namespace Yoyo {
             DerefOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
             InstructionVariant to_variant() override;
         };
+        class MayLoadOperation;
         class DerefLoadOperation : public Instruction {
         public:
             Value reference;
+            Domain ref_domain;
+            std::vector<MayLoadOperation*> may_loads;
+            std::vector<Instruction*> definer;
             std::string into;
             DerefLoadOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
             InstructionVariant to_variant() override;
@@ -238,8 +250,8 @@ namespace Yoyo {
         public:
             Instruction* origin;
             Domain domain;
-            MayLoadOperation(Instruction* origin, Domain&& domain) 
-                : origin(origin), 
+            MayLoadOperation(Instruction* origin, Domain&& domain)
+                : origin(origin),
                 domain(std::move(domain)) {}
             InstructionVariant to_variant() override;
         };
@@ -283,8 +295,8 @@ namespace Yoyo {
                 return out;
             }
         };
-        
-        
+
+
         class BorrowCheckerEmitter {
             IRGenerator* irgen;
             TypeCheckerState* stt;
@@ -373,7 +385,7 @@ namespace Yoyo {
             Value do_expr(Expression* expr);
         };
         struct DomainCheckerState;
-        
+
         struct BorrowCheckerType {
             enum TypeType {
                 Primitive = 0, // Unit type cant be divided any further (stability doesn't matter)
@@ -577,7 +589,7 @@ namespace Yoyo {
             bool operator()(NewPrimitiveInstruction*) { return false; }
             bool operator()(BorrowValueInstruction*) { return false; }
             bool operator()(DerefOperation*) { return false; }
-            bool operator()(DerefLoadOperation*) { return false; }
+            bool operator()(DerefLoadOperation*);
             bool operator()(DomainSubsetConstraint* con);
             bool operator()(DomainDependenceEdgeConstraint*) { return false; }
             bool operator()(DomainExtensionConstraint*);
@@ -617,7 +629,7 @@ namespace Yoyo {
                 return edges.at(dom);
             }
         };
-        
+
 
         struct DefUseGraph {
             struct ElemHash {
@@ -632,6 +644,20 @@ namespace Yoyo {
                 std::unordered_set<std::pair<Instruction*, std::string>, ElemHash>> edges;
             std::string to_graphviz();
         };
+        struct TopLevelPointsToGraph {
+            std::unordered_map<std::string, std::unordered_set<std::string>> domain_to_node;
+            enum AdditionStatus: bool { Changed = 1, Unchanged = 0};
+            AdditionStatus add_new_relation(const std::string& domain, const std::string& node) {
+                auto& entry = domain_to_node[domain];
+                if(entry.contains(node)) return Unchanged;
+                entry.insert(node);
+                return Changed;
+            }
+            std::unordered_set<std::string>& get_pointees_of(const std::string& dom) {
+                return domain_to_node[dom];
+            }
+            std::string to_graphviz();
+        };
         struct DomainCheckerState {
             // TODO make the union find
             size_t last_id = 0;
@@ -644,6 +670,7 @@ namespace Yoyo {
             BasicBlock* entry_block;
             PointsToGraph ptgraph;
             DefUseGraph def_use_graph;
+            TopLevelPointsToGraph final_ptg;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
@@ -653,10 +680,10 @@ namespace Yoyo {
             // transforms domain-related code to SSA
             void transform_to_ssa();
             // remove all "DomainDependenceEdge" constraints
-            // and add new assignments 
+            // and add new assignments
             void clear_dependencies();
             void build_dug();
+            void do_primary_analysis();
         };
     }
 }
-

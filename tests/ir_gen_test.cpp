@@ -43,7 +43,7 @@ void print_int(uint64_t arg) {
     std::cout << arg << std::endl;
 }
 void get_string(void* out) {
-    
+
 
     auto as_str = reinterpret_cast<YoyoString*>(out);
     as_str->text = static_cast<char*>(malloc(15));
@@ -81,7 +81,7 @@ Yoyo::YVMAppModule* addTestModule(Yoyo::YVMEngine* eng) {
     return md;
 }
 constexpr bool emit_ir = true;
-TEST_CASE("Test IR") 
+TEST_CASE("Test IR")
 {
     std::ifstream ifs("source.yoyo");
     std::ostringstream oss;
@@ -123,7 +123,7 @@ TEST_CASE("Test IR")
             //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
         }
     }
-    
+
     std::string func_2_name = src_md->module_hash + "func_2";
     auto fn2 = engine.findFunction(src_md, func_2_name).value();
     auto fib2 = engine.createFiber(fn2);
@@ -194,7 +194,7 @@ TEST_CASE("Test union initialization", "[unions]")
     std::string source(1 + R"(
 Color: union = {
     ColorRGB: struct = { r: u8, g: u8, b: u8, a: u8 }
-    
+
     RGB: ColorRGB,
     Hex: u32,
 
@@ -274,34 +274,53 @@ main: fn = {
 TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(
+condition: fn -> bool = { return false; }
 main: fn = {
-    a: mut i32 = 10;
-    b: mut i32 = 20;
-    c: mut i32 = 30;
+    x: i32 = 10;
+    y: i32 = 20;
+    z: i32 = 30;
 
-    p: mut &mut i32 = &mut a;
-    q: mut &mut i32 = &mut b;
-    
-    i: mut i32 = 0;
-    while(i == 10) {
-        *p = 100; 
-        temp := p; 
-        p = q;       
-        q = temp;    
-        
-        if(i == 5) {
-            p = &mut c;
-        }
+    p_1: mut &i32 = &x; // 0__1 -> {x}
+    p_2: mut &i32 = &y; // 1__1 -> {y}
+
+    pp: mut &mut &i32 = &mut p_1; // 2__1 -> {p_1}
+
+
+    // 2__2 as phi(2__1, 2__3)
+    // 1__4 as phi(1__1, 1__2)
+    // 0__5 as phi(0__1, 0__3)
+    while (condition()) {
+        if (condition()) {
+            // may store 0__4 from 0__5, 1__3 from 1__4 [pp = 2__2]
+            *pp = &z;
+        } else {
+            // p_1 becomes 0__6
+            p_1 = &y;
+        };
+        // 1__5 = phi(1__3, 1__4); 0__7 = phi(0__4, 0__6)
+        // deref 2__2 potentially loading (1__5 and 0__7) introduced 7__1 for the result, 
+        // deref that result and store in temp
+        temp := **pp;
+
+        if (condition()) {
+            // introduce 2__5
+            pp = &mut p_2;
+        };
+        // introduce 2__3 as phi(2__2, 2__5)
+        // deref pp potentially storing 0__3 from 0__7, 1__2 from 1__5
+        *pp = &x;
 
     }
-
-    val_p := *p;
-    val_q := *q;
+    // pp is 2__2, p3 is 4__1
+    p_3: mut &i32 = *pp;
+    // p_1 is 0__2
+    p_1 = p_3;
+    return;
 }
 )");
     Yoyo::YVMEngine engine;
     auto test_md = addTestModule(&engine);
-    test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) { 
+    test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) {
         for (auto i : std::views::iota(0, 10)) REQUIRE(i + 1 == reinterpret_cast<uint32_t*>(arr)[i]);
     }), "check_array");
     auto mod = engine.addModule("source", source);
@@ -411,7 +430,7 @@ main: fn -> i32 \ str = {
 }
 TEST_CASE("Test if expression", "[expressions], [if-expression]") {
     std::string source(1 + R"(
-produce: fn::<T>(val: T) -> T = return val; 
+produce: fn::<T>(val: T) -> T = return val;
 print_i32: fn(val: i32) = "${val}".test::print();
 main: fn -> bool = {
     result: mut = if(true) {
@@ -448,7 +467,7 @@ main: fn -> bool = {
 TEST_CASE("Test interfaces", "[type-checker], [interfaces]") {
     std::string source(1 + R"(
 takes_intf: fn::<T: impl Interface>(arg: T) = return;
-takes_generic_intf: fn::<O, T: impl InterfaceWrapper::<O>::Interface>(arg: T) -> O = return; 
+takes_generic_intf: fn::<O, T: impl InterfaceWrapper::<O>::Interface>(arg: T) -> O = return;
 main: fn = {
     obj1 := Generic1::new();
     obj2 := Generic2::new();
@@ -498,7 +517,7 @@ main: fn = {
     veci2 := Vec2::new(20, 30);
     vecf1 := Vec2::<f32>::new(30.0, 10.0);
     vecf2 := Vec2::new(100.0, 20.0);
-    
+
     veci1.to_str().test::print();
     "${veci2 * veci1}".test::print();
     "${vecf1 * vecf2}".test::print();
@@ -564,7 +583,7 @@ TEST_CASE("Test CFG", "[CFG]")
         } else {
             "Hello"
         }
-        if({ 
+        if({
             elem.stuff();
             if(true) {
                 return true;
