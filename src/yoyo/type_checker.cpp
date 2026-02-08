@@ -2,6 +2,7 @@
 #include "overload_details.h"
 #include "overload_resolve.h"
 #include "type_checker.h"
+#include <cmath>
 #include <ranges>
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo

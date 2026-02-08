@@ -6,6 +6,7 @@
 #include <vector>
 namespace Yoyo
 {
+    void YOYO_API debugbreak();
     class IRGenerator;
     // type must be an integer i8-i64/u8-u64
     struct IsIntegerConstraint {
@@ -247,7 +248,7 @@ namespace Yoyo
         template<typename T>
         TypeCheckerConstraint(T&& t) noexcept : TypeCheckerConstraintUnderlyingType(t) {}
     };
-    
+    struct TypeCheckerState;    
     /// represents the possible types a variable can be
     class Domain {
         bool is_infinite = true;
@@ -283,7 +284,7 @@ namespace Yoyo
             // type variables are types but in the form "?<num>"
             uint32_t res;
             auto [ptr, ec] = std::from_chars(tp.name.c_str() + 1, tp.name.c_str() + tp.name.size(), res);
-            if (ec != std::errc{}) __debugbreak();
+            if (ec != std::errc{}) debugbreak();
             return res;
         }
         Type id_to_type(uint32_t id) {

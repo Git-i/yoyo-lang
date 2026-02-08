@@ -167,7 +167,7 @@ namespace Yoyo
     }
     void YVMIRGenerator::operator()(InterfaceDeclaration* decl)
     {
-        __debugbreak();
+        debugbreak();
     }
     bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface);
     void YVMIRGenerator::operator()(EnumDeclaration* decl)

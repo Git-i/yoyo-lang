@@ -888,7 +888,7 @@ namespace Yoyo
     Type parseType(MangleScanner& scanner)
     {
 
-        //if (scanner.text.starts_with("gwrap_other")) __debugbreak();
+        //if (scanner.text.starts_with("gwrap_other")) debugbreak();
         Type output;
         auto token = scanner.next().value();
         assert(token.type == MangleScanner::Name);

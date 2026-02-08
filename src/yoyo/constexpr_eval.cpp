@@ -4,8 +4,8 @@ namespace Yoyo
 {
     Constant ConstantEvaluator::operator()(IntegerLiteral* lit)
     {
-        if (target && target->is_signed_integral()) return std::stoll(lit->text);
-        return std::stoull(lit->text);
+        if (target && target->is_signed_integral()) return static_cast<int64_t>(std::stoll(lit->text));
+        return static_cast<uint64_t>(std::stoull(lit->text));
     }
     Constant ConstantEvaluator::operator()(BooleanLiteral* lit)
     {

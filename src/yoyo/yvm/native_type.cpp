@@ -1,5 +1,6 @@
 #include "yvm/native_type.h"
 #include <ranges>
+#include <algorithm>
 
 namespace Yoyo
 {

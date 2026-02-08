@@ -98,6 +98,8 @@ if backend == 'yvm' or backend == 'both'
     ]
     if target_machine.system() == 'windows'
         sources += ['src/yoyo/yvm/windows_native_module.cpp']
+    else
+        sources += ['src/yoyo/yvm/unix_native_module.cpp']
     endif
 endif
 yoyo_args = []

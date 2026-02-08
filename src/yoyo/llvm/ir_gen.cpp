@@ -423,7 +423,7 @@ namespace Yoyo
     }
     void LLVMIRGenerator::operator()(InterfaceDeclaration* decl)
     {
-        __debugbreak();
+        debugbreak();
     }
     bool implementsInterfaceMethod(const FunctionSignature& cls, const FunctionSignature& interface)
     {

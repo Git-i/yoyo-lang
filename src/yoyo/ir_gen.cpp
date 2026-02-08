@@ -12,9 +12,11 @@ namespace Yoyo
     void debugbreak()
     {
 #if _MSC_VER
-        __debugbreak();
+        debugbreak();
+#else
+    raise(SIGTRAP);
 #endif
-    }
+}
     
     void IRGenerator::saturateSignature(FunctionSignature& sig, ModuleBase* module)
     {

@@ -5,6 +5,7 @@
 #include "func_sig.h"
 namespace Yoyo
 {
+    void YOYO_API debugbreak();
     Parser::Parser(std::string& src) : source(src), scn(source)
     {
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
@@ -335,7 +336,7 @@ namespace Yoyo
             << "\nline: " << (tk ? std::to_string(tk->loc.line) : "Invalid")
             << " col: " << (tk ? std::to_string(tk->loc.column) : "Invalid")
             << std::endl;
-        __debugbreak();
+        debugbreak();
     }
 
     void Parser::synchronizeTo(std::span<const TokenType> t)

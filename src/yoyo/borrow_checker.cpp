@@ -261,6 +261,7 @@ namespace Yoyo{
                 current_block->add_instruction(new BorrowValueInstruction(std::move(this_eval), std::string(result)));
                 return Value::from(std::move(result));
             }
+            default: return Value::from("");
             }
         }
         Value BorrowCheckerEmitter::operator()(BinaryOperation * op) {
@@ -612,7 +613,7 @@ namespace Yoyo{
                     }
                 }
                 else if(auto inst = dynamic_cast<DomainExtensionConstraint*>(node)) {
-                    __debugbreak();
+                    debugbreak();
                 }
                 else if(auto inst = dynamic_cast<DomainPhiInstruction*>(node)) {
                     bool has_change = false;

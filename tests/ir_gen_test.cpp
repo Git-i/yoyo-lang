@@ -159,7 +159,7 @@ main: fn(inp: i32) = {
     REQUIRE(engine.compile());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
-    for (auto i : std::views::iota(0i32, 10i32)) {
+    for (auto i : std::views::iota(0, 10)) {
         auto fib = createFiberFor(mod, "source::main");
         *(int32_t*)fib.parameters = i;
         engine.execute();
