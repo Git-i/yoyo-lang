@@ -6,3 +6,4 @@ compile_commands.json
 *.obj
 *.dll
 *.exp
+.vscode/
