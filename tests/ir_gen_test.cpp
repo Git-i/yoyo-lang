@@ -275,47 +275,13 @@ TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(
 condition: fn -> bool = { return false; }
+Vector2: struct = {
+    x: i32, y: i32
+}
 main: fn = {
-    x: i32 = 10;
-    y: i32 = 20;
-    z: i32 = 30;
-
-    p_1: mut &i32 = &x; // 0__1 -> {x}
-    p_2: mut &i32 = &y; // 1__1 -> {y}
-
-    pp: mut &mut &i32 = &mut p_1; // 2__1 -> {p_1}
-
-
-    // 2__2 as phi(2__1, 2__3)
-    // 1__4 as phi(1__1, 1__2)
-    // 0__5 as phi(0__1, 0__3)
-    while (condition()) {
-        if (condition()) {
-            // may store 0__4 from 0__5, 1__3 from 1__4 [pp = 2__2]
-            *pp = &z;
-        } else {
-            // p_1 becomes 0__6
-            p_1 = &y;
-        };
-        // 1__5 = phi(1__3, 1__4); 0__7 = phi(0__4, 0__6)
-        // deref 2__2 potentially loading (1__5 and 0__7) introduced 7__1 for the result, 
-        // deref that result and store in temp
-        temp := **pp;
-
-        if (condition()) {
-            // introduce 2__5
-            pp = &mut p_2;
-        };
-        // introduce 2__3 as phi(2__2, 2__5)
-        // deref pp potentially storing 0__3 from 0__7, 1__2 from 1__5
-        *pp = &x;
-
-    }
-    // pp is 2__2, p3 is 4__1
-    p_3: mut &i32 = *pp;
-    // p_1 is 0__2
-    p_1 = p_3;
-    return;
+    vec := Vector2{ .x = 10, .y = 30 };
+    vec_ref: &mut Vector2 = &mut vec;
+    vec_ref.x = 200;
 }
 )");
     Yoyo::YVMEngine engine;

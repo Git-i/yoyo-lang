@@ -1,6 +1,7 @@
 #include "ir_gen.h"
 #include "overload_details.h"
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <variant>
 #include <ranges>
@@ -34,6 +35,7 @@ namespace Yoyo{
         InstructionVariant DerefLoadOperation::to_variant() { return this; }
         InstructionVariant MayStoreOperation::to_variant() { return this; }
         InstructionVariant MayLoadOperation::to_variant() { return this; }
+        InstructionVariant NewAggregateInstruction::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -261,7 +263,6 @@ namespace Yoyo{
                 current_block->add_instruction(new BorrowValueInstruction(std::move(this_eval), std::string(result)));
                 return Value::from(std::move(result));
             }
-            default: return Value::from("");
             }
         }
         Value BorrowCheckerEmitter::operator()(BinaryOperation * op) {
@@ -302,9 +303,16 @@ namespace Yoyo{
                 ));
                 return Value::from(std::move(result));
             }
+            else if (token_tp == TokenType::Dot && op->evaluated_type.name != "__bound_fn") {
+                // memeber access
+                auto as_name = dynamic_cast<NameExpression*>(op->rhs.get());
+                if(!as_name) debugbreak();
+                return std::visit(*this, op->lhs->toVariant()).member(std::string(as_name->text));
+            }
             else {
+                               
                 // TODO
-                // could be member access, function binding or assignment
+                // could be function binding or assignment
                 return Value::empty();
             }
         }
@@ -376,8 +384,13 @@ namespace Yoyo{
         }
         Value BorrowCheckerEmitter::operator()(ObjectLiteral * lit) {
             RE_REPR(lit);
-            // TODO aggregate types
-            return Value::empty();
+            auto name = temporary_name();
+            std::unordered_map<std::string, Value> value_map;
+            for(auto&[name, expr] : lit->values) {
+                value_map[name] = std::visit(*this, expr->toVariant());
+            }
+            current_block->add_instruction(new NewAggregateInstruction(std::move(value_map), lit->evaluated_type.full_name(), std::string(name)));
+            return Value::from(std::move(name));
         }
         Value BorrowCheckerEmitter::operator()(NullLiteral * lit) {
             RE_REPR(lit);
@@ -489,6 +502,20 @@ namespace Yoyo{
             }
             if constexpr (std::is_same_v<T, DerefLoadOperation>) {
                 return std::format("%{} = deref load {} from domain {}", inst->into, inst->reference.to_string(), inst->ref_domain.to_string());
+            }
+            if constexpr (std::is_same_v<T, NewAggregateInstruction>) {
+                std::string body = "{";
+                NewAggregateInstruction* inst_cast = inst;
+                if (!inst_cast->values.empty()) {
+                    body += inst_cast->values.begin()->first + ": " + inst_cast->values.begin()->second.to_string();
+                }
+                if(inst_cast->values.size() > 1) {
+                    for(auto&[name, val] : std::ranges::subrange(std::next(inst_cast->values.begin()), inst_cast->values.end())) {
+                        body += ", " + name + ": " + val.to_string(); 
+                    } 
+                }
+               body += "}";
+                return std::format("%{} = aggrg {}", inst->into, body);
             }
             return "not implemented";
         };
@@ -1515,6 +1542,10 @@ namespace Yoyo {
                 add_assign_constraints_between_types(new_tp, original);
                 state->register_value_base_type(inst->into, std::move(new_tp));
             }
+            return current_position;
+        }
+        BlockIteratorTy DomainVariableInserter::operator()(NewAggregateInstruction* inst) {
+            // TODO
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewArrayInstruction* inst) {

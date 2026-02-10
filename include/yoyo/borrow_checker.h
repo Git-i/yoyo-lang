@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <span>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <optional>
@@ -112,6 +113,15 @@ namespace Yoyo {
             NewArrayInstruction(std::vector<Value>&& values, std::string&& into) :
                 values(values), into(into) {
             }
+        };
+        class NewAggregateInstruction : public Instruction {
+        public:
+            std::string into;
+            std::string type_name;
+            std::unordered_map<std::string, Value> values;
+            InstructionVariant to_variant() override;
+            NewAggregateInstruction(std::unordered_map<std::string, Value>&& values, std::string&& type_name, std::string&& into)
+                : into(std::move(into)), type_name(std::move(type_name)), values(std::move(values)) {}
         };
         // borrow a value
         class BorrowValueInstruction : public Instruction {
@@ -273,7 +283,8 @@ namespace Yoyo {
             DerefLoadOperation*,
             DerefOperation*,
             MayStoreOperation*,
-            MayLoadOperation*
+            MayLoadOperation*,
+            NewAggregateInstruction*
         >;
         class InstructionVariant : public InstructionVariantBase {
         public:
@@ -533,6 +544,7 @@ namespace Yoyo {
             BlockIteratorTy operator()(AssignInstruction*);
             BlockIteratorTy operator()(CallFunctionInstruction*);
             BlockIteratorTy operator()(RelocateValueInstruction*);
+            BlockIteratorTy operator()(NewAggregateInstruction*);
             BlockIteratorTy operator()(NewArrayInstruction*);
             BlockIteratorTy operator()(NewPrimitiveInstruction*);
             BlockIteratorTy operator()(BorrowValueInstruction*);
@@ -596,6 +608,7 @@ namespace Yoyo {
             bool operator()(DomainPhiInstruction*) { return false; }
             bool operator()(MayStoreOperation*) { return false; }
             bool operator()(MayLoadOperation*) { return false; }
+            bool operator()(NewAggregateInstruction*) { return false; }
         };
         struct DominatorList {
             // stores pairs (a, b) where b = idom(a)
