@@ -282,6 +282,10 @@ main: fn = {
     vec := Vector2{ .x = 10, .y = 30 };
     vec_ref: &mut Vector2 = &mut vec;
     vec_ref.x = 200;
+    
+    field_ref: mut &i32 = &vec_ref.x;
+    field_ref = &vec.y;
+    // field_ref should correctly resolve
 }
 )");
     Yoyo::YVMEngine engine;

@@ -325,15 +325,15 @@ namespace Yoyo {
             std::string name_based_on(std::string_view other) { return std::to_string(counter++) + std::string(other); }
             void drop_object(Value&& val) { /* TODO */ }
         public:
-            friend class LValueEmitter;
+            friend  class LValueEmitter;
             BorrowCheckerEmitter(
                 IRGenerator* irgen,
                 TypeCheckerState* stt,
                 BorrowCheckerFunction* function,
                 BasicBlock* current_block) :
                 irgen(irgen),
-                variables(1),
                 stt(stt),
+                variables(1),
                 function(function),
                 current_block(current_block) {
             }
@@ -415,6 +415,8 @@ namespace Yoyo {
                 FieldMap(const FieldMap&) = delete;
                 FieldMap() = default;
                 FieldMap(FieldMap&&) noexcept = default;
+                FieldMap& operator=(const FieldMap&) = delete;
+                FieldMap& operator=(FieldMap&&) noexcept = default;
             };
             struct AggregateDetails {
                 AggregateDetails() = default;
@@ -479,6 +481,8 @@ namespace Yoyo {
                 LValueDetails& operator=(LValueDetails&&) noexcept = default;
                 LValueDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
+                // populated when lvalues are used in field access ex: (*a).f1.f2 = value;
+                std::vector<std::string> subpath;
             };
             struct NamedTypeDetails {
                 NamedTypeDetails() = default;

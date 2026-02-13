@@ -1,6 +1,9 @@
 #include "class_entry.h"
 #include "ir_gen.h"
 #include "overload_details.h"
+#include "token.h"
+#include <memory>
+#include <utility>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -250,16 +253,17 @@ namespace Yoyo{
         }
         Value BorrowCheckerEmitter::operator()(PrefixOperation * pfx) {
             RE_REPR(pfx);
-            auto this_eval = std::visit(*this, pfx->operand->toVariant());
             switch (pfx->op.type) {
                 // BIG TODO regarding moving from behind references and all that
             case TokenType::Star: {
+                auto this_eval = std::visit(*this, pfx->operand->toVariant());
                 auto result = temporary_name();
                 current_block->add_instruction(new DerefLoadOperation(std::move(this_eval), std::string(result)));
                 return Value::from(std::move(result));
             }
             case TokenType::Ampersand: [[fallthrough]];
             case TokenType::RefMut: {
+                auto this_eval = LValueEmitter{*this}.do_expr(pfx->operand.get());
                 auto result = temporary_name();
                 current_block->add_instruction(new BorrowValueInstruction(std::move(this_eval), std::string(result)));
                 return Value::from(std::move(result));
@@ -308,7 +312,16 @@ namespace Yoyo{
                 // memeber access
                 auto as_name = dynamic_cast<NameExpression*>(op->rhs.get());
                 if(!as_name) debugbreak();
-                return std::visit(*this, op->lhs->toVariant()).member(std::string(as_name->text));
+                auto left_value = std::visit(*this, op->lhs->toVariant());
+                // If access is behind a reference, we need to desugar into dereference + access
+                if (op->lhs->evaluated_type.is_reference()) {
+                    std::string new_value = temporary_name();
+                    current_block->add_instruction(new DerefLoadOperation(
+                        std::move(left_value), new_value
+                    ));
+                    left_value = Value::from(std::move(new_value));
+                }
+                return left_value.member(std::string(as_name->text));
             }
             else {
                                
@@ -549,21 +562,29 @@ namespace Yoyo{
             if(type.is_integral() || type.is_floating_point() || type.get_decl_if_enum()) {
                 return BorrowCheckerType::new_primitive();
             }
-            if(auto decl = type.get_decl_if_class(irgen)) {
-                // TODO create dummy domains for types
-                return BorrowCheckerType::new_aggregate_from(Type(type));    
-            }
-            if (auto decl = type.get_decl_if_union()) {
-                return BorrowCheckerType::new_aggregate_from(Type(type));
-            }
+            if (type.get_decl_if_class(irgen) || type.get_decl_if_union()) {
+                return BorrowCheckerType::new_aggregate_from(Type(type)); 
+            } 
             debugbreak();
         }
         const BorrowCheckerType& DomainCheckerState::field_lookup(const BorrowCheckerType& type, const std::string& base_name, std::span<const std::string> fields) {
             if (fields.empty()) {
                 return type;
             }
-            if (auto ref = std::get_if<BorrowCheckerType::RefPtr>(&type.details); ref) {
-                return field_lookup(*ref->subtype, base_name, fields);
+            // lvalue field lookup just project the paths unto the lvalue (eg lvaue<('0), {x: i32, y: i32}>.x => lvalue<('0, .x), /* I think the type here remains*/>)
+            if (auto lvalue = std::get_if<BorrowCheckerType::LValue>(&type.details); lvalue) {
+                auto& final_type = field_lookup(*lvalue->subtype.get(), base_name, fields);
+                auto name_so_far = base_name;
+                for (auto i : std::views::iota(0u, fields.size())) {
+                    name_so_far += "." + fields[i];
+                    auto& type_entry = named_value_type_cache.at(name_so_far);
+                    auto actual_type = BorrowCheckerType{};
+                    actual_type.domains = type.domains;
+                    actual_type.details.emplace<BorrowCheckerType::LValue>(std::make_unique<BorrowCheckerType>(type_entry.cloned(this)));
+                    std::get<BorrowCheckerType::LValue>(actual_type.details).subpath = std::vector<std::string>{fields.begin(), fields.begin() + i + 1};
+                    std::swap(type_entry, actual_type);
+                }
+                return final_type;
             }
             if (auto named = std::get_if<BorrowCheckerType::Named>(&type.details); named) {
                 std::string full_name = base_name;
@@ -1215,6 +1236,13 @@ namespace Yoyo{
                 ntype.details.emplace<Named>(Type(std::get<Named>(type.details).actual_type));
                 return ntype;
             }
+            case LValue: {
+                auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
+                ntype.details.emplace<LValue>(std::make_unique<BorrowCheckerType>(clone_type(*std::get<LValue>(type.details).subtype)));
+                std::get<LValue>(ntype.details).subpath = std::get<LValue>(type.details).subpath;
+                return ntype;
+            }
             default: debugbreak();
             }
         };
@@ -1277,6 +1305,11 @@ namespace Yoyo{
                         // this probably doesn't require any special behaviour
                         break;
                     }
+                    case LValue: {
+                        auto& dets = std::get<LValue>(type.details);
+                        self(*dets.subtype, self);
+                        break;
+                    }
                     default: debugbreak();
                     }
                 };
@@ -1314,6 +1347,10 @@ namespace Yoyo{
             }
             else if (auto named = std::get_if<Named>(&details); named) {
                 new_type.details.emplace<Named>(Type(named->actual_type));    
+            }
+            else if (auto lvalue = std::get_if<LValue>(&details); lvalue) {
+                new_type.details.emplace<LValue>(std::make_unique<BorrowCheckerType>(clone_type(*lvalue->subtype)));
+                std::get<LValue>(new_type.details).subpath = lvalue->subpath;
             }
             else { debugbreak(); }
             return new_type;
@@ -1391,14 +1428,17 @@ namespace Yoyo{
             }
             case LValue: {
                 auto& dets = std::get<LValue>(details);
-                result = std::format("lvalue<({}), {}>", domains[0].first.to_string(), dets.subtype->to_string());
+                std::string path_str = "";
+                if(!dets.subpath.empty()) {
+                    path_str += ", ";
+                    for (auto& path : dets.subpath) {
+                        path_str += "." + path;
+                    }
+                }
+                result = std::format("lvalue<({}{}), {}>", domains[0].first.to_string(), path_str, dets.subtype->to_string());
                 break;
             }
-            case Named: {
-                auto& dets = std::get<Named>(details);
-                result = dets.actual_type.full_name();
-                break;
-            } 
+            case Named: result = std::get<Named>(details).actual_type.full_name(); break;
             default: debugbreak();
             }
             return result;
@@ -1484,8 +1524,20 @@ namespace Yoyo{
                     em.current_block->add_instruction(new DerefOperation(std::move(this_eval), std::string(result)));
                     return Value::from(std::move(result));
                 }
+            } 
+            if (auto bexp = dynamic_cast<BinaryOperation*>(expr)) {
+                if (auto rhs_name = dynamic_cast<NameExpression*>(bexp->rhs.get()); rhs_name && bexp->op.type == TokenType::Dot) {
+                    auto left_value = do_expr(bexp->lhs.get());
+                    if (bexp->lhs->evaluated_type.is_reference()) {
+                        auto result = em.temporary_name();
+                        em.current_block->add_instruction(new DerefOperation(std::move(left_value), result));
+                        left_value = Value::from(std::move(result));
+                    }
+                    return left_value.member(std::string(rhs_name->text));
+                }
             }
-            return std::visit(em, expr->toVariant());
+            // auto dereference occurs in field access behind reference
+           return std::visit(em, expr->toVariant());
         }
         std::string DefUseGraph::to_graphviz()
         {

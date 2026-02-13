@@ -2821,8 +2821,18 @@ namespace Yoyo
             }
             
         }
+        // TODO:  handle `has_type_variable`
+        else {
+            // result and subject are concrete
+            // check base case: result = &T && subject = T
+            if(result.name != "__ref") {
+                irgen->error(Error(con.expr, "Operator & always returns a reference"));
+            }
+            if(result.subtypes[0].is_equal(subject)) {
+                return true;
+            }
 
-        
+        }
     }
     bool ConstraintSolver::operator()(BorrowResultMutConstraint& con)
     {
