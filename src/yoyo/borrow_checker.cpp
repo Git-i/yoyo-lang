@@ -1,3 +1,4 @@
+#include "class_entry.h"
 #include "ir_gen.h"
 #include "overload_details.h"
 #include <type_traits>
@@ -389,7 +390,7 @@ namespace Yoyo{
             for(auto&[name, expr] : lit->values) {
                 value_map[name] = std::visit(*this, expr->toVariant());
             }
-            current_block->add_instruction(new NewAggregateInstruction(std::move(value_map), lit->evaluated_type.full_name(), std::string(name)));
+            current_block->add_instruction(new NewAggregateInstruction(std::move(value_map), Type(lit->evaluated_type), std::string(name)));
             return Value::from(std::move(name));
         }
         Value BorrowCheckerEmitter::operator()(NullLiteral * lit) {
@@ -515,7 +516,7 @@ namespace Yoyo{
                     } 
                 }
                body += "}";
-                return std::format("%{} = aggrg {}", inst->into, body);
+                return std::format("%{} = aggrg ({}) {}", inst->into, inst->type_name.full_name(),body);
             }
             return "not implemented";
         };
@@ -541,14 +542,70 @@ namespace Yoyo{
         {
             return Domain{ .name = "'?" + std::to_string(last_id++) };
         }
-        void DomainCheckerState::register_value_base_type(const std::string& value, BorrowCheckerType&& type)
-        {
+        void DomainCheckerState::register_value_base_type(const std::string& value, BorrowCheckerType&& type) {
             type_mapping.emplace(value, std::move(type));
+        }
+        BorrowCheckerType DomainCheckerState::type_to_borrow_checker_type(const Type& type) {
+            if(type.is_integral() || type.is_floating_point() || type.get_decl_if_enum()) {
+                return BorrowCheckerType::new_primitive();
+            }
+            if(auto decl = type.get_decl_if_class(irgen)) {
+                // TODO create dummy domains for types
+                return BorrowCheckerType::new_aggregate_from(Type(type));    
+            }
+            if (auto decl = type.get_decl_if_union()) {
+                return BorrowCheckerType::new_aggregate_from(Type(type));
+            }
+            debugbreak();
+        }
+        const BorrowCheckerType& DomainCheckerState::field_lookup(const BorrowCheckerType& type, const std::string& base_name, std::span<const std::string> fields) {
+            if (fields.empty()) {
+                return type;
+            }
+            if (auto ref = std::get_if<BorrowCheckerType::RefPtr>(&type.details); ref) {
+                return field_lookup(*ref->subtype, base_name, fields);
+            }
+            if (auto named = std::get_if<BorrowCheckerType::Named>(&type.details); named) {
+                std::string full_name = base_name;
+                for(auto& field : fields) full_name += "." + field;
+                if(named_value_type_cache.contains(full_name)) return named_value_type_cache.at(full_name);
+                // populate the cache with the type of each field reaching up to the desired pointe
+                // e.g val.f1.f2.f3 creates entries for val.f1 val.f1.f2 and val.f1.f2
+                std::string name_so_far = base_name;
+                Type type_so_far = named->actual_type;
+                for(auto i : std::views::iota(0u, fields.size())) {
+                    auto& prev_type = (i == 0) ? type : named_value_type_cache.at(name_so_far);
+                    // type so far is guaranteed to be a struct/union/tuple/array by the type system
+                    name_so_far += "." + fields[i];
+                    if (auto decl = type_so_far.get_decl_if_class(this->irgen)) {
+                        auto it = std::ranges::find_if(decl->vars, [&fields, i](ClassVariable& var)
+                                             {
+                                                return var.name == fields[i];
+                                             });
+                        // this probably will never happen if the type checker has already run 
+                        if (it == decl->vars.end()) debugbreak();
+                        type_so_far = it->type;
+                        named_value_type_cache.emplace(name_so_far, type_to_borrow_checker_type(it->type));
+                        // apply proper domain substitutions here 
+                    }
+                    else if (auto decl = type_so_far.get_decl_if_union()) {
+                        if(!decl->fields.contains(fields[i])) debugbreak();
+                        type_so_far = decl->fields.at(fields[i]);
+                        named_value_type_cache.emplace(name_so_far, type_to_borrow_checker_type(type_so_far));
+                    }
+                    else debugbreak();
+                }
+                return named_value_type_cache.at(full_name);
+            }
+            else debugbreak();
         }
         const BorrowCheckerType& DomainCheckerState::get_value_type(const Value& value)
         {
-            if (!value.subpaths.empty()) debugbreak();
             if (!type_mapping.contains(value.base_name)) debugbreak();
+            if (!value.subpaths.empty()) {
+                auto& base_type = type_mapping.at(value.base_name);
+                return field_lookup(base_type, value.base_name, value.subpaths);
+            }
             return type_mapping.at(value.base_name);
         }
         std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
@@ -556,6 +613,7 @@ namespace Yoyo{
         {
             auto function = std::make_unique<BorrowCheckerFunction>();
             func = &*function;
+            this->irgen = irgen;
             entry_block = function->new_block("entry");
             std::visit(BorrowCheckerEmitter{ irgen, stt, &*function, entry_block }, decl->body->toVariant());
             std::cout << "Phase 1\n" << function->to_string() << std::endl;
@@ -1151,6 +1209,12 @@ namespace Yoyo{
                 )));
                 return ntype;
             }
+            case Named: {
+                auto ntype = BorrowCheckerType();
+                ntype.domains = type.domains;
+                ntype.details.emplace<Named>(Type(std::get<Named>(type.details).actual_type));
+                return ntype;
+            }
             default: debugbreak();
             }
         };
@@ -1209,6 +1273,10 @@ namespace Yoyo{
                         self(*dets.subtype, self);
                         break;
                     }
+                    case Named: {
+                        // this probably doesn't require any special behaviour
+                        break;
+                    }
                     default: debugbreak();
                     }
                 };
@@ -1244,6 +1312,9 @@ namespace Yoyo{
             else if (auto prim = std::get_if<Primitive>(&details); prim) {
                 new_type.details.emplace<Primitive>();
             }
+            else if (auto named = std::get_if<Named>(&details); named) {
+                new_type.details.emplace<Named>(Type(named->actual_type));    
+            }
             else { debugbreak(); }
             return new_type;
         }
@@ -1264,6 +1335,12 @@ namespace Yoyo{
         {
             BorrowCheckerType new_type;
             new_type.details.emplace<Primitive>();
+            return new_type;
+        }
+        BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp) {
+            BorrowCheckerType new_type;
+            new_type.details.emplace<Named>(std::move(tp));
+            // TODO add the domain variables in the type definition
             return new_type;
         }
         BorrowCheckerType BorrowCheckerType::new_array_of(BorrowCheckerType&& tp)
@@ -1317,6 +1394,11 @@ namespace Yoyo{
                 result = std::format("lvalue<({}), {}>", domains[0].first.to_string(), dets.subtype->to_string());
                 break;
             }
+            case Named: {
+                auto& dets = std::get<Named>(details);
+                result = dets.actual_type.full_name();
+                break;
+            } 
             default: debugbreak();
             }
             return result;
@@ -1545,7 +1627,8 @@ namespace Yoyo {
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewAggregateInstruction* inst) {
-            // TODO
+            auto new_tp = BorrowCheckerType::new_aggregate_from(Type(inst->type_name));
+            state->register_value_base_type(inst->into, std::move(new_tp));
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(NewArrayInstruction* inst) {

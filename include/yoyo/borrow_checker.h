@@ -117,10 +117,10 @@ namespace Yoyo {
         class NewAggregateInstruction : public Instruction {
         public:
             std::string into;
-            std::string type_name;
+            Type type_name;
             std::unordered_map<std::string, Value> values;
             InstructionVariant to_variant() override;
-            NewAggregateInstruction(std::unordered_map<std::string, Value>&& values, std::string&& type_name, std::string&& into)
+            NewAggregateInstruction(std::unordered_map<std::string, Value>&& values, Type&& type_name, std::string&& into)
                 : into(std::move(into)), type_name(std::move(type_name)), values(std::move(values)) {}
         };
         // borrow a value
@@ -406,7 +406,8 @@ namespace Yoyo {
                 UniquePtr, // Owning poiner type
                 Array, // Owning Heap type with many elems
                 RefPtr, // Non owning pointer type
-                LValue
+                LValue,
+                Named, // Named aggregate types (correspond to the type system) support types that reference themselves
             };
             struct PrimitiveDetails {};
             // because std::map is wierd
@@ -479,6 +480,17 @@ namespace Yoyo {
                 LValueDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
             };
+            struct NamedTypeDetails {
+                NamedTypeDetails() = default;
+                NamedTypeDetails(const NamedTypeDetails&) = delete;
+                NamedTypeDetails& operator=(const NamedTypeDetails&) = delete;
+
+                NamedTypeDetails(NamedTypeDetails&&) noexcept = default;
+                NamedTypeDetails& operator=(NamedTypeDetails&&) noexcept = default;
+                NamedTypeDetails(std::string full_type_name);
+                NamedTypeDetails(Type&& tp) : actual_type(std::move(tp)) {};
+                Type actual_type;
+            };
             BorrowCheckerType() = default;
             BorrowCheckerType(const BorrowCheckerType&) = delete;
             BorrowCheckerType(BorrowCheckerType&&) noexcept = default;
@@ -491,7 +503,8 @@ namespace Yoyo {
                 UniquePtrDetails,
                 ArrayDetails,
                 RefPtrDetails,
-                LValueDetails> details;
+                LValueDetails,
+                NamedTypeDetails> details;
             // the "bool" field marks if the domain is bidirectional
             // for example &'a &'b i32, 'a is not bidirectional because
             // if the reference were to be duplicated the new 'a can expand freely
@@ -509,6 +522,7 @@ namespace Yoyo {
             BorrowCheckerType deref() const;
             // create a new primitive type
             static BorrowCheckerType new_primitive();
+            static BorrowCheckerType new_aggregate_from(Type&&);
             // does not change domains of the provided type
             static BorrowCheckerType new_array_of(BorrowCheckerType&&);
 
@@ -677,13 +691,18 @@ namespace Yoyo {
             ValueTypeMapping type_mapping;
             Domain new_domain_var();
             void register_value_base_type(const std::string& value, BorrowCheckerType&&);
-            const BorrowCheckerType& get_value_type(const Value&);
+            BorrowCheckerType type_to_borrow_checker_type(const Type& type);
+            const BorrowCheckerType& get_value_type(const Value& value);
+            const BorrowCheckerType& field_lookup(const BorrowCheckerType& type, const std::string& base, std::span<const std::string> fields); 
             DominatorList dominators;
             BorrowCheckerFunction* func;
             BasicBlock* entry_block;
+            IRGenerator* irgen;
             PointsToGraph ptgraph;
             DefUseGraph def_use_graph;
             TopLevelPointsToGraph final_ptg;
+            // stores field information for named types
+            ValueTypeMapping named_value_type_cache;
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
