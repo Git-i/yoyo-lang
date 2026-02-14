@@ -41,6 +41,13 @@ namespace Yoyo {
             static Value from(std::string&& name) {
                 Value val;
                 val.base_name = name;
+                bool first = true;
+                for (auto member : std::views::split(std::string_view{name}, std::string_view{"."})) {
+                    if(first) {
+                        val.base_name = std::string_view{member.begin(), member.end()};
+                        first = false;
+                    } else val.member(std::string(member.begin(), member.end()));
+                }
                 return val;
             }
             Value& member(std::string&& member_name)& {

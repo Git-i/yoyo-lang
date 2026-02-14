@@ -574,15 +574,17 @@ namespace Yoyo{
             // lvalue field lookup just project the paths unto the lvalue (eg lvaue<('0), {x: i32, y: i32}>.x => lvalue<('0, .x), /* I think the type here remains*/>)
             if (auto lvalue = std::get_if<BorrowCheckerType::LValue>(&type.details); lvalue) {
                 auto& final_type = field_lookup(*lvalue->subtype.get(), base_name, fields);
-                auto name_so_far = base_name;
-                for (auto i : std::views::iota(0u, fields.size())) {
-                    name_so_far += "." + fields[i];
-                    auto& type_entry = named_value_type_cache.at(name_so_far);
-                    auto actual_type = BorrowCheckerType{};
-                    actual_type.domains = type.domains;
-                    actual_type.details.emplace<BorrowCheckerType::LValue>(std::make_unique<BorrowCheckerType>(type_entry.cloned(this)));
-                    std::get<BorrowCheckerType::LValue>(actual_type.details).subpath = std::vector<std::string>{fields.begin(), fields.begin() + i + 1};
-                    std::swap(type_entry, actual_type);
+                if (lvalue->subtype->details.index() == BorrowCheckerType::Named && final_type.details.index() != BorrowCheckerType::LValue) {
+                    auto name_so_far = base_name;
+                    for (auto i : std::views::iota(0u, fields.size())) {
+                        name_so_far += "." + fields[i];
+                        auto& type_entry = named_value_type_cache.at(name_so_far);
+                        auto actual_type = BorrowCheckerType{};
+                        actual_type.domains = type.domains;
+                        actual_type.details.emplace<BorrowCheckerType::LValue>(std::make_unique<BorrowCheckerType>(type_entry.cloned(this)));
+                        std::get<BorrowCheckerType::LValue>(actual_type.details).subpath = std::vector<std::string>{fields.begin(), fields.begin() + i + 1};
+                        std::swap(type_entry, actual_type);
+                    }
                 }
                 return final_type;
             }
@@ -1251,7 +1253,8 @@ namespace Yoyo{
             BorrowCheckerType new_type;
             new_type.domains.emplace_back(stt->new_domain_var(), false);
             // all child domains become bidirectional
-            auto inner = cloned(stt);
+            // If `this` is an lvalue, we reborrow i.e &a, where a is of type T and T is lvalue<R> returns &R
+            auto inner = details.index() == LValue ? std::get<LValue>(details).subtype->cloned(stt) : cloned(stt);
             for (auto& [domain, _] : inner.domains) new_type.domains.emplace_back(domain, true);
             new_type.details.emplace<RefPtr>(std::make_unique<BorrowCheckerType>(
                 std::move(inner)
@@ -1495,7 +1498,19 @@ namespace Yoyo{
             }
             // p > {q}
             else if(!con->sub.is_null()) {
-                return ptg.add_edge(con->super.to_string(), con->sub.to_string());
+                auto as_val = Value::from(con->sub.to_string());
+                auto& val_type = state->get_value_type(as_val);
+                // for lvalues we reborrow, so we need to look at what the lvalue is from and extract the references from there
+                if (auto lval = std::get_if<BorrowCheckerType::LValue>(&val_type.details)) {
+                    bool has_change = false;
+                    for (auto& pointee : ptg.get_pointees_of(val_type.domains[0].first.to_string())) {
+                        auto edge = pointee;
+                        // apply the path;
+                        for(auto& path : lval->subpath) edge += "." + path;
+                        has_change = ptg.add_edge(con->super.to_string(), edge) || has_change;
+                    }
+                }
+                else return ptg.add_edge(con->super.to_string(), con->sub.to_string());
             }
             return false;
         }
@@ -1511,7 +1526,19 @@ namespace Yoyo{
             }
             // p > p + {q}
             else if (!con->sub.is_null()) {
-                return ptg.add_edge(con->super.to_string(), con->sub.to_string());
+                auto as_val = Value::from(con->sub.to_string());
+                auto& val_type = state->get_value_type(as_val);
+                // for lvalues we reborrow, so we need to look at what the lvalue is from and extract the references from there
+                if (auto lval = std::get_if<BorrowCheckerType::LValue>(&val_type.details)) {
+                    bool has_change = false;
+                    for (auto& pointee : ptg.get_pointees_of(val_type.domains[0].first.to_string())) {
+                        auto edge = pointee;
+                        // apply the path;
+                        for(auto& path : lval->subpath) edge += "." + path;
+                        has_change = ptg.add_edge(con->super.to_string(), edge) || has_change;
+                    }
+                }                                                                                                                         
+                else return ptg.add_edge(con->super.to_string(), con->sub.to_string());
             }
             return false;
         }
