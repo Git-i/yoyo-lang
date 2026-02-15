@@ -216,6 +216,9 @@ namespace Yoyo {
         public:
             Domain super;
             Domain sub;
+
+            // only used when sub is an lvalue
+            std::string lvalue_domain;
             DomainSubsetConstraint(Domain&& super, Domain&& sub) : super(super), sub(sub) {}
             InstructionVariant to_variant() override;
         };

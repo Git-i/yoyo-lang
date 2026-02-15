@@ -1,8 +1,6 @@
 #include "cfg_node.h"
 
 #include <cassert>
-#include <format>
-#include <iostream>
 #include <memory>
 #include <ranges>
 #include <set>
@@ -397,7 +395,7 @@ namespace Yoyo
         //for(auto& child : exit->children)
         //    child->parents.erase(std::ranges::find(child->parents, exit));
         //exit->children.clear();
-        for(int64_t i = 0; i < mgr.nodes.size(); i++)
+        for(size_t i = 0; i < mgr.nodes.size(); i++)
             if(mgr.nodes[i]->parents.empty() && mgr.nodes[i]->children.empty())
                 mgr.nodes.erase(mgr.nodes.begin() + i++);
         mgr.root_node = entry;
@@ -452,7 +450,7 @@ namespace Yoyo
             for(auto&[var, use] : uses)
                 //child is deeper, or it's shallow but the var is defined before so its only first use if we don't use it
                 if(child->depth >= node->depth ||
-                    child->depth < node->depth && exists_before(var, node->depth))
+                    (child->depth < node->depth && exists_before(var, node->depth)))
                 {
                     if(!init_here.contains(var))
                         out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
@@ -512,11 +510,11 @@ namespace Yoyo
             for(auto&[var, use] : uses)
                 //child is deeper, or it's shallow but the var is defined before so its only first use if we don't use it
                 if(child->depth >= node->depth ||
-                    child->depth < node->depth && exists_before(var, node->depth))
+                    (child->depth < node->depth && exists_before(var, node->depth)))
                 {
                     //if the node looped we only add variables we don't know
                     out[var].clear();
-                    if(!node->looped || node->looped && !exists_before(var, node->depth + 1))
+                    if(!node->looped || (node->looped && !exists_before(var, node->depth + 1)))
                         child_uses[var].emplace_back(child, std::move(use));
                 }
                 //child is shallow and var doesn't exist before

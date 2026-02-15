@@ -172,7 +172,7 @@ namespace Yoyo
         GenericClause clause;
         std::unique_ptr<Statement> body;
         OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body, GenericClause cl)
-            : signature(std::move(sig)), tok(ident), body(std::move(body)), clause(std::move(cl)) {}
+            : signature(std::move(sig)), tok(ident), clause(std::move(cl)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
     class UnionDeclaration : public Statement
@@ -235,8 +235,8 @@ namespace Yoyo
             std::vector<std::unique_ptr<Statement>> stats,
             Ownership sh,
             std::vector<InterfaceImplementation> impls)
-            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), ownership(sh), 
-            impls(std::move(impls)){}
+            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), impls(std::move(impls)), 
+            ownership(sh){}
         StatementVariant toVariant() override;
     };
     class GenericClassDeclaration : public ClassDeclaration

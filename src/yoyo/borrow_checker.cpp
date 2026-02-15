@@ -723,7 +723,7 @@ namespace Yoyo{
                         // for lvalues we reborrow, so we need to look at what the lvalue is from and extract the references from there
                         if (auto lval = std::get_if<BorrowCheckerType::LValue>(&val_type.details)) {
                             bool has_change = false;
-                            for (auto& pointee : final_ptg.get_pointees_of(val_type.domains[0].first.to_string())) {
+                            for (auto& pointee : final_ptg.get_pointees_of(inst->lvalue_domain)) {
                                 auto edge = pointee;
                                 // apply the path;
                                 for(auto& path : lval->subpath) edge += "." + path;
@@ -962,6 +962,10 @@ namespace Yoyo{
                             if (tp->sub.is_var()) {
                                 if (storage_entry.contains(tp->sub.name)) tp->sub.name = storage_entry[tp->sub.name];
                                 else unfound_uses.push_back(std::ref(tp->sub.name));
+                            }
+                            if (!tp->lvalue_domain.empty()) {
+                                if (storage_entry.contains(tp->lvalue_domain)) tp->lvalue_domain = storage_entry[tp->lvalue_domain];
+                                else unfound_uses.push_back(std::ref(tp->lvalue_domain));
                             }
                         }
                         if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
@@ -1538,6 +1542,7 @@ namespace Yoyo{
                         for(auto& path : lval->subpath) edge += "." + path;
                         has_change = ptg.add_edge(con->super.to_string(), edge) || has_change;
                     }
+                    con->lvalue_domain = val_type.domains[0].first.to_string();
                 }
                 else return ptg.add_edge(con->super.to_string(), con->sub.to_string());
             }

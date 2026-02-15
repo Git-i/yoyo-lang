@@ -1,9 +1,7 @@
 #include "ir_gen.h"
 
 #include <csignal>
-#include <list>
 #include <ranges>
-#include <set>
 #include <iostream>
 #include "tree_cloner.h"
 #include "yvm/fwd_decl.h"
@@ -246,7 +244,7 @@ namespace Yoyo
     {
         for (auto& type : types) type.saturate(mod, this);
         std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
-        if (auto exists = mod->findAlias(block, name)) return;
+        if (mod->findAlias(block, name)) return;
         auto old_hash = std::move(this->block_hash);
         this->block_hash = block;
         auto module = this->module;

@@ -1,9 +1,9 @@
 #include "type.h"
 
-#include <csignal>
 #include <ranges>
 #include <set>
 
+#include "borrow_checker.h"
 #include "ir_gen.h"
 #include "statement.h"
 #include "fn_type.h"
@@ -126,8 +126,9 @@ namespace Yoyo
         }
         if(name == "__called_fn" && (other.is_function() || other.is_lambda()))
         {
-            const FunctionSignature* as_fn;
-            if(other.is_function()); as_fn = &reinterpret_cast<const FunctionType&>(other).sig;
+            const FunctionSignature* as_fn = nullptr;
+            if(other.is_function()) as_fn = &reinterpret_cast<const FunctionType&>(other).sig;
+            else debugbreak();
             //if (other.is_lambda()) as_fn = &other.module->lambdas[other.name].second->sig;
             if(signature->parameters.size() != as_fn->parameters.size()) return false;
             for(size_t i = 0; i < signature->parameters.size(); ++i)
@@ -143,7 +144,7 @@ namespace Yoyo
             return other.name == "__null" || subtypes[0].is_assignable_from(other, irgen);
         }
         if (is_gc_reference()) return false;
-        if (is_mutable_reference()) other.is_gc_reference() && other.is_mutable && deref().is_equal(other.deref());
+        if (is_mutable_reference()) return other.is_gc_reference() && other.is_mutable && deref().is_equal(other.deref());
         if (is_reference()) return other.is_reference() && deref().is_equal(other.deref());
         //for variants, the rhs must be assignable to only one of the subtypes
         if(is_variant())
@@ -742,7 +743,7 @@ namespace Yoyo
         {
             std::string_view curr(str.begin() + it, str.begin() + it + delim.size());
             //we dont split in the special case of ::<
-            if (curr == delim)
+            if (curr == delim) {
                 if (str[it + delim.size()] != '<')
                 {
                     if (generic_depth == 0)
@@ -753,6 +754,7 @@ namespace Yoyo
                     }
                 }
                 else generic_depth++;
+            }
             if (str[it] == '>') generic_depth--;
         }
         result.emplace_back(str.begin() + left, str.ends_with(delim) ? str.end() - delim.size() : str.end());
@@ -796,15 +798,18 @@ namespace Yoyo
             {
                 if(from_pos.starts_with("::<"))
                 {
-                    if(update_pos)pos += 3; return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 2}};
+                    if(update_pos)pos += 3; 
+                    return Token{SubOpen, {from_pos.begin(), from_pos.begin() + 2}};
                 }
                 if(from_pos.starts_with("::"))
                 {
-                    if(update_pos)pos += 2; return Token{ Scope, {from_pos.begin(), from_pos.begin() + 2} };
+                    if(update_pos)pos += 2; 
+                    return Token{ Scope, {from_pos.begin(), from_pos.begin() + 2} };
                 }
                 if(from_pos.starts_with(">"))
                 {
-                    if(update_pos)pos += 1; return Token{SubClose, {from_pos.begin(), from_pos.begin() + 1}};
+                    if(update_pos)pos += 1; 
+                    return Token{SubClose, {from_pos.begin(), from_pos.begin() + 1}};
                 }
                 if(update_pos)pos += 1; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
             }

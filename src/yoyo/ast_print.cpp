@@ -1,6 +1,5 @@
 #include "ast_print.h"
 #include <format>
-#include <iostream>
 namespace Yoyo {
 	std::string sig_to_str(FunctionSignature& sig);
 	void ASTPrinter::operator()(VariableDeclaration* decl)

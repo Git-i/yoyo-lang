@@ -183,6 +183,7 @@ namespace Yoyo
             }
             hash += type.name + IRGenerator::mangleGenericArgs(subtypes) + "::";
             subtypes.clear();
+            return std::nullopt; // is this even correct
         }
         else {
             if (auto dets = md->findClass(hash, type.name); dets.second)
@@ -473,6 +474,10 @@ namespace Yoyo
         else if (matches.size() == 0) {
             return NoOperatorReason::NoMatches;
         }
+        else {
+            // unreachable
+            return NoOperatorReason::NoMatches;
+        }
     }
     Type mutable_reference_to (const Type& tp, IRGenerator* irgen) {
         return Type{ .name = "__ref_mut", .subtypes = {tp}, .module = core_module };
@@ -643,13 +648,13 @@ namespace Yoyo
         state->pop_variable_block();
     }
     FunctionType TypeChecker::operator()(IntegerLiteral* lit) const {
-        if (target)
+        if (target) {
             if (target->is_integral()) return { *target };
             else {
                 irgen->error(Error(lit, "Cannot convert integer literal to " + target->full_name())); 
                 return Type{ "__error_type" };
             }
-        
+        }
         lit->evaluated_type = state->new_type_var();
         state->add_constraint(IsIntegerConstraint{lit->evaluated_type});
         state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text)});
@@ -722,13 +727,13 @@ namespace Yoyo
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(RealLiteral* lit) const {
-        if (target)
+        if (target) {
             if (target->is_floating_point()) return { *target };
             else {
                 irgen->error(Error(lit, "Cannot convert real literal to " + target->full_name()));
                 return Type{ "__error_type" };
             }
-
+        }
         lit->evaluated_type = state->new_type_var();
         state->add_constraint(IsFloatConstraint{ lit->evaluated_type });
         state->add_constraint(CanStoreRealConstraint{ lit->evaluated_type, std::stod(std::string(lit->token.text)) });
@@ -893,7 +898,7 @@ namespace Yoyo
             }
             return expr->evaluated_type;
             };
-        auto do_overloadable = [expr, this, &do_overloadable_explicit_token]() {
+        auto do_overloadable = [expr, &do_overloadable_explicit_token]() {
             return do_overloadable_explicit_token(expr->op.type);
             };
         switch (expr->op.type) {
@@ -931,6 +936,7 @@ namespace Yoyo
         }
         case DoubleDotEqual: irgen->error(Error(expr, "Not implemented yet")); return {};
         case DoubleDot: irgen->error(Error(expr, "Not implemented yet")); return {};
+        default: irgen->error(Error(expr, "Internal error")); debugbreak(); return {};
         }
     }
     FunctionType TypeChecker::operator()(GroupingExpression* expr) const {
@@ -1145,7 +1151,7 @@ namespace Yoyo
                 scp->evaluated_type.block_hash = hash + fn->name + "::";
                 scp->evaluated_type.module = md;
                 // function may be generic so we add its types to our generic instantiations
-                if (auto generic = dynamic_cast<GenericFunctionDeclaration*>(fn)) {
+                if (dynamic_cast<GenericFunctionDeclaration*>(fn)) {
                     for (auto i : std::views::iota(0u, last.subtypes.size())) {
                         generic_instantiations[clause->types[i]] = last.subtypes[i];
                     }
@@ -1512,7 +1518,7 @@ namespace Yoyo
                     continue;
                 }
                 else {
-                    if (auto pass = can_match(this1.subtypes[i], this2.subtypes[i]))
+                    if (can_match(this1.subtypes[i], this2.subtypes[i]))
                         continue;
                     else return false;
                 }
@@ -1531,7 +1537,7 @@ namespace Yoyo
                 continue;
             }
             else {
-                if (auto pass = can_match(end1.subtypes[i], end2.subtypes[i]))
+                if (can_match(end1.subtypes[i], end2.subtypes[i]))
                     continue;
                 else return false;
             }
@@ -2471,7 +2477,7 @@ namespace Yoyo
                             auto op_result_immutable = unary_operator_result(TokenType::Ampersand, reference_to(no_reference, irgen), con.substitution_cache, state, irgen);
                             if (auto invalid_immutable = std::get_if<NoOperatorReason>(&op_result_immutable)) {
                                 if (*invalid == NoOperatorReason::MulipleMatches) return false;
-                                else if (*invalid_immutable == NoOperatorReason::NoMatches); // fall through to UCFS
+                                else if (*invalid_immutable == NoOperatorReason::NoMatches) {} // fall through to UCFS
                             }
                             else {
                                 auto& [result_tp, constraints] = std::get<0>(op_result_immutable);
@@ -2717,6 +2723,7 @@ namespace Yoyo
             }
         }
         irgen->error(Error(con.expr, "Type does not have field"));
+        return true;
     }
     bool ConstraintSolver::operator()(AllFieldsConstraint& con)
     {
@@ -2735,6 +2742,7 @@ namespace Yoyo
             return true;
         }
         irgen->error(Error(con.expr, "Internal Error"));
+        return true;
     }
     bool ConstraintSolver::operator()(BorrowResultConstraint& con)
     {
@@ -2766,7 +2774,7 @@ namespace Yoyo
                 auto op_result = unary_operator_result(TokenType::Ampersand, reference_to(subject, irgen), con.substitution_cache, state, irgen);
                 if (auto invalid = std::get_if<NoOperatorReason>(&op_result)) {
                     if (*invalid == NoOperatorReason::MulipleMatches) return false;
-                    else if (*invalid == NoOperatorReason::NoMatches); 
+                    else if (*invalid == NoOperatorReason::NoMatches) {} 
                 }
                 else {
                     auto& [type, extra_constraints] = std::get<0>(op_result);
@@ -2860,7 +2868,7 @@ namespace Yoyo
                 auto op_result = unary_operator_result(TokenType::RefMut, mutable_reference_to(subject, irgen), con.substitution_cache, state, irgen);
                 if (auto invalid = std::get_if<NoOperatorReason>(&op_result)) {
                     if (*invalid == NoOperatorReason::MulipleMatches) return false;
-                    else if (*invalid == NoOperatorReason::NoMatches);
+                    else if (*invalid == NoOperatorReason::NoMatches) {}
                 }
                 else {
                     auto& [type, extra_constraints] = std::get<0>(op_result);
@@ -3206,7 +3214,7 @@ namespace Yoyo
         // other must not be concrete
         // so instead of replacing the entire domain we remove elements that can't match
         // if we empty the domain then there's an error
-        std::erase_if(concrete_types.types, [this, &other](auto& elem) {
+        std::erase_if(concrete_types.types, [&other](auto& elem) {
             return !can_match(other, elem);
             });
         if (!concrete_types.types.empty())

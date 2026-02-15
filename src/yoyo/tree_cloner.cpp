@@ -1,4 +1,5 @@
 #include "tree_cloner.h"
+#include "borrow_checker.h"
 
 namespace Yoyo
 {
@@ -138,6 +139,10 @@ namespace Yoyo
         {
             auto left = copy_expr(std::get<std::unique_ptr<Expression>>(invc->left));
             return std::make_unique<MacroInvocation>(std::move(new_name), std::move(left), std::move(right));
+        } else {
+            // TODO: handle clonging for other cases
+            debugbreak();
+            return nullptr;
         }
     }
     std::unique_ptr<Expression> ExpressionTreeCloner::operator()(SpawnExpression* exr)
