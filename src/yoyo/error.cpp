@@ -64,14 +64,14 @@ namespace Yoyo
 		}
 		std::string final_str;
 		if(consider)
-		for (auto& row : rows)
-		{
-			replaceCharWithStr(row, '$', "─");
-			replaceCharWithStr(row, char{ 5 }, "┬");
-			replaceCharWithStr(row, char{ 6 }, "│");
-			replaceCharWithStr(row, char{ 7 }, "╰");
-			final_str.append(prefix + row + "\n");
-		}
+            for (auto& row : rows)
+            {
+                replaceCharWithStr(row, '$', "─");
+                replaceCharWithStr(row, char{ 5 }, "┬");
+                replaceCharWithStr(row, char{ 6 }, "│");
+                replaceCharWithStr(row, char{ 7 }, "╰");
+                final_str.append(prefix + row + "\n");
+            }
 		return final_str;
 	}
 	std::string Error::to_string(const SourceView& view, bool enable_color) const

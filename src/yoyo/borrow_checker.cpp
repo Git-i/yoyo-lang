@@ -158,6 +158,7 @@ namespace Yoyo{
             Value ret = Value::empty();
             if (expr->expr) ret = std::visit(*this, expr->expr->toVariant());
             for (auto& variable : variables.back() | std::views::reverse) {
+                std::ignore = variable;
                 // drop here
             }
             variables.pop_back();
@@ -204,6 +205,7 @@ namespace Yoyo{
             // [<expr>; <expr>] repeat first <expr>, sencond <expr> times (second expr is a constant)
             else {
                 auto& elem_size = std::get<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>(lit->elements);
+                std::ignore = elem_size;
                 // TODO
             }
             return Value::from(std::move(array_obj));
@@ -268,7 +270,9 @@ namespace Yoyo{
                 current_block->add_instruction(new BorrowValueInstruction(std::move(this_eval), std::string(result)));
                 return Value::from(std::move(result));
             }
+            default: debugbreak();
             }
+            return Value::empty();
         }
         Value BorrowCheckerEmitter::operator()(BinaryOperation * op) {
             RE_REPR(op);
@@ -383,8 +387,9 @@ namespace Yoyo{
                 // array element access (member access is not fully resolved wrt to refernces)
                 return std::move(object).member("[*]");
             }
-
-
+            // TODO: handle this operator for evey other type
+            debugbreak();
+            return Value::empty();
         }
         Value BorrowCheckerEmitter::operator()(LambdaExpression*) { return Value::empty(); }
         Value BorrowCheckerEmitter::operator()(TryExpression*) { return Value::empty(); }
@@ -506,7 +511,7 @@ namespace Yoyo{
                 return std::format("{} = domain φ({})", inst->into, input);
             }
             if constexpr (std::is_same_v<T, DerefOperation>) {
-                return std::format("%{} = deref {}", inst->into, inst->reference.to_string());
+                return std::format("%{} = deref {} from domain {}", inst->into, inst->reference.to_string(), inst->ref_domain.to_string());
             }
             if constexpr (std::is_same_v<T, MayStoreOperation>) {
                 return std::format("{} = χ({}) [may store]", inst->new_domain.to_string(), inst->old_domain.to_string());
@@ -566,6 +571,7 @@ namespace Yoyo{
                 return BorrowCheckerType::new_aggregate_from(Type(type)); 
             } 
             debugbreak();
+            return BorrowCheckerType{};
         }
         const BorrowCheckerType& DomainCheckerState::field_lookup(const BorrowCheckerType& type, const std::string& base_name, std::span<const std::string> fields) {
             if (fields.empty()) {
@@ -597,7 +603,7 @@ namespace Yoyo{
                 std::string name_so_far = base_name;
                 Type type_so_far = named->actual_type;
                 for(auto i : std::views::iota(0u, fields.size())) {
-                    auto& prev_type = (i == 0) ? type : named_value_type_cache.at(name_so_far);
+                    // auto& prev_type = (i == 0) ? type : named_value_type_cache.at(name_so_far);
                     // type so far is guaranteed to be a struct/union/tuple/array by the type system
                     name_so_far += "." + fields[i];
                     if (auto decl = type_so_far.get_decl_if_class(this->irgen)) {
@@ -621,6 +627,7 @@ namespace Yoyo{
                 return named_value_type_cache.at(full_name);
             }
             else debugbreak();
+            return type; // this should never be reached 
         }
         const BorrowCheckerType& DomainCheckerState::get_value_type(const Value& value)
         {
@@ -711,7 +718,19 @@ namespace Yoyo{
                     }
                     // p > {q}
                     else if(!inst->sub.is_null()) {
-                        has_change =
+                        auto as_val = Value::from(inst->sub.to_string());
+                        auto& val_type = get_value_type(as_val);
+                        // for lvalues we reborrow, so we need to look at what the lvalue is from and extract the references from there
+                        if (auto lval = std::get_if<BorrowCheckerType::LValue>(&val_type.details)) {
+                            bool has_change = false;
+                            for (auto& pointee : final_ptg.get_pointees_of(val_type.domains[0].first.to_string())) {
+                                auto edge = pointee;
+                                // apply the path;
+                                for(auto& path : lval->subpath) edge += "." + path;
+                                has_change = final_ptg.add_new_relation(inst->super.to_string(), edge) == Changed || has_change;
+                            }
+                        }
+                        else has_change =
                             final_ptg.add_new_relation(inst->super.to_string(), inst->sub.to_string()) == Changed;
                     }
 
@@ -721,6 +740,7 @@ namespace Yoyo{
                     }
                 }
                 else if(auto inst = dynamic_cast<DomainExtensionConstraint*>(node)) {
+                    std::ignore = inst;
                     debugbreak();
                 }
                 else if(auto inst = dynamic_cast<DomainPhiInstruction*>(node)) {
@@ -824,6 +844,10 @@ namespace Yoyo{
                             worklist.insert(use);
                     }
                 }
+                else if (auto inst = dynamic_cast<DerefOperation*>(node)) {
+                    // I don't think there's any special behaviour required here
+                    std::ignore = inst;
+                }
                 else debugbreak();
             }
         }
@@ -832,14 +856,7 @@ namespace Yoyo{
             // Incomplete on purpose
             dominators.register_for(entry_block, entry_block);
             bool should_loop = true;
-            // the order should not matter
-            auto reverse_post_order = [](BasicBlock* block)
-                {
-
-                    for (auto child : block->instructions.back()->children()) {
-
-                    }
-                };
+            // the order should not matter 
             while (should_loop) {
                 should_loop = false;
 
@@ -921,10 +938,10 @@ namespace Yoyo{
                             }
                             else tp->old_super.name = storage_entry[tp->super.name];
 
-                            if (tp->sub.is_var())
+                            if (tp->sub.is_var()) {
                                 if (storage_entry.contains(tp->sub.name)) tp->sub.name = storage_entry[tp->sub.name];
                                 else unfound_uses.push_back(std::ref(tp->sub.name));
-
+                            }
                             auto new_name = producer.name_for(tp->super.name);
                             storage_entry[tp->super.name] = new_name;
                             tp->super.name = new_name;
@@ -942,14 +959,16 @@ namespace Yoyo{
 
                             tp->super.name = new_name;
 
-                            if (tp->sub.is_var())
+                            if (tp->sub.is_var()) {
                                 if (storage_entry.contains(tp->sub.name)) tp->sub.name = storage_entry[tp->sub.name];
                                 else unfound_uses.push_back(std::ref(tp->sub.name));
+                            }
                         }
                         if constexpr (std::is_same_v<T, DomainDependenceEdgeConstraint>) {
-                            if (tp->d1.is_var())
+                            if (tp->d1.is_var()) {
                                 if (storage_entry.contains(tp->d1.name)) tp->d1.name = storage_entry[tp->d1.name];
                                 else unfound_uses.push_back(std::ref(tp->d1.name));
+                            }
                         }
                         if constexpr (std::is_same_v<T, AssignInstruction>) {
                             AssignInstruction* inst = tp;
@@ -1010,6 +1029,10 @@ namespace Yoyo{
                                     it = block->instructions.emplace(++it, op);
                                 }
                             }
+                        }
+                        if constexpr (std::is_same_v<T, DerefOperation>) {
+                            if (storage_entry.contains(tp->ref_domain.name)) tp->ref_domain.name = storage_entry[tp->ref_domain.name];
+                            else unfound_uses.push_back(std::ref(tp->ref_domain.name));
                         }
                     },
                     (*it)->to_variant());
@@ -1175,6 +1198,11 @@ namespace Yoyo{
                         add_definition(as_sub_constraint->super.to_string(), op);
                     }
                 }
+                void operator()(DerefOperation* op) {
+                    // this should also count as a use, we're going to need to know the domain at this instruction during check time
+                    // I'm not sure how to handle this, however as there may be an associated store or reborrow
+                    add_use(op->ref_domain.to_string(), op);
+                }
                 void operator()(Instruction*) {}
             };
             DUGEdgeInserter edge_inserter{ this, skip_instruction };
@@ -1247,6 +1275,7 @@ namespace Yoyo{
             }
             default: debugbreak();
             }
+            return BorrowCheckerType{};
         };
         BorrowCheckerType BorrowCheckerType::borrowed(DomainCheckerState* stt) const
         {
@@ -1736,7 +1765,9 @@ namespace Yoyo {
         }
         BlockIteratorTy DomainVariableInserter::operator()(DerefOperation* op)
         {
-            state->register_value_base_type(op->into, state->get_value_type(op->reference).deref());
+            auto& reference_type = state->get_value_type(op->reference);
+            op->ref_domain = reference_type.domains[0].first;
+            state->register_value_base_type(op->into, reference_type.deref());
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(DerefLoadOperation* op)

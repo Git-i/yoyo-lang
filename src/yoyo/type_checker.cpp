@@ -2915,6 +2915,19 @@ namespace Yoyo
             }
 
         }
+        // TODO:  handle `has_type_variable`
+        else {
+            // result and subject are concrete
+            // check base case: result = &T && subject = T
+            if(result.name != "__ref_mut") {
+                irgen->error(Error(con.expr, "Operator &mut always returns a mutable reference"));
+            }
+            if(result.subtypes[0].is_equal(subject)) {
+                return true;
+            }
+
+        }
+                                                                                                                             
     }
     bool ConstraintSolver::operator()(IfEqualThenConstrain& con)
     {

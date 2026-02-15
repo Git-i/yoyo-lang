@@ -8,6 +8,7 @@
 #include <vector>
 #include <optional>
 #include <variant>
+#include <sstream>
 #include <map>
 #include <ranges>
 namespace Yoyo {
@@ -237,6 +238,7 @@ namespace Yoyo {
         class DerefOperation : public Instruction {
         public:
             Value reference;
+            Domain ref_domain;
             std::string into;
             DerefOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
             InstructionVariant to_variant() override;

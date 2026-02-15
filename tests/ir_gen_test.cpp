@@ -283,8 +283,9 @@ main: fn = {
     vec_ref: &mut Vector2 = &mut vec;
     vec_ref.x = 200;
     
-    field_ref: mut &i32 = &vec_ref.x;
-    field_ref = &vec.y;
+    field_ref: mut &mut i32 = &mut vec_ref.x;
+    *field_ref = 300;
+    field_ref = &mut vec.y;
     // field_ref should correctly resolve
 }
 )");
