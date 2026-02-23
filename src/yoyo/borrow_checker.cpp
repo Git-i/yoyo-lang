@@ -2,6 +2,7 @@
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "token.h"
+#include <deque>
 #include <memory>
 #include <utility>
 #include <type_traits>
@@ -677,6 +678,8 @@ namespace Yoyo{
 
             do_primary_analysis();
             std::cout << final_ptg.to_graphviz();
+
+            do_domain_validity_analysis(entry_block); // perform an analysis to know what domains are valid for every instruction 
             return function;
         }
         void DomainCheckerState::do_primary_analysis() {
@@ -849,6 +852,92 @@ namespace Yoyo{
                     std::ignore = inst;
                 }
                 else debugbreak();
+            }
+        }
+        struct TransferFunctionVisitor {
+            DomainCheckerState* state;
+            BasicBlock* block;
+            size_t instruction_idx;
+            std::set<std::string> operator()(NewPrimitiveInstruction* inst) {
+                // GEN and KILL are empty sets
+                return state->dfa_in[inst];
+            }
+            std::set<std::string> operator()(NewAggregateInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(DomainSubsetConstraint* inst) {
+                auto in = state->dfa_in[inst];
+                // GEN = the new domain introduced
+                // TODO: should probably remove the old version of the domain
+                in.insert(inst->super.to_string());
+                return in;
+            }
+            std::set<std::string> operator()(RelocateValueInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(BorrowValueInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(CondBrInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(BrInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(RetInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(Instruction* inst) {
+                debugbreak(); return {};
+            }
+        };
+        void DomainCheckerState::do_domain_validity_analysis(BasicBlock* entry) {
+            // this is not the optimal order for a forward DFA, but it'll work
+            auto blocks_without_entry = func->blocks | std::views::transform([](auto& elem) { return elem.get(); }) | std::views::filter([entry](auto elem) { return elem != entry; });
+            std::deque<BasicBlock*> worklist(blocks_without_entry.begin(), blocks_without_entry.end());
+            // we handle the entry block specially
+            enum TransferStatus: uint8_t { Changed = 0, Unchanged };
+            auto transfer_fn = 
+                [this](Instruction* inst, BasicBlock* block, size_t idx) -> TransferStatus{
+                    auto visitor = TransferFunctionVisitor{ this, block, idx };
+                    auto out_k = std::visit(visitor, inst->to_variant());
+                    if (out_k != dfa_out[inst]) {
+                        dfa_out[inst] = std::move(out_k);
+                        return Changed;
+                    } else return Unchanged;
+                };
+            dfa_in.insert(std::pair{entry->instructions.front().get(), std::set<std::string>{}});
+            transfer_fn(entry->instructions.front().get(), entry, 0);
+            for (auto idx : std::views::iota(1u, entry->instructions.size())){
+                auto inst = entry->instructions[idx].get();
+                dfa_in.insert(std::pair{inst, dfa_out[entry->instructions[idx - 1].get()]});
+                transfer_fn(inst, entry, idx);
+            }
+            while (!worklist.empty()) {
+                auto current_block = worklist.front();
+                worklist.pop_front();
+                //handle first instruction
+                auto first_inst = current_block->instructions.front().get();
+                auto in_first_inst = std::set<std::string>{};
+                // IN_k = ∩_{p in preds(k)} OUT_p
+                for (const auto& domain : dfa_out[current_block->preds[0]->instructions.back().get()]) {
+                    bool part_of_intersection = true;
+                    for (auto pred : current_block->preds | std::views::transform([this](BasicBlock* pred) {
+                        return std::cref(dfa_out[pred->instructions.back().get()]);
+                    })) {
+                        if(!pred.get().contains(domain)) { 
+                            part_of_intersection = false;
+                            break;
+                        }
+                    }
+                    if (part_of_intersection) in_first_inst.insert(domain);
+                }
+                dfa_in[first_inst] = std::move(in_first_inst);
+                transfer_fn(first_inst, current_block, 0);
+                // TODO: handle case of 1 instruction blocks
+                for (auto idx : std::views::iota(1u, current_block->instructions.size() - 1)) {
+                    auto inst = current_block->instructions[idx].get();
+                    dfa_in[inst] = dfa_out[current_block->instructions[idx - 1].get()];
+                    transfer_fn(inst, current_block, idx);
+                }
+                // we handle the last instruction specially, because we'll need to update the worklist if it changes
+                auto last_inst = current_block->instructions.back().get();
+                dfa_in[last_inst] = dfa_out[current_block->instructions[current_block->instructions.size() - 2].get()];
+                if(transfer_fn(last_inst, current_block, current_block->instructions.size() - 1) == Changed) {
+                    // insert all the successors into the worklist (that aren't already there)
+                    for (auto succ : last_inst->children()) {
+                        auto it = std::ranges::find(worklist, succ);
+                        if(it != worklist.end()) worklist.push_back(succ);
+                    }
+                }
             }
         }
         void DomainCheckerState::build_dominators()

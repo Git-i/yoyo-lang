@@ -4,6 +4,7 @@
 #include <memory>
 #include <span>
 #include <unordered_map>
+#include <set>
 #include <unordered_set>
 #include <vector>
 #include <optional>
@@ -719,6 +720,9 @@ namespace Yoyo {
             TopLevelPointsToGraph final_ptg;
             // stores field information for named types
             ValueTypeMapping named_value_type_cache;
+            std::unordered_map<Instruction*, std::set<std::string>> dfa_in;
+            std::unordered_map<Instruction*, std::set<std::string>> dfa_out;
+    
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
@@ -732,6 +736,7 @@ namespace Yoyo {
             void clear_dependencies();
             void build_dug();
             void do_primary_analysis();
+            void do_domain_validity_analysis(BasicBlock* entry);
         };
     }
 }
