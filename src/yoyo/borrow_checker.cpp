@@ -3,6 +3,7 @@
 #include "overload_details.h"
 #include "token.h"
 #include <deque>
+#include <iterator>
 #include <memory>
 #include <utility>
 #include <type_traits>
@@ -539,12 +540,26 @@ namespace Yoyo{
             }
             return "not implemented";
         };
-        std::string BasicBlock::to_string()
+        std::string BasicBlock::to_string(bool include_dfa, DomainCheckerState* state)
         {
-
             std::string instructions_string;
+            auto append_set = [&instructions_string](std::set<std::string>& in) {
+                if(!in.empty()) {
+                    instructions_string += *in.begin();
+                    for(auto& elem: std::ranges::subrange{std::ranges::next(in.begin(), 1), in.end()}) instructions_string += ", " + elem;
+                }
+                instructions_string += "}\n";
+            };
             for (auto& inst : instructions) {
+                if (include_dfa) {
+                    instructions_string += "in: {";
+                    append_set(state->dfa_in[inst.get()]);
+                }
                 instructions_string += std::visit([](auto* inst) { return instruction_to_string(inst); }, inst->to_variant()) + '\n';
+                if (include_dfa) {
+                    instructions_string += "out: {";
+                    append_set(state->dfa_out[inst.get()]);
+                }
             }
             instructions_string.pop_back(); // remove the trailing \n
 
@@ -680,6 +695,7 @@ namespace Yoyo{
             std::cout << final_ptg.to_graphviz();
 
             do_domain_validity_analysis(entry_block); // perform an analysis to know what domains are valid for every instruction 
+            std::cout << "Phse 7\n" << function->to_string(true, this) << std::endl;
             return function;
         }
         void DomainCheckerState::do_primary_analysis() {
@@ -858,6 +874,50 @@ namespace Yoyo{
             DomainCheckerState* state;
             BasicBlock* block;
             size_t instruction_idx;
+            // Generate KILL sets (all the domains invalidated when the provided values are modified)
+            std::set<std::string> kill_for_modifying_values(std::span<const Value> values) {
+                std::set<std::string> result;
+                auto unstable_suffix = 
+                    // returns true is the input is a path that begins with the input path and contains an unstable link
+                    [this, values](std::string value) -> bool {
+                        auto input = Value::from(std::move(value));
+                        bool is_unstable = false;
+                        for(auto& elem : values) {
+                            // elem must be a prefix of input
+                            if(!input.to_string().starts_with(elem.to_string())) continue;
+                            // look past the prefix and see if any unstable links exist
+                            auto extra_fields = std::span<std::string>{input.subpaths.begin() + elem.subpaths.size(), input.subpaths.end()};
+                            auto& elem_ty = state->get_value_type(elem);
+                            auto* current_type = &elem_ty;
+                            // access all extra_fields from elem_ty and see if there's and unstable link
+                            auto current_value = elem;
+                            for (auto& field: extra_fields) {
+                                // if fields remain, it must be an Aggregate type: array, box (not implemented yet), or named type.
+                                if (auto as_arr = std::get_if<BorrowCheckerType::Array>(&current_type->details)) {
+                                    // TODO: handle arrays
+                                    debugbreak();
+                                } else if (auto as_named = std::get_if<BorrowCheckerType::Named>(&current_type->details)) {
+                                    // access of a struct field is stable, and that of a union is not
+                                    if(as_named->actual_type.get_decl_if_union()) is_unstable = true;
+                                } else debugbreak();
+                                if(is_unstable) break;
+                                current_value.subpaths.push_back(field);
+                                current_type = &state->get_value_type(current_value);
+                            }
+                        }
+                        return is_unstable;
+                    };
+                for (auto&[domain, point_to] : state->final_ptg.domain_to_node) {
+                    // check if the domain points to anything that is being modified
+                    for (auto& val : point_to) {
+                        if (unstable_suffix(val)) {
+                            result.insert(domain);
+                            break;
+                        }
+                    }
+                }
+                return result;
+            }
             std::set<std::string> operator()(NewPrimitiveInstruction* inst) {
                 // GEN and KILL are empty sets
                 return state->dfa_in[inst];
@@ -875,6 +935,29 @@ namespace Yoyo{
             std::set<std::string> operator()(CondBrInstruction* inst) { return state->dfa_in[inst]; }
             std::set<std::string> operator()(BrInstruction* inst) { return state->dfa_in[inst]; }
             std::set<std::string> operator()(RetInstruction* inst) { return state->dfa_in[inst]; }
+            std::set<std::string> operator()(DerefOperation* inst) {
+                // The valid sets don't change during this operation
+                return state->dfa_in[inst];
+            }
+            std::set<std::string> operator()(AssignInstruction* inst) {
+                // assign modifies a value, so it invalidates all domains that points to values originating from that value 
+                // this will contain all the modified values by this assign (it will be more than one in the case of lvalue assign)
+                std::vector<Value> lhs_values;
+                if (auto& type = state->get_value_type(inst->lhs); type.details.index() == BorrowCheckerType::LValue) {
+                    auto pointees = state->final_ptg.get_pointees_of(inst->lhs_domain.to_string()) | std::views::transform(
+                        [](std::string input) {
+                            return Value::from(std::move(input));
+                        }
+                    );
+                    lhs_values.insert(lhs_values.end(), pointees.begin(), pointees.end());
+                } else {
+                    lhs_values.push_back(inst->lhs);
+                }
+                auto kill = kill_for_modifying_values(lhs_values);
+                std::vector<std::string> output;
+                std::ranges::set_difference(state->dfa_in[inst], kill, std::back_inserter(output));
+                return std::set<std::string>{output.begin(), output.end()};
+            }
             std::set<std::string> operator()(Instruction* inst) {
                 debugbreak(); return {};
             }

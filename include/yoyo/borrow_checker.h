@@ -71,7 +71,7 @@ namespace Yoyo {
                 if (!base_name.starts_with("__constant__fn__")) return std::nullopt;
                 return std::string(base_name.begin() + "__constant__fn__"sv.size(), base_name.end());
             }
-            std::string to_string() {
+            std::string to_string() const {
                 std::string result = "%" + base_name;
                 for (auto& path : subpaths) result += "." + path;
                 return result;
@@ -94,11 +94,12 @@ namespace Yoyo {
             virtual std::span<BasicBlock*> children() { return {}; };
             virtual InstructionVariant to_variant() = 0;
         };
+        struct DomainCheckerState;
         struct BasicBlock {
             std::string debug_name;
             std::vector<std::unique_ptr<Instruction>> instructions;
             std::vector<BasicBlock*> preds;
-            std::string to_string();
+            std::string to_string(bool include_dfa = false, DomainCheckerState* state = nullptr);
             void add_instruction(Instruction* inst) {
                 instructions.emplace_back(inst);
             }
@@ -278,6 +279,12 @@ namespace Yoyo {
                 domain(std::move(domain)) {}
             InstructionVariant to_variant() override;
         };
+        class DropInstruction : public Instruction {
+        public:
+            Value val; // I don't think `val` here is allowed to have subpaths
+            DropInstruction(Value val) : val(std::move(val)) {}
+            InstructionVariant to_variant() override;
+        };
         using InstructionVariantBase = std::variant<
             CondBrInstruction*,
             BrInstruction*,
@@ -311,10 +318,10 @@ namespace Yoyo {
             BasicBlock* new_block(std::string debug_name) {
                 return blocks.emplace_back(new BasicBlock{ .debug_name = debug_name + std::to_string(idx++) }).get();
             }
-            std::string to_string() {
+            std::string to_string(bool add_dfa = false, DomainCheckerState* state = nullptr) {
                 std::string out;
                 for (auto& block : blocks) {
-                    out += block->to_string() + "\n\n";
+                    out += block->to_string(add_dfa, state) + "\n\n";
                 }
                 return out;
             }
