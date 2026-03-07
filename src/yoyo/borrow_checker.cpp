@@ -6,6 +6,7 @@
 #include <deque>
 #include <iterator>
 #include <memory>
+#include <string>
 #include <utility>
 #include <type_traits>
 #include <unordered_map>
@@ -822,8 +823,30 @@ namespace Yoyo{
                     }
                 }
                 else if(auto inst = dynamic_cast<DomainExtensionConstraint*>(node)) {
-                    std::ignore = inst;
-                    debugbreak();
+                    // p_n > p_o + q
+                    bool has_change = false;
+                    if (inst->sub.is_var()) {
+                        for (auto& pointee : final_ptg.get_pointees_of(inst->sub.to_string())) {
+                            has_change =
+                                (final_ptg.add_new_relation(inst->super.to_string(), pointee) == Changed)
+                                || has_change;
+                        }
+                        for (auto& pointee : final_ptg.get_pointees_of(inst->old_super.to_string())) {
+                            has_change =
+                                (final_ptg.add_new_relation(inst->super.to_string(), pointee) == Changed)
+                                || has_change;
+                        }
+                    }
+                    // p > {q}
+                    else if(!inst->sub.is_null()) debugbreak();
+                    else {
+                        // sub is null
+                        debugbreak();
+                    }
+                    if(has_change) {
+                        for (auto [use, domain] : def_use_graph.edges[node])
+                            worklist.insert(use);
+                    }
                 }
                 else if(auto inst = dynamic_cast<DomainPhiInstruction*>(node)) {
                     bool has_change = false;
@@ -989,8 +1012,20 @@ namespace Yoyo{
             std::set<std::string> operator()(DomainSubsetConstraint* inst) {
                 auto in = state->dfa_in[inst];
                 // GEN = the new domain introduced
-                // TODO: should probably remove the old version of the domain
+               // TODO: should probably remove the old version of the domain
                 in.insert(inst->super.to_string());
+                return in;
+            }
+            std::set<std::string> operator()(DomainExtensionConstraint* inst) {
+                auto in = state->dfa_in[inst];
+                in.insert(inst->super.to_string());
+                return in;
+            }
+            std::set<std::string> operator()(DomainPhiInstruction* inst) {
+                // this intrusction introduces a new doamin only if all the input domains are valid
+                auto in = state->dfa_in[inst];
+                
+                in.insert(inst->into);
                 return in;
             }
             std::set<std::string> operator()(RelocateValueInstruction* inst) { return state->dfa_in[inst]; }
@@ -1000,6 +1035,14 @@ namespace Yoyo{
             std::set<std::string> operator()(RetInstruction* inst) { return state->dfa_in[inst]; }
             std::set<std::string> operator()(DerefOperation* inst) {
                 // The valid sets don't change during this operation
+                return state->dfa_in[inst];
+            }
+            std::set<std::string> operator()(DerefLoadOperation* inst) {
+                return state->dfa_in[inst];
+            }
+            std::set<std::string> operator()(PhiInstruction* inst) {
+                // This always introduces a new value (no reassignment)
+                // TODO: we still don't hanlde move of the input values
                 return state->dfa_in[inst];
             }
             std::set<std::string> operator()(AssignInstruction* inst) {
