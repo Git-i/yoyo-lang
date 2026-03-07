@@ -148,8 +148,8 @@ namespace Yoyo
         void operator()(GenericFunctionDeclaration*) {}
         void operator()(ConditionalExtraction* stat)
         {
-            node->statements.push_back(stat);
-
+            node->expressions.push_back(stat);
+            std::visit(*this, stat->condition->toVariant());
             auto then = node->manager->newNode(depth + 1, "cond_extract_then");
             auto else_node = stat->else_body ? node->manager->newNode(depth + 1, "cond_extract_else") : nullptr;
             auto cont = node->manager->newNode(depth, "cond_extract_cont");
@@ -157,15 +157,31 @@ namespace Yoyo
             node->addChild(then);
             auto then_prep = CFGPreparator{then,exit, depth + 1, break_to, continue_to};
             std::visit(then_prep, stat->body->toVariant());
-            if (then_prep.node != exit) then_prep.node->addChild(cont);
+            CFGNode* goto_if_not_cont = nullptr;
+            if (then_prep.node != exit && then_prep.node != break_to && then_prep.node != continue_to) {
+                then_prep.node->addChild(cont);
+                stat->then_transfers_control = false;
+            } else { 
+                then->debug_name += "(surrenders control)";
+                goto_if_not_cont = then_prep.node;
+            }
             if(else_node)
             {
                 node->addChild(else_node);
                 auto else_prep = CFGPreparator{else_node, exit,depth + 1, break_to, continue_to};
                 std::visit(else_prep, stat->else_body->toVariant());
-                if (else_prep.node != exit) else_prep.node->addChild(cont);
+                if (else_prep.node != exit && else_prep.node != break_to && else_prep.node != continue_to) { 
+                    else_prep.node->addChild(cont);
+                    stat->else_transfers_control = false;
+                } else {
+                    else_node->debug_name += "(surrenders control)";
+                    if (goto_if_not_cont == continue_to) goto_if_not_cont = else_prep.node;
+                    else if (goto_if_not_cont == break_to) {
+                        if (else_prep.node == exit) goto_if_not_cont = exit;
+                    }
+                }
             }
-            node = cont->parents.empty() ? exit : cont;
+            node = cont->parents.empty() ? goto_if_not_cont : cont;
         }
         void operator()(WithStatement* stat)
         {

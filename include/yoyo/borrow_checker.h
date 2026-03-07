@@ -367,7 +367,6 @@ namespace Yoyo {
             void operator()(EnumDeclaration*);
             void operator()(UsingStatement*);
             void operator()(ModuleImport*);
-            void operator()(ConditionalExtraction*);
             void operator()(WithStatement*);
             void operator()(OperatorOverload*);
             void operator()(GenericFunctionDeclaration*);
@@ -382,6 +381,7 @@ namespace Yoyo {
             void operator()(UnionDeclaration*);
             void operator()(MacroDeclaration*);
 
+            Value operator()(ConditionalExtraction*);
             Value operator()(IfExpression*);
             Value operator()(BlockExpression*);
             Value operator()(IntegerLiteral*);

@@ -4,6 +4,7 @@
 #include <func_sig.h>
 
 #include "token.h"
+#include "type.h"
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -46,6 +47,7 @@ namespace Yoyo
     class TryExpression;
     class BlockExpression;
     class IfExpression;
+    class ConditionalExtraction;
     using ExpressionVariant = std::variant<
         IntegerLiteral*,
         BooleanLiteral*,
@@ -73,7 +75,8 @@ namespace Yoyo
         SpawnExpression*,
         TryExpression*,
         BlockExpression*,
-        IfExpression*>;
+        IfExpression*,
+        ConditionalExtraction*>;
     enum class Ownership { Owning = 0, NonOwning, NonOwningMut };
     class YOYO_API Expression : public ASTNode {
     public:
@@ -325,6 +328,33 @@ namespace Yoyo
         IfExpression(std::unique_ptr<Expression> cond, std::unique_ptr<Expression> then_, std::unique_ptr<Expression> else_)
             : condition(std::move(cond)), then_expr(std::move(then_)), else_expr(std::move(else_)) {
         }
+        ExpressionVariant toVariant() override;
+    };
+    class YOYO_API ConditionalExtraction : public Expression
+    {
+    public:
+        enum CaptureType {
+            Own, Ref, RefMut
+        };
+        std::string captured_name;
+        CaptureType then_capture_tp;
+        CaptureType else_capture_tp;
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<Expression> body;
+        std::string else_capture;
+        std::unique_ptr<Expression> else_body;
+        bool then_transfers_control = true;
+        bool else_transfers_control = true;
+        ConditionalExtraction(
+                std::string name,
+                CaptureType cap,
+                std::unique_ptr<Expression> cond,
+                std::unique_ptr<Expression> body,
+                std::unique_ptr<Expression> else_,
+                std::string else_name = "",
+                CaptureType else_cap = Own)
+                : captured_name(std::move(name)), then_capture_tp(cap), condition(std::move(cond)), body(std::move(body))
+                    , else_capture(std::move(else_name)), else_capture_tp(else_cap), else_body(std::move(else_)) {}
         ExpressionVariant toVariant() override;
     };
 }

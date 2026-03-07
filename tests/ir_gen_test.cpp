@@ -278,15 +278,34 @@ condition: fn -> bool = { return false; }
 Vector2: struct = {
     x: i32, y: i32
 }
+// main: fn = {
+//     vec := Vector2{ .x = 10, .y = 30 };
+//     vec_ref: &mut Vector2 = &mut vec;
+//     vec_ref.x = 200;
+//
+//     field_ref: mut &mut i32 = &mut vec_ref.x;
+//     *field_ref = 300;
+//     field_ref = &mut vec.y;
+//     // field_ref should correctly resolve
+// }
+
+Shape: union = {
+    Circle: i32, Rectangle: Vector2
+}
+
 main: fn = {
-    vec := Vector2{ .x = 10, .y = 30 };
-    vec_ref: &mut Vector2 = &mut vec;
-    vec_ref.x = 200;
+    val: mut = Shape::Circle(300);
+    other_val: i32 = 100;
     
-    field_ref: mut &mut i32 = &mut vec_ref.x;
-    *field_ref = 300;
-    field_ref = &mut vec.y;
-    // field_ref should correctly resolve
+    int_ref: &i32 = if |&inner| (val as Circle) {
+        inner
+    } else { &other_val };
+
+    if |&mut inner| (val as Circle) { *inner = 40; }; // int_ref should still remain valid
+    *int_ref;
+
+    val = Shape::Rectangle(Vector2{ .x = 10, .y = 20 });
+    *int_ref; // invalid
 }
 )");
     Yoyo::YVMEngine engine;

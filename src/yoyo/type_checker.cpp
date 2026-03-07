@@ -1,3 +1,4 @@
+#include "expression.h"
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "overload_resolve.h"
@@ -113,11 +114,11 @@ namespace Yoyo
         //    if (exists) return exists;
         //    if (if_stat->else_stat) return get_next_stat(if_stat->else_stat.get(), name);
         //}
-        else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
-            auto exists = get_next_stat(cond->body.get(), name);
-            if (exists) return exists;
-            if (cond->else_body) return get_next_stat(cond->else_body.get(), name);
-        }
+        // else if (auto cond = dynamic_cast<ConditionalExtraction*>(stat)) {
+        //     auto exists = get_next_stat(cond->body.get(), name);
+        //     if (exists) return exists;
+        //     if (cond->else_body) return get_next_stat(cond->else_body.get(), name);
+        // }
         else if (auto with = dynamic_cast<WithStatement*>(stat)) {
             return get_next_stat(with->body.get(), name);
         }
@@ -600,18 +601,19 @@ namespace Yoyo
     {
         std::visit(targetless(), stat->expression->toVariant());
     }
-    void TypeChecker::operator()(ConditionalExtraction* stat)
+    FunctionType TypeChecker::operator()(ConditionalExtraction* stat) const
     {
         auto tp = std::visit(targetless(), stat->condition->toVariant());
         auto obj_ty = state->new_type_var();
         Type else_ty;
-        if (stat->is_ref) {
+        if (stat->then_capture_tp != ConditionalExtraction::Own) {
             // value_conversion_result::<T> extracts to T
             // optional extracts to T, ref extracts to &T or &mut T
             // ref_conversion_result::<T> extracts to T, ref extracts to &T or &mut T
             state->add_constraint(RefExtractsToConstraint{
                     tp,
-                    obj_ty
+                    obj_ty,
+                    stat->then_capture_tp == ConditionalExtraction::RefMut, stat
                 });
         }
         else {
@@ -619,14 +621,14 @@ namespace Yoyo
         }
         if (!stat->else_capture.empty()) {
             else_ty = state->new_type_var();
-            if (stat->else_is_ref)
-                state->add_constraint(ElseRefExtractsToConstraint{ tp, else_ty });
+            if (stat->else_capture_tp != ConditionalExtraction::Own)
+                state->add_constraint(ElseRefExtractsToConstraint{ tp, else_ty, stat->else_capture_tp == ConditionalExtraction::RefMut, stat });
             else
                 state->add_constraint(ElseExtractsToConstraint{ tp, else_ty });
         }
         state->push_variable_block();
         state->create_variable(stat->captured_name, obj_ty);
-        std::visit(*this, stat->body->toVariant());
+        auto then_ty = std::visit(*this, stat->body->toVariant());
         state->pop_variable_block();
 
         if (stat->else_body) {
@@ -634,9 +636,17 @@ namespace Yoyo
                 state->push_variable_block();
                 state->create_variable(stat->else_capture, else_ty);
             }
-            std::visit(*this, stat->else_body->toVariant());
+            auto else_ty = std::visit(*this, stat->else_body->toVariant());
             if (!stat->else_capture.empty()) state->pop_variable_block();
-        }
+            stat->evaluated_type = state->new_type_var();
+            state->add_constraint(IfStatementConstraint{
+                then_ty, else_ty,
+                stat->then_transfers_control, stat->else_transfers_control,
+                stat->evaluated_type,
+                stat
+            });
+        } else stat->evaluated_type = Type { .name = "void", .module = core_module };
+        return stat->evaluated_type;
     }
     void TypeChecker::operator()(WithStatement* stat)
     {
@@ -960,9 +970,24 @@ namespace Yoyo
     FunctionType TypeChecker::operator()(CallOperation* op) const {
         auto callee_ty = std::visit(targetless(), op->callee->toVariant());
         if (callee_ty.name.starts_with("__union_var")) {
-            // not a function call, actually Union initialization
-            // TODO
-            return Type{ "__error_type" };
+            using namespace std::string_view_literals;
+            size_t dollar_off = callee_ty.name.find_first_of('$');
+            std::string variant = std::string(callee_ty.name.begin() + dollar_off + 1, callee_ty.name.end());
+            std::string type_name = std::string(callee_ty.name.begin() + "__union_var"sv.size(), callee_ty.name.begin() + dollar_off);
+            callee_ty.name = type_name;
+            auto decl = callee_ty.get_decl_if_union();
+            if (!decl) {
+                irgen->error(Error(op, callee_ty.full_name() + " is not a union"));
+                return Type{"__error_type"};
+            }
+            if (op->arguments.size() != 1) { 
+                irgen->error(Error(op, "Union initializer must have one argument"));
+                return Type{"__error_type"};
+            }
+            auto arg_ty = std::visit(targetless(), op->arguments[0]->toVariant());
+            state->add_constraint(EqualConstraint{decl->fields.at(variant), arg_ty, op});
+            op->evaluated_type = callee_ty;
+            return op->evaluated_type;
         }
         state->add_constraint(IsInvocableConstraint{ callee_ty });
         // is of the form <expr>.<expr>() not <expr>()
@@ -1277,18 +1302,14 @@ namespace Yoyo
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(AsExpression* ex) const {
+        // AsExpressions are a little bit more complicated than a cast, because of unions:
+        // if the source is a union and the destination is on of the variants, we return the __conv_result_{val, ref} types
+        // else the final type is always the same as the destination
         auto src = std::visit(targetless(), ex->expr->toVariant());
-        normalize_type(ex->dest, state, irgen, {});
-        state->add_constraint(ConvertibleToConstraint{
-                src, ex->dest, ex
+        ex->evaluated_type = state->new_type_var();
+        state->add_constraint(AsConstraint{
+                src, ex->dest, ex->evaluated_type, ex
             });
-        if (target) {
-            state->add_constraint(EqualConstraint{
-                    ex->dest,
-                    *target, ex
-                });
-        }
-        ex->evaluated_type = ex->dest;
         return ex->evaluated_type;
     }
     FunctionType TypeChecker::operator()(CharLiteral* ch) const {
@@ -2283,6 +2304,28 @@ namespace Yoyo
 
         if (!type.is_non_owning(irgen))
             irgen->error(Error(con.expr, std::format("They type {} must be non owning", type.pretty_name(irgen->block_hash))));
+        return true;
+    }
+    bool ConstraintSolver::operator()(AsConstraint& con) {
+        auto src = state->best_repr(con.input_type);
+        // TODO: we can probably partially initialized unions here (`has_type_variable` && !`is_type_variable`)
+        if (has_type_variable(src)) return false;
+
+        if (auto decl = src.get_decl_if_union())
+        {
+            // TODO: consider user defined conversions
+            if (!con.dest.subtypes.empty()) irgen->error(Error(con.expr, "'as' expressions for unions must use only the variant name"));
+            if (!con.dest.block_hash.empty()) irgen->error(Error(con.expr, "'as' expressions for unions must use only the variant name"));
+            if (!decl->fields.contains(con.dest.name)) irgen->error(Error(con.expr, "Specified field does not exist in the union"));
+            auto dest_tye = Type{
+                "__conv_result_ref", { decl->fields.at(con.dest.name) }, nullptr,
+                irgen->module->engine->modules.at("core").get(),src.is_mutable,src.is_lvalue
+            };
+            add_new_constraint(EqualConstraint{dest_tye, con.result, con.expr});
+            return true;
+        }
+        normalize_type(con.dest, state, irgen, {});
+        add_new_constraint(ConvertibleToConstraint{ con.input_type, con.dest, con.expr });
         return true;
     }
     bool ConstraintSolver::operator()(ConvertibleToConstraint& con)

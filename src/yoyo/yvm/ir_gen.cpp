@@ -1,3 +1,4 @@
+#include "expression.h"
 #include "yvm/yvm_irgen.h"
 
 #include <csignal>
@@ -541,7 +542,7 @@ namespace Yoyo
         // number of fn params + number of allocas
         auto tp_e = stat->condition->evaluated_type;
         if (!stat->else_capture.empty()) { debugbreak(); return; }
-        if (stat->is_ref && tp_e.is_value_conversion_result()) { error(Error(stat->condition.get(), "Expanded expression cannot be borrowed", "")); return; }
+        if (stat->then_capture_tp != ConditionalExtraction::Own && tp_e.is_value_conversion_result()) { error(Error(stat->condition.get(), "Expanded expression cannot be borrowed", "")); return; }
 
         if (isShadowing(stat->captured_name)) { error(Error({}, {}, "Name is already in use")); return; }
 
@@ -569,27 +570,25 @@ namespace Yoyo
 
         builder->write_ptr_off(NativeType::getElementOffset(as_native, 0));
         // if its not a ref we have to clone it
-        if (!tp_e.is_value_conversion_result() && !stat->is_ref) {
+        if (!tp_e.is_value_conversion_result() && !stat->then_capture_tp != ConditionalExtraction::Own) {
             if (tp_e.is_ref_conversion_result())
                 builder->write_2b_inst(Load, Yvm::Type::ptr);
             if (!tp_e.subtypes[0].should_sret())
                 builder->write_2b_inst(Load, toTypeEnum(tp_e.subtypes[0]));
             expr_eval.clone(stat->condition.get(), tp_e.subtypes[0], false, false);
         }
-        Type variable_type = stat->is_ref ?
+        Type variable_type = stat->then_capture_tp == ConditionalExtraction::Ref ?
             Type{ tp_e.is_mutable ? "__ref_mut" : "__ref", {tp_e.subtypes[0]} } :
             tp_e.subtypes[0];
         variable_type.saturate(module, this);
         variables.back().emplace_back(stat->captured_name, VariableEntry{ VariableIndex{builder->checkpoint(), VariableIndex::Checkpoint}, std::move(variable_type) });
-        current_Statement = &stat->body;
-        std::visit(*this, stat->body->toVariant());
+        std::visit(expr_eval, stat->body->toVariant());
 
         popScope();
         if (stat->else_body) {
             builder->create_jump(Jump, cont_block);
             builder->create_label(else_block);
-            current_Statement = &stat->else_body;
-            std::visit(*this, stat->else_body->toVariant());
+            std::visit(expr_eval, stat->else_body->toVariant());
         }
 
         builder->create_label(cont_block);

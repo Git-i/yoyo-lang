@@ -1,4 +1,5 @@
 #pragma once
+#include "ast_node.h"
 #include "fn_type.h"
 #include "statement.h"
 #include "expression.h"
@@ -153,12 +154,21 @@ namespace Yoyo
     struct RefExtractsToConstraint {
         Type type;
         Type dst;
+        bool is_mut;
         ASTNode* expr;
     };
     // Similar to else extracts to but the result borrows
     struct ElseRefExtractsToConstraint {
         Type type;
         Type dst;
+        bool is_mut;
+        ASTNode* expr;
+    };
+    // This is different from `ConvertibleToConstraint` because of union variant handling
+    struct AsConstraint {
+        Type input_type;
+        Type dest;
+        Type result;
         ASTNode* expr;
     };
     struct ConvertibleToConstraint {
@@ -231,6 +241,7 @@ namespace Yoyo
         ExtractsToConstraint,
         RefExtractsToConstraint,
         NonOwningConstraint,
+        AsConstraint,
         ConvertibleToConstraint,
         BinaryDotCompatibleConstraint,
         ElseExtractsToConstraint,
@@ -356,6 +367,7 @@ namespace Yoyo
         bool operator()(ExtractsToConstraint& con);
         bool operator()(RefExtractsToConstraint& con);
         bool operator()(NonOwningConstraint& con);
+        bool operator()(AsConstraint& con);
         bool operator()(ConvertibleToConstraint& con);
         bool operator()(BinaryDotCompatibleConstraint& con);
         bool operator()(ElseRefExtractsToConstraint& con);
@@ -386,7 +398,6 @@ namespace Yoyo
         void operator()(EnumDeclaration*) {}
         void operator()(UsingStatement*) {}
         void operator()(ModuleImport*) {}
-        void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);
         void operator()(OperatorOverload*) {}
         void operator()(GenericFunctionDeclaration*) {}
@@ -401,6 +412,7 @@ namespace Yoyo
         void operator()(UnionDeclaration*) {}
         void operator()(MacroDeclaration*) {}
 
+        FunctionType operator()(ConditionalExtraction*) const;
         FunctionType operator()(IfExpression*) const;
         FunctionType operator()(BlockExpression*) const;
         FunctionType operator()(TryExpression*) const;

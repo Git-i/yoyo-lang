@@ -1,5 +1,7 @@
 #pragma once
+#include "expression.h"
 #include "statement.h"
+#include <memory>
 namespace Yoyo
 {
     //No reflection so we have to this cursed nonsense
@@ -32,6 +34,7 @@ namespace Yoyo
         std::unique_ptr<Expression> operator()(TryExpression*);
         std::unique_ptr<Expression> operator()(IfExpression*);
         std::unique_ptr<Expression> operator()(BlockExpression*);
+        std::unique_ptr<Expression> operator()(ConditionalExtraction*);
 
         static std::unique_ptr<Expression> copy_expr(Expression*);
         static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
@@ -49,7 +52,6 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(ExpressionStatement*);
         std::unique_ptr<Statement> operator()(EnumDeclaration*);
         std::unique_ptr<Statement> operator()(ModuleImport*);
-        std::unique_ptr<Statement> operator()(ConditionalExtraction*);
         std::unique_ptr<Statement> operator()(WithStatement*);
         std::unique_ptr<Statement> operator()(OperatorOverload*);
         std::unique_ptr<Statement> operator()(GenericFunctionDeclaration*);

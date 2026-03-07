@@ -318,7 +318,10 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> IfParselet::parse(Parser& p, Token tk)
     {
-        if (p.Peek() && p.Peek()->type == TokenType::Pipe) return nullptr; // p.parseConditionalExtraction(tk);
+        if (p.Peek() && p.Peek()->type == TokenType::Pipe) {
+            // conditional extraction
+            return p.parseConditionalExtraction(p.Peek().value());
+        } 
         if (!p.discard(TokenType::LParen)) p.error("Expected '('", p.Peek());
         auto condition = p.parseExpression(0);
         if (!condition) p.synchronizeTo({ {TokenType::RParen} });

@@ -1,4 +1,5 @@
 #include "class_entry.h"
+#include "expression.h"
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "token.h"
@@ -102,8 +103,55 @@ namespace Yoyo{
         void BorrowCheckerEmitter::operator()(ExpressionStatement * stat) {
             drop_object(std::visit(*this, stat->expression->toVariant()));
         }
-        void BorrowCheckerEmitter::operator()(ConditionalExtraction * stat) {
-            // TODO
+        Value BorrowCheckerEmitter::operator()(ConditionalExtraction * stat) {
+            RE_REPR(stat);
+            // to get here we're guaranteed to be valid from the type checker
+            // the condition can either be an optional, result (not implemented) or a __conv_result
+            // for the last case the `Value` produced is already correct, we just need to borrow (or move) it.
+            // and for the first 2 cases we need a .value field
+            auto cond = std::visit(*this, stat->condition->toVariant());
+            auto then_block = function->new_block("cond_extract_then");
+            auto else_block = stat->else_body ? function->new_block("cond_extract_else") : nullptr;
+            auto cont_block = function->new_block("cond_extract_cont");
+            current_block->add_instruction(new CondBrInstruction(
+                { then_block, else_block ? else_block : cont_block },
+                Value(cond)
+            ));
+
+            current_block = then_block;
+            auto then_capture_name = name_based_on(stat->captured_name);
+            variables.emplace_back();
+            variables.back().emplace_back(stat->captured_name, then_capture_name);
+            if(stat->then_capture_tp == ConditionalExtraction::Own) {
+                // TODO: figure out hove move works in this IR
+                current_block->add_instruction(new RelocateValueInstruction(std::move(cond), std::move(then_capture_name)));
+            } else current_block->add_instruction(new BorrowValueInstruction(std::move(cond), std::move(then_capture_name)));
+            
+            auto then_value = std::visit(*this, stat->body->toVariant());
+            if (!then_block->is_terminated()) {
+                then_block->add_instruction(new BrInstruction(cont_block));
+            }
+            variables.pop_back();
+
+            auto else_value = Value::empty();
+            if(else_block) {
+                current_block = else_block;
+                else_value = std::visit(*this, stat->else_body->toVariant());
+                if (!else_block->is_terminated()) {
+                    else_block->add_instruction(new BrInstruction(cont_block));
+                }
+            }
+            
+            current_block = cont_block;
+            if (stat->evaluated_type.is_void()) return Value::empty();
+            else {
+                if (then_value.is_empty()) return else_value;
+                if (else_value.is_empty()) return then_value;
+
+                auto name = temporary_name();
+                current_block->add_instruction(new PhiInstruction({then_value, else_value}, std::string(name)));
+                return Value::from(std::move(name));
+            }
         }
         void BorrowCheckerEmitter::operator()(WithStatement * stat) {
             // This statement might just be dying
@@ -360,7 +408,19 @@ namespace Yoyo{
             auto& callee_type = op->callee->evaluated_type;
             if (callee_type.name == "__bound_fn") {
                 // TODO
+                debugbreak();
                 return Value::empty();
+            }
+            if (callee_type.name.starts_with("__union_var")) {
+                auto result = temporary_name();
+                auto inner_val = std::visit(*this, op->arguments[0]->toVariant());
+                auto field_name = std::string(
+                    callee_type.name.begin() + 1 + callee_type.name.find_first_of('$'), callee_type.name.end()
+                ); 
+                current_block->add_instruction(new NewAggregateInstruction{
+                    { {std::move(field_name), std::move(inner_val) } }, Type(op->evaluated_type), std::string(result)
+                });
+                return Value::from(std::move(result));
             }
             auto result = temporary_name();
             std::vector<Value> args;
@@ -419,7 +479,10 @@ namespace Yoyo{
         }
         Value BorrowCheckerEmitter::operator()(AsExpression * ss) {
             RE_REPR(ss);
-            // TODO
+            // if we return __conv_result we can just propagate the value and allow the conditional extraction to take care of it-
+            if (ss->evaluated_type.name.starts_with("__conv_result")) { 
+                return std::visit(*this, ss->expr->toVariant()).member(std::string(ss->dest.name));
+            }
             return Value::empty();
         }
         Value BorrowCheckerEmitter::operator()(CharLiteral * lit) {

@@ -133,5 +133,8 @@ namespace Yoyo
     {
         return this;
     }
-
+    ExpressionVariant ConditionalExtraction::toVariant()
+    {
+        return this;
+    }
 }
