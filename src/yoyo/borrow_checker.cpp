@@ -3,6 +3,7 @@
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "token.h"
+#include <chrono>
 #include <deque>
 #include <iterator>
 #include <memory>
@@ -1109,18 +1110,22 @@ namespace Yoyo{
                     }
                     if (part_of_intersection) in_first_inst.insert(domain);
                 }
+                TransferStatus last_inst_status = Changed; 
                 dfa_in[first_inst] = std::move(in_first_inst);
-                transfer_fn(first_inst, current_block, 0);
-                // TODO: handle case of 1 instruction blocks
-                for (auto idx : std::views::iota(1u, current_block->instructions.size() - 1)) {
-                    auto inst = current_block->instructions[idx].get();
-                    dfa_in[inst] = dfa_out[current_block->instructions[idx - 1].get()];
-                    transfer_fn(inst, current_block, idx);
+                // last_inst_status is the transfer status of the last instruction, it changes if the block has more than instruction
+                last_inst_status = transfer_fn(first_inst, current_block, 0);
+                auto last_inst = current_block->instructions.back().get();
+                if(current_block->instructions.size() > 1) {
+                    for (auto idx : std::views::iota(1u, current_block->instructions.size() - 1)) {
+                        auto inst = current_block->instructions[idx].get();
+                        dfa_in[inst] = dfa_out[current_block->instructions[idx - 1].get()];
+                        transfer_fn(inst, current_block, idx);
+                    }
+                    dfa_in[last_inst] = dfa_out[current_block->instructions[current_block->instructions.size() - 2].get()];
+                    last_inst_status = transfer_fn(last_inst, current_block, current_block->instructions.size() - 1);
                 }
                 // we handle the last instruction specially, because we'll need to update the worklist if it changes
-                auto last_inst = current_block->instructions.back().get();
-                dfa_in[last_inst] = dfa_out[current_block->instructions[current_block->instructions.size() - 2].get()];
-                if(transfer_fn(last_inst, current_block, current_block->instructions.size() - 1) == Changed) {
+                if(last_inst_status == Changed) {
                     // insert all the successors into the worklist (that aren't already there)
                     for (auto succ : last_inst->children()) {
                         auto it = std::ranges::find(worklist, succ);
@@ -1257,21 +1262,17 @@ namespace Yoyo{
                             auto& type = state->get_value_type(inst->lhs);
                             auto as_lval = std::get_if<BorrowCheckerType::LValue>(&type.details);
                             if (!as_lval) return;
-
+                            // write the rhs_domain and lhs_domain as they're uses for the DUG
+                            // lhs is used to read its pointees for update
+                            inst->lhs_domain = type.domains[0].first;
+                            if (storage_entry.contains(inst->lhs_domain.name)) inst->lhs_domain.name = storage_entry[inst->lhs_domain.name];
+                            else unfound_uses.push_back(std::ref(inst->lhs_domain.name));
                             // if its a pointer to pointer we need to add may store instruction(s)
                             if (!as_lval->subtype->domains.empty()) {
-                                // write the rhs_domain and lhs_domain as they're uses for the DUG
-                                // lhs is used to read its pointees for update
-                                // rhs is used, because obviously (in future these may become multiple for struct assignment)
-                                inst->lhs_domain = type.domains[0].first;
                                 inst->rhs_domain = state->get_value_type(inst->rhs).domains[0].first;
-
-                                if (storage_entry.contains(inst->lhs_domain.name)) inst->lhs_domain.name = storage_entry[inst->lhs_domain.name];
-                                else unfound_uses.push_back(std::ref(inst->lhs_domain.name));
-
                                 if (storage_entry.contains(inst->rhs_domain.name)) inst->rhs_domain.name = storage_entry[inst->rhs_domain.name];
                                 else unfound_uses.push_back(std::ref(inst->rhs_domain.name));
-
+                               
                                 for (auto pointee : state->ptgraph.get_pointees_of(type.domains[0].first.to_string())) {
                                     auto& type = state->get_value_type(Value::from(std::move(pointee)));
                                     auto new_name = producer.name_for(type.domains[0].first.name);

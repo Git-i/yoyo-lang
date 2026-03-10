@@ -295,18 +295,13 @@ Shape: union = {
 
 main: fn = {
     val: mut = Shape::Circle(300);
-    other_val: i32 = 100;
-    
-    int_ref: &i32 = if |&inner| (val as Circle) {
-        inner
-    } else { &other_val };
-
-    if |&mut inner| (val as Circle) { *inner = 40; }; // int_ref should still remain valid
-    *int_ref;
-
-    val = Shape::Rectangle(Vector2{ .x = 10, .y = 20 });
-    *int_ref; // invalid
-}
+    val_ptr: &mut Shape = &mut val;
+    if |&mut num_ref| (val as Circle) {
+        *val_ptr = Shape::Rectangle(Vector2{.x = 20, .y = 40});
+        *num_ref = 200;
+    };
+    return;
+}                       
 )");
     Yoyo::YVMEngine engine;
     auto test_md = addTestModule(&engine);
