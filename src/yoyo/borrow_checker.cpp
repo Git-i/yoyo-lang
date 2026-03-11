@@ -760,7 +760,7 @@ namespace Yoyo{
             std::cout << final_ptg.to_graphviz();
 
             do_domain_validity_analysis(entry_block); // perform an analysis to know what domains are valid for every instruction 
-            std::cout << "Phse 7\n" << function->to_string(true, this) << std::endl;
+            std::cout << "Phase 7\n" << function->to_string(true, this) << std::endl;
             return function;
         }
         void DomainCheckerState::do_primary_analysis() {

@@ -498,7 +498,7 @@ namespace Yoyo
         if (decl->initializer) {
             auto init = std::visit(targetless(), decl->initializer->toVariant());
             if (decl->type)
-                state->add_constraint(EqualConstraint{ tp, init });
+                state->add_constraint(EqualConstraint{ tp, init, decl });
             else
                 tp = init;
         }
@@ -511,7 +511,8 @@ namespace Yoyo
 	{
         state->add_constraint(EqualConstraint{ 
             std::visit(targetless(), stat->condition->toVariant()), 
-            Type{.name = "bool", .module = core_module} 
+            Type{.name = "bool", .module = core_module},
+            stat->condition.get()
         });
         auto if_type = std::visit(*this, stat->then_expr->toVariant());
         if (stat->else_expr) {
@@ -533,7 +534,8 @@ namespace Yoyo
     {
         state->add_constraint(EqualConstraint{
             std::visit(targetless(), stat->condition->toVariant()),
-            Type{.name = "bool", .module = core_module}
+            Type{.name = "bool", .module = core_module},
+            stat->condition.get()
             });
 
         std::visit(*this, stat->body->toVariant());
@@ -574,11 +576,13 @@ namespace Yoyo
         exp->evaluated_type = state->new_type_var();
         state->add_constraint(EqualConstraint{
                 Type{.name = "__res", .subtypes = {exp->evaluated_type, ret_fail }, .module = core_module},
-                std::visit(targetless(), exp->expression->toVariant())
+                std::visit(targetless(), exp->expression->toVariant()),
+                exp
             });
         state->add_constraint(EqualConstraint{
                 Type{.name = "__res", .subtypes = {ret_success, ret_fail}, .module = core_module},
-                state->return_type
+                state->return_type,
+                exp
             });
         return exp->evaluated_type;
     }
@@ -593,7 +597,8 @@ namespace Yoyo
             // `target` should handle it but add equality constraint for safety
             state->add_constraint(EqualConstraint{
                 std::visit(new_target(state->return_type), stat->expression->toVariant()),
-                state->return_type
+                state->return_type,
+                stat
                 });
         }
     }
@@ -617,14 +622,14 @@ namespace Yoyo
                 });
         }
         else {
-            state->add_constraint(ExtractsToConstraint{ tp, obj_ty });
+            state->add_constraint(ExtractsToConstraint{ tp, obj_ty, stat });
         }
         if (!stat->else_capture.empty()) {
             else_ty = state->new_type_var();
             if (stat->else_capture_tp != ConditionalExtraction::Own)
                 state->add_constraint(ElseRefExtractsToConstraint{ tp, else_ty, stat->else_capture_tp == ConditionalExtraction::RefMut, stat });
             else
-                state->add_constraint(ElseExtractsToConstraint{ tp, else_ty });
+                state->add_constraint(ElseExtractsToConstraint{ tp, else_ty, stat });
         }
         state->push_variable_block();
         state->create_variable(stat->captured_name, obj_ty);
@@ -666,8 +671,8 @@ namespace Yoyo
             }
         }
         lit->evaluated_type = state->new_type_var();
-        state->add_constraint(IsIntegerConstraint{lit->evaluated_type});
-        state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text)});
+        state->add_constraint(IsIntegerConstraint{lit->evaluated_type, lit });
+        state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text), lit });
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(BooleanLiteral* lit) const {
@@ -704,7 +709,8 @@ namespace Yoyo
                 expr->evaluated_type = sub_type;
                 state->add_constraint(EqualConstraint{
                         sub_type,
-                        std::visit(targetless(), expr->toVariant())
+                        std::visit(targetless(), expr->toVariant()),
+                        lit
                     });
             }
         }
@@ -729,7 +735,8 @@ namespace Yoyo
             expr->evaluated_type = sub_type;
             state->add_constraint(EqualConstraint{
                     sub_type,
-                    std::visit(targetless(), expr->toVariant())
+                    std::visit(targetless(), expr->toVariant()),
+                    expr.get()
                 });
             // TODO expr type must implement clone too
         }
@@ -745,8 +752,8 @@ namespace Yoyo
             }
         }
         lit->evaluated_type = state->new_type_var();
-        state->add_constraint(IsFloatConstraint{ lit->evaluated_type });
-        state->add_constraint(CanStoreRealConstraint{ lit->evaluated_type, std::stod(std::string(lit->token.text)) });
+        state->add_constraint(IsFloatConstraint{ lit->evaluated_type, lit });
+        state->add_constraint(CanStoreRealConstraint{ lit->evaluated_type, std::stod(std::string(lit->token.text)), lit });
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(StringLiteral* str) const {
@@ -759,7 +766,7 @@ namespace Yoyo
         for (auto& entry : str->literal) {
             if (std::holds_alternative<std::unique_ptr<Expression>>(entry)) {
                 auto& interp = std::get<std::unique_ptr<Expression>>(entry);
-                state->add_constraint(ToStringConstraint{ std::visit(targetless(), interp->toVariant())});
+                state->add_constraint(ToStringConstraint{ std::visit(targetless(), interp->toVariant()), interp.get() });
             }
         }
         return str->evaluated_type;
@@ -847,19 +854,19 @@ namespace Yoyo
         case Minus: {
             // -<expr>
             op->evaluated_type = state->new_type_var();
-            state->add_constraint(HasUnaryMinusConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type });
+            state->add_constraint(HasUnaryMinusConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type, op });
             break;
         }
         case Bang: {
             // !<expr>
             op->evaluated_type = state->new_type_var();
-            state->add_constraint(HasUnaryNotConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type });
+            state->add_constraint(HasUnaryNotConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type, op});
             break;
         }
         case Star:
         {
             op->evaluated_type = state->new_type_var();
-            state->add_constraint(IsReferenceToConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type });
+            state->add_constraint(IsReferenceToConstraint{ std::visit(targetless(), op->operand->toVariant()), op->evaluated_type, op });
             break;
         }
         case Ampersand:
@@ -867,14 +874,14 @@ namespace Yoyo
             // `&<expr>` is defined for every type except for references
             auto inner = std::visit(targetless(), op->operand->toVariant());
             op->evaluated_type = state->new_type_var();
-            state->add_constraint(BorrowResultConstraint{ std::move(inner), op->evaluated_type });
+            state->add_constraint(BorrowResultConstraint{ std::move(inner), op->evaluated_type, op });
             break;
         }
         case RefMut:
         {
             auto inner = std::visit(targetless(), op->operand->toVariant());
             op->evaluated_type = state->new_type_var();
-            state->add_constraint(BorrowResultMutConstraint{ std::move(inner), op->evaluated_type });
+            state->add_constraint(BorrowResultMutConstraint{ std::move(inner), op->evaluated_type, op });
             break;
         }
         default: break; // unreachable
@@ -899,7 +906,7 @@ namespace Yoyo
                 expr->evaluated_type = Type{ .name = "bool",.module = core_module };
             }
             else if (expr->op.type == Spaceship) {
-                state->add_constraint(ComparableConstraint{ expr->evaluated_type });
+                state->add_constraint(ComparableConstraint{ expr->evaluated_type, expr });
                 expr->evaluated_type = Type{ .name = "bool", .module = core_module };
             }
             if (target) {
@@ -939,7 +946,8 @@ namespace Yoyo
         case Equal: {
             state->add_constraint(EqualConstraint{
                 std::visit(targetless(true), expr->lhs->toVariant()),
-                std::visit(targetless(), expr->rhs->toVariant())
+                std::visit(targetless(), expr->rhs->toVariant()),
+                expr
                 });
             expr->evaluated_type = Type{ .name = "void", .module = core_module };
             return expr->evaluated_type;
@@ -961,8 +969,8 @@ namespace Yoyo
         auto left = std::visit(targetless(), expr->lhs->toVariant());
         auto right = std::visit(targetless(), expr->rhs->toVariant());
         // nothing can implicitly convert to bool and logical operations only work for and return bools
-        state->add_constraint(EqualConstraint{ left, Type{.name = "bool", .module = core_module } });
-        state->add_constraint(EqualConstraint{ right, Type{ .name = "bool", .module = core_module }});
+        state->add_constraint(EqualConstraint{ left, Type{.name = "bool", .module = core_module }, expr->lhs.get() });
+        state->add_constraint(EqualConstraint{ right, Type{ .name = "bool", .module = core_module }, expr->rhs.get() });
         expr->evaluated_type = Type{ .name = "bool", .module = core_module };
         return expr->evaluated_type;
     }
@@ -989,7 +997,7 @@ namespace Yoyo
             op->evaluated_type = callee_ty;
             return op->evaluated_type;
         }
-        state->add_constraint(IsInvocableConstraint{ callee_ty });
+        state->add_constraint(IsInvocableConstraint{ callee_ty, op->callee.get() });
         // is of the form <expr>.<expr>() not <expr>()
         auto is_bound = callee_ty.is_bound;
         if (is_bound) {
@@ -1397,10 +1405,16 @@ namespace Yoyo
     {
         auto type = state->best_repr(con.type);
         if (is_type_variable(type)) {
-            if (auto as_u64 = std::get_if<uint64_t>(&con.value))
-                state->get_type_domain(type)->constrain_to_store(*as_u64);
-            else
-                state->get_type_domain(type)->constrain_to_store(std::get<int64_t>(con.value));
+            if (auto as_u64 = std::get_if<uint64_t>(&con.value)) {
+                if(auto err = state->get_type_domain(type)->constrain_to_store(*as_u64)) {
+                    irgen->error(err.value());
+                }
+            }
+            else {
+                if(auto err = state->get_type_domain(type)->constrain_to_store(std::get<int64_t>(con.value))) {
+                    irgen->error(err.value());
+                }
+            }
             return true;
         }
         else {
@@ -1429,8 +1443,9 @@ namespace Yoyo
     {
         auto type = state->best_repr(con.type);
         if (is_type_variable(type)) {
-            state->get_type_domain(type)->constrain_to_store(con.value);
-            return false; // we return false because the domain may get populated again and we need to still filter
+            if(auto err = state->get_type_domain(type)->constrain_to_store(con.value)) {
+                irgen->error(err.value());
+            }
         }
         else {
             // TODO
@@ -1682,7 +1697,7 @@ namespace Yoyo
         if (is_bound && con.arg_no == uint32_t(-1)) {
             // ^this is only compatible with gc references
             if (callee.subtypes[0].is_gc_reference()) {
-                add_new_constraint(EqualConstraint{ callee.subtypes[0], arg });
+                add_new_constraint(EqualConstraint{ callee.subtypes[0], arg, con.expr });
             }
             // &mut this works with mutable references and mutable arguments
             else if (callee.subtypes[0].is_mutable_reference()) {
@@ -1698,7 +1713,7 @@ namespace Yoyo
                 }
                 else {
                     if (arg.is_mutable_reference() || arg.is_mutable) {
-                        add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref() });
+                        add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref(), con.expr });
                     }
                     else {
                         irgen->error(Error(con.expr, "Tried to bind to mutable reference with immutable parameter"));
@@ -1720,7 +1735,7 @@ namespace Yoyo
                     }
                 }
                 else {
-                    add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref() });
+                    add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref(), con.expr });
                 }
             }
             return true;
@@ -1925,16 +1940,21 @@ namespace Yoyo
                 std::swap(state->write_new_constraints_to, collector_ptr);
                 std::swap(irgen->block_hash, intf.block_hash);
                 for (auto& [id, group] : itf_generic_groups) {
-                    state->get_type_domain(state->tbl.id_to_type(id))->add_and_intersect(std::move(group), state);
+                    if(auto err = state->get_type_domain(state->tbl.id_to_type(id))->add_and_intersect(std::move(group), state)) {
+                        irgen->error(err.value());
+                    }
                 }
                 // If we have only 1 match we constrain the subject types
                 if (num_matches == 1) {
                     for (auto& [id, group] : type_generic_groups) {
-                        subject_constraints[id].add_and_intersect(std::move(group), state);
+                        if(auto err = subject_constraints[id].add_and_intersect(std::move(group), state)) {
+                            irgen->error(err.value());
+                        }
                     }
                     for (auto& [id, domain] : subject_constraints) {
-                        state->get_type_domain(state->tbl.id_to_type(id))
-                            ->merge_intersect(std::move(domain), state);
+                        if(auto err = state->get_type_domain(state->tbl.id_to_type(id))->merge_intersect(std::move(domain), state)) {
+                            irgen->error(err.value());
+                        }
                     }
                     for (auto& con : var_to_var_constraints) {
                         add_new_constraint(std::move(con));
@@ -2264,7 +2284,7 @@ namespace Yoyo
         }
         add_new_constraint(EqualConstraint{
                 type.subtypes[0],
-                target
+                target, con.expr
             });
         return true;
     }
@@ -2346,7 +2366,7 @@ namespace Yoyo
         else {
             // anything can convert to optional
             if (dst.name == "__opt") {
-                add_new_constraint(EqualConstraint{ dst.subtypes[0], src });
+                add_new_constraint(EqualConstraint{ dst.subtypes[0], src, con.expr });
                 return true;
             }
         }
@@ -2393,7 +2413,7 @@ namespace Yoyo
                     .deref() // remove reference to get the underlying tuple
                     .subtypes[std::stol(std::string{ as_int->text })] // get the right subtype
                     .take_mutability_characteristics(left.deref());
-                add_new_constraint(EqualConstraint{ result, return_type });
+                add_new_constraint(EqualConstraint{ result, return_type, con.expr });
                 return true;
             }
         }
@@ -2411,7 +2431,7 @@ namespace Yoyo
                     // and we don't modify the AST to not affect future instantiations
                     auto type = it->type;
                     normalize_type(type, state, irgen, gctx);
-                    add_new_constraint(EqualConstraint{ result, type });
+                    add_new_constraint(EqualConstraint{ result, type, con.expr });
                     return true;
                 }
             }
@@ -2761,7 +2781,7 @@ namespace Yoyo
             if (it != cls->vars.end()) {
                 auto type = it->type;
                 normalize_type(type, state, irgen, std::move(gctx));
-                add_new_constraint(EqualConstraint{ result, type });
+                add_new_constraint(EqualConstraint{ result, type, con.expr });
                 return true;
             }
         }
@@ -2775,7 +2795,7 @@ namespace Yoyo
         auto [stat, gctx] = normalize_type(subject, state, irgen, {});
         if (auto cls = dynamic_cast<ClassDeclaration*>(stat)) {
             auto& first_range = con.fields;
-            auto second_range = cls->vars | std::views::transform([this, &gctx](const ClassVariable& var) {
+            auto second_range = cls->vars | std::views::transform([](const ClassVariable& var) {
                     return var.name;
                 });
             auto first_set = std::set<std::string>{ first_range.begin(), first_range.end() };
@@ -2826,7 +2846,7 @@ namespace Yoyo
                         add_new_constraint(IfEqualThenConstrain{
                             std::move(type),
                             result,
-                            std::move(extra_constraints)
+                            std::move(extra_constraints),
                          });
                     }
                 }
