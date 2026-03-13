@@ -282,7 +282,7 @@ namespace Yoyo {
         class DropInstruction : public Instruction {
         public:
             Value val; // I don't think `val` here is allowed to have subpaths
-            DropInstruction(Value val) : val(std::move(val)) {}
+            DropInstruction(Value&& val) : val(std::move(val)) {}
             InstructionVariant to_variant() override;
         };
         using InstructionVariantBase = std::variant<
@@ -304,7 +304,8 @@ namespace Yoyo {
             DerefOperation*,
             MayStoreOperation*,
             MayLoadOperation*,
-            NewAggregateInstruction*
+            NewAggregateInstruction*,
+            DropInstruction*
         >;
         class InstructionVariant : public InstructionVariantBase {
         public:
@@ -343,7 +344,15 @@ namespace Yoyo {
             BasicBlock* current_block;
             std::string temporary_name() { return "__tmp" + std::to_string(counter++); }
             std::string name_based_on(std::string_view other) { return std::to_string(counter++) + std::string(other); }
-            void drop_object(Value&& val) { /* TODO */ }
+            void destroy_and_remove_block() {
+                for (auto& [name, id] : variables.back() | std::views::reverse) {
+                    drop_object(Value::from(std::move(id)));
+                }
+                variables.pop_back();
+            }
+            void drop_object(Value&& val) {
+                current_block->add_instruction(new DropInstruction(std::move(val)));
+            }
         public:
             friend  class LValueEmitter;
             BorrowCheckerEmitter(
@@ -588,6 +597,7 @@ namespace Yoyo {
             BlockIteratorTy operator()(BorrowValueInstruction*);
             BlockIteratorTy operator()(DerefOperation*);
             BlockIteratorTy operator()(DerefLoadOperation*);
+            BlockIteratorTy operator()(DropInstruction*);
             BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
             BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
@@ -633,6 +643,7 @@ namespace Yoyo {
             bool operator()(RetInstruction*) { return false; }
             bool operator()(PhiInstruction*) { return false; }
             bool operator()(AssignInstruction*);
+            bool operator()(DropInstruction*) { return false; }
             bool operator()(CallFunctionInstruction*) { return false; }
             bool operator()(RelocateValueInstruction*) { return false; }
             bool operator()(NewArrayInstruction*) { return false; }

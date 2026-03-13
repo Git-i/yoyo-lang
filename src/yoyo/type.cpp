@@ -811,7 +811,8 @@ namespace Yoyo
                     if(update_pos)pos += 1; 
                     return Token{SubClose, {from_pos.begin(), from_pos.begin() + 1}};
                 }
-                if(update_pos)pos += 1; return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
+                if(update_pos)pos += 1;
+                return Token{AtAt, {from_pos.begin(), from_pos.begin() + 2}};
             }
             auto ret_val = std::string_view{from_pos.begin(), from_pos.begin() + (next_at_at - pos)};
             if(update_pos) pos = next_at_at;

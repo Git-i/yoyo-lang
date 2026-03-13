@@ -3,7 +3,6 @@
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "token.h"
-#include <chrono>
 #include <deque>
 #include <iterator>
 #include <memory>
@@ -45,6 +44,7 @@ namespace Yoyo{
         InstructionVariant MayStoreOperation::to_variant() { return this; }
         InstructionVariant MayLoadOperation::to_variant() { return this; }
         InstructionVariant NewAggregateInstruction::to_variant() { return this; }
+        InstructionVariant DropInstruction::to_variant() { return this; }
         //=======================================================
         void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
         void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -103,7 +103,8 @@ namespace Yoyo{
             // Drop all the valid variables (TODO)
         }
         void BorrowCheckerEmitter::operator()(ExpressionStatement * stat) {
-            drop_object(std::visit(*this, stat->expression->toVariant()));
+            auto val = std::visit(*this, stat->expression->toVariant());
+            if (!stat->expression->evaluated_type.is_void()) drop_object(std::move(val));
         }
         Value BorrowCheckerEmitter::operator()(ConditionalExtraction * stat) {
             RE_REPR(stat);
@@ -130,11 +131,15 @@ namespace Yoyo{
             } else current_block->add_instruction(new BorrowValueInstruction(std::move(cond), std::move(then_capture_name)));
             
             auto then_value = std::visit(*this, stat->body->toVariant());
-            if (!then_block->is_terminated()) {
-                then_block->add_instruction(new BrInstruction(cont_block));
+            if (!current_block->is_terminated()) {
+                destroy_and_remove_block();
+                current_block->add_instruction(new BrInstruction(cont_block));
+            } else {
+                auto last = std::move(current_block->instructions.back());
+                current_block->instructions.pop_back();
+                destroy_and_remove_block();
+                current_block->instructions.push_back(std::move(last));
             }
-            variables.pop_back();
-
             auto else_value = Value::empty();
             if(else_block) {
                 current_block = else_block;
@@ -173,8 +178,8 @@ namespace Yoyo{
 
             current_block = then_block;
             auto then_value = std::visit(*this, expr->then_expr->toVariant());
-            if (!then_block->is_terminated()) {
-                then_block->add_instruction(new BrInstruction(cont_block));
+            if (!current_block->is_terminated()) {
+                current_block->add_instruction(new BrInstruction(cont_block));
             }
 
             auto else_value = Value::empty();
@@ -203,17 +208,16 @@ namespace Yoyo{
             for (auto& stt : expr->statements) {
                 std::visit(*this, stt->toVariant());
                 if (current_block->is_terminated()) {
-                    variables.pop_back();
+                    auto store = std::move(current_block->instructions.back());
+                    current_block->instructions.pop_back();
+                    destroy_and_remove_block();
+                    current_block->instructions.push_back(std::move(store));
                     return Value::empty();
                 }
             }
             Value ret = Value::empty();
             if (expr->expr) ret = std::visit(*this, expr->expr->toVariant());
-            for (auto& variable : variables.back() | std::views::reverse) {
-                std::ignore = variable;
-                // drop here
-            }
-            variables.pop_back();
+            destroy_and_remove_block();
             return ret;
         }
         Value BorrowCheckerEmitter::operator()(IntegerLiteral * lit) {
@@ -603,6 +607,9 @@ namespace Yoyo{
                body += "}";
                 return std::format("%{} = aggrg ({}) {}", inst->into, inst->type_name.full_name(),body);
             }
+            if constexpr (std::is_same_v<T, DropInstruction>) {
+                return "drop " + inst->val.to_string();
+            }
             return "not implemented";
         };
         std::string BasicBlock::to_string(bool include_dfa, DomainCheckerState* state)
@@ -982,6 +989,7 @@ namespace Yoyo{
                                 // if fields remain, it must be an Aggregate type: array, box (not implemented yet), or named type.
                                 if (auto as_arr = std::get_if<BorrowCheckerType::Array>(&current_type->details)) {
                                     // TODO: handle arrays
+                                    std::ignore = as_arr;
                                     debugbreak();
                                 } else if (auto as_named = std::get_if<BorrowCheckerType::Named>(&current_type->details)) {
                                     // access of a struct field is stable, and that of a union is not
@@ -1005,6 +1013,19 @@ namespace Yoyo{
                 }
                 return result;
             }
+            std::set<std::string> kill_for_dropping_value(const Value& in) {
+                std::set<std::string> result;
+                for (auto&[domain, point_to]: state->final_ptg.domain_to_node) {
+                    for (auto& val : point_to) {
+                        // hopefully this string match would suffice
+                        if (Value::from(std::string(val)).to_string().starts_with(in.to_string())) {
+                            result.insert(domain);
+                            break;
+                        }
+                    }
+                }
+                return result;
+            } 
             std::set<std::string> operator()(NewPrimitiveInstruction* inst) {
                 // GEN and KILL are empty sets
                 return state->dfa_in[inst];
@@ -1061,6 +1082,14 @@ namespace Yoyo{
                     lhs_values.push_back(inst->lhs);
                 }
                 auto kill = kill_for_modifying_values(lhs_values);
+                std::vector<std::string> output;
+                std::ranges::set_difference(state->dfa_in[inst], kill, std::back_inserter(output));
+                return std::set<std::string>{output.begin(), output.end()};
+            }
+            std::set<std::string> operator()(DropInstruction* inst) {
+                // similarly to assign all domains point to children of the dropped value are invalidated
+                // but, the domains pointing to the dropped value are also invalidated, and stability does not matter
+                auto kill = kill_for_dropping_value(inst->val);
                 std::vector<std::string> output;
                 std::ranges::set_difference(state->dfa_in[inst], kill, std::back_inserter(output));
                 return std::set<std::string>{output.begin(), output.end()};
@@ -1980,6 +2009,9 @@ namespace Yoyo {
         BlockIteratorTy DomainVariableInserter::operator()(BrInstruction*) {
             // nothing here either
             return current_position;
+        }
+        BlockIteratorTy DomainVariableInserter::operator()(DropInstruction*) {
+            return current_position; // Lvalue's cannot be dropped, so...
         }
         BlockIteratorTy DomainVariableInserter::operator()(RetInstruction*) { return current_position; }
         BlockIteratorTy DomainVariableInserter::operator()(PhiInstruction* inst) {

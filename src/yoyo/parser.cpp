@@ -1236,7 +1236,6 @@ namespace Yoyo
         return Type{ .name = std::move(name), .subtypes = { std::move(next).value_or(Type{}) }, .signature = sig };
     }
     //TODO reconsider this table
-    static constexpr uint32_t PipePrecedence = 1;
     static constexpr uint32_t OptionalPreference = 3;
     static constexpr uint32_t TemplatePrecedence = 4;
     static constexpr uint32_t ScopePrecedence = 5;

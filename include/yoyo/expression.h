@@ -1,5 +1,4 @@
 #pragma once
-#include <array>
 #include <ast_node.h>
 #include <func_sig.h>
 
@@ -353,8 +352,8 @@ namespace Yoyo
                 std::unique_ptr<Expression> else_,
                 std::string else_name = "",
                 CaptureType else_cap = Own)
-                : captured_name(std::move(name)), then_capture_tp(cap), condition(std::move(cond)), body(std::move(body))
-                    , else_capture(std::move(else_name)), else_capture_tp(else_cap), else_body(std::move(else_)) {}
+                : captured_name(std::move(name)), then_capture_tp(cap), else_capture_tp(else_cap), condition(std::move(cond))
+                    , body(std::move(body)), else_capture(std::move(else_name)), else_body(std::move(else_)) {}
         ExpressionVariant toVariant() override;
     };
 }
