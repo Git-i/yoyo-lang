@@ -1,8 +1,6 @@
 #include "cfg_node.h"
 
 #include <cassert>
-#include <format>
-#include <iostream>
 #include <memory>
 #include <ranges>
 #include <set>
@@ -20,6 +18,10 @@ namespace Yoyo
         CFGNode* break_to = nullptr;
         CFGNode* continue_to = nullptr;
         void operator()(Expression* expr)  { node->expressions.push_back(expr); }
+        void operator()(BinaryOperation* expr) {
+            std::visit(*this, expr->rhs->toVariant());
+            std::visit(*this, expr->lhs->toVariant());
+        }
         void operator()(GroupingExpression* expr) {
             std::visit(*this, expr->expr->toVariant());
         }
@@ -52,7 +54,7 @@ namespace Yoyo
             std::visit(then_prep, expr->then_expr->toVariant());
 
             CFGNode* goto_if_not_cont = nullptr;
-            if (then_prep.node != exit && then_prep.node != break_to && then_prep.continue_to) {
+            if (then_prep.node != exit && then_prep.node != break_to && then_prep.node != continue_to) {
                 then_prep.node->addChild(cont);
                 expr->then_transfers_control = false;
             }
@@ -146,8 +148,8 @@ namespace Yoyo
         void operator()(GenericFunctionDeclaration*) {}
         void operator()(ConditionalExtraction* stat)
         {
-            node->statements.push_back(stat);
-
+            node->expressions.push_back(stat);
+            std::visit(*this, stat->condition->toVariant());
             auto then = node->manager->newNode(depth + 1, "cond_extract_then");
             auto else_node = stat->else_body ? node->manager->newNode(depth + 1, "cond_extract_else") : nullptr;
             auto cont = node->manager->newNode(depth, "cond_extract_cont");
@@ -155,15 +157,31 @@ namespace Yoyo
             node->addChild(then);
             auto then_prep = CFGPreparator{then,exit, depth + 1, break_to, continue_to};
             std::visit(then_prep, stat->body->toVariant());
-            if (then_prep.node != exit) then_prep.node->addChild(cont);
+            CFGNode* goto_if_not_cont = nullptr;
+            if (then_prep.node != exit && then_prep.node != break_to && then_prep.node != continue_to) {
+                then_prep.node->addChild(cont);
+                stat->then_transfers_control = false;
+            } else { 
+                then->debug_name += "(surrenders control)";
+                goto_if_not_cont = then_prep.node;
+            }
             if(else_node)
             {
                 node->addChild(else_node);
                 auto else_prep = CFGPreparator{else_node, exit,depth + 1, break_to, continue_to};
                 std::visit(else_prep, stat->else_body->toVariant());
-                if (else_prep.node != exit) else_prep.node->addChild(cont);
+                if (else_prep.node != exit && else_prep.node != break_to && else_prep.node != continue_to) { 
+                    else_prep.node->addChild(cont);
+                    stat->else_transfers_control = false;
+                } else {
+                    else_node->debug_name += "(surrenders control)";
+                    if (goto_if_not_cont == continue_to) goto_if_not_cont = else_prep.node;
+                    else if (goto_if_not_cont == break_to) {
+                        if (else_prep.node == exit) goto_if_not_cont = exit;
+                    }
+                }
             }
-            node = cont->parents.empty() ? exit : cont;
+            node = cont->parents.empty() ? goto_if_not_cont : cont;
         }
         void operator()(WithStatement* stat)
         {
@@ -393,7 +411,7 @@ namespace Yoyo
         //for(auto& child : exit->children)
         //    child->parents.erase(std::ranges::find(child->parents, exit));
         //exit->children.clear();
-        for(int64_t i = 0; i < mgr.nodes.size(); i++)
+        for(size_t i = 0; i < mgr.nodes.size(); i++)
             if(mgr.nodes[i]->parents.empty() && mgr.nodes[i]->children.empty())
                 mgr.nodes.erase(mgr.nodes.begin() + i++);
         mgr.root_node = entry;
@@ -448,7 +466,7 @@ namespace Yoyo
             for(auto&[var, use] : uses)
                 //child is deeper, or it's shallow but the var is defined before so its only first use if we don't use it
                 if(child->depth >= node->depth ||
-                    child->depth < node->depth && exists_before(var, node->depth))
+                    (child->depth < node->depth && exists_before(var, node->depth)))
                 {
                     if(!init_here.contains(var))
                         out[var].insert(std::make_move_iterator(use.begin()), std::make_move_iterator(use.end()));
@@ -508,11 +526,11 @@ namespace Yoyo
             for(auto&[var, use] : uses)
                 //child is deeper, or it's shallow but the var is defined before so its only first use if we don't use it
                 if(child->depth >= node->depth ||
-                    child->depth < node->depth && exists_before(var, node->depth))
+                    (child->depth < node->depth && exists_before(var, node->depth)))
                 {
                     //if the node looped we only add variables we don't know
                     out[var].clear();
-                    if(!node->looped || node->looped && !exists_before(var, node->depth + 1))
+                    if(!node->looped || (node->looped && !exists_before(var, node->depth + 1)))
                         child_uses[var].emplace_back(child, std::move(use));
                 }
                 //child is shallow and var doesn't exist before

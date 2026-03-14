@@ -21,7 +21,6 @@ namespace Yoyo
     class ForStatement;
     class ModuleImport;
     class EnumDeclaration;
-    class ConditionalExtraction;
     class WithStatement;
     class OperatorOverload;
     class GenericFunctionDeclaration;
@@ -47,7 +46,6 @@ namespace Yoyo
         ExpressionStatement*,
         ModuleImport*,
         EnumDeclaration*,
-        ConditionalExtraction*,
         OperatorOverload*,
         WithStatement*,
         GenericFunctionDeclaration*,
@@ -172,7 +170,7 @@ namespace Yoyo
         GenericClause clause;
         std::unique_ptr<Statement> body;
         OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body, GenericClause cl)
-            : signature(std::move(sig)), tok(ident), body(std::move(body)), clause(std::move(cl)) {}
+            : signature(std::move(sig)), tok(ident), clause(std::move(cl)), body(std::move(body)) {}
         StatementVariant toVariant() override;
     };
     class UnionDeclaration : public Statement
@@ -235,8 +233,8 @@ namespace Yoyo
             std::vector<std::unique_ptr<Statement>> stats,
             Ownership sh,
             std::vector<InterfaceImplementation> impls)
-            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), ownership(sh), 
-            impls(std::move(impls)){}
+            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), impls(std::move(impls)), 
+            ownership(sh){}
         StatementVariant toVariant() override;
     };
     class GenericClassDeclaration : public ClassDeclaration
@@ -277,30 +275,8 @@ namespace Yoyo
         StatementVariant toVariant() override;
     };
     // if |value| (optional) { }
-    // if |value| (result) {} else |error| {}
-    class ConditionalExtraction : public Statement
-    {
-    public:
-        std::string captured_name;
-        bool is_ref;
-        std::unique_ptr<Expression> condition;
-        std::unique_ptr<Statement> body;
-        std::string else_capture;
-        bool else_is_ref;
-        std::unique_ptr<Statement> else_body;
-        ConditionalExtraction(
-            std::string name,
-            bool is_ref,
-            std::unique_ptr<Expression> cond,
-            std::unique_ptr<Statement> body,
-            std::unique_ptr<Statement> else_,
-            std::string else_name = "",
-            bool else_is_ref = false)
-                : captured_name(std::move(name)), is_ref(is_ref), condition(std::move(cond)), body(std::move(body))
-                , else_capture(std::move(else_name)), else_is_ref(else_is_ref), else_body(std::move(else_)) {}
-        StatementVariant toVariant() override;
+    // if |value| (result) {} else |error
 
-    };
     class WithStatement : public Statement
     {
     public:

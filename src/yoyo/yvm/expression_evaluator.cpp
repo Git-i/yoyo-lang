@@ -5,6 +5,7 @@
 #include <set>
 #include <tree_cloner.h>
 
+#include "overload_details.h"
 #include "yvm/yvm_irgen.h"
 #include "fn_type.h"
 #include <format>
@@ -61,7 +62,7 @@ namespace Yoyo
                     irgen->builder->write_alloca(*dst.float_width()/8);
                     irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
                 }
-                else if (do_load && !on_stack);
+                else if (do_load && !on_stack) debugbreak();
                 return;
             }
         }
@@ -77,7 +78,7 @@ namespace Yoyo
                 irgen->builder->write_alloca(*dst.integer_width() / 8);
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
             }
-            else if (do_load && !on_stack);
+            else if (do_load && !on_stack) debugbreak();
             return;
         }
         if(dst.is_signed_integral())
@@ -93,7 +94,7 @@ namespace Yoyo
                     irgen->builder->write_alloca(*dst.integer_width() / 8);
                     irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
                 }
-                else if (do_load && !on_stack);
+                else if (do_load && !on_stack) debugbreak();
                 return;
             }
             else if (src.is_unsigned_integral())
@@ -107,7 +108,7 @@ namespace Yoyo
                     irgen->builder->write_alloca(*dst.integer_width() / 8);
                     irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
                 }
-                else if (do_load && !on_stack);
+                else if (do_load && !on_stack) debugbreak();
                 return;
             }
         }
@@ -124,7 +125,7 @@ namespace Yoyo
                     irgen->builder->write_alloca(*dst.float_width() / 8);
                     irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
                 }
-                else if (do_load && !on_stack);
+                else if (do_load && !on_stack) debugbreak();
             }
             else if (src.is_unsigned_integral())
             {
@@ -187,7 +188,7 @@ namespace Yoyo
                 irgen->builder->write_alloca(sizeof(void*));
                 irgen->builder->write_2b_inst(OpCode::Store, irgen->toTypeEnum(dst));
             }
-            else if (do_load && !on_stack);
+            else if (do_load && !on_stack) debugbreak();
         }
         // from here on out we require a pointer to our out data
         auto native = irgen->toNativeType(dst);
@@ -812,6 +813,7 @@ namespace Yoyo
                 return {};
             }
         }
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(BinaryOperation* bop)
@@ -836,6 +838,7 @@ namespace Yoyo
         {
             return std::visit(YVMExpressionEvaluator{irgen}, op->operand->toVariant());
         }
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(Expression* expr)
@@ -1075,6 +1078,7 @@ namespace Yoyo
             irgen->builder->write_const(std::get<void*>(cnst.internal_repr));
             return {};
         }
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::operator()(GenericNameExpression* nm)
@@ -1088,6 +1092,7 @@ namespace Yoyo
             irgen->builder->write_fn_addr(hash + mangled_name_suffix);
             return {};
         }
+        return {};
     }
 
     std::vector<Type> YVMExpressionEvaluator::operator()(PrefixOperation* op)
@@ -1133,7 +1138,9 @@ namespace Yoyo
             std::visit(*this, op->operand->toVariant());
             irgen->builder->write_1b_inst(OpCode::Not);
         }
+        default: debugbreak(); break;
         }
+        return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(BinaryOperation* op)
     {
@@ -1156,6 +1163,7 @@ namespace Yoyo
             case LessEqual: return doCmp(EQ_LT, lhs, rhs, left_t, right_t, res, op->selected);
             case BangEqual: return doCmp(NE, lhs, rhs, left_t, right_t, res, op->selected);
             case DoubleEqual: return doCmp(EQ, lhs, rhs, left_t, right_t, res, op->selected);
+            default: debugbreak(); break;
             }
             doBasicBinaryOp(this, op->selected, op->op.type, op);
         }

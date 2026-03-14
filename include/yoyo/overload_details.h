@@ -1,4 +1,5 @@
 #pragma once
+#include "common.h"
 #include <csignal>
 #include <span>
 namespace Yoyo
@@ -71,6 +72,7 @@ namespace Yoyo
             switch (t) {
             case TokenType::Ampersand: break;
             case TokenType::RefMut: off = 1; break;
+            default: debugbreak(); break;
             }
             size_t actual_off = off == 0 ? 0 : un_offsets[off];
             un_overloads.insert(un_overloads.begin() + actual_off, { std::move(block_hash), std::move(un) });
@@ -91,6 +93,7 @@ namespace Yoyo
             case TokenType::DoubleGreater: off = 7; break; //shr >>
             case TokenType::SquarePair: off = 8; break;
             case TokenType::SquarePairMut: off = 9; break;
+            default: debugbreak(); break;
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
             bin_overloads.insert(bin_overloads.begin() + actual_off, { std::move(block_hash), std::move(bin) });
@@ -111,6 +114,7 @@ namespace Yoyo
             case TokenType::DoubleGreater: off = 7; break;
             case TokenType::SquarePair: off = 8; break;
             case TokenType::SquarePairMut: off = 9; break;
+            default: debugbreak(); break;
             }
             size_t actual_off = off == 0 ? 0 : offsets[off];
             bin_overloads.emplace(bin_overloads.begin() + actual_off, std::move(block_hash), OverloadDetailsBinary{ std::move(l), std::move(r), std::move(res) });

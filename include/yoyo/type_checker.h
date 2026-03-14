@@ -1,4 +1,5 @@
 #pragma once
+#include "ast_node.h"
 #include "fn_type.h"
 #include "statement.h"
 #include "expression.h"
@@ -6,6 +7,7 @@
 #include <vector>
 namespace Yoyo
 {
+    void YOYO_API debugbreak();
     class IRGenerator;
     // type must be an integer i8-i64/u8-u64
     struct IsIntegerConstraint {
@@ -152,12 +154,21 @@ namespace Yoyo
     struct RefExtractsToConstraint {
         Type type;
         Type dst;
+        bool is_mut;
         ASTNode* expr;
     };
     // Similar to else extracts to but the result borrows
     struct ElseRefExtractsToConstraint {
         Type type;
         Type dst;
+        bool is_mut;
+        ASTNode* expr;
+    };
+    // This is different from `ConvertibleToConstraint` because of union variant handling
+    struct AsConstraint {
+        Type input_type;
+        Type dest;
+        Type result;
         ASTNode* expr;
     };
     struct ConvertibleToConstraint {
@@ -230,6 +241,7 @@ namespace Yoyo
         ExtractsToConstraint,
         RefExtractsToConstraint,
         NonOwningConstraint,
+        AsConstraint,
         ConvertibleToConstraint,
         BinaryDotCompatibleConstraint,
         ElseExtractsToConstraint,
@@ -247,7 +259,7 @@ namespace Yoyo
         template<typename T>
         TypeCheckerConstraint(T&& t) noexcept : TypeCheckerConstraintUnderlyingType(t) {}
     };
-    
+    struct TypeCheckerState;    
     /// represents the possible types a variable can be
     class Domain {
         bool is_infinite = true;
@@ -283,7 +295,7 @@ namespace Yoyo
             // type variables are types but in the form "?<num>"
             uint32_t res;
             auto [ptr, ec] = std::from_chars(tp.name.c_str() + 1, tp.name.c_str() + tp.name.size(), res);
-            if (ec != std::errc{}) __debugbreak();
+            if (ec != std::errc{}) debugbreak();
             return res;
         }
         Type id_to_type(uint32_t id) {
@@ -355,6 +367,7 @@ namespace Yoyo
         bool operator()(ExtractsToConstraint& con);
         bool operator()(RefExtractsToConstraint& con);
         bool operator()(NonOwningConstraint& con);
+        bool operator()(AsConstraint& con);
         bool operator()(ConvertibleToConstraint& con);
         bool operator()(BinaryDotCompatibleConstraint& con);
         bool operator()(ElseRefExtractsToConstraint& con);
@@ -385,7 +398,6 @@ namespace Yoyo
         void operator()(EnumDeclaration*) {}
         void operator()(UsingStatement*) {}
         void operator()(ModuleImport*) {}
-        void operator()(ConditionalExtraction*);
         void operator()(WithStatement*);
         void operator()(OperatorOverload*) {}
         void operator()(GenericFunctionDeclaration*) {}
@@ -400,6 +412,7 @@ namespace Yoyo
         void operator()(UnionDeclaration*) {}
         void operator()(MacroDeclaration*) {}
 
+        FunctionType operator()(ConditionalExtraction*) const;
         FunctionType operator()(IfExpression*) const;
         FunctionType operator()(BlockExpression*) const;
         FunctionType operator()(TryExpression*) const;

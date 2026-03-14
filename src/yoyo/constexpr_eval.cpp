@@ -4,8 +4,8 @@ namespace Yoyo
 {
     Constant ConstantEvaluator::operator()(IntegerLiteral* lit)
     {
-        if (target && target->is_signed_integral()) return std::stoll(lit->text);
-        return std::stoull(lit->text);
+        if (target && target->is_signed_integral()) return static_cast<int64_t>(std::stoll(lit->text));
+        return static_cast<uint64_t>(std::stoull(lit->text));
     }
     Constant ConstantEvaluator::operator()(BooleanLiteral* lit)
     {
@@ -112,7 +112,7 @@ namespace Yoyo
             if (auto as_int = std::get_if<int64_t>(&expr.internal_repr))
                 return Constant{ -*as_int };
             else if (auto as_uint = std::get_if<uint64_t>(&expr.internal_repr))
-                if (*as_uint > std::numeric_limits<int64_t>::max() + 1) {
+                if (*as_uint > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1) {
                     irgen->error(Error(op, "Value too large to negate"));
                     return Constant{ nullptr };
                 }
@@ -129,6 +129,8 @@ namespace Yoyo
         }
         default: debugbreak();
         }
+        // TODO: probably error here
+        return Constant{};
     }
     Constant ConstantEvaluator::operator()(BinaryOperation* bop)
     {

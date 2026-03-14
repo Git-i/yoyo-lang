@@ -615,7 +615,7 @@ namespace Yoyo
         }
         if (auto [hsh, galias] = md->findGenericAlias(hash, type.name); galias)
         {
-            __debugbreak();
+            debugbreak();
         }
         return false;
     }
@@ -920,22 +920,22 @@ namespace Yoyo
             {
                 auto gtp = generic_it.next();
                 auto rtp = resolved_it.next();
-                if (gtp != rtp) __debugbreak();
+                if (gtp != rtp) debugbreak();
             }
             if (resolved_it.is_end())
             {
-                if(!generic_it.is_end()) __debugbreak();
+                if(!generic_it.is_end()) debugbreak();
             }
             else
             {
                 Type rtp = resolved_it.next();
                 Type gtp = generic_it.last();
-                if (rtp != gtp) __debugbreak();
+                if (rtp != gtp) debugbreak();
             }
             while (!it.is_end())
             {
                 Type gtp = it.next();
-                if (resolved_it.is_end() && !it.is_end()) __debugbreak();
+                if (resolved_it.is_end() && !it.is_end()) debugbreak();
                 Type rtp = resolved_it.is_end() ? resolved_it.last(true) : resolved_it.next();
                 if (gtp.name != rtp.name) return std::nullopt;
                 if (gtp.subtypes.size() != rtp.subtypes.size()) return std::nullopt;

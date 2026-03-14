@@ -1,10 +1,7 @@
 #include "parselets/prefix_parselets.h"
-
-#include <ranges>
-
-
 #include "parser.h"
 #include "precedences.h"
+#include <tuple>
 namespace Yoyo
 {
     std::unique_ptr<Expression> PrefixOperationParselet::parse(Parser& parser, Token tk)
@@ -79,9 +76,9 @@ namespace Yoyo
                 }
                 switch (input[pos + 1])
                 {
-                case '\\': [[fallthtough]];
-                case '\"': [[fallthtough]];
-                case '\'': [[fallthtough]];
+                case '\\': [[fallthrough]];
+                case '\"': [[fallthrough]];
+                case '\'': [[fallthrough]];
                 case '$': { output += input[pos + 1]; break; }
                 case 'a': { output += '\a'; break; }
                 case 'b': { output += '\b'; break; }
@@ -321,7 +318,10 @@ namespace Yoyo
     }
     std::unique_ptr<Expression> IfParselet::parse(Parser& p, Token tk)
     {
-        if (p.Peek() && p.Peek()->type == TokenType::Pipe) return nullptr; // p.parseConditionalExtraction(tk);
+        if (p.Peek() && p.Peek()->type == TokenType::Pipe) {
+            // conditional extraction
+            return p.parseConditionalExtraction(p.Peek().value());
+        } 
         if (!p.discard(TokenType::LParen)) p.error("Expected '('", p.Peek());
         auto condition = p.parseExpression(0);
         if (!condition) p.synchronizeTo({ {TokenType::RParen} });
@@ -355,12 +355,12 @@ namespace Yoyo
                 // so if the next token does not end the block we consider it a statement
                 if (p.canOmitSemiColon(ex)) {
                     if (p.discard(TokenType::RCurly)) {
-                        decl.release();
+                        std::ignore = decl.release();
                         expr.reset(ex);
                         break;
                     }
                     else {
-                        decl.release();
+                        std::ignore = decl.release();
                         statements.push_back(std::make_unique<ExpressionStatement>(std::unique_ptr<Expression>(ex)));
                         continue;
                     }
@@ -370,7 +370,7 @@ namespace Yoyo
                         p.error("Expected ';' or '}'", p.Peek()); 
                         return nullptr;
                     }
-                    decl.release();
+                    std::ignore = decl.release();
                     expr.reset(ex);
                     break;
                 }

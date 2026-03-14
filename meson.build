@@ -1,4 +1,4 @@
-project('yoyo-lang','cpp', default_options: ['cpp_std=c++20', 'b_sanitize=address'])
+project('yoyo-lang','cpp', default_options: ['cpp_std=c++20'])
 
 sources = [
     'src/yoyo/scanner.cpp',
@@ -12,7 +12,6 @@ sources = [
     'src/yoyo/parselets/prefix_parselets.cpp',
     'src/yoyo/engine.cpp',
     'src/yoyo/module.cpp',
-    'src/yoyo/lifetime.cpp',
     'src/yoyo/cfg_node.cpp',
     'src/yoyo/overload_resolve.cpp',
     'src/yoyo/tree_cloner.cpp',
@@ -23,7 +22,7 @@ sources = [
     'src/yoyo/borrow_checker.cpp',
     'src/yoyo/type_checker.cpp',
     'src/yoyo/ast_print.cpp',
-    
+
     'include/yoyo/ast_node.h',
     'include/yoyo/cfg_node.h',
     'include/yoyo/class_entry.h',
@@ -95,21 +94,28 @@ if backend == 'yvm' or backend == 'both'
         'src/yoyo/yvm/unique_type_selector.cpp',
         'src/yoyo/yvm/app_module.cpp',
 
-        
+
     ]
     if target_machine.system() == 'windows'
         sources += ['src/yoyo/yvm/windows_native_module.cpp']
+    else
+        sources += ['src/yoyo/yvm/unix_native_module.cpp']
     endif
 endif
-yoyo_args = ['-DYOYO_DLL']
+yoyo_args = []
+dependency_args = []
+if get_option('default_library') == 'shared'
+    yoyo_args += ['-DYOYO_DLL', '-DYOYO_SHARED']
+    dependency_args += ['-DYOYO_SHARED']
+endif
 yoyo_lib = library(
-    'yoyo', 
-    sources, 
+    'yoyo',
+    sources,
     include_directories: ['include/yoyo', 'subprojects/minicoro'],
     dependencies: deps,
     cpp_args: yoyo_args)
-yoyo_dep = declare_dependency(include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)
-parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
+yoyo_dep = declare_dependency(compile_args: dependency_args, include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)
+#parser_test = executable('parser_test', ['tests/parser_test.cpp'], dependencies: [yoyo_dep, dependency('catch2-with-main')])
 irgen_deps = [
     yoyo_dep,
     dependency('catch2-with-main'),

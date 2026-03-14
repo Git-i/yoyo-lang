@@ -43,7 +43,7 @@ void print_int(uint64_t arg) {
     std::cout << arg << std::endl;
 }
 void get_string(void* out) {
-    
+
 
     auto as_str = reinterpret_cast<YoyoString*>(out);
     as_str->text = static_cast<char*>(malloc(15));
@@ -81,7 +81,7 @@ Yoyo::YVMAppModule* addTestModule(Yoyo::YVMEngine* eng) {
     return md;
 }
 constexpr bool emit_ir = true;
-TEST_CASE("Test IR") 
+TEST_CASE("Test IR")
 {
     std::ifstream ifs("source.yoyo");
     std::ostringstream oss;
@@ -123,7 +123,7 @@ TEST_CASE("Test IR")
             //if (llvm::verifyModule(*mod.second->code.getModuleUnlocked(), &llvm::errs())) Yoyo::debugbreak();
         }
     }
-    
+
     std::string func_2_name = src_md->module_hash + "func_2";
     auto fn2 = engine.findFunction(src_md, func_2_name).value();
     auto fib2 = engine.createFiber(fn2);
@@ -159,7 +159,7 @@ main: fn(inp: i32) = {
     REQUIRE(engine.compile());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
-    for (auto i : std::views::iota(0i32, 10i32)) {
+    for (auto i : std::views::iota(0, 10)) {
         auto fib = createFiberFor(mod, "source::main");
         *(int32_t*)fib.parameters = i;
         engine.execute();
@@ -194,7 +194,7 @@ TEST_CASE("Test union initialization", "[unions]")
     std::string source(1 + R"(
 Color: union = {
     ColorRGB: struct = { r: u8, g: u8, b: u8, a: u8 }
-    
+
     RGB: ColorRGB,
     Hex: u32,
 
@@ -274,15 +274,40 @@ main: fn = {
 TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(
-LEN: const u32 = 5;
-main: fn = {
-    arr: [i32; LEN * 2] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    test::check_array(&arr);
+condition: fn -> bool = { return false; }
+Vector2: struct = {
+    x: i32, y: i32
 }
+// main: fn = {
+//     vec := Vector2{ .x = 10, .y = 30 };
+//     vec_ref: &mut Vector2 = &mut vec;
+//     vec_ref.x = 200;
+//
+//     field_ref: mut &mut i32 = &mut vec_ref.x;
+//     *field_ref = 300;
+//     field_ref = &mut vec.y;
+//     // field_ref should correctly resolve
+// }
+
+Shape: union = {
+    Circle: i32, Rectangle: Vector2
+}
+takes_ref: fn (a: &i32) = return;
+main: fn = {
+    val: mut = Shape::Circle(300);
+    int: i32 = 20;
+    int + 20;
+    val_ptr: &mut Shape = &mut val;
+    if |&mut num_ref| (val as Circle) {
+        *val_ptr = Shape::Rectangle(Vector2{.x = 20, .y = 40});
+        *num_ref = 200;
+    };
+    return;
+}                       
 )");
     Yoyo::YVMEngine engine;
     auto test_md = addTestModule(&engine);
-    test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) { 
+    test_md->addFunction("(x: &[i32; 10]) -> void", static_cast<void(*)(void*)>([](void* arr) {
         for (auto i : std::views::iota(0, 10)) REQUIRE(i + 1 == reinterpret_cast<uint32_t*>(arr)[i]);
     }), "check_array");
     auto mod = engine.addModule("source", source);
@@ -392,7 +417,7 @@ main: fn -> i32 \ str = {
 }
 TEST_CASE("Test if expression", "[expressions], [if-expression]") {
     std::string source(1 + R"(
-produce: fn::<T>(val: T) -> T = return val; 
+produce: fn::<T>(val: T) -> T = return val;
 print_i32: fn(val: i32) = "${val}".test::print();
 main: fn -> bool = {
     result: mut = if(true) {
@@ -429,7 +454,7 @@ main: fn -> bool = {
 TEST_CASE("Test interfaces", "[type-checker], [interfaces]") {
     std::string source(1 + R"(
 takes_intf: fn::<T: impl Interface>(arg: T) = return;
-takes_generic_intf: fn::<O, T: impl InterfaceWrapper::<O>::Interface>(arg: T) -> O = return; 
+takes_generic_intf: fn::<O, T: impl InterfaceWrapper::<O>::Interface>(arg: T) -> O = return;
 main: fn = {
     obj1 := Generic1::new();
     obj2 := Generic2::new();
@@ -479,7 +504,7 @@ main: fn = {
     veci2 := Vec2::new(20, 30);
     vecf1 := Vec2::<f32>::new(30.0, 10.0);
     vecf2 := Vec2::new(100.0, 20.0);
-    
+
     veci1.to_str().test::print();
     "${veci2 * veci1}".test::print();
     "${vecf1 * vecf2}".test::print();
@@ -545,7 +570,7 @@ TEST_CASE("Test CFG", "[CFG]")
         } else {
             "Hello"
         }
-        if({ 
+        if({
             elem.stuff();
             if(true) {
                 return true;

@@ -72,10 +72,6 @@ namespace Yoyo
         return this;
     }
 
-    StatementVariant ConditionalExtraction::toVariant()
-    {
-        return this;
-    }
     StatementVariant WithStatement::toVariant()
     {
         return this;

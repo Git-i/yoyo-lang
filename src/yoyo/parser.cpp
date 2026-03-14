@@ -1,10 +1,12 @@
 #include "parser.h"
 #include <iostream>
 #include <precedences.h>
+#include "expression.h"
 #include "statement.h"
 #include "func_sig.h"
 namespace Yoyo
 {
+    void YOYO_API debugbreak();
     Parser::Parser(std::string& src) : source(src), scn(source)
     {
         auto prefix_op_parselet = std::make_shared<PrefixOperationParselet>();
@@ -335,7 +337,7 @@ namespace Yoyo
             << "\nline: " << (tk ? std::to_string(tk->loc.line) : "Invalid")
             << " col: " << (tk ? std::to_string(tk->loc.column) : "Invalid")
             << std::endl;
-        __debugbreak();
+        debugbreak();
     }
 
     void Parser::synchronizeTo(std::span<const TokenType> t)
@@ -514,7 +516,7 @@ namespace Yoyo
     std::unique_ptr<Statement> Parser::parseUsingDeclaration(Token using_tok)
     {
         // modify the behaviour of the type parser to allow for ::{...} and ::*
-        auto tp = parseUsingContent();
+        auto tp = parseUsingContent(0);
         if (!discard(TokenType::SemiColon)) { error("Expected ';'", Peek()); return nullptr; }
         
         return Statement::attachSLAndParent(std::make_unique<UsingStatement>(std::move(tp)), using_tok.loc, discardLocation);
@@ -1082,13 +1084,16 @@ namespace Yoyo
             discardLocation, parent);
     }
 
-    std::unique_ptr<Statement> Parser::parseConditionalExtraction(Token tk)
+    std::unique_ptr<Expression> Parser::parseConditionalExtraction(Token tk)
     {
         //parse the capture
-        bool is_ref = false;
-        bool else_is_ref = false;
+        ConditionalExtraction::CaptureType then_cap = ConditionalExtraction::Own;
+        ConditionalExtraction::CaptureType else_cap = ConditionalExtraction::Own;
         if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
-        if(discard(TokenType::Ampersand)) is_ref = true;
+        if(discard(TokenType::Ampersand)) {
+            then_cap = ConditionalExtraction::Ref;
+            if(discard(TokenType::Mut)) then_cap = ConditionalExtraction::RefMut;
+        }
         auto iden = Get();
         if(!iden) return nullptr;
         if(iden->type != TokenType::Identifier) error("Expected identifier", iden);
@@ -1099,10 +1104,10 @@ namespace Yoyo
         auto condition = parseExpression(0);
         if(!condition) synchronizeTo({{TokenType::RParen}});
         if(!discard(TokenType::RParen)) error("Expected ')'", Peek());
-        auto then = parseStatement();
+        auto then = parseExpression(0);
         SourceLocation end = then->end;
 
-        std::unique_ptr<Statement> else_stat = nullptr;
+        std::unique_ptr<Expression> else_stat = nullptr;
         std::string else_name;
         auto else_tk = Peek();
         if(else_tk && else_tk->type == TokenType::Else)
@@ -1110,18 +1115,21 @@ namespace Yoyo
             Get();
             if(discard(TokenType::Pipe))
             {
-                if(discard(TokenType::Ampersand)) else_is_ref = true;
+                if(discard(TokenType::Ampersand)) {
+                    else_cap = ConditionalExtraction::Ref;
+                    if(discard(TokenType::Mut)) else_cap = ConditionalExtraction::RefMut;
+                }
                 auto else_iden = Get();
                 if(!else_iden) return nullptr;
                 if(else_iden->type != TokenType::Identifier) error("Expected identifier", else_iden);
                 if(!discard(TokenType::Pipe)) error("Expected '|'", Peek());
                 else_name.assign(else_iden->text.begin(), else_iden->text.end());
             }
-            else_stat = parseStatement();
+            else_stat = parseExpression(0);
             end = else_stat->end;
         }
-        return Statement::attachSLAndParent(
-            std::make_unique<ConditionalExtraction>(name, is_ref, std::move(condition), std::move(then), std::move(else_stat), else_name, else_is_ref),
+        return Expression::attachSLAndParent(
+            std::make_unique<ConditionalExtraction>(name, then_cap, std::move(condition), std::move(then), std::move(else_stat), else_name, else_cap),
             tk.loc, end, parent
         );
     }
@@ -1214,21 +1222,20 @@ namespace Yoyo
         if(parser.discard(TokenType::SemiColon))
         {
             if (parser.discard(TokenType::Star) && parser.Peek() && parser.Peek()->type == TokenType::RSquare) {
-                name = "__arr_s_uneval";
+                name = "__arr_d";
             }
             else {
                 auto size = parser.parseExpression(0);
                 //this is really dirty and bad code don't learn from this
                 struct Deleter { void operator()(FunctionSignature* ptr) { delete (Expression*)ptr; } };
                 sig.reset(reinterpret_cast<FunctionSignature*>(size.release()), Deleter{});
-                name = "__arr_d";
+                name = "__arr_s_uneval";
             }
         }
         if(!parser.discard(TokenType::RSquare)) parser.error("Expected ']'", parser.Peek());
         return Type{ .name = std::move(name), .subtypes = { std::move(next).value_or(Type{}) }, .signature = sig };
     }
     //TODO reconsider this table
-    static constexpr uint32_t PipePrecedence = 1;
     static constexpr uint32_t OptionalPreference = 3;
     static constexpr uint32_t TemplatePrecedence = 4;
     static constexpr uint32_t ScopePrecedence = 5;
@@ -1293,7 +1300,6 @@ namespace Yoyo
     {
         auto is_mut = p.discard(TokenType::Mut);
         auto t = *p.parseType(0);
-        if(t.is_reference()) p.error("Double reference not allowed", tk);
         if(is_mut) return Type{"__ref_mut", {std::move(t)}};
         return Type("__ref", {std::move(t)});
     }

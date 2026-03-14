@@ -1,7 +1,11 @@
 #pragma once
+#include "ir_gen.h"
+#include <cstdint>
 #include <variant>
 namespace Yoyo
 {
+    struct Type;
+    class IRGenerator;
     struct Constant
     {
         std::variant<void*, uint64_t, int64_t, double, bool> internal_repr;

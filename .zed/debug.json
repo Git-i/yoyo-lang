@@ -1,0 +1,18 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+[
+  {
+    "label": "Debug borrow checker",
+    "build": {
+      "command": "meson",
+      "args": ["compile"],
+      "cwd": "$ZED_WORKTREE_ROOT/build_ninja",
+    },
+    "program": "$ZED_WORKTREE_ROOT/build_ninja/ir_gen_test.exe",
+    "args": ["[array][static_array]"],
+    "request": "launch",
+    "adapter": "CodeLLDB",
+  },
+]
