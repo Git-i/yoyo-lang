@@ -154,9 +154,10 @@ namespace Yoyo {
             std::vector<Value> val;
             std::string function_name;
             std::string into;
+            Type expected_return;
             InstructionVariant to_variant() override;
-            CallFunctionInstruction(std::string&& function_name, std::string&& into, std::vector<Value>&& val)
-                : val(val), function_name(function_name), into(into) {
+            CallFunctionInstruction(std::string&& function_name, std::string&& into, std::vector<Value>&& val, Type exp_r)
+                : val(val), function_name(function_name), into(into), expected_return(std::move(exp_r)) {
             }
         };
         class MayStoreOperation;

@@ -246,7 +246,7 @@ namespace Yoyo{
                 });
 
             auto name = temporary_name();
-            current_block->add_instruction(new CallFunctionInstruction("__builtin_make_tuple", std::string(name), std::move(args)));
+            current_block->add_instruction(new CallFunctionInstruction("__builtin_make_tuple", std::string(name), std::move(args), exp->evaluated_type), exp);
             return Value::from(std::move(name));
         }
         Value BorrowCheckerEmitter::operator()(ArrayLiteral * lit) {
@@ -292,8 +292,8 @@ namespace Yoyo{
                         "__builtin_to_string_for_" + capture->evaluated_type.full_name(),
                         // drop the string or not, it doesn't really matter string is fully owning
                         temporary_name(),
-                        { Value::from(std::move(arg)) }
-                    ));
+                        { Value::from(std::move(arg)) }, lit->evaluated_type
+                    ), capture.get());
 
                 }
             }
@@ -365,11 +365,14 @@ namespace Yoyo{
             }
             else if (token_tp != TokenType::Dot && token_tp != TokenType::Equal) {
                 auto result = temporary_name();
+                auto lhs = std::visit(*this, op->lhs->toVariant());
+                auto rhs = std::visit(*this, op->rhs->toVariant());
                 current_block->add_instruction(new CallFunctionInstruction(
                     op->selected->mangled_name(token_tp),
                     std::string(result),
-                    { std::visit(*this, op->lhs->toVariant()), std::visit(*this, op->rhs->toVariant()) }
-                ));
+                    { std::move(lhs) , std::move(rhs) },
+                    op->evaluated_type
+                ), op);
                 return Value::from(std::move(result));
             }
             else if (token_tp == TokenType::Dot && op->evaluated_type.name != "__bound_fn") {
@@ -442,8 +445,9 @@ namespace Yoyo{
             current_block->add_instruction(new CallFunctionInstruction(
                 callee_val.function_name().value(),
                 std::string(result),
-                std::move(args)
-            ));
+                std::move(args),
+                op->evaluated_type
+            ), op);
             return Value::from(std::move(result));
         }
         Value BorrowCheckerEmitter::operator()(SubscriptOperation * op) {
@@ -1124,6 +1128,10 @@ namespace Yoyo{
                 std::vector<std::string> output;
                 std::ranges::set_difference(state->dfa_in[inst], kill, std::back_inserter(output));
                 return std::set<std::string>{output.begin(), output.end()};
+            }
+            std::set<std::string> operator()(CallFunctionInstruction* inst) {
+                // functions cannot do anything with references now
+                return state->dfa_in[inst];
             }
             std::set<std::string> operator()(Instruction* inst) {
                 debugbreak(); return {};
@@ -2063,8 +2071,19 @@ namespace Yoyo {
             add_assign_constraints_between_types(left_type, right_type);
             return current_position;
         }
-        BlockIteratorTy DomainVariableInserter::operator()(CallFunctionInstruction*) {
-            // literally magic
+        BlockIteratorTy DomainVariableInserter::operator()(CallFunctionInstruction* func) {
+            // we implement this only for functions that don't have anything to do with references
+            // i.e no input or output references
+            
+            // check that no inputs have anything to do with references
+            for (auto i : std::views::iota(0u, func->val.size())) {
+                auto& in = func->val[i];
+                if (!state->get_value_type(in).domains.empty()) {
+                    state->irgen->error(Error(func->origin, "References are not supported in function calls", std::format("The {}th parameter contains a reference", i + 1)));
+                }
+            }
+            // TODO: check that the return value does not contain a reference
+            state->register_value_base_type(func->into, state->type_to_borrow_checker_type(func->expected_return));
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(RelocateValueInstruction* inst) {

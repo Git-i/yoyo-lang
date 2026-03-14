@@ -292,9 +292,11 @@ Vector2: struct = {
 Shape: union = {
     Circle: i32, Rectangle: Vector2
 }
-
+takes_ref: fn (a: &i32) = return;
 main: fn = {
     val: mut = Shape::Circle(300);
+    int: i32 = 20;
+    int + 20;
     val_ptr: &mut Shape = &mut val;
     if |&mut num_ref| (val as Circle) {
         *val_ptr = Shape::Rectangle(Vector2{.x = 20, .y = 40});
