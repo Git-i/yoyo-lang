@@ -1,11 +1,14 @@
 #include "class_entry.h"
+#include "error.h"
 #include "expression.h"
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "token.h"
+#include <cstddef>
 #include <deque>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <type_traits>
@@ -15,6 +18,7 @@
 #include <ranges>
 #include <algorithm>
 #include <iostream>
+#include <vector>
 #include "borrow_checker.h"
 namespace Yoyo { bool has_type_variable(const Yoyo::Type& tp);}
 #define RE_REPR(x) x->evaluated_type = stt->best_repr(x->evaluated_type);\
@@ -316,7 +320,7 @@ namespace Yoyo{
             case TokenType::Star: {
                 auto this_eval = std::visit(*this, pfx->operand->toVariant());
                 auto result = temporary_name();
-                current_block->add_instruction(new DerefLoadOperation(std::move(this_eval), std::string(result)));
+                current_block->add_instruction(new DerefLoadOperation(std::move(this_eval), std::string(result)), pfx);
                 return Value::from(std::move(result));
             }
             case TokenType::Ampersand: [[fallthrough]];
@@ -356,7 +360,7 @@ namespace Yoyo{
                 auto lhs = LValueEmitter{ *this }.do_expr(op->lhs.get());
                 current_block->add_instruction(new AssignInstruction(
                     std::move(lhs),
-                    std::move(rhs)));
+                    std::move(rhs)), op);
                 return Value::empty();
             }
             else if (token_tp != TokenType::Dot && token_tp != TokenType::Equal) {
@@ -378,7 +382,7 @@ namespace Yoyo{
                     std::string new_value = temporary_name();
                     current_block->add_instruction(new DerefLoadOperation(
                         std::move(left_value), new_value
-                    ));
+                    ), op);
                     left_value = Value::from(std::move(new_value));
                 }
                 return left_value.member(std::string(as_name->text));
@@ -768,6 +772,11 @@ namespace Yoyo{
 
             do_domain_validity_analysis(entry_block); // perform an analysis to know what domains are valid for every instruction 
             std::cout << "Phase 7\n" << function->to_string(true, this) << std::endl;
+            
+            for (auto& block : function->blocks) {
+                for (auto& inst : block->instructions)
+                    std::visit(BorrowCheckVisitor{this, irgen}, inst->to_variant());
+            }
             return function;
         }
         void DomainCheckerState::do_primary_analysis() {
@@ -969,13 +978,15 @@ namespace Yoyo{
             BasicBlock* block;
             size_t instruction_idx;
             // Generate KILL sets (all the domains invalidated when the provided values are modified)
-            std::set<std::string> kill_for_modifying_values(std::span<const Value> values) {
-                std::set<std::string> result;
+            std::vector<std::pair<std::string, KillReason>> kill_for_modifying_values(std::span<const Value> values) {
+                std::vector<std::pair<std::string, KillReason>> result;
                 auto unstable_suffix = 
                     // returns true is the input is a path that begins with the input path and contains an unstable link
-                    [this, values](std::string value) -> bool {
+                    // if the first part of the pair is true, the second part is the value that made it true
+                    [this, values](std::string value) -> std::pair<bool, std::string> {
                         auto input = Value::from(std::move(value));
                         bool is_unstable = false;
+                        std::string affected_value;
                         for(auto& elem : values) {
                             // elem must be a prefix of input
                             if(!input.to_string().starts_with(elem.to_string())) continue;
@@ -993,20 +1004,27 @@ namespace Yoyo{
                                     debugbreak();
                                 } else if (auto as_named = std::get_if<BorrowCheckerType::Named>(&current_type->details)) {
                                     // access of a struct field is stable, and that of a union is not
-                                    if(as_named->actual_type.get_decl_if_union()) is_unstable = true;
+                                    if(as_named->actual_type.get_decl_if_union()) { 
+                                        is_unstable = true;
+                                        affected_value = elem.to_string();
+                                    }
                                 } else debugbreak();
                                 if(is_unstable) break;
                                 current_value.subpaths.push_back(field);
                                 current_type = &state->get_value_type(current_value);
                             }
                         }
-                        return is_unstable;
+                        return std::make_pair(is_unstable, std::move(affected_value));
                     };
                 for (auto&[domain, point_to] : state->final_ptg.domain_to_node) {
                     // check if the domain points to anything that is being modified
                     for (auto& val : point_to) {
-                        if (unstable_suffix(val)) {
-                            result.insert(domain);
+                        if (auto[is_unstable, affected] = unstable_suffix(val); is_unstable) {
+                            result.emplace_back(domain, KillReason{
+                                .source = KillReason::Assign,
+                                .affected_value = std::move(affected),
+                                .bad_pointee = val
+                            });
                             break;
                         }
                     }
@@ -1071,7 +1089,9 @@ namespace Yoyo{
                 // assign modifies a value, so it invalidates all domains that points to values originating from that value 
                 // this will contain all the modified values by this assign (it will be more than one in the case of lvalue assign)
                 std::vector<Value> lhs_values;
+                std::optional<std::string> origin_string = std::nullopt;
                 if (auto& type = state->get_value_type(inst->lhs); type.details.index() == BorrowCheckerType::LValue) {
+                    origin_string = std::get<BorrowCheckerType::LValue>(type.details).origin;
                     auto pointees = state->final_ptg.get_pointees_of(inst->lhs_domain.to_string()) | std::views::transform(
                         [](std::string input) {
                             return Value::from(std::move(input));
@@ -1083,7 +1103,18 @@ namespace Yoyo{
                 }
                 auto kill = kill_for_modifying_values(lhs_values);
                 std::vector<std::string> output;
-                std::ranges::set_difference(state->dfa_in[inst], kill, std::back_inserter(output));
+                std::ranges::set_difference(state->dfa_in[inst], kill | std::views::transform([](auto& elem) { return elem.first; }), std::back_inserter(output));
+                if(output.size() != state->dfa_in[inst].size()) {
+                    // add kill reasons for the killed domains
+                    auto& in = state->dfa_in[inst];
+                    for(auto&[domain, reason] : kill) {
+                        if(in.contains(domain) && !state->domain_kill_reason.contains(domain)) {
+                            reason.killing_instruction = inst->origin;
+                            reason.lvalue_source = origin_string;
+                            state->domain_kill_reason[domain] = reason;
+                        }
+                    }
+                }
                 return std::set<std::string>{output.begin(), output.end()};
             }
             std::set<std::string> operator()(DropInstruction* inst) {
@@ -1890,7 +1921,7 @@ namespace Yoyo{
                 if (px->op.type == TokenType::Star) {
                     auto this_eval = std::visit(em, px->operand->toVariant());
                     auto result = em.temporary_name();
-                    em.current_block->add_instruction(new DerefOperation(std::move(this_eval), std::string(result)));
+                    em.current_block->add_instruction(new DerefOperation(std::move(this_eval), std::string(result)), expr);
                     return Value::from(std::move(result));
                 }
             } 
@@ -1899,7 +1930,7 @@ namespace Yoyo{
                     auto left_value = do_expr(bexp->lhs.get());
                     if (bexp->lhs->evaluated_type.is_reference()) {
                         auto result = em.temporary_name();
-                        em.current_block->add_instruction(new DerefOperation(std::move(left_value), result));
+                        em.current_block->add_instruction(new DerefOperation(std::move(left_value), result), expr);
                         left_value = Value::from(std::move(result));
                     }
                     return left_value.member(std::string(rhs_name->text));
@@ -2083,7 +2114,9 @@ namespace Yoyo {
         {
             auto& reference_type = state->get_value_type(op->reference);
             op->ref_domain = reference_type.domains[0].first;
-            state->register_value_base_type(op->into, reference_type.deref());
+            auto type = reference_type.deref();
+            std::get<BorrowCheckerType::LValue>(type.details).origin = op->reference.to_string();
+            state->register_value_base_type(op->into, std::move(type));
             return current_position;
         }
         BlockIteratorTy DomainVariableInserter::operator()(DerefLoadOperation* op)
@@ -2103,6 +2136,29 @@ namespace Yoyo {
             state->register_value_base_type(op->into,
                 std::move(new_type));
             return current_position;
+        }
+        void add_kill_reason_to_error(Error& err, const KillReason& reason) {
+            auto span = SourceSpan{reason.killing_instruction->beg, reason.killing_instruction->end};
+            auto detail = std::string{};
+            if (reason.source == KillReason::Assign) {
+                detail = std::format("Value may point to {}, which was invalidated when {} was modified", reason.bad_pointee, reason.affected_value);
+                if (reason.lvalue_source) detail += std::format(" ({} may point to {})", reason.lvalue_source.value(), reason.affected_value);
+            }
+            err.markers.emplace_back(span, std::move(detail));
+        }
+        void BorrowCheckVisitor::operator()(DerefOperation* inst) {
+            if (!state->dfa_in[inst].contains(inst->ref_domain.to_string())) {
+                if(!state->domain_kill_reason.contains(inst->ref_domain.to_string())) debugbreak();
+                const auto& reason = state->domain_kill_reason.at(inst->ref_domain.to_string());
+                Error err(inst->origin, "Attempt to dereference value that might point to invalid memory");
+                add_kill_reason_to_error(err, reason);
+                irgen->error(err);
+            }
+        }
+        void BorrowCheckVisitor::operator()(DerefLoadOperation* inst) {
+            if (!state->dfa_in[inst].contains(inst->ref_domain.to_string())) {
+                irgen->error(Error(inst->origin, "Attempt to dereference value that might point to invalid memory"));
+            }
         }
     }
 }

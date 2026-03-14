@@ -165,7 +165,7 @@ namespace Yoyo
     void IRGenerator::error(const Error& e)
     {
         auto str = e.to_string(*view, true);
-        std::cout << str << std::endl;
+        std::cerr << str << std::endl;
         has_error = true;
         debugbreak();
     }

@@ -53,7 +53,7 @@ namespace Yoyo
 			rows.emplace_back(line_size + 3, ' ');
 			rows.back()[bar_position] = char{ 7 };
 			rows.back()[bar_position + 1] = '$';
-			if(color) rows.back().insert(bar_position + 3, std::format("\033[1;35m{}\033[0m", marker.second));
+			if(color) rows.back().insert(bar_position + 3, std::format("\033[1;34m{}\033[0m", marker.second));
 			else rows.back().insert(bar_position + 3,  marker.second);
 		}
 		for (auto& span : markers | filter(begins_but_not_ends) | keys)

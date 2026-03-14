@@ -100,7 +100,8 @@ namespace Yoyo {
             std::vector<std::unique_ptr<Instruction>> instructions;
             std::vector<BasicBlock*> preds;
             std::string to_string(bool include_dfa = false, DomainCheckerState* state = nullptr);
-            void add_instruction(Instruction* inst) {
+            void add_instruction(Instruction* inst, ASTNode* origin = nullptr) {
+                inst->origin = origin;
                 instructions.emplace_back(inst);
             }
             bool is_terminated() const {
@@ -510,6 +511,7 @@ namespace Yoyo {
                 LValueDetails& operator=(LValueDetails&&) noexcept = default;
                 LValueDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
                 std::unique_ptr<BorrowCheckerType> subtype;
+                std::string origin; // the origin of the lvalue (used for error reporting)
                 // populated when lvalues are used in field access ex: (*a).f1.f2 = value;
                 std::vector<std::string> subpath;
             };
@@ -720,6 +722,30 @@ namespace Yoyo {
             }
             std::string to_graphviz();
         };
+        // This class uses all the gathered information to determine whether a function is safe or not
+        struct BorrowCheckVisitor {
+            DomainCheckerState* state;
+            IRGenerator* irgen;
+            // since I've decided to go with c++ copy and "drop at the end of block" semantics, I don't think I need
+            // to check for dropped value usage in every instruction
+            void operator()(Instruction*) {  }
+            void operator()(DerefLoadOperation*);
+            void operator()(DerefOperation*);
+        };
+        // used primarily for error reporting, It contains information about why a domain was killed
+        struct KillReason {
+            // is the kill from a re-assignment or from a drop?
+            enum InstructionSource { Assign, Drop };
+            InstructionSource source;
+            // what value was assigned to/dropped
+            std::string affected_value;
+            // what pointee made this eligible for killing
+            std::string bad_pointee;
+            // what instruction did the assign/drop take place
+            ASTNode* killing_instruction;
+            // for assigns, if it comes from an lvalue this is the value that was dereferenced
+            std::optional<std::string> lvalue_source;
+        };
         struct DomainCheckerState {
             // TODO make the union find
             size_t last_id = 0;
@@ -740,7 +766,7 @@ namespace Yoyo {
             ValueTypeMapping named_value_type_cache;
             std::unordered_map<Instruction*, std::set<std::string>> dfa_in;
             std::unordered_map<Instruction*, std::set<std::string>> dfa_out;
-    
+            std::unordered_map<std::string, KillReason> domain_kill_reason; 
 
             std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
             // doesn't do anything for now
