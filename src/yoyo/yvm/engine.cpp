@@ -7,6 +7,7 @@
 #include <yvm/yvm_irgen.h>
 #include <gc/gc.h>
 #include <yvm/app_module.h>
+#include "borrow_checker.h"
 #include "yvm/fwd_decl.h"
 #include <format>
 
@@ -196,6 +197,9 @@ namespace Yoyo
 
         mco_coro* co;
         auto res = mco_create(&co, &desc);
+        if (res != MCO_SUCCESS) {
+            debugbreak();
+        }
         mco_resume(co);
         ParamReturnPtrs param_ret;
         mco_pop(co, &param_ret, sizeof(ParamReturnPtrs));
@@ -231,7 +235,7 @@ namespace Yoyo
         auto irgen = reinterpret_cast<YVMIRGenerator*>(irgen_g);
         auto native_t = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(type));
         if (type.name == "str") {
-            auto str_ptr = static_cast<char*>(std::get<void*>(args[0].internal_repr));
+            auto str_ptr = static_cast<const char*>(std::get<const void*>(args[0].internal_repr));
             auto str_sz = strlen(str_ptr);
             auto ret_val = static_cast<YoyoString*>(malloc(sizeof(YoyoString)));
             ret_val->size = str_sz;

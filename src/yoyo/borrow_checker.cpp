@@ -1777,7 +1777,7 @@ namespace Yoyo{
         BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp) {
             BorrowCheckerType new_type;
             new_type.details.emplace<Named>(Type(tp));
-            auto& as_named = std::get<Named>(new_type.details);
+            // auto& as_named = */std::get<Named>(new_type.details);
             return new_type;
         }
         BorrowCheckerType BorrowCheckerType::new_array_of(BorrowCheckerType&& tp)

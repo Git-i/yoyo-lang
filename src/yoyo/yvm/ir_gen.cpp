@@ -1,12 +1,8 @@
 #include "expression.h"
 #include "yvm/yvm_irgen.h"
 
-#include <csignal>
-#include <list>
 #include <ranges>
-#include <set>
 #include <iostream>
-#include "gc/gc.h"
 #include <cassert>
 #include <yvm/fwd_decl.h>
 #include "ast_print.h"
@@ -210,7 +206,6 @@ namespace Yoyo
         auto curr_hash = reset_hash();
         block_hash = unn_hash;
         for (auto& var : decl->fields | std::views::values) var.saturate(module, this);
-        size_t biggest_size = 0;
         
         
         //module->unions[curr_hash].emplace_back(std::unique_ptr<UnionDeclaration>{decl}, llvm_t);
@@ -233,7 +228,7 @@ namespace Yoyo
     void YVMIRGenerator::operator()(MacroDeclaration* decl)
     {
         assert(current_Statement->get() == decl);
-        current_Statement->release();
+        std::ignore = current_Statement->release();
     }
     bool advanceScope(Type& type, ModuleBase*& md, std::string& hash, IRGenerator* irgen, bool first);
     void YVMIRGenerator::operator()(UsingStatement* stat)
@@ -570,7 +565,7 @@ namespace Yoyo
 
         builder->write_ptr_off(NativeType::getElementOffset(as_native, 0));
         // if its not a ref we have to clone it
-        if (!tp_e.is_value_conversion_result() && !stat->then_capture_tp != ConditionalExtraction::Own) {
+        if (!tp_e.is_value_conversion_result() && !(stat->then_capture_tp != ConditionalExtraction::Own)) {
             if (tp_e.is_ref_conversion_result())
                 builder->write_2b_inst(Load, Yvm::Type::ptr);
             if (!tp_e.subtypes[0].should_sret())
@@ -641,11 +636,11 @@ namespace Yoyo
 
     void YVMIRGenerator::operator()(GenericFunctionDeclaration*)
     {
-        current_Statement->release();
+        std::ignore = current_Statement->release();
     }
     void YVMIRGenerator::operator()(GenericClassDeclaration*)
     {
-        current_Statement->release();
+        std::ignore = current_Statement->release();
     }
     void YVMIRGenerator::operator()(AliasDeclaration* decl)
     {
@@ -655,7 +650,7 @@ namespace Yoyo
 
     void YVMIRGenerator::operator()(GenericAliasDeclaration*)
     {
-        current_Statement->release();
+        std::ignore = current_Statement->release();
     }
 
     void YVMIRGenerator::operator()(ReturnStatement* stat)

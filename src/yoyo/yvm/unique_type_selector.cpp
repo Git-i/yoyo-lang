@@ -30,10 +30,10 @@ namespace Yoyo
 				return child->get_struct_type(std::span{ data.begin() + 1, data.end() });
 			}	
 		}
-		size_t child_depth = 0;
+		// size_t child_depth = 0;
 		auto parent_iter = parent;
-		while (parent_iter) child_depth++, parent_iter = parent_iter->parent;
-		NativeTy* const* arr = data.data() - child_depth;
+		while (parent_iter) parent_iter = parent_iter->parent;
+		// NativeTy* const* arr = data.data() - child_depth;
 		auto should_child = this;
 		for (auto ptr : data) {
 			auto& new_child = should_child->children.emplace_back();
@@ -76,10 +76,10 @@ namespace Yoyo
 				return child->get_proto(std::span{ data.begin() + 1, data.end() }, ret);
 			}
 		}
-		size_t child_depth = 0;
+		// size_t child_depth = 0;
 		auto parent_iter = parent;
-		while (parent_iter) child_depth++, parent_iter = parent_iter->parent;
-		NativeTy* const* arr = data.data() - child_depth;
+		while (parent_iter) parent_iter = parent_iter->parent;
+		// NativeTy* const* arr = data.data() - child_depth;
 		auto should_child = this;
 		for (auto ptr : data) {
 			auto& new_child = should_child->children.emplace_back();

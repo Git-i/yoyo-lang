@@ -3224,7 +3224,7 @@ namespace Yoyo
         }
         std::erase_if(concrete_types.types, [val](Type& elem) { 
             if (!elem.is_integral()) { return true; }
-            return !((elem.is_signed_integral() || getIntMinOf(elem) <= val) && getIntMaxOf(elem) >= val);
+            return !((elem.is_signed_integral() || static_cast<uint64_t>(getIntMinOf(elem)) <= val) && getIntMaxOf(elem) >= val);
             });
         if (concrete_types.types.empty()) {
             return Error(nullptr, "Type cannot store " + std::to_string(val));

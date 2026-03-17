@@ -101,7 +101,7 @@ namespace Yoyo
     }
     Constant ConstantEvaluator::operator()(Expression* expr)
     {
-        irgen->error(Error(expr, "Expression cannot be constant evaluated"));
+        irgen->error(Error(expr, "Expression cannot be constant evaluated."));
         return Constant();
     }
     Constant ConstantEvaluator::operator()(PrefixOperation* op)

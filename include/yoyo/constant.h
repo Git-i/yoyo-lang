@@ -8,13 +8,13 @@ namespace Yoyo
     class IRGenerator;
     struct Constant
     {
-        std::variant<void*, uint64_t, int64_t, double, bool> internal_repr;
+        std::variant<const void*, uint64_t, int64_t, double, bool> internal_repr;
         Constant() = default;
         Constant(uint64_t val) : internal_repr(val){}
         Constant(int64_t val) : internal_repr(val) {}
         Constant(bool val) : internal_repr(val) {}
         Constant(double val) : internal_repr(val) {}
-        Constant(void* ptr) : internal_repr(ptr) {}
+        Constant(const void* ptr) : internal_repr(ptr) {}
     };
     class ConstantEvaluator
     {

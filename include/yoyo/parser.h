@@ -64,7 +64,7 @@ namespace Yoyo
         ASTNode* parent = nullptr;
         SourceLocation discardLocation;
     private:
-        friend class MacroExprEval;
+        friend struct MacroExprEval;
         bool has_error = false;
         std::unique_ptr<Statement> parseFunctionDeclaration(Token identifier);
 

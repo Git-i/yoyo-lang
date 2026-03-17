@@ -1,5 +1,3 @@
-#include <cmath>
-#include <csignal>
 #include <memory>
 #include <overload_resolve.h>
 #include <ranges>
@@ -456,7 +454,6 @@ namespace Yoyo
             if(candidate != decl->stats.end() && dynamic_cast<FunctionDeclaration*>(candidate->get()))
             {
                 auto decl = reinterpret_cast<FunctionDeclaration*>(candidate->get());
-                auto& sig = decl->signature;
                 std::string fn_name = std::get<0>(*decl_tup) + decl->name;
                 irgen->builder->write_1b_inst(OpCode::Dup); // dest for sret
                 irgen->builder->write_2b_inst(OpCode::RevStackAddr, 2); // src
@@ -583,7 +580,7 @@ namespace Yoyo
             case TokenType::DoubleLess: return "<<";
             case TokenType::SquarePair: return "[]";
             case TokenType::SquarePairMut: return "[mut]";
-            default: debugbreak();
+            default: debugbreak(); return "";
             }
             };
         auto& left_type = op->lhs->evaluated_type;
@@ -673,10 +670,10 @@ namespace Yoyo
         OverloadDetailsBinary* target_ovl)
     {
         constexpr int32_t eq = 1;
-        constexpr int32_t ne = 0;
+        // constexpr int32_t ne = 0;
+        // constexpr int32_t unord = 4;
         constexpr int32_t less = 2;
         constexpr int32_t greater = 3;
-        constexpr int32_t unord = 4;
         // enum comparisons
         if ((p == EQ || p == NE) && left_type_og.is_equal(right_type_og)) {
             if (left_type_og.get_decl_if_enum()) {
@@ -1078,7 +1075,7 @@ namespace Yoyo
         //    else return std::vector<Type>{};
         //}, cnst.internal_repr);
         else {
-            irgen->builder->write_const(std::get<void*>(cnst.internal_repr));
+            irgen->builder->write_const(std::get<const void*>(cnst.internal_repr));
             return {};
         }
         return {};
@@ -1320,6 +1317,7 @@ namespace Yoyo
                         return mth->name == name_expr->text;
                         });
                     bool uses_sret = (*it)->signature.returnType.should_sret();
+                    std::ignore = uses_sret;
                     auto value = std::visit(*this, expr->lhs->toVariant());
 
                     //auto pointer_type = llvm::PointerType::get(irgen->context, 0);
@@ -1403,7 +1401,7 @@ namespace Yoyo
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(SubscriptOperation* op)
     {
-        auto& final_type = op->evaluated_type;
+        // auto& final_type = op->evaluated_type;
 
         auto& expr_ty = op->object->evaluated_type;
 
@@ -1439,7 +1437,7 @@ namespace Yoyo
             tok = TokenType::SquarePairMut;
             std::tie(block, ovl) = resolveIdxMut(expr_ty.mutable_reference_to(), idx_ty, irgen);
         }
-
+        std::ignore = tok;
         // if there is no mutable overload still default to the non mutable overload
         if (!ovl) {
             std::tie(block, ovl) = resolveIdx(expr_ty.reference_to(), idx_ty, irgen);
@@ -1489,7 +1487,7 @@ namespace Yoyo
         }
         if (!t || !(t->is_function() || t->is_lambda())) { irgen->error(t.error()); return {}; }
         
-        bool is_lambda = t->is_lambda();
+        // bool is_lambda = t->is_lambda();
         auto fn = reinterpret_cast<FunctionType&>(*t);
         auto bexpr = dynamic_cast<BinaryOperation*>(call_op->callee.get()); 
         StructNativeTy* params_ty;
@@ -1518,7 +1516,6 @@ namespace Yoyo
             //bexpr is guaranteed to be valid if the function is bound as
             //callee is a binary dot expr
             auto left_t = std::visit(type_checker, bexpr->lhs->toVariant());
-            auto cls = left_t->deref().get_decl_if_class(irgen);
             // method call
             if (auto rhs = dynamic_cast<NameExpression*>(bexpr->rhs.get()))
             {
@@ -1681,7 +1678,7 @@ namespace Yoyo
     {
         // for lambda expressions, every lambda has a different type this generates the type name
         std::string lambda_ty = "__lambda" + irgen->block_hash + std::to_string(reinterpret_cast<std::uintptr_t>(expr));
-        StructNativeTy* elem_types = nullptr;
+        // StructNativeTy* elem_types = nullptr;
         if (!expr->captures.empty()) {
             std::vector<NativeTy*> context_types;
             context_types.reserve(expr->captures.size());
@@ -1721,8 +1718,9 @@ namespace Yoyo
         }
         if (ty.is_error_ty()) return {};
         // try to eval as const
-        auto cnst = ConstantEvaluator{ irgen }(op);
-        
+        debugbreak();
+        // auto cnst = ConstantEvaluator{ irgen }(op);
+        return {}; 
         //auto as_llvm = irgen->ToLLVMType(*ty, false);
         //if (ty->is_integral() || ty->is_char() || ty->is_boolean() || ty->get_decl_if_enum())
         //    return std::visit([as_llvm]<typename T>(T & val) {

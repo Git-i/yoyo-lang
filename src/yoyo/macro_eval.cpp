@@ -104,6 +104,8 @@ namespace Yoyo
 					return stack.at(expr->text).clone_or_ref_to();
 				}
 			}
+            irgen->error(Error(expr, "Use of undefined identifier"));
+            return MacroEvaluator::ObjectTy();
 		}
 		MacroEvaluator::ObjectTy doBexprInt(int64_t left, MacroEvaluator::ObjectTy right, TokenType tp) {
 			if(std::holds_alternative<int64_t>(right)) {
@@ -127,7 +129,7 @@ namespace Yoyo
 				default: return std::monostate{};
 				}
 			}
-
+            return MacroEvaluator::ObjectTy();
 		}
 		MacroEvaluator::ObjectTy doBexprASTCall(MacroEvaluator::ObjectTy& left, std::string& fn_name)
 		{
@@ -170,7 +172,7 @@ namespace Yoyo
 								if (!expr) irgen->error(Error(nullptr, "Expression is empty"));
 								else irgen->error(Error(nullptr, "Arg must be an expression"));
 							}
-							expr.release();
+                            std::ignore = expr.release();
 							ptr->literal.push_back(std::unique_ptr<Expression>{ as_expr });
 							return { std::monostate{} };
 						}
@@ -190,7 +192,7 @@ namespace Yoyo
 			}
 			else if (auto ptr = dynamic_cast<IntegerLiteral*>(node_ptr)) {
 				if (fn_name == "value") {
-					return { FnType{"IntLit::value", [ptr, irgen](std::vector<ObjTy> objs) -> ObjTy {
+					return { FnType{"IntLit::value", [ptr](std::vector<ObjTy> objs) -> ObjTy {
 							return std::stoll(ptr->text);
 						}
 					} };
@@ -262,8 +264,8 @@ namespace Yoyo
 					}
 				} };
 			}
-			
-			
+		    irgen->error(Error(nullptr, "Undefined function"));	
+		    return ObjTy();	
 		}
 		MacroEvaluator::ObjectTy doBexprOwnedTokenCall(MacroEvaluator::OwnedToken tk, std::string& fn_name) {
 			using ObjTy = MacroEvaluator::ObjectTy;
@@ -289,6 +291,7 @@ namespace Yoyo
 					}
 				} };
 			}
+            return ObjTy();
 		}
 		MacroEvaluator::ObjectTy doBexprArrayRefCall(std::vector<MacroEvaluator::ObjectTy>* tk, std::string& fn_name) {
 			using ObjTy = MacroEvaluator::ObjectTy;
@@ -303,10 +306,10 @@ namespace Yoyo
 					}
 				};
 			}
+            return ObjTy();
 		}
 		MacroEvaluator::ObjectTy operator()(BinaryOperation* bexpr) {
 			using ObjTy = MacroEvaluator::ObjectTy;
-			using FnType = std::pair<std::string, std::function<ObjTy(std::vector<ObjTy>)>>;
 			using NodeType = std::unique_ptr<ASTNode>;
 			auto left = std::visit(*this, bexpr->lhs->toVariant());
 
@@ -334,7 +337,7 @@ namespace Yoyo
 				auto rhs = std::visit(*this, bexpr->rhs->toVariant());
 				return doBexprInt(std::get<int64_t>(left), std::move(rhs), bexpr->op.type);
 			}
-
+            return ObjTy();
 		}
 		MacroEvaluator::ObjectTy operator()(GroupingExpression*) {
 			return {};
@@ -518,6 +521,7 @@ namespace Yoyo
 				if (lit->values.size() != 0) irgen->error(Error(lit, "String literal must be created empty"));
 				return { std::make_unique<StringLiteral>(decltype(StringLiteral::literal){}) };
 			}
+            return MacroEvaluator::ObjectTy();
 		}
 		MacroEvaluator::ObjectTy operator()(NullLiteral*) { return {}; }
 		MacroEvaluator::ObjectTy operator()(AsExpression*) { return {}; }
