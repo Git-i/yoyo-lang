@@ -75,7 +75,7 @@ Yoyo::Fiber createFiberFor(Yoyo::ModuleBase* mod, const std::string& function_na
 }
 Yoyo::YVMAppModule* addTestModule(Yoyo::YVMEngine* eng) {
     auto md = eng->addAppModule("test");
-    md->addFunction("(x: &str) -> i32", func, "print");
+    md->addFunction("(x: str) -> i32", func, "print");
     md->addFunction("(x: bool, y: &str) -> void", test_assert, "assert");
     md->addFunction("(x: &str, y: &str) -> void", test_str_cmp, "str_cmp");
     return md;
@@ -292,7 +292,6 @@ Vector2: struct = {
 Shape: union = {
     Circle: i32, Rectangle: Vector2
 }
-takes_ref: fn (a: &i32) = return;
 main: fn = {
     val: mut = Shape::Circle(300);
     int: i32 = 20;
@@ -300,7 +299,10 @@ main: fn = {
     val_ptr: &mut Shape = &mut val;
     if |&mut num_ref| (val as Circle) {
         *val_ptr = Shape::Rectangle(Vector2{.x = 20, .y = 40});
-        *num_ref = 200;
+   //     *num_ref = 200;
+    };
+    if |&vec_ref| (val as Rectangle) {
+        test::print("Rectangle: ${vec_ref.x}, ${vec_ref.y}");
     };
     return;
 }                       

@@ -526,6 +526,7 @@ namespace Yoyo {
                 NamedTypeDetails(std::string full_type_name);
                 NamedTypeDetails(Type&& tp) : actual_type(std::move(tp)) {};
                 Type actual_type;
+                std::unordered_map<std::string, Domain> field_domains;
             };
             BorrowCheckerType() = default;
             BorrowCheckerType(const BorrowCheckerType&) = delete;

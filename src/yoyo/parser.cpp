@@ -751,7 +751,8 @@ namespace Yoyo
     bool Parser::canOmitSemiColon(Expression* ex)
     {
         return dynamic_cast<BlockExpression*>(ex) != nullptr ||
-                dynamic_cast<IfExpression*>(ex) != nullptr;
+                dynamic_cast<IfExpression*>(ex) != nullptr ||
+                dynamic_cast<ConditionalExtraction*>(ex) != nullptr;
     }
 
     std::unique_ptr<Expression> Parser::parseExpression(uint32_t precedence)

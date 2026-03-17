@@ -281,23 +281,36 @@ namespace Yoyo{
             for (auto& entry : lit->literal) {
                 if (std::holds_alternative<std::unique_ptr<Expression>>(entry)) {
                     auto& capture = std::get<std::unique_ptr<Expression>>(entry);
-
-                    auto arg = temporary_name();
-                    current_block->add_instruction(new BorrowValueInstruction(
-                        std::visit(*this, capture->toVariant()),
-                        std::string(arg)
-                    ));
+                    RE_REPR(capture.get());
+                    Value to_string_arg;
+                    if(!capture->evaluated_type.should_sret()) {
+                        to_string_arg = std::visit(*this, capture->toVariant());
+                    } else {
+                        auto arg = temporary_name();
+                        current_block->add_instruction(new BorrowValueInstruction(
+                            std::visit(*this, capture->toVariant()),
+                            std::string(arg)
+                        ));
+                        to_string_arg = Value::from(std::move(arg));
+                    }
 
                     current_block->add_instruction(new CallFunctionInstruction(
                         "__builtin_to_string_for_" + capture->evaluated_type.full_name(),
                         // drop the string or not, it doesn't really matter string is fully owning
                         temporary_name(),
-                        { Value::from(std::move(arg)) }, lit->evaluated_type
+                        { std::move(to_string_arg) }, lit->evaluated_type
                     ), capture.get());
 
                 }
             }
-            return Value::from(temporary_name());
+            /*
+             * HACK:
+             * since strings are not supported we just call "new primitive" to emulate building a string from parts
+             * this should still be correct, becuase string assembly does not involve references (those are handled by the function calls above)
+             */
+            auto val = temporary_name();
+            current_block->add_instruction(new NewPrimitiveInstruction(std::string(val)), lit);
+            return Value::from(std::move(val));
         }
         Value BorrowCheckerEmitter::operator()(NameExpression * name) {
             RE_REPR(name);
@@ -325,6 +338,7 @@ namespace Yoyo{
             }
             case TokenType::Ampersand: [[fallthrough]];
             case TokenType::RefMut: {
+                RE_REPR(pfx->operand.get());
                 auto this_eval = LValueEmitter{*this}.do_expr(pfx->operand.get());
                 auto result = temporary_name();
                 current_block->add_instruction(new BorrowValueInstruction(std::move(this_eval), std::string(result)));
@@ -357,6 +371,7 @@ namespace Yoyo{
             if (token_tp == TokenType::Equal) {
                 // we need to evaluate the rhs first
                 auto rhs = std::visit(*this, op->rhs->toVariant());
+                RE_REPR(op->lhs.get());
                 auto lhs = LValueEmitter{ *this }.do_expr(op->lhs.get());
                 current_block->add_instruction(new AssignInstruction(
                     std::move(lhs),
@@ -666,6 +681,8 @@ namespace Yoyo{
             if (type.get_decl_if_class(irgen) || type.get_decl_if_union()) {
                 return BorrowCheckerType::new_aggregate_from(Type(type)); 
             } 
+            // HACK: strings are not properly supported (so nothing fancy can happen) and we just treat them like primitives
+            if (type.is_str()) return BorrowCheckerType::new_primitive();
             debugbreak();
             return BorrowCheckerType{};
         }
@@ -1759,8 +1776,8 @@ namespace Yoyo{
         }
         BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp) {
             BorrowCheckerType new_type;
-            new_type.details.emplace<Named>(std::move(tp));
-            // TODO add the domain variables in the type definition
+            new_type.details.emplace<Named>(Type(tp));
+            auto& as_named = std::get<Named>(new_type.details);
             return new_type;
         }
         BorrowCheckerType BorrowCheckerType::new_array_of(BorrowCheckerType&& tp)

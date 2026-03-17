@@ -1,11 +1,14 @@
 #include <cmath>
 #include <csignal>
+#include <memory>
 #include <overload_resolve.h>
 #include <ranges>
 #include <set>
 #include <tree_cloner.h>
 
+#include "expression.h"
 #include "overload_details.h"
+#include "yvm/native_type.h"
 #include "yvm/yvm_irgen.h"
 #include "fn_type.h"
 #include <format>
@@ -1148,7 +1151,7 @@ namespace Yoyo
         auto r_as_var = op->rhs->toVariant();
 
         auto& left_t = op->lhs->evaluated_type;
-        auto& right_t = op->lhs->evaluated_type;
+        auto& right_t = op->rhs->evaluated_type;
         auto& res = op->evaluated_type;
         
         auto lhs = op->lhs.get(); auto rhs = op->rhs.get();
@@ -1163,7 +1166,7 @@ namespace Yoyo
             case LessEqual: return doCmp(EQ_LT, lhs, rhs, left_t, right_t, res, op->selected);
             case BangEqual: return doCmp(NE, lhs, rhs, left_t, right_t, res, op->selected);
             case DoubleEqual: return doCmp(EQ, lhs, rhs, left_t, right_t, res, op->selected);
-            default: debugbreak(); break;
+            default: break;
             }
             doBasicBinaryOp(this, op->selected, op->op.type, op);
         }
@@ -1268,7 +1271,7 @@ namespace Yoyo
         //type checker is allowed to modify generic function nodes to do argument deduction
         if (op->callee->evaluated_type.name.starts_with("__union_var"))
         {
-            return doUnionVar(op, op->evaluated_type);
+            return doUnionVar(op, op->callee->evaluated_type);
         }
         bool is_lambda = op->callee->evaluated_type.is_lambda();
         auto& return_t = op->evaluated_type;
@@ -1628,6 +1631,50 @@ namespace Yoyo
         irgen->builder->create_label(cont);
         returned_alloc_addr = irgen->builder->checkpoint();
         returned_alloc_is_checkpoint = true;
+        return {};
+    }
+    std::vector<Type> YVMExpressionEvaluator::operator()(ConditionalExtraction* expr)
+    {
+        std::visit(*this, expr->condition->toVariant());
+        auto& cond_tp = expr->condition->evaluated_type;
+        auto cond_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(cond_tp));
+        // all types that do conditional extraction are of the form {data, is_valid}
+        irgen->builder->write_1b_inst(OpCode::Dup);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(cond_native, 1));
+        irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::u8); // load the is_valid bool
+
+        auto cont_block = irgen->builder->unq_label_name("cond_extract_cont");
+        std::string else_block;
+        if(expr->else_body) {
+            else_block = irgen->builder->unq_label_name("cond_extract_else");
+            irgen->builder->create_jump(OpCode::JumpIfFalse, else_block);
+        } else {
+            irgen->builder->create_jump(OpCode::JumpIfFalse, cont_block);
+        }
+        irgen->pushScope();
+        
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(cond_native, 0));
+        // if its not a ref we have to clone it
+        if (!cond_tp.is_value_conversion_result() && !(expr->then_capture_tp != ConditionalExtraction::Own)) {
+            if (cond_tp.is_ref_conversion_result())
+                irgen->builder->write_2b_inst(OpCode::Load, Yvm::Type::ptr);
+            if (!cond_tp.subtypes[0].should_sret())
+                irgen->builder->write_2b_inst(OpCode::Load, irgen->toTypeEnum(cond_tp.subtypes[0]));
+            clone(expr->condition.get(), cond_tp.subtypes[0], false, false);
+        }
+        Type variable_type = expr->then_capture_tp != ConditionalExtraction::Own ?
+            Type{ expr->then_capture_tp == ConditionalExtraction::RefMut ? "__ref_mut" : "__ref", {cond_tp.subtypes[0]} } :
+            cond_tp.subtypes[0];
+        variable_type.saturate(irgen->module, irgen);
+        irgen->variables.back().emplace_back(expr->captured_name, YVMIRGenerator::VariableEntry{ YVMIRGenerator::VariableIndex{irgen->builder->checkpoint(), YVMIRGenerator::VariableIndex::Checkpoint}, std::move(variable_type) });
+        std::visit(*this, expr->body->toVariant());
+
+        irgen->popScope();
+        if (expr->else_body) {
+            irgen->builder->create_jump(OpCode::Jump, cont_block);
+            irgen->builder->create_label(else_block);
+            std::visit(*this, expr->else_body->toVariant());
+        }
         return {};
     }
     std::vector<Type> YVMExpressionEvaluator::operator()(LambdaExpression* expr)

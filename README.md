@@ -1,3 +1,9 @@
+---
+title: Untitled
+author: Eric
+date: 2026-03-17T03:20:50Z
+---
+
 # Yoyo
 
 Yoyo is (going to be) a statically typed, research language, written in C++20.

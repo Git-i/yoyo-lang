@@ -1,5 +1,7 @@
 #pragma once
 #include <ir_gen.h>
+#include "borrow_checker.h"
+#include "expression.h"
 #include "yoyo_vm/vm.h"
 #include "yvm/native_type.h"
 #include "yoyo_vm/emitter.h"
@@ -146,6 +148,7 @@ namespace Yoyo {
         std::vector<Type> operator()(SpawnExpression*);
         std::vector<Type> operator()(BlockExpression*);
         std::vector<Type> operator()(IfExpression*);
-        std::vector<Type> operator()(Expression*) { return {}; } // TODO
+        std::vector<Type> operator()(ConditionalExtraction*);
+        std::vector<Type> operator()(Expression*) { debugbreak(); return {}; } // TODO
     };
 }
