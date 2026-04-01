@@ -1,10 +1,13 @@
 #include "expression.h"
+#include "info_aggregator.h"
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "overload_resolve.h"
 #include "type_checker.h"
 #include <cmath>
+#include <iterator>
 #include <ranges>
+#include <type_traits>
 #define core_module irgen->module->engine->modules.at("core").get()
 namespace Yoyo
 {
@@ -1394,6 +1397,11 @@ namespace Yoyo
             grp.add_type(Type{ .name = "u64", .module = core_module });
             if(auto error = domain->add_and_intersect(std::move(grp), state))
                 irgen->error(*error);
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{type.name, domain->get_type_list(), state->current_constraint}
+            });
         }
         else {
             if (!type.is_integral()) irgen->error(Error(con.expr, "This type must be an integer"));
@@ -1416,6 +1424,11 @@ namespace Yoyo
                 }
             }
             return true;
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{type.name, state->get_type_domain(type)->get_type_list(), state->current_constraint}
+            });
         }
         else {
             // TODO
@@ -1432,6 +1445,11 @@ namespace Yoyo
             grp.add_type(Type{ .name = "f64", .module = core_module });
             if (auto error = domain->add_and_intersect(std::move(grp), state))
                 irgen->error(*error);
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{type.name, domain->get_type_list(), state->current_constraint}
+            });
         }
         else {
             if (!type.is_floating_point()) irgen->error(Error(con.expr, "This type must be an floating point"));
@@ -1446,6 +1464,11 @@ namespace Yoyo
             if(auto err = state->get_type_domain(type)->constrain_to_store(con.value)) {
                 irgen->error(err.value());
             }
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{type.name, state->get_type_domain(type)->get_type_list(), state->current_constraint}
+            });
         }
         else {
             // TODO
@@ -1598,11 +1621,21 @@ namespace Yoyo
                 // concrete types the validation can be handled by the state
                 if (auto err = state->get_type_domain(type1)->equal_constrain(std::move(type2)))
                     irgen->error(*err);
+                state->push_step(Info::TypeCheckerStateDiff{
+                    .op = Info::TypeCheckerStateDiff::Replace,
+                    .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                    .arg = Info::SubstitutionInformation{type1.name, state->get_type_domain(type1)->get_type_list(), state->current_constraint}
+                });
             }
             // ?1 and concrete <case 3>
             else {
                 if(auto err = state->get_type_domain(type1)->equal_constrain(std::move(type2)))
                     irgen->error(*err);
+                state->push_step(Info::TypeCheckerStateDiff{
+                    .op = Info::TypeCheckerStateDiff::Replace,
+                    .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                    .arg = Info::SubstitutionInformation{type1.name, state->get_type_domain(type1)->get_type_list(), state->current_constraint}
+                });
             }
         }
         else if (has_type_variable(type1)) {
@@ -1610,6 +1643,11 @@ namespace Yoyo
             if (is_type_variable(type2)) {
                 if (auto err = state->get_type_domain(type2)->equal_constrain(std::move(type1)))
                     irgen->error(*err);
+                state->push_step(Info::TypeCheckerStateDiff{
+                    .op = Info::TypeCheckerStateDiff::Replace,
+                    .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                    .arg = Info::SubstitutionInformation{type2.name, state->get_type_domain(type2)->get_type_list(), state->current_constraint}
+                });
             }
             // Something::<?1>::Type and Something::<?1>::Type <case 4>
             else if (has_type_variable(type2)) {
@@ -1638,6 +1676,11 @@ namespace Yoyo
             if (is_type_variable(type2)) {
                 if (auto err = state->get_type_domain(type2)->equal_constrain(std::move(type1)))
                     irgen->error(*err);
+                state->push_step(Info::TypeCheckerStateDiff{
+                    .op = Info::TypeCheckerStateDiff::Replace,
+                    .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                    .arg = Info::SubstitutionInformation{type2.name, state->get_type_domain(type2)->get_type_list(), state->current_constraint}
+                });
             }
             // concrete and Something::<?2>::Type (same as <case 5>)
             else if (has_type_variable(type2)) {
@@ -1710,6 +1753,11 @@ namespace Yoyo
                     if (auto err = domain->add_and_intersect(std::move(gp), state)) {
                         irgen->error(err.value());
                     }
+                    state->push_step(Info::TypeCheckerStateDiff{
+                        .op = Info::TypeCheckerStateDiff::Replace,
+                        .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                        .arg = Info::SubstitutionInformation{arg.name, domain->get_type_list(), state->current_constraint}
+                    });
                 }
                 else {
                     if (arg.is_mutable_reference() || arg.is_mutable) {
@@ -1733,6 +1781,11 @@ namespace Yoyo
                     if (auto err = domain->add_and_intersect(std::move(gp), state)) {
                         irgen->error(err.value());
                     }
+                    state->push_step(Info::TypeCheckerStateDiff{
+                        .op = Info::TypeCheckerStateDiff::Replace,
+                        .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                        .arg = Info::SubstitutionInformation{arg.name, domain->get_type_list(), state->current_constraint}
+                    });
                 }
                 else {
                     add_new_constraint(EqualConstraint{ callee.subtypes[0].deref(), arg.deref(), con.expr });
@@ -2216,12 +2269,28 @@ namespace Yoyo
         write_new_constraints_to = &constraints;
         // generate constraints
         std::visit(TypeChecker{std::nullopt, irgen, this}, decl->body->toVariant());
+        // Record initial state
+        info.initial_state = Info::RecordedTypeCheckerState {
+            .active_constraints = {},
+            .generated_constraints = {},
+            .subsitutions = {}
+        }; 
+        std::ranges::transform(constraints, std::back_inserter(info.initial_state.active_constraints), [](const TypeCheckerConstraint& con) {
+            auto constraint_get_expr_visitor = [](const auto& con) {
+                return con.expr;
+            };
+            return Info::ConstraintInformation{
+                .generated_by = std::visit(constraint_get_expr_visitor, con),
+                .constraint = std::make_unique<TypeCheckerConstraint>(con)
+            };
+        });
         // solve constraints
-        ConstraintSolver sv{ false, irgen, this };
+        sv = ConstraintSolver { false, irgen, this };
         // any generated constraints are written into a temporary buffer
         write_new_constraints_to = &sv.temp_constraints;
         bool has_change = true;
         while (has_change) {
+            info.iterations.push_back(info.steps.size());
             has_change = std::erase_if(constraints, [&sv](TypeCheckerConstraint& elem) {
                 return std::visit(sv, elem);
                 }) != 0;
@@ -3016,6 +3085,14 @@ namespace Yoyo
     }
     void ConstraintSolver::add_new_constraint(TypeCheckerConstraint con)
     {
+        state->push_step(Info::TypeCheckerStateDiff{
+            .op = Info::TypeCheckerStateDiff::Add,
+            .apply_to = Info::TypeCheckerStateDiff::GeneratedConstraints,
+            .arg = Info::ConstraintInformation{
+                .generated_by = state->current_constraint,
+                .constraint = std::make_unique<TypeCheckerConstraint>(con)
+            }
+        });
         temp_constraints.push_back(std::move(con));
     }
     Type TypeCheckerState::new_type_var()
@@ -3027,6 +3104,16 @@ namespace Yoyo
     }
     void TypeCheckerState::add_constraint(TypeCheckerConstraint c)
     {
+        if (write_new_constraints_to == &sv.temp_constraints) {
+            push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Add,
+                .apply_to = Info::TypeCheckerStateDiff::GeneratedConstraints,
+                .arg = Info::ConstraintInformation{
+                    .generated_by = current_constraint,
+                    .constraint = std::make_unique<TypeCheckerConstraint>(c)
+                }
+            });
+        }
         write_new_constraints_to->push_back(std::move(c));
     }
     void TypeCheckerState::unify_types(const Type& t1, const Type& t2, IRGenerator* irgen)
@@ -3291,6 +3378,9 @@ namespace Yoyo
     bool Domain::is_solved()
     {
         return concrete_types.types.size() == 1;
+    }
+    std::vector<Type> Domain::get_type_list() {
+        return concrete_types.types;
     }
     Type Domain::get_solution()
     {

@@ -5,6 +5,7 @@
 #include "expression.h"
 #include <charconv>
 #include <vector>
+#include "info_aggregator.h"
 namespace Yoyo
 {
     void YOYO_API debugbreak();
@@ -219,6 +220,7 @@ namespace Yoyo
         // have to use std::vector like this because I can't
         // forward declare using
         std::vector<TypeCheckerConstraint> apply_if_true;
+        ASTNode* expr;
     };
     using TypeCheckerConstraintUnderlyingType = std::variant<
         IsIntegerConstraint,
@@ -281,6 +283,7 @@ namespace Yoyo
         [[nodiscard]] std::optional<Error> equal_constrain(Type other);
         bool is_solved();
         Type get_solution();
+        std::vector<Type> get_type_list();
         Group concrete_types;
     };
     // This is a union-find
@@ -312,35 +315,6 @@ namespace Yoyo
         Domain* domain_of(uint32_t id) {
             return &domains[find(id)];
         }
-    };
-    struct TypeCheckerState {
-        std::vector<std::unordered_map<std::string, Type>> variables;
-        std::vector<TypeCheckerConstraint> constraints;
-        std::vector<TypeCheckerConstraint>* write_new_constraints_to;
-        UnificationTable tbl;
-        // the return type of the function being checked
-        Type return_type;
-        // Creates a new type variable
-        Type new_type_var();
-        // Adds a new constraint to be checked
-        // (should not be called by the constraint checker, it has a special method for that)
-        void add_constraint(TypeCheckerConstraint);
-        // given 2 type variables, make them equal to each other
-        void unify_types(const Type&, const Type&, IRGenerator* irgen);
-        // append a new block for variables
-        void push_variable_block();
-        // remove a block for variables
-        void pop_variable_block();
-        // register a new variable
-        void create_variable(std::string name, Type type);
-        // applies a type substitution if possible
-        // else converts it to its most solved form
-        Type best_repr(const Type&);
-        Domain* get_type_domain(const Type&);
-
-        void resolve_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature&);
-        // A variation of Type::is_non_owning that is guaranteed to not instantiate generics
-        bool is_non_owning(const Type&, IRGenerator*);
     };
     struct ConstraintSolver {
         bool has_error;
@@ -381,6 +355,39 @@ namespace Yoyo
         bool operator()(BorrowResultMutConstraint& con);
         bool operator()(IfEqualThenConstrain& con);
         void add_new_constraint(TypeCheckerConstraint);
+    };
+    struct TypeCheckerState {
+        Info::FunctionInformation& info;
+        uint32_t current_constraint;
+        std::vector<std::unordered_map<std::string, Type>> variables;
+        std::vector<TypeCheckerConstraint> constraints;
+        std::vector<TypeCheckerConstraint>* write_new_constraints_to;
+        UnificationTable tbl;
+        ConstraintSolver sv;
+        // the return type of the function being checked
+        Type return_type;
+        // Creates a new type variable
+        Type new_type_var();
+        void push_step(Info::TypeCheckerStateDiff diff);
+        // Adds a new constraint to be checked
+        // (should not be called by the constraint checker, it has a special method for that)
+        void add_constraint(TypeCheckerConstraint);
+        // given 2 type variables, make them equal to each other
+        void unify_types(const Type&, const Type&, IRGenerator* irgen);
+        // append a new block for variables
+        void push_variable_block();
+        // remove a block for variables
+        void pop_variable_block();
+        // register a new variable
+        void create_variable(std::string name, Type type);
+        // applies a type substitution if possible
+        // else converts it to its most solved form
+        Type best_repr(const Type&);
+        Domain* get_type_domain(const Type&);
+
+        void resolve_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature&);
+        // A variation of Type::is_non_owning that is guaranteed to not instantiate generics
+        bool is_non_owning(const Type&, IRGenerator*);
     };
 	struct TypeChecker
 	{   

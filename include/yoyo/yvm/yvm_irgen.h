@@ -6,6 +6,7 @@
 #include "yvm/native_type.h"
 #include "yoyo_vm/emitter.h"
 #include "yvm/yvm_module.h"
+#include "info_aggregator.h"
 namespace Yoyo {
 	class YVMIRGenerator : public IRGenerator {
     public:
@@ -26,7 +27,7 @@ namespace Yoyo {
             /// the std::pair<> is the variable name and the stack_addr and type of the variable
             std::vector<std::pair<std::string, VariableEntry>>
         > variables;
-        
+        Info::InformationAggregator agg;
 		std::string break_to;
 		std::string continue_to;
         virtual void doFunction(FunctionDeclaration* decl) override { (*this)(decl); };

@@ -70,8 +70,8 @@ namespace Yoyo
         CFGNode::prepareFromFunction(function_cfgs.emplace_back(), decl);
         function_cfgs.back().annotate();
 
-        
-        TypeCheckerState stt{};
+        auto& this_func_info = agg.function_info[fn_name];
+        TypeCheckerState stt{this_func_info};
         stt.resolve_function(decl, this, sig);
         // don't go further if type checking failed
         if (has_error) {

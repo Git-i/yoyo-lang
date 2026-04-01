@@ -24,6 +24,7 @@ Notes:
 
 Expressions have mostly the same syntax and precedence rules as C++.
 
-## Memory model
+## This branch
 
-Explainer on the way
+This branch allows the compiler to write its output to files that can be parsed
+by other programs
