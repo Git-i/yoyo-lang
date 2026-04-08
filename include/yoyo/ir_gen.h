@@ -28,6 +28,7 @@ namespace Yoyo
         std::vector<std::vector<UsingStatement*>> used_types;
         std::unique_ptr<Statement>* current_Statement; //we keep the current the statement in the case we want to steal it
         std::vector<CFGNodeManager> function_cfgs;
+        std::vector<std::pair<Error, std::string>>* write_errors_to = nullptr;
         std::string block_hash;
         bool has_error = false;
 

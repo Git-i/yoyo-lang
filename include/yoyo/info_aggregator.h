@@ -20,6 +20,11 @@ struct SubstitutionInformation {
     std::vector<Type> result_type;
     uint64_t generated_by;
 };
+struct UnificationInformation {
+    std::string parent_var;
+    std::string other_var;
+    uint64_t generated_by;
+};
 struct TypeCheckerStateDiff {
     enum Operator {
         Clear,
@@ -30,14 +35,15 @@ struct TypeCheckerStateDiff {
     enum Operand {
         ActiveConstraints,
         GeneratedConstraints,
-        Substitutions
+        Substitutions,
+        Unifications
     };
     Operator op;
     Operand apply_to;
     // this specifies what to apply the Operations
     // size_t is used to specify what constraint to target
     // std::string  specifies what substitution to target
-    std::variant<size_t, ConstraintInformation, SubstitutionInformation> arg;
+    std::variant<size_t, ConstraintInformation, SubstitutionInformation, UnificationInformation> arg;
     std::string to_string() {
         auto operator_string = [](Operator op) {
             switch (op) {
@@ -52,6 +58,7 @@ struct TypeCheckerStateDiff {
             case ActiveConstraints: return "Active Constraints";
             case GeneratedConstraints: return "Generated Constraints";
             case Substitutions: return "Substitutions";
+            case Unifications: return "Unifications";
             }
         };
         return std::format("Apply {} to {}", operator_string(op), operand_string(apply_to));

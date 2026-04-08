@@ -3,6 +3,7 @@
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "overload_resolve.h"
+#include "type.h"
 #include "type_checker.h"
 #include <cmath>
 #include <iterator>
@@ -1996,6 +1997,12 @@ namespace Yoyo
                     if(auto err = state->get_type_domain(state->tbl.id_to_type(id))->add_and_intersect(std::move(group), state)) {
                         irgen->error(err.value());
                     }
+                    auto type = state->tbl.id_to_type(id); auto domain = state->get_type_domain(type);
+                    state->push_step(Info::TypeCheckerStateDiff{
+                        .op = Info::TypeCheckerStateDiff::Replace,
+                        .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                        .arg = Info::SubstitutionInformation{type.name, domain->get_type_list(), state->current_constraint}
+                    });
                 }
                 // If we have only 1 match we constrain the subject types
                 if (num_matches == 1) {
@@ -2008,6 +2015,12 @@ namespace Yoyo
                         if(auto err = state->get_type_domain(state->tbl.id_to_type(id))->merge_intersect(std::move(domain), state)) {
                             irgen->error(err.value());
                         }
+                        auto type = state->tbl.id_to_type(id);
+                        state->push_step(Info::TypeCheckerStateDiff{
+                            .op = Info::TypeCheckerStateDiff::Replace,
+                            .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                            .arg = Info::SubstitutionInformation{type.name, state->get_type_domain(type)->get_type_list(), state->current_constraint}
+                        });
                     }
                     for (auto& con : var_to_var_constraints) {
                         add_new_constraint(std::move(con));
@@ -2046,7 +2059,12 @@ namespace Yoyo
             }
             std::erase_if(domain->concrete_types.types, [&intf, as_intf, &check_type_against_interface](Type& tp) { 
                 return !check_type_against_interface(intf, tp, as_intf, false); 
-                });
+                }); 
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{type.name, domain->get_type_list(), state->current_constraint}
+            });
             return true;
         }
         else {
@@ -2169,9 +2187,8 @@ namespace Yoyo
                 if (matches.size() == 1) {
                     if (take_action)
                     {
-                        std::ranges::move(std::move(l_collector), std::back_inserter(temp_constraints));
-                        std::ranges::move(std::move(r_collector), std::back_inserter(temp_constraints));
-
+                        for (auto& elem : l_collector) add_new_constraint(std::move(elem));
+                        for (auto& elem : r_collector) add_new_constraint(std::move(elem));
                         auto this_result = matches[0].second->result;
                         normalize_type(this_result, state, irgen, con.substitution_cache[matches[0].second->statement]);
                         std::visit([&matches, &con]<typename T>(T * expr) {
@@ -2209,6 +2226,15 @@ namespace Yoyo
                 { 
                     return !is_compatible(tp, right, con.op, false);
                 });
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{
+                    .type_var = left.name,
+                    .result_type = domain->get_type_list(),
+                    .generated_by = state->current_constraint
+                }
+            });
             return false;
         }
         else if (is_type_variable(right)) {
@@ -2219,6 +2245,15 @@ namespace Yoyo
                 {
                     return !is_compatible(left, tp, con.op, false);
                 });
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{
+                    .type_var = right.name,
+                    .result_type = domain->get_type_list(),
+                    .generated_by = state->current_constraint
+                }
+            });
             return false;
         }
         else {
@@ -2291,7 +2326,7 @@ namespace Yoyo
         bool has_change = true;
         while (has_change) {
             info.iterations.push_back(info.steps.size());
-            has_change = std::erase_if(constraints, [&sv](TypeCheckerConstraint& elem) {
+            has_change = std::erase_if(constraints, [this](TypeCheckerConstraint& elem) {
                 return std::visit(sv, elem);
                 }) != 0;
             // add newly generated constraints here
@@ -2615,14 +2650,14 @@ namespace Yoyo
                                 auto& [result_tp, constraints] = std::get<0>(op_result_immutable);
                                 // we cache this incase we have to revisit this constraint
                                 con.deref_result_opt = std::move(result_tp);
-                                std::ranges::move(std::move(constraints), std::back_inserter(temp_constraints));
+                                for (auto& elem : constraints) add_new_constraint(std::move(elem));
                             }
                         }
                     }
                     else {
                         auto& [result_tp, constraints] = std::get<0>(op_result);
                         con.deref_result_opt = std::move(result_tp);
-                        std::ranges::move(std::move(constraints), std::back_inserter(temp_constraints));
+                        for (auto& elem : constraints) add_new_constraint(std::move(elem));
                     }
                 }
                 else { con.deref_result_opt = state->best_repr(con.deref_result_opt.value()); }
@@ -2678,6 +2713,15 @@ namespace Yoyo
             auto error_type = state->new_type_var();
             grp.add_type(Type{ .name = "__res", .subtypes = { state->new_type_var(), error_type }});
             auto err = state->get_type_domain(type)->add_and_intersect(std::move(grp), state);
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{
+                    .type_var = type.name,
+                    .result_type = state->get_type_domain(type)->get_type_list(),
+                    .generated_by = state->current_constraint
+                }
+            });
             if (err) irgen->error(err.value());
             add_new_constraint(EqualConstraint{
                  type.is_mutable ? mutable_reference_to(error_type) : reference_to(error_type),
@@ -2709,6 +2753,15 @@ namespace Yoyo
             auto error_type = state->new_type_var();
             grp.add_type(Type{ .name = "__res", .subtypes = { state->new_type_var(), error_type } });
             auto err = state->get_type_domain(type)->add_and_intersect(std::move(grp), state);
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{
+                    .type_var = type.name,
+                    .result_type = state->get_type_domain(type)->get_type_list(),
+                    .generated_by = state->current_constraint
+                }
+            });
             if (err) irgen->error(err.value());
             add_new_constraint(EqualConstraint{
                  error_type,
@@ -2923,6 +2976,15 @@ namespace Yoyo
             if (auto error = state->get_type_domain(result)->add_and_intersect(std::move(possible_types), state)) {
                 irgen->error(error.value());
             }
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{
+                    .type_var = result.name,
+                    .result_type = state->get_type_domain(result)->get_type_list(),
+                    .generated_by = state->current_constraint
+                }
+            });
             return true;
         }
         else if (is_type_variable(subject)) {
@@ -2937,6 +2999,15 @@ namespace Yoyo
                     if (result.deref().name == "__slice" && type.is_array()) return false;
                     return true;
                     // check if it can match
+                });
+                state->push_step(Info::TypeCheckerStateDiff{
+                    .op = Info::TypeCheckerStateDiff::Replace,
+                    .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                    .arg = Info::SubstitutionInformation{
+                        .type_var = subject.name,
+                        .result_type = state->get_type_domain(subject)->get_type_list(),
+                        .generated_by = state->current_constraint
+                    }
                 });
                 if (domain->is_solved()) return true;
                 return false;
@@ -2973,6 +3044,7 @@ namespace Yoyo
             }
 
         }
+        return false;
     }
     bool ConstraintSolver::operator()(BorrowResultMutConstraint& con)
     {
@@ -3017,6 +3089,15 @@ namespace Yoyo
             if (auto error = state->get_type_domain(result)->add_and_intersect(std::move(possible_types), state)) {
                 irgen->error(error.value());
             }
+            state->push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Replace,
+                .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                .arg = Info::SubstitutionInformation{
+                    .type_var = result.name,
+                    .result_type = state->get_type_domain(result)->get_type_list(),
+                    .generated_by = state->current_constraint
+                }
+            });
             return true;
         }
         else if (is_type_variable(subject)) {
@@ -3032,6 +3113,15 @@ namespace Yoyo
                     return true;
                     // check if it can match
                     });
+                state->push_step(Info::TypeCheckerStateDiff{
+                    .op = Info::TypeCheckerStateDiff::Replace,
+                    .apply_to = Info::TypeCheckerStateDiff::Substitutions,
+                    .arg = Info::SubstitutionInformation{
+                        .type_var = subject.name,
+                        .result_type = state->get_type_domain(subject)->get_type_list(),
+                        .generated_by = state->current_constraint
+                    }
+                });
                 if (domain->is_solved()) return true;
                 return false;
             }
@@ -3067,7 +3157,7 @@ namespace Yoyo
             }
 
         }
-                                                                                                                             
+        return false;
     }
     bool ConstraintSolver::operator()(IfEqualThenConstrain& con)
     {
@@ -3079,7 +3169,7 @@ namespace Yoyo
             return false;
         }
         if (type1.full_name() == type2.full_name()) {
-            std::ranges::move(std::move(con.apply_if_true), std::back_inserter(temp_constraints));
+            for (auto& elem : con.apply_if_true) add_new_constraint(std::move(elem));
         } 
         return true;
     }
@@ -3119,8 +3209,22 @@ namespace Yoyo
     void TypeCheckerState::unify_types(const Type& t1, const Type& t2, IRGenerator* irgen)
     {
         if (is_type_variable(t1) && is_type_variable(t2)) {
-            tbl.unite(tbl.type_to_id(t1), tbl.type_to_id(t2), irgen, this);
+            auto result_id = tbl.unite(tbl.type_to_id(t1), tbl.type_to_id(t2), irgen, this);
+            auto result_str = tbl.id_to_type(result_id).name;
+            auto other_tp = result_str == t1.name ? t2.name : t1.name;
+            push_step(Info::TypeCheckerStateDiff{
+                .op = Info::TypeCheckerStateDiff::Add,
+                .apply_to = Info::TypeCheckerStateDiff::Unifications,
+                .arg = Info::UnificationInformation {
+                    .parent_var = result_str,
+                    .other_var = other_tp,
+                    .generated_by = current_constraint
+                }
+            });
         }
+    }
+    void TypeCheckerState::push_step(Info::TypeCheckerStateDiff diff) {
+        info.steps.push_back(std::move(diff));
     }
     void TypeCheckerState::push_variable_block()
     {

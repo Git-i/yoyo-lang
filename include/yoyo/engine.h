@@ -30,6 +30,7 @@ namespace Yoyo {
         void sleep(const std::chrono::duration<Rep, Period>& sleep_duration) { 
             sleep(std::chrono::duration_cast<std::chrono::milliseconds>(sleep_duration).count());
         }
+        const std::vector<std::unique_ptr<Statement>>* get_module_parse_output(const std::string& mod);
         void sleep(uint64_t milliseconds);
     };
 }

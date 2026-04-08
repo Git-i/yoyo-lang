@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ir_gen.h>
 #include <yvm/yvm_module.h>
 #include <parser.h>
@@ -124,23 +125,33 @@ namespace Yoyo
         return md.get();
     }
 
-    bool YVMEngine::compile()
+    void YVMEngine::removeModule(const std::string& module_name) {
+        if (!modules.contains(module_name)) return;
+        auto& md = modules[module_name];
+        vm.remove_module(&reinterpret_cast<YVMModule*>(md.get())->code);
+        modules.erase(module_name);
+    }
+
+    CompilationOutput YVMEngine::compile()
     {
         YVMIRGenerator irgen;
         auto keys_view = std::ranges::views::keys(modules);
         std::vector module_names(keys_view.begin(), keys_view.end());
         bool has_error = false;
+        CompilationOutput ret_val;
         for (auto& mod : modules)
         {
             auto yvm_mod = reinterpret_cast<YVMModule*>(mod.second.get());
             if (!sources.contains(mod.first)) continue;
+            auto& result = ret_val.compiled_modules[yvm_mod];
             auto src = sources.extract(mod.first);
             SourceView vw(src.mapped().first, mod.first);
             irgen.view = &vw;
-            bool this_success = irgen.GenerateIR(mod.first, std::move(src.mapped().second), yvm_mod, this);
-            has_error = !this_success || has_error;
+            bool this_success = irgen.GenerateIR(mod.first, std::move(src.mapped().second), yvm_mod, this, &result.errors);
+            result.successful = this_success;
+            result.compilation_info = std::move(irgen.agg);
         }
-        return !has_error;
+        return ret_val;
     }
     void YVMEngine::addDynamicLibrary(std::string_view path)
     {
@@ -281,5 +292,10 @@ namespace Yoyo
     void YVMEngine::prepareForExecution()
     {
         vm.link();
+    }
+    bool CompilationOutput::is_successful() {
+        return std::ranges::all_of(compiled_modules | std::views::values, [](const ModuleCompilationResult& in) {
+               return in.successful; 
+            });
     }
 }

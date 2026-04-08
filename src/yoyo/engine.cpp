@@ -1,6 +1,7 @@
 #include "engine.h"
 #include "yvm/yvm_module.h"
 #include <ir_gen.h>
+#include <memory>
 #include <module.h>
 #include <parser.h>
 #include <ranges>
@@ -40,6 +41,12 @@ namespace Yoyo
             Runtime::TimePoint::clock::now() + std::chrono::milliseconds(milliseconds)
         );
         mco_yield(cor);
+    }
+    const std::vector<std::unique_ptr<Statement>>* Engine::get_module_parse_output(const std::string& mod) {
+        if (sources.contains(mod)) {
+            return &sources.at(mod).second;
+        } 
+        return nullptr;
     }
 
 }

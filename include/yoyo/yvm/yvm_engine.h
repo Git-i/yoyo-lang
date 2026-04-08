@@ -1,8 +1,11 @@
 #pragma once
 #include "engine.h"
+#include "error.h"
 #include "yoyo_vm/vm.h"
+#include "info_aggregator.h"
 #include "unique_type_selector.h"
 #include <optional>
+#include <unordered_map>
 namespace Yoyo
 {
     struct YVMAppModule;
@@ -15,6 +18,15 @@ namespace Yoyo
     struct FiberData {
 
     };
+    struct CompilationOutput {
+        struct ModuleCompilationResult {
+            bool successful;
+            std::vector<std::pair<Error, std::string>> errors;
+            Info::InformationAggregator compilation_info;
+        };
+        std::unordered_map<ModuleBase*, ModuleCompilationResult> compiled_modules;
+        bool is_successful();
+    };
 	class YOYO_API YVMEngine : public Engine {
         size_t idx = 0;
     public:
@@ -22,7 +34,8 @@ namespace Yoyo
         ~YVMEngine() override;
         YVMAppModule* addAppModule(const std::string& name);
         ModuleBase* addModule(const std::string& module_name, std::string source);
-        bool compile();
+        void removeModule(const std::string& module_name);
+        CompilationOutput compile();
         void prepareForExecution();
         void addDynamicLibrary(std::string_view path);
         Fiber createFiber(const FunctionTy& fn);

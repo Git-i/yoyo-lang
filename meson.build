@@ -128,3 +128,4 @@ if gvz.found()
 endif
 irgen_test = executable('ir_gen_test', ['tests/ir_gen_test.cpp'], dependencies: irgen_deps, cpp_args: irgen_args)
 test('irgen', irgen_test, workdir: meson.current_source_dir() / 'tests')
+meson.override_dependency('yoyo-lang', yoyo_dep)

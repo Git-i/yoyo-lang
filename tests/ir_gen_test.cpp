@@ -156,7 +156,7 @@ main: fn(inp: i32) = {
     auto test_mod = addTestModule(&engine);
     test_mod->addFunction("(x: i32) -> u64", static_cast<uint64_t(*)(int32_t)>([](int32_t x) -> uint64_t { return x; }), "i32_to_u64");
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     for (auto i : std::views::iota(0, 10)) {
@@ -181,7 +181,7 @@ main: fn(val: u32) = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     for (uint32_t i : std::views::iota(0u, 10u)) {
         auto fib = createFiberFor(mod, "source::main");
@@ -214,7 +214,7 @@ main: fn = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
@@ -234,7 +234,7 @@ main: fn = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -265,7 +265,7 @@ main: fn = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -274,38 +274,12 @@ main: fn = {
 TEST_CASE("Test static array", "[array][static_array]")
 {
     std::string source(1 + R"(
-condition: fn -> bool = { return false; }
-Vector2: struct = {
-    x: i32, y: i32
-}
-// main: fn = {
-//     vec := Vector2{ .x = 10, .y = 30 };
-//     vec_ref: &mut Vector2 = &mut vec;
-//     vec_ref.x = 200;
-//
-//     field_ref: mut &mut i32 = &mut vec_ref.x;
-//     *field_ref = 300;
-//     field_ref = &mut vec.y;
-//     // field_ref should correctly resolve
-// }
-
-Shape: union = {
-    Circle: i32, Rectangle: Vector2
-}
+id: fn::<T>(input: T) -> T = return input;
 main: fn = {
-    val: mut = Shape::Circle(300);
-    int: i32 = 20;
-    int + 20;
-    val_ptr: &mut Shape = &mut val;
-    if |&mut num_ref| (val as Circle) {
-        *val_ptr = Shape::Rectangle(Vector2{.x = 20, .y = 40});
-   //     *num_ref = 200;
-    };
-    if |&vec_ref| (val as Rectangle) {
-        test::print("Rectangle: ${vec_ref.x}, ${vec_ref.y}");
-    };
-    return;
-}                       
+    val: i32 = 100;
+    val2 := 50;
+    val3 := id(val + val2);
+}
 )");
     Yoyo::YVMEngine engine;
     auto test_md = addTestModule(&engine);
@@ -313,7 +287,7 @@ main: fn = {
         for (auto i : std::views::iota(0, 10)) REQUIRE(i + 1 == reinterpret_cast<uint32_t*>(arr)[i]);
     }), "check_array");
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -362,7 +336,7 @@ main: fn = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -388,7 +362,7 @@ main: fn = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -411,7 +385,7 @@ main: fn -> i32 \ str = {
     auto test_mod = addTestModule(&engine);
     test_mod->addFunction("-> [i64; 10] \\ str", static_cast<void(*)(void*)>([](void* in) {}), "return_result");
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -447,7 +421,7 @@ main: fn -> bool = {
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -488,7 +462,7 @@ InterfaceWrapper: struct::<T> = {
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -520,7 +494,7 @@ Vec2: struct::<T> = {
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
-    REQUIRE(engine.compile());
+    REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
     if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
     auto fib = createFiberFor(mod, "source::main");
@@ -544,7 +518,7 @@ Vec2: struct::<T> = {
 //    Yoyo::YVMEngine engine;
 //    addTestModule(&engine);
 //    auto mod = engine.addModule("source", source);
-//    REQUIRE(engine.compile());
+//    REQUIRE(engine.compile().is_successful());
 //    engine.prepareForExecution();
 //    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
 //    auto fib = createFiberFor(mod, "source::main");

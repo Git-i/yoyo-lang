@@ -726,11 +726,12 @@ namespace Yoyo
 
 
 
-    bool YVMIRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng)
+    bool YVMIRGenerator::GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng, std::vector<std::pair<Error, std::string>>* write_errors_to)
     {
         block_hash = md->module_hash;
         module = md;
         builder = std::make_unique<Yvm::Emitter>();
+        this->write_errors_to = write_errors_to;
         pushScope();
         used_types.emplace_back();
         for (auto& stat : statements) {
@@ -738,6 +739,7 @@ namespace Yoyo
             std::visit(*this, stat->toVariant());
         }
         builder = nullptr;
+        write_errors_to = nullptr;
         return !has_error;
     }
 

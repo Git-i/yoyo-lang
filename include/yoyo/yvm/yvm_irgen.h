@@ -66,7 +66,7 @@ namespace Yoyo {
         void callDestructors(size_t depth = 0);
         void pushScope();
         void popScope();
-        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng);
+        bool GenerateIR(std::string_view name, std::vector<std::unique_ptr<Statement>> statements, YVMModule* md, Engine* eng, std::vector<std::pair<Error, std::string>>* write_errors_to);
         std::optional<Type> getVariableType(const std::string& name, Expression*) override;
 	};
     class YVMExpressionEvaluator
