@@ -203,7 +203,7 @@ namespace Yoyo
         for (size_t i = 0; i < types.size(); i++)
             this->module->aliases[hash + name + "::"].emplace(fn->clause.types[i], types[i]);
 
-        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn));
+        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<FunctionDeclaration*>(fn), nullptr);
         auto new_decl = reinterpret_cast<FunctionDeclaration*>(ptr.get());
         new_decl->name = name;
         auto old_hash = this->reset_hash();
@@ -232,7 +232,7 @@ namespace Yoyo
         for (size_t i = 0; i < types.size(); i++)
             this->module->aliases[hash + name + "::"].emplace(decl->clause.types[i], types[i]);
 
-        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<ClassDeclaration*>(decl));
+        auto ptr = StatementTreeCloner::copy_stat_specific(static_cast<ClassDeclaration*>(decl), nullptr);
         auto new_decl = reinterpret_cast<ClassDeclaration*>(ptr.get());
         new_decl->name = name;
         auto old_hash = this->reset_hash();
@@ -256,7 +256,7 @@ namespace Yoyo
         this->module = mod;
         for (size_t i = 0; i < types.size(); i++)
             this->module->aliases[block + name + "__"].emplace(decl->clause.types[i], types[i]);
-        auto new_statement = StatementTreeCloner::copy_stat_specific(static_cast<AliasDeclaration*>(decl));
+        auto new_statement = StatementTreeCloner::copy_stat_specific(static_cast<AliasDeclaration*>(decl), nullptr);
         auto alias = reinterpret_cast<AliasDeclaration*>(new_statement.get());
         alias->name = name;
         doAlias(alias);
@@ -268,7 +268,7 @@ namespace Yoyo
         for (auto& type : types) type.saturate(md, this);
         std::string name = decl->name + IRGenerator::mangleGenericArgs(types);
         if (auto [_, exists] = md->findInterface(block, name); exists) return;
-        auto new_interface = StatementTreeCloner::copy_stat_specific(static_cast<InterfaceDeclaration*>(decl));
+        auto new_interface = StatementTreeCloner::copy_stat_specific(static_cast<InterfaceDeclaration*>(decl), nullptr);
         auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.get());
         itf->name = name;
         //TODO interface visitors to automatically saturate signatures

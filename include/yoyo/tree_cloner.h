@@ -1,4 +1,5 @@
 #pragma once
+#include "ast_node.h"
 #include "expression.h"
 #include "statement.h"
 #include <memory>
@@ -36,8 +37,8 @@ namespace Yoyo
         std::unique_ptr<Expression> operator()(BlockExpression*);
         std::unique_ptr<Expression> operator()(ConditionalExtraction*);
 
-        static std::unique_ptr<Expression> copy_expr(Expression*);
-        static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
+        static std::unique_ptr<Expression> copy_expr(Expression*, ASTNode*);
+        static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&, ASTNode*);
     private:
         ExpressionTreeCloner() = default;
     };
@@ -68,18 +69,18 @@ namespace Yoyo
         std::unique_ptr<Statement> operator()(MacroDeclaration* decl);
         std::unique_ptr<Statement> operator()(UsingStatement* decl);
 
-        static std::unique_ptr<Statement> copy_stat(Statement*);
-        static std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&);
+        static std::unique_ptr<Statement> copy_stat(Statement*, ASTNode* parent);
+        static std::unique_ptr<Statement> copy_stat(std::unique_ptr<Statement>&, ASTNode* parent);
         template<typename T>
-        static std::unique_ptr<Statement> copy_stat_specific(T* val)
+        static std::unique_ptr<Statement> copy_stat_specific(T* val, ASTNode* parent)
         {
             auto cs = StatementTreeCloner{}(val);
             cs->beg = val->beg; cs->end = val->end;
             return cs;
         }
 
-        static std::unique_ptr<Expression> copy_expr(Expression*);
-        static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&);
+        static std::unique_ptr<Expression> copy_expr(Expression*, ASTNode* parent);
+        static std::unique_ptr<Expression> copy_expr(std::unique_ptr<Expression>&, ASTNode* parent);
     private:
         StatementTreeCloner() = default;
     };

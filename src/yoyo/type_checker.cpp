@@ -667,13 +667,6 @@ namespace Yoyo
         state->pop_variable_block();
     }
     FunctionType TypeChecker::operator()(IntegerLiteral* lit) const {
-        if (target) {
-            if (target->is_integral()) return { *target };
-            else {
-                irgen->error(Error(lit, "Cannot convert integer literal to " + target->full_name())); 
-                return Type{ "__error_type" };
-            }
-        }
         lit->evaluated_type = state->new_type_var();
         state->add_constraint(IsIntegerConstraint{lit->evaluated_type, lit });
         state->add_constraint(CanStoreIntegerConstraint{lit->evaluated_type, std::stoull(lit->text), lit });

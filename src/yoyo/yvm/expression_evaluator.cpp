@@ -617,7 +617,7 @@ namespace Yoyo
                 eval->irgen->saturateSignature(sig, op->module);
                 eval->irgen->block_hash.erase(og_size, fn_name.size() + 2);
 
-                FunctionDeclaration decl{ "", {}, StatementTreeCloner::copy_stat(target_ovl->statement->body) };
+                FunctionDeclaration decl{ "", {}, StatementTreeCloner::copy_stat(target_ovl->statement->body, nullptr) };
                 eval->irgen->doFunctionInternal(fn_name, sig, &decl);
                 std::swap(eval->irgen->block_hash, op->module->module_hash);
                 std::swap(eval->irgen->module, op->module);
