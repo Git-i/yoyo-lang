@@ -202,6 +202,7 @@ namespace Yoyo
         ce->beg = e->beg;
         ce->end = e->end;
         ce->parent = parent;
+        ce->evaluated_type = e->evaluated_type;
         return ce;
     }
 
@@ -267,6 +268,7 @@ namespace Yoyo
             copy_expr(stat->else_expr, nullptr));
         ret->condition->parent = ret->then_expr->parent = ret.get();
         if (ret->else_expr) ret->else_expr->parent = ret.get();
+        return ret;
     }
     std::unique_ptr<Statement> StatementTreeCloner::operator()(BreakStatement*)
     {

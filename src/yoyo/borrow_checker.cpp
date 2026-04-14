@@ -101,10 +101,13 @@ namespace Yoyo{
             // TODO
         }
         void BorrowCheckerEmitter::operator()(ReturnStatement * stat) {
-            current_block->add_instruction(stat->expression ?
-                new RetInstruction(std::visit(*this, stat->expression->toVariant())) :
-                new RetInstruction);
-            // Drop all the valid variables (TODO)
+            if (stat->expression) {
+                auto val = std::visit(*this, stat->expression->toVariant());
+                current_block->add_instruction(new RetInstruction(std::move(val)));
+            } else {
+                current_block->add_instruction(new RetInstruction);
+            }
+        // Drop all the valid variables (TODO)
         }
         void BorrowCheckerEmitter::operator()(ExpressionStatement * stat) {
             auto val = std::visit(*this, stat->expression->toVariant());

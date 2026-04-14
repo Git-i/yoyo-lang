@@ -9,6 +9,7 @@
 #include <vector>
 namespace Yoyo {
 struct TypeCheckerConstraint;
+struct Statement;
 namespace Info{
 
 struct ConstraintInformation {
@@ -69,6 +70,7 @@ struct RecordedTypeCheckerState {
     std::vector<ConstraintInformation> generated_constraints;
     std::unordered_map<std::string, SubstitutionInformation> subsitutions;
     // TODO: store unifications here
+    RecordedTypeCheckerState applied(const TypeCheckerStateDiff& diff);
     void apply(const TypeCheckerStateDiff& diff);
     std::string to_string() {
         std::string final_string;
@@ -83,6 +85,7 @@ struct FunctionInformation {
     std::vector<TypeCheckerStateDiff> steps;
     // this holds a list of where the diffs for each iteration start and stop
     std::vector<size_t> iterations;
+    std::unique_ptr<Statement> typedTree;
     std::string to_string() {
         std::string final_string = "Initial state:\n";
         final_string += initial_state.to_string() + "\n";

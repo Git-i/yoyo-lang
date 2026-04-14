@@ -1,4 +1,5 @@
 #include "expression.h"
+#include "tree_cloner.h"
 #include "yvm/yvm_irgen.h"
 
 #include <ranges>
@@ -77,7 +78,7 @@ namespace Yoyo
         if (has_error) {
             return;
         }
-        
+        this_func_info.typedTree = StatementTreeCloner::copy_stat(decl, nullptr);
         BorrowChecker::DomainCheckerState dm_stt{};
         auto current_function = dm_stt.check_function(decl, this, sig, &stt);
         std::cout << "[" << fn_name << "]" << '\n';
