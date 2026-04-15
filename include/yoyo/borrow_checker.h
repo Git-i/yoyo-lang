@@ -1,788 +1,837 @@
 #pragma once
-#include "statement.h"
-#include <string>
-#include <memory>
-#include <span>
-#include <unordered_map>
-#include <set>
-#include <unordered_set>
-#include <vector>
-#include <optional>
-#include <variant>
-#include <sstream>
 #include <map>
+#include <memory>
+#include <optional>
 #include <ranges>
+#include <set>
+#include <span>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <variant>
+#include <vector>
+
+#include "statement.h"
 namespace Yoyo {
-    void debugbreak(); // in src/yoyo/irgen.cpp
-    class IRGenerator;
-    struct TypeCheckerState;
-    class ASTNode;
-    namespace BorrowChecker
-    {
-        // The IR is SSA based and the only values either:
-        // - variable names
-        // - field accesses
-        struct Domain {
-            std::string name;
-            std::string to_string() const { return name; }
-            bool is_var() const { return name.starts_with("'?"); };
-            bool is_null() const { return name == "null"; }
-            bool operator==(const Domain& other) const { return name == other.name;  }
-        };
-        struct DomainHasher {
-            size_t operator()(const Domain& dom) const {
-                return std::hash<std::string>{}(dom.to_string());
-            }
-        };
-        class Value {
-        public:
-            std::string base_name;
-            // we could do with one name separated by .
-            // but I feel this would be easier to process
-            std::vector<std::string> subpaths;
-            static Value from(std::string&& name) {
-                Value val;
-                val.base_name = name;
-                bool first = true;
-                for (auto member : std::views::split(std::string_view{name}, std::string_view{"."})) {
-                    if(first) {
-                        val.base_name = std::string_view{member.begin(), member.end()};
-                        first = false;
-                    } else val.member(std::string(member.begin(), member.end()));
-                }
-                return val;
-            }
-            Value& member(std::string&& member_name)& {
-                subpaths.push_back(member_name);
-                return *this;
-            }
-            Value member(std::string&& member_name)&& {
-                subpaths.push_back(member_name);
-                return std::move(*this);
-            }
-            static Value empty() { return Value(); }
-            bool is_empty() { return base_name.empty(); }
-            // verified by the type system to never be borrowed immutably
-            // so we don't need much wrt to borrow checking these
-            static Value constant() { return Value::from("__constant__"); }
-            static Value function(std::string&& func_name) { return Value::from("__constant__fn__" + func_name); }
-            std::optional<std::string> function_name() {
-                using namespace std::literals::string_view_literals;
-                if (!base_name.starts_with("__constant__fn__")) return std::nullopt;
-                return std::string(base_name.begin() + "__constant__fn__"sv.size(), base_name.end());
-            }
-            std::string to_string() const {
-                std::string result = "%" + base_name;
-                for (auto& path : subpaths) result += "." + path;
-                return result;
-            }
-            Domain as_domain() {
-                auto final_str = base_name;
-                for (auto& subpath : subpaths) {
-                    final_str += "." + subpath;
-                }
-                return Domain{ std::move(final_str) };
-            }
-        };
-        class InstructionVariant;
-        struct BasicBlock;
-        class Instruction {
-        public:
-            ASTNode* origin;
-            virtual ~Instruction() = default;
-            virtual bool is_terminator() { return false; }
-            virtual std::span<BasicBlock*> children() { return {}; };
-            virtual InstructionVariant to_variant() = 0;
-        };
-        struct DomainCheckerState;
-        struct BasicBlock {
-            std::string debug_name;
-            std::vector<std::unique_ptr<Instruction>> instructions;
-            std::vector<BasicBlock*> preds;
-            std::string to_string(bool include_dfa = false, DomainCheckerState* state = nullptr);
-            void add_instruction(Instruction* inst, ASTNode* origin = nullptr) {
-                inst->origin = origin;
-                instructions.emplace_back(inst);
-            }
-            bool is_terminated() const {
-                return !instructions.empty() && instructions.back()->is_terminator();
-            }
-        };
-        // most instructions bind thier result into a variable, hence the "into" parameter
-        // Create a new primitive object
-        class NewPrimitiveInstruction : public Instruction {
-        public:
-            std::string into;
-            NewPrimitiveInstruction(std::string&& into) : into(into) {};
-            InstructionVariant to_variant() override;
-        };
-        class NewArrayInstruction : public Instruction {
-        public:
-            std::vector<Value> values;
-            std::string into;
-            InstructionVariant to_variant() override;
-            NewArrayInstruction(std::vector<Value>&& values, std::string&& into) :
-                values(values), into(into) {
-            }
-        };
-        class NewAggregateInstruction : public Instruction {
-        public:
-            std::string into;
-            Type type_name;
-            std::unordered_map<std::string, Value> values;
-            InstructionVariant to_variant() override;
-            NewAggregateInstruction(std::unordered_map<std::string, Value>&& values, Type&& type_name, std::string&& into)
-                : into(std::move(into)), type_name(std::move(type_name)), values(std::move(values)) {}
-        };
-        // borrow a value
-        class BorrowValueInstruction : public Instruction {
-        public:
-            Value val;
-            std::string into;
-            InstructionVariant to_variant() override;
-            BorrowValueInstruction(Value&& val, std::string&& into) : val(val), into(into) {};
-        };
-        class RelocateValueInstruction : public Instruction {
-        public:
-            Value val;
-            std::string into;
-            InstructionVariant to_variant() override;
-            RelocateValueInstruction(Value&& val, std::string&& into) : val(val), into(into) {};
-        };
-        class CallFunctionInstruction : public Instruction {
-        public:
-            std::vector<Value> val;
-            std::string function_name;
-            std::string into;
-            Type expected_return;
-            InstructionVariant to_variant() override;
-            CallFunctionInstruction(std::string&& function_name, std::string&& into, std::vector<Value>&& val, Type exp_r)
-                : val(val), function_name(function_name), into(into), expected_return(std::move(exp_r)) {
-            }
-        };
-        class MayStoreOperation;
-        class AssignInstruction : public Instruction {
-        public:
-            Value lhs;
-            Value rhs;
-
-            //used for lvalue assign (aka store)
-            Domain lhs_domain;
-            std::vector<MayStoreOperation*> may_stores;
-            Domain rhs_domain;
-
-            AssignInstruction(Value&& lhs, Value&& rhs) : lhs(lhs), rhs(rhs) {}
-            InstructionVariant to_variant() override;
-        };
-        class PhiInstruction : public Instruction {
-        public:
-            std::vector<Value> args;
-            std::string into;
-            InstructionVariant to_variant() override;
-            PhiInstruction(std::vector<Value>&& args, std::string&& into) : args(args), into(into) {};
-
-        };
-        class DomainPhiInstruction : public Instruction {
-        public:
-            std::vector<Domain> args;
-            std::string into;
-            InstructionVariant to_variant() override;
-            DomainPhiInstruction(std::vector<Domain>&& args, std::string&& into) : args(args), into(into) {};
-        };
-        // These instructions must be at the end of each basic block
-        class RetInstruction : public Instruction {
-        public:
-            std::optional<Value> ret_val;
-            InstructionVariant to_variant() override;
-            RetInstruction() : ret_val(std::nullopt) {}
-            RetInstruction(Value&& val) : ret_val(val) {}
-            RetInstruction(std::optional<Value>&& val) : ret_val(val) {}
-            bool is_terminator() override { return true; }
-        };
-        class BrInstruction : public Instruction {
-        public:
-            BasicBlock* next;
-            InstructionVariant to_variant() override;
-            BrInstruction(BasicBlock* next) : next(next) {};
-            bool is_terminator() override { return true; }
-            std::span<BasicBlock*> children() override { return std::span{ &next, 1 }; };
-        };
-        class CondBrInstruction : public Instruction {
-        public:
-            std::vector<BasicBlock*> options;
-            Value br_on;
-            InstructionVariant to_variant() override;
-            bool is_terminator() override { return true; }
-            std::span<BasicBlock*> children() override { return options; };
-            CondBrInstruction(std::vector<BasicBlock*>&& options, Value&& br_on) : options(options), br_on(br_on) {};
-        };
-        class DomainSubsetConstraint : public Instruction {
-        public:
-            Domain super;
-            Domain sub;
-
-            // only used when sub is an lvalue
-            std::string lvalue_domain;
-            DomainSubsetConstraint(Domain&& super, Domain&& sub) : super(super), sub(sub) {}
-            InstructionVariant to_variant() override;
-        };
-        class DomainDependenceEdgeConstraint : public Instruction {
-        public:
-            Domain d1;
-            Domain d2;
-            DomainDependenceEdgeConstraint(Domain&& d1, Domain&& d2) : d1(std::move(d1)), d2(std::move(d2)) {}
-            InstructionVariant to_variant() override;
-        };
-        class DomainExtensionConstraint : public Instruction {
-        public:
-            Domain super;
-            Domain sub;
-            // only used in the SSA phase
-            Domain old_super;
-            DomainExtensionConstraint(Domain&& super, Domain&& sub) : super(super), sub(sub) {}
-            InstructionVariant to_variant() override;
-        };
-        class DerefOperation : public Instruction {
-        public:
-            Value reference;
-            Domain ref_domain;
-            std::string into;
-            DerefOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
-            InstructionVariant to_variant() override;
-        };
-        class MayLoadOperation;
-        class DerefLoadOperation : public Instruction {
-        public:
-            Value reference;
-            Domain ref_domain;
-            std::vector<MayLoadOperation*> may_loads;
-            std::vector<Instruction*> definer;
-            std::string into;
-            DerefLoadOperation(Value&& ref, std::string into) : reference(std::move(ref)), into(std::move(into)) {}
-            InstructionVariant to_variant() override;
-        };
-        class MayStoreOperation : public Instruction {
-        public:
-            Instruction* origin;
-            Domain old_domain;
-            Domain new_domain;
-            MayStoreOperation(Instruction* origin, Domain&& old_domain, Domain&& new_domain)
-                : origin(origin),
-                old_domain(std::move(old_domain)),
-                new_domain(std::move(new_domain)) {}
-            InstructionVariant to_variant() override;
-        };
-        class MayLoadOperation : public Instruction {
-        public:
-            Instruction* origin;
-            Domain domain;
-            MayLoadOperation(Instruction* origin, Domain&& domain)
-                : origin(origin),
-                domain(std::move(domain)) {}
-            InstructionVariant to_variant() override;
-        };
-        class DropInstruction : public Instruction {
-        public:
-            Value val; // I don't think `val` here is allowed to have subpaths
-            DropInstruction(Value&& val) : val(std::move(val)) {}
-            InstructionVariant to_variant() override;
-        };
-        using InstructionVariantBase = std::variant<
-            CondBrInstruction*,
-            BrInstruction*,
-            RetInstruction*,
-            PhiInstruction*,
-            AssignInstruction*,
-            CallFunctionInstruction*,
-            RelocateValueInstruction*,
-            NewArrayInstruction*,
-            NewPrimitiveInstruction*,
-            BorrowValueInstruction*,
-            DomainSubsetConstraint*,
-            DomainDependenceEdgeConstraint*,
-            DomainExtensionConstraint*,
-            DomainPhiInstruction*,
-            DerefLoadOperation*,
-            DerefOperation*,
-            MayStoreOperation*,
-            MayLoadOperation*,
-            NewAggregateInstruction*,
-            DropInstruction*
-        >;
-        class InstructionVariant : public InstructionVariantBase {
-        public:
-            template<typename T>
-            InstructionVariant(T* val) : InstructionVariantBase(val) {}
-        };
-
-        struct BorrowCheckerFunction {
-            std::vector<std::unique_ptr<BasicBlock>> blocks;
-            size_t idx = 0;
-            BasicBlock* new_block(std::string debug_name) {
-                return blocks.emplace_back(new BasicBlock{ .debug_name = debug_name + std::to_string(idx++) }).get();
-            }
-            std::string to_string(bool add_dfa = false, DomainCheckerState* state = nullptr) {
-                std::string out;
-                for (auto& block : blocks) {
-                    out += block->to_string(add_dfa, state) + "\n\n";
-                }
-                return out;
-            }
-        };
-
-
-        class BorrowCheckerEmitter {
-            IRGenerator* irgen;
-            TypeCheckerState* stt;
-            // std::vector -- each block
-            //    std::vector -- each variable
-            //        std::pair -- variable entry
-            //            std::string -- variable name
-            //            std::string -- borrow checker id
-
-            size_t counter = 0;
-            std::vector<std::vector<std::pair<std::string, std::string>>> variables;
-            BorrowCheckerFunction* function;
-            BasicBlock* current_block;
-            std::string temporary_name() { return "__tmp" + std::to_string(counter++); }
-            std::string name_based_on(std::string_view other) { return std::to_string(counter++) + std::string(other); }
-            void destroy_and_remove_block() {
-                for (auto& [name, id] : variables.back() | std::views::reverse) {
-                    drop_object(Value::from(std::move(id)));
-                }
-                variables.pop_back();
-            }
-            void drop_object(Value&& val) {
-                current_block->add_instruction(new DropInstruction(std::move(val)));
-            }
-        public:
-            friend  class LValueEmitter;
-            BorrowCheckerEmitter(
-                IRGenerator* irgen,
-                TypeCheckerState* stt,
-                BorrowCheckerFunction* function,
-                BasicBlock* current_block) :
-                irgen(irgen),
-                stt(stt),
-                variables(1),
-                function(function),
-                current_block(current_block) {
-            }
-            void operator()(FunctionDeclaration*);
-            void operator()(ClassDeclaration*);
-            void operator()(VariableDeclaration*);
-            void operator()(WhileStatement*);
-            void operator()(ForStatement*);
-            void operator()(ReturnStatement*);
-            void operator()(ExpressionStatement*);
-            void operator()(EnumDeclaration*);
-            void operator()(UsingStatement*);
-            void operator()(ModuleImport*);
-            void operator()(WithStatement*);
-            void operator()(OperatorOverload*);
-            void operator()(GenericFunctionDeclaration*);
-            void operator()(AliasDeclaration*);
-            void operator()(GenericAliasDeclaration*);
-            void operator()(GenericClassDeclaration*);
-            void operator()(InterfaceDeclaration*);
-            void operator()(BreakStatement*);
-            void operator()(ContinueStatement*);
-            void operator()(ConstantDeclaration*);
-            void operator()(CImportDeclaration*);
-            void operator()(UnionDeclaration*);
-            void operator()(MacroDeclaration*);
-
-            Value operator()(ConditionalExtraction*);
-            Value operator()(IfExpression*);
-            Value operator()(BlockExpression*);
-            Value operator()(IntegerLiteral*);
-            Value operator()(BooleanLiteral*);
-            Value operator()(TupleLiteral*);
-            Value operator()(ArrayLiteral*);
-            Value operator()(RealLiteral*);
-            Value operator()(StringLiteral*);
-            Value operator()(NameExpression*);
-            Value operator()(GenericNameExpression*);
-            Value operator()(PrefixOperation*);
-            Value operator()(BinaryOperation*);
-            Value operator()(GroupingExpression*);
-            Value operator()(LogicalOperation*);
-            Value operator()(PostfixOperation*);
-            Value operator()(CallOperation*);
-            Value operator()(SubscriptOperation*);
-            Value operator()(LambdaExpression*);
-            Value operator()(ScopeOperation*);
-            Value operator()(ObjectLiteral*);
-            Value operator()(NullLiteral*);
-            Value operator()(AsExpression*);
-            Value operator()(CharLiteral*);
-            Value operator()(GCNewExpression*);
-            Value operator()(MacroInvocation*);
-            Value operator()(SpawnExpression*);
-            Value operator()(TryExpression*);
-        };
-        class LValueEmitter {
-        public:
-            BorrowCheckerEmitter& em;
-            Value do_expr(Expression* expr);
-        };
-        struct DomainCheckerState;
-
-        struct BorrowCheckerType {
-            enum TypeType {
-                Primitive = 0, // Unit type cant be divided any further (stability doesn't matter)
-                Aggregate, // Product type (stable)
-                Union, // Sum type (unstable)
-                // I'm building these two as primitves to make my life easier
-                UniquePtr, // Owning poiner type
-                Array, // Owning Heap type with many elems
-                RefPtr, // Non owning pointer type
-                LValue,
-                Named, // Named aggregate types (correspond to the type system) support types that reference themselves
-            };
-            struct PrimitiveDetails {};
-            // because std::map is wierd
-            struct FieldMap: std::map<std::string, BorrowCheckerType> {
-                FieldMap(const FieldMap&) = delete;
-                FieldMap() = default;
-                FieldMap(FieldMap&&) noexcept = default;
-                FieldMap& operator=(const FieldMap&) = delete;
-                FieldMap& operator=(FieldMap&&) noexcept = default;
-            };
-            struct AggregateDetails {
-                AggregateDetails() = default;
-                AggregateDetails(AggregateDetails&&) noexcept = default;
-                AggregateDetails& operator=(AggregateDetails&&) noexcept = default;
-
-                AggregateDetails(const AggregateDetails&) = delete;
-                AggregateDetails& operator=(const AggregateDetails&) = delete;
-
-                AggregateDetails(FieldMap&& fields) : fields(std::move(fields)) {}
-                FieldMap fields;
-            };
-            struct UnionDetails {
-                UnionDetails() = default;
-                UnionDetails(const UnionDetails&) = delete;
-                UnionDetails& operator=(const UnionDetails&) = delete;
-
-                UnionDetails(UnionDetails&&) noexcept = default;
-                UnionDetails& operator=(UnionDetails&&) noexcept = default;
-
-                UnionDetails(FieldMap&& fields) : fields(std::move(fields)) {}
-                FieldMap fields;
-            };
-            struct UniquePtrDetails {
-                UniquePtrDetails() = default;
-                UniquePtrDetails(const UniquePtrDetails&) = delete;
-                UniquePtrDetails& operator=(const UniquePtrDetails&) = delete;
-
-                UniquePtrDetails(UniquePtrDetails&&) noexcept = default;
-                UniquePtrDetails& operator=(UniquePtrDetails&&) noexcept = default;
-
-                UniquePtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
-                std::unique_ptr<BorrowCheckerType> subtype;
-            };
-            struct ArrayDetails {
-                ArrayDetails() = default;
-                ArrayDetails(const ArrayDetails&) = delete;
-                ArrayDetails& operator=(const ArrayDetails&) = delete;
-
-                ArrayDetails& operator=(ArrayDetails&&) noexcept = default;
-                ArrayDetails(ArrayDetails&&) noexcept = default;
-
-                ArrayDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
-                std::unique_ptr<BorrowCheckerType> subtype;
-            };
-            struct RefPtrDetails {
-                RefPtrDetails() = default;
-                RefPtrDetails(const RefPtrDetails&) = delete;
-                RefPtrDetails& operator=(const RefPtrDetails&) = delete;
-
-                RefPtrDetails(RefPtrDetails&&) noexcept = default;
-                RefPtrDetails& operator=(RefPtrDetails&&) noexcept = default;
-                RefPtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
-                std::unique_ptr<BorrowCheckerType> subtype;
-            };
-            struct LValueDetails {
-                LValueDetails() = default;
-                LValueDetails(const LValueDetails&) = delete;
-                LValueDetails& operator=(const LValueDetails&) = delete;
-
-                LValueDetails(LValueDetails&&) noexcept = default;
-                LValueDetails& operator=(LValueDetails&&) noexcept = default;
-                LValueDetails(std::unique_ptr<BorrowCheckerType>&& subtype) : subtype(std::move(subtype)) {}
-                std::unique_ptr<BorrowCheckerType> subtype;
-                std::string origin; // the origin of the lvalue (used for error reporting)
-                // populated when lvalues are used in field access ex: (*a).f1.f2 = value;
-                std::vector<std::string> subpath;
-            };
-            struct NamedTypeDetails {
-                NamedTypeDetails() = default;
-                NamedTypeDetails(const NamedTypeDetails&) = delete;
-                NamedTypeDetails& operator=(const NamedTypeDetails&) = delete;
-
-                NamedTypeDetails(NamedTypeDetails&&) noexcept = default;
-                NamedTypeDetails& operator=(NamedTypeDetails&&) noexcept = default;
-                NamedTypeDetails(std::string full_type_name);
-                NamedTypeDetails(Type&& tp) : actual_type(std::move(tp)) {};
-                Type actual_type;
-                std::unordered_map<std::string, Domain> field_domains;
-            };
-            BorrowCheckerType() = default;
-            BorrowCheckerType(const BorrowCheckerType&) = delete;
-            BorrowCheckerType(BorrowCheckerType&&) noexcept = default;
-            BorrowCheckerType& operator=(BorrowCheckerType&&) noexcept = default;
-            BorrowCheckerType& operator=(const BorrowCheckerType&) = delete;
-            std::variant<
-                PrimitiveDetails,
-                AggregateDetails,
-                UnionDetails,
-                UniquePtrDetails,
-                ArrayDetails,
-                RefPtrDetails,
-                LValueDetails,
-                NamedTypeDetails> details;
-            // the "bool" field marks if the domain is bidirectional
-            // for example &'a &'b i32, 'a is not bidirectional because
-            // if the reference were to be duplicated the new 'a can expand freely
-            // but the new 'b cannot expand freely and must remainn equal to the original 'b
-            std::vector<std::pair<Domain, bool>> domains;
-
-            // Bring up all nexted domains
-            void normalize();
-            // Get a borrowed version of a type into the specified domain
-            BorrowCheckerType borrowed(DomainCheckerState*) const;
-            // Make a new type with fresh domains
-            BorrowCheckerType cloned(DomainCheckerState*) const;
-            // Duplicate a type with the same domains
-            BorrowCheckerType moved(DomainCheckerState*) const;
-            BorrowCheckerType deref() const;
-            // create a new primitive type
-            static BorrowCheckerType new_primitive();
-            static BorrowCheckerType new_aggregate_from(Type&&);
-            // does not change domains of the provided type
-            static BorrowCheckerType new_array_of(BorrowCheckerType&&);
-
-            std::string to_string() const;
-        };
-        // Maps "Value"s to types
-        struct ValueTypeMapping: std::unordered_map<std::string, BorrowCheckerType> {
-            ValueTypeMapping(const ValueTypeMapping&) = delete;
-            ValueTypeMapping() = default;
-            ValueTypeMapping(ValueTypeMapping&&) noexcept = default;
-            std::string to_string();
-        };
-        // Types the CFG and inserts domains
-        class DomainVariableInserter {
-        public:
-            // insert instructions to satisfy domain relationships when left is assiged right
-            void add_assign_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
-            // insert instructions to satisfy domain relationships when left is extended to store right (like array push)
-            void add_extend_constraints_between_types(const BorrowCheckerType&, const BorrowCheckerType&);
-            void add_extend_constraints_between_multiple_types(const BorrowCheckerType&, std::ranges::input_range auto const&);
-            void initialize_domains_to_null(const BorrowCheckerType&);
-            using InstructionListTy = decltype(BasicBlock::instructions);
-            using BlockIteratorTy = InstructionListTy::iterator;
-
-            DomainCheckerState* state;
-            InstructionListTy& instructions;
-            BlockIteratorTy current_position;
-
-            BlockIteratorTy operator()(CondBrInstruction*);
-            BlockIteratorTy operator()(BrInstruction*);
-            BlockIteratorTy operator()(RetInstruction*);
-            BlockIteratorTy operator()(PhiInstruction*);
-            BlockIteratorTy operator()(AssignInstruction*);
-            BlockIteratorTy operator()(CallFunctionInstruction*);
-            BlockIteratorTy operator()(RelocateValueInstruction*);
-            BlockIteratorTy operator()(NewAggregateInstruction*);
-            BlockIteratorTy operator()(NewArrayInstruction*);
-            BlockIteratorTy operator()(NewPrimitiveInstruction*);
-            BlockIteratorTy operator()(BorrowValueInstruction*);
-            BlockIteratorTy operator()(DerefOperation*);
-            BlockIteratorTy operator()(DerefLoadOperation*);
-            BlockIteratorTy operator()(DropInstruction*);
-            BlockIteratorTy operator()(DomainSubsetConstraint*) { debugbreak(); return current_position; }
-            BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) { debugbreak(); return current_position; }
-            BlockIteratorTy operator()(DomainExtensionConstraint*) { debugbreak(); return current_position; }
-            BlockIteratorTy operator()(DomainPhiInstruction*) { debugbreak(); return current_position; }
-            BlockIteratorTy operator()(MayStoreOperation*) { debugbreak(); return current_position; }
-            BlockIteratorTy operator()(MayLoadOperation*) { debugbreak(); return current_position; }
-        };
-        struct PointsToGraph {
-            std::unordered_map<std::string, std::unordered_set<std::string>> pointee_pairs;
-            bool add_edge(std::string domain, std::string pointee) {
-                if (pointee_pairs[domain].contains(pointee)) return false;
-                pointee_pairs[domain].insert(std::move(pointee));
-                return true;
-            }
-            std::unordered_set<std::string>& get_pointees_of(std::string domain) {
-                return pointee_pairs[domain];
-            }
-            std::string to_graphviz() {
-                std::ostringstream out;
-                out << "digraph PointeeGraph " << " {\n";
-                for (const auto& [src, targets] : pointee_pairs) {
-                    if (targets.empty()) {
-                        out << "    \"" << src << "\";\n";
-                    }
-                    else {
-                        for (const auto& dst : targets) {
-                            out << "    \"" << src << "\" -> \"" << dst << "\";\n";
-                        }
-                    }
-                }
-                out << "}\n";
-                auto out_str = out.str();
-                return out_str;
-            }
-        };
-        class InclusionPointerAnalyser {
-        public:
-            PointsToGraph& ptg;
-            DomainCheckerState* state;
-
-            bool operator()(CondBrInstruction*) { return false; }
-            bool operator()(BrInstruction*) { return false; }
-            bool operator()(RetInstruction*) { return false; }
-            bool operator()(PhiInstruction*) { return false; }
-            bool operator()(AssignInstruction*);
-            bool operator()(DropInstruction*) { return false; }
-            bool operator()(CallFunctionInstruction*) { return false; }
-            bool operator()(RelocateValueInstruction*) { return false; }
-            bool operator()(NewArrayInstruction*) { return false; }
-            bool operator()(NewPrimitiveInstruction*) { return false; }
-            bool operator()(BorrowValueInstruction*) { return false; }
-            bool operator()(DerefOperation*) { return false; }
-            bool operator()(DerefLoadOperation*);
-            bool operator()(DomainSubsetConstraint* con);
-            bool operator()(DomainDependenceEdgeConstraint*) { return false; }
-            bool operator()(DomainExtensionConstraint*);
-            bool operator()(DomainPhiInstruction*) { return false; }
-            bool operator()(MayStoreOperation*) { return false; }
-            bool operator()(MayLoadOperation*) { return false; }
-            bool operator()(NewAggregateInstruction*) { return false; }
-        };
-        struct DominatorList {
-            // stores pairs (a, b) where b = idom(a)
-            // we can probably find all d
-            std::unordered_map<BasicBlock*, BasicBlock*> idoms;
-            std::vector<BasicBlock*> get_all_dominators_of(BasicBlock* input) const;
-            void register_for(BasicBlock* node, BasicBlock* dominator) {
-                if (idoms.contains(node)) debugbreak();
-                idoms[node] = dominator;
-            }
-        };
-        // produces unique names for each variable instance
-        // used solely for the ssa related stuff
-        struct ValueProducer {
-            std::unordered_map<std::string, size_t> var_map;
-            std::string name_for(const std::string& val);
-        };
-        using UseStorageTy = std::unordered_map<
-            BasicBlock*,
-            std::unordered_map<std::string, std::string>>;
-        // Represents the results of our points to analysis
-        struct PointeeGraph {
-            std::unordered_map<std::string, std::unordered_set<Domain, DomainHasher>> edges;
-            void add_edge(const std::string& edge, Domain&& dom) {
-                edges[edge].insert(std::move(dom));
-            }
-            void initialize(const std::string& edge) {
-                edges[edge];
-            }
-            std::unordered_set<Domain, DomainHasher>& pointees_of(const std::string& dom) {
-                return edges.at(dom);
-            }
-        };
-
-
-        struct DefUseGraph {
-            struct ElemHash {
-            public:
-                std::size_t operator()(const std::pair<Instruction*, std::string>& x) const
-                {
-                    return std::hash<Instruction*>()(x.first) ^ std::hash<std::string>()(x.second);
-                }
-            };
-            std::unordered_map<
-                Instruction*,
-                std::unordered_set<std::pair<Instruction*, std::string>, ElemHash>> edges;
-            std::string to_graphviz();
-        };
-        struct TopLevelPointsToGraph {
-            std::unordered_map<std::string, std::unordered_set<std::string>> domain_to_node;
-            enum AdditionStatus: bool { Changed = 1, Unchanged = 0};
-            AdditionStatus add_new_relation(const std::string& domain, const std::string& node) {
-                auto& entry = domain_to_node[domain];
-                if(entry.contains(node)) return Unchanged;
-                entry.insert(node);
-                return Changed;
-            }
-            std::unordered_set<std::string>& get_pointees_of(const std::string& dom) {
-                return domain_to_node[dom];
-            }
-            std::string to_graphviz();
-        };
-        // This class uses all the gathered information to determine whether a function is safe or not
-        struct BorrowCheckVisitor {
-            DomainCheckerState* state;
-            IRGenerator* irgen;
-            // since I've decided to go with c++ copy and "drop at the end of block" semantics, I don't think I need
-            // to check for dropped value usage in every instruction
-            void operator()(Instruction*) {  }
-            void operator()(DerefLoadOperation*);
-            void operator()(DerefOperation*);
-        };
-        // used primarily for error reporting, It contains information about why a domain was killed
-        struct KillReason {
-            // is the kill from a re-assignment or from a drop?
-            enum InstructionSource { Assign, Drop };
-            InstructionSource source;
-            // what value was assigned to/dropped
-            std::string affected_value;
-            // what pointee made this eligible for killing
-            std::string bad_pointee;
-            // what instruction did the assign/drop take place
-            ASTNode* killing_instruction;
-            // for assigns, if it comes from an lvalue this is the value that was dereferenced
-            std::optional<std::string> lvalue_source;
-        };
-        struct DomainCheckerState {
-            // TODO make the union find
-            size_t last_id = 0;
-            ValueTypeMapping type_mapping;
-            Domain new_domain_var();
-            void register_value_base_type(const std::string& value, BorrowCheckerType&&);
-            BorrowCheckerType type_to_borrow_checker_type(const Type& type);
-            const BorrowCheckerType& get_value_type(const Value& value);
-            const BorrowCheckerType& field_lookup(const BorrowCheckerType& type, const std::string& base, std::span<const std::string> fields); 
-            DominatorList dominators;
-            BorrowCheckerFunction* func;
-            BasicBlock* entry_block;
-            IRGenerator* irgen;
-            PointsToGraph ptgraph;
-            DefUseGraph def_use_graph;
-            TopLevelPointsToGraph final_ptg;
-            // stores field information for named types
-            ValueTypeMapping named_value_type_cache;
-            std::unordered_map<Instruction*, std::set<std::string>> dfa_in;
-            std::unordered_map<Instruction*, std::set<std::string>> dfa_out;
-            std::unordered_map<std::string, KillReason> domain_kill_reason; 
-
-            std::unique_ptr<BorrowCheckerFunction> check_function(FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig, TypeCheckerState* stt);
-            // doesn't do anything for now
-            void build_dominators();
-            // assigns predecessors to blocks
-            void calc_block_preds();
-            // transforms domain-related code to SSA
-            void transform_to_ssa();
-            // remove all "DomainDependenceEdge" constraints
-            // and add new assignments
-            void clear_dependencies();
-            void build_dug();
-            void do_primary_analysis();
-            void do_domain_validity_analysis(BasicBlock* entry);
-        };
+void debugbreak();  // in src/yoyo/irgen.cpp
+class IRGenerator;
+struct TypeCheckerState;
+class ASTNode;
+namespace BorrowChecker {
+// The IR is SSA based and the only values either:
+// - variable names
+// - field accesses
+struct Domain {
+    std::string name;
+    std::string to_string() const { return name; }
+    bool is_var() const { return name.starts_with("'?"); };
+    bool is_null() const { return name == "null"; }
+    bool operator==(const Domain& other) const { return name == other.name; }
+};
+struct DomainHasher {
+    size_t operator()(const Domain& dom) const {
+        return std::hash<std::string>{}(dom.to_string());
     }
-}
+};
+class Value {
+public:
+    std::string base_name;
+    // we could do with one name separated by .
+    // but I feel this would be easier to process
+    std::vector<std::string> subpaths;
+    static Value from(std::string&& name) {
+        Value val;
+        val.base_name = name;
+        bool first = true;
+        for (auto member :
+             std::views::split(std::string_view{name}, std::string_view{"."})) {
+            if (first) {
+                val.base_name = std::string_view{member.begin(), member.end()};
+                first = false;
+            } else
+                val.member(std::string(member.begin(), member.end()));
+        }
+        return val;
+    }
+    Value& member(std::string&& member_name) & {
+        subpaths.push_back(member_name);
+        return *this;
+    }
+    Value member(std::string&& member_name) && {
+        subpaths.push_back(member_name);
+        return std::move(*this);
+    }
+    static Value empty() { return Value(); }
+    bool is_empty() { return base_name.empty(); }
+    // verified by the type system to never be borrowed immutably
+    // so we don't need much wrt to borrow checking these
+    static Value constant() { return Value::from("__constant__"); }
+    static Value function(std::string&& func_name) {
+        return Value::from("__constant__fn__" + func_name);
+    }
+    std::optional<std::string> function_name() {
+        using namespace std::literals::string_view_literals;
+        if (!base_name.starts_with("__constant__fn__")) return std::nullopt;
+        return std::string(base_name.begin() + "__constant__fn__"sv.size(),
+                           base_name.end());
+    }
+    std::string to_string() const {
+        std::string result = "%" + base_name;
+        for (auto& path : subpaths) result += "." + path;
+        return result;
+    }
+    Domain as_domain() {
+        auto final_str = base_name;
+        for (auto& subpath : subpaths) {
+            final_str += "." + subpath;
+        }
+        return Domain{std::move(final_str)};
+    }
+};
+class InstructionVariant;
+struct BasicBlock;
+class Instruction {
+public:
+    ASTNode* origin;
+    virtual ~Instruction() = default;
+    virtual bool is_terminator() { return false; }
+    virtual std::span<BasicBlock*> children() { return {}; };
+    virtual InstructionVariant to_variant() = 0;
+};
+struct DomainCheckerState;
+struct BasicBlock {
+    std::string debug_name;
+    std::vector<std::unique_ptr<Instruction>> instructions;
+    std::vector<BasicBlock*> preds;
+    std::string to_string(bool include_dfa = false,
+                          DomainCheckerState* state = nullptr);
+    void add_instruction(Instruction* inst, ASTNode* origin = nullptr) {
+        inst->origin = origin;
+        instructions.emplace_back(inst);
+    }
+    bool is_terminated() const {
+        return !instructions.empty() && instructions.back()->is_terminator();
+    }
+};
+// most instructions bind thier result into a variable, hence the "into"
+// parameter Create a new primitive object
+class NewPrimitiveInstruction : public Instruction {
+public:
+    std::string into;
+    NewPrimitiveInstruction(std::string&& into) : into(into) {};
+    InstructionVariant to_variant() override;
+};
+class NewArrayInstruction : public Instruction {
+public:
+    std::vector<Value> values;
+    std::string into;
+    InstructionVariant to_variant() override;
+    NewArrayInstruction(std::vector<Value>&& values, std::string&& into)
+        : values(values), into(into) {}
+};
+class NewAggregateInstruction : public Instruction {
+public:
+    std::string into;
+    Type type_name;
+    std::unordered_map<std::string, Value> values;
+    InstructionVariant to_variant() override;
+    NewAggregateInstruction(std::unordered_map<std::string, Value>&& values,
+                            Type&& type_name, std::string&& into)
+        : into(std::move(into)),
+          type_name(std::move(type_name)),
+          values(std::move(values)) {}
+};
+// borrow a value
+class BorrowValueInstruction : public Instruction {
+public:
+    Value val;
+    std::string into;
+    InstructionVariant to_variant() override;
+    BorrowValueInstruction(Value&& val, std::string&& into)
+        : val(val), into(into) {};
+};
+class RelocateValueInstruction : public Instruction {
+public:
+    Value val;
+    std::string into;
+    InstructionVariant to_variant() override;
+    RelocateValueInstruction(Value&& val, std::string&& into)
+        : val(val), into(into) {};
+};
+class CallFunctionInstruction : public Instruction {
+public:
+    std::vector<Value> val;
+    std::string function_name;
+    std::string into;
+    Type expected_return;
+    InstructionVariant to_variant() override;
+    CallFunctionInstruction(std::string&& function_name, std::string&& into,
+                            std::vector<Value>&& val, Type exp_r)
+        : val(val),
+          function_name(function_name),
+          into(into),
+          expected_return(std::move(exp_r)) {}
+};
+class MayStoreOperation;
+class AssignInstruction : public Instruction {
+public:
+    Value lhs;
+    Value rhs;
+
+    // used for lvalue assign (aka store)
+    Domain lhs_domain;
+    std::vector<MayStoreOperation*> may_stores;
+    Domain rhs_domain;
+
+    AssignInstruction(Value&& lhs, Value&& rhs) : lhs(lhs), rhs(rhs) {}
+    InstructionVariant to_variant() override;
+};
+class PhiInstruction : public Instruction {
+public:
+    std::vector<Value> args;
+    std::string into;
+    InstructionVariant to_variant() override;
+    PhiInstruction(std::vector<Value>&& args, std::string&& into)
+        : args(args), into(into) {};
+};
+class DomainPhiInstruction : public Instruction {
+public:
+    std::vector<Domain> args;
+    std::string into;
+    InstructionVariant to_variant() override;
+    DomainPhiInstruction(std::vector<Domain>&& args, std::string&& into)
+        : args(args), into(into) {};
+};
+// These instructions must be at the end of each basic block
+class RetInstruction : public Instruction {
+public:
+    std::optional<Value> ret_val;
+    InstructionVariant to_variant() override;
+    RetInstruction() : ret_val(std::nullopt) {}
+    RetInstruction(Value&& val) : ret_val(val) {}
+    RetInstruction(std::optional<Value>&& val) : ret_val(val) {}
+    bool is_terminator() override { return true; }
+};
+class BrInstruction : public Instruction {
+public:
+    BasicBlock* next;
+    InstructionVariant to_variant() override;
+    BrInstruction(BasicBlock* next) : next(next) {};
+    bool is_terminator() override { return true; }
+    std::span<BasicBlock*> children() override { return std::span{&next, 1}; };
+};
+class CondBrInstruction : public Instruction {
+public:
+    std::vector<BasicBlock*> options;
+    Value br_on;
+    InstructionVariant to_variant() override;
+    bool is_terminator() override { return true; }
+    std::span<BasicBlock*> children() override { return options; };
+    CondBrInstruction(std::vector<BasicBlock*>&& options, Value&& br_on)
+        : options(options), br_on(br_on) {};
+};
+class DomainSubsetConstraint : public Instruction {
+public:
+    Domain super;
+    Domain sub;
+
+    // only used when sub is an lvalue
+    std::string lvalue_domain;
+    DomainSubsetConstraint(Domain&& super, Domain&& sub)
+        : super(super), sub(sub) {}
+    InstructionVariant to_variant() override;
+};
+class DomainDependenceEdgeConstraint : public Instruction {
+public:
+    Domain d1;
+    Domain d2;
+    DomainDependenceEdgeConstraint(Domain&& d1, Domain&& d2)
+        : d1(std::move(d1)), d2(std::move(d2)) {}
+    InstructionVariant to_variant() override;
+};
+class DomainExtensionConstraint : public Instruction {
+public:
+    Domain super;
+    Domain sub;
+    // only used in the SSA phase
+    Domain old_super;
+    DomainExtensionConstraint(Domain&& super, Domain&& sub)
+        : super(super), sub(sub) {}
+    InstructionVariant to_variant() override;
+};
+class DerefOperation : public Instruction {
+public:
+    Value reference;
+    Domain ref_domain;
+    std::string into;
+    DerefOperation(Value&& ref, std::string into)
+        : reference(std::move(ref)), into(std::move(into)) {}
+    InstructionVariant to_variant() override;
+};
+class MayLoadOperation;
+class DerefLoadOperation : public Instruction {
+public:
+    Value reference;
+    Domain ref_domain;
+    std::vector<MayLoadOperation*> may_loads;
+    std::vector<Instruction*> definer;
+    std::string into;
+    DerefLoadOperation(Value&& ref, std::string into)
+        : reference(std::move(ref)), into(std::move(into)) {}
+    InstructionVariant to_variant() override;
+};
+class MayStoreOperation : public Instruction {
+public:
+    Instruction* origin;
+    Domain old_domain;
+    Domain new_domain;
+    MayStoreOperation(Instruction* origin, Domain&& old_domain,
+                      Domain&& new_domain)
+        : origin(origin),
+          old_domain(std::move(old_domain)),
+          new_domain(std::move(new_domain)) {}
+    InstructionVariant to_variant() override;
+};
+class MayLoadOperation : public Instruction {
+public:
+    Instruction* origin;
+    Domain domain;
+    MayLoadOperation(Instruction* origin, Domain&& domain)
+        : origin(origin), domain(std::move(domain)) {}
+    InstructionVariant to_variant() override;
+};
+class DropInstruction : public Instruction {
+public:
+    Value val;  // I don't think `val` here is allowed to have subpaths
+    DropInstruction(Value&& val) : val(std::move(val)) {}
+    InstructionVariant to_variant() override;
+};
+using InstructionVariantBase =
+    std::variant<CondBrInstruction*, BrInstruction*, RetInstruction*,
+                 PhiInstruction*, AssignInstruction*, CallFunctionInstruction*,
+                 RelocateValueInstruction*, NewArrayInstruction*,
+                 NewPrimitiveInstruction*, BorrowValueInstruction*,
+                 DomainSubsetConstraint*, DomainDependenceEdgeConstraint*,
+                 DomainExtensionConstraint*, DomainPhiInstruction*,
+                 DerefLoadOperation*, DerefOperation*, MayStoreOperation*,
+                 MayLoadOperation*, NewAggregateInstruction*, DropInstruction*>;
+class InstructionVariant : public InstructionVariantBase {
+public:
+    template <typename T>
+    InstructionVariant(T* val) : InstructionVariantBase(val) {}
+};
+
+struct BorrowCheckerFunction {
+    std::vector<std::unique_ptr<BasicBlock>> blocks;
+    size_t idx = 0;
+    BasicBlock* new_block(std::string debug_name) {
+        return blocks
+            .emplace_back(new BasicBlock{.debug_name = debug_name +
+                                                       std::to_string(idx++)})
+            .get();
+    }
+    std::string to_string(bool add_dfa = false,
+                          DomainCheckerState* state = nullptr) {
+        std::string out;
+        for (auto& block : blocks) {
+            out += block->to_string(add_dfa, state) + "\n\n";
+        }
+        return out;
+    }
+};
+
+class BorrowCheckerEmitter {
+    IRGenerator* irgen;
+    TypeCheckerState* stt;
+    // std::vector -- each block
+    //    std::vector -- each variable
+    //        std::pair -- variable entry
+    //            std::string -- variable name
+    //            std::string -- borrow checker id
+
+    size_t counter = 0;
+    std::vector<std::vector<std::pair<std::string, std::string>>> variables;
+    BorrowCheckerFunction* function;
+    BasicBlock* current_block;
+    std::string temporary_name() { return "__tmp" + std::to_string(counter++); }
+    std::string name_based_on(std::string_view other) {
+        return std::to_string(counter++) + std::string(other);
+    }
+    void destroy_and_remove_block() {
+        for (auto& [name, id] : variables.back() | std::views::reverse) {
+            drop_object(Value::from(std::move(id)));
+        }
+        variables.pop_back();
+    }
+    void drop_object(Value&& val) {
+        current_block->add_instruction(new DropInstruction(std::move(val)));
+    }
+
+public:
+    friend class LValueEmitter;
+    BorrowCheckerEmitter(IRGenerator* irgen, TypeCheckerState* stt,
+                         BorrowCheckerFunction* function,
+                         BasicBlock* current_block)
+        : irgen(irgen),
+          stt(stt),
+          variables(1),
+          function(function),
+          current_block(current_block) {}
+    void operator()(FunctionDeclaration*);
+    void operator()(ClassDeclaration*);
+    void operator()(VariableDeclaration*);
+    void operator()(WhileStatement*);
+    void operator()(ForStatement*);
+    void operator()(ReturnStatement*);
+    void operator()(ExpressionStatement*);
+    void operator()(EnumDeclaration*);
+    void operator()(UsingStatement*);
+    void operator()(ModuleImport*);
+    void operator()(WithStatement*);
+    void operator()(OperatorOverload*);
+    void operator()(GenericFunctionDeclaration*);
+    void operator()(AliasDeclaration*);
+    void operator()(GenericAliasDeclaration*);
+    void operator()(GenericClassDeclaration*);
+    void operator()(InterfaceDeclaration*);
+    void operator()(BreakStatement*);
+    void operator()(ContinueStatement*);
+    void operator()(ConstantDeclaration*);
+    void operator()(CImportDeclaration*);
+    void operator()(UnionDeclaration*);
+    void operator()(MacroDeclaration*);
+
+    Value operator()(ConditionalExtraction*);
+    Value operator()(IfExpression*);
+    Value operator()(BlockExpression*);
+    Value operator()(IntegerLiteral*);
+    Value operator()(BooleanLiteral*);
+    Value operator()(TupleLiteral*);
+    Value operator()(ArrayLiteral*);
+    Value operator()(RealLiteral*);
+    Value operator()(StringLiteral*);
+    Value operator()(NameExpression*);
+    Value operator()(GenericNameExpression*);
+    Value operator()(PrefixOperation*);
+    Value operator()(BinaryOperation*);
+    Value operator()(GroupingExpression*);
+    Value operator()(LogicalOperation*);
+    Value operator()(PostfixOperation*);
+    Value operator()(CallOperation*);
+    Value operator()(SubscriptOperation*);
+    Value operator()(LambdaExpression*);
+    Value operator()(ScopeOperation*);
+    Value operator()(ObjectLiteral*);
+    Value operator()(NullLiteral*);
+    Value operator()(AsExpression*);
+    Value operator()(CharLiteral*);
+    Value operator()(GCNewExpression*);
+    Value operator()(MacroInvocation*);
+    Value operator()(SpawnExpression*);
+    Value operator()(TryExpression*);
+};
+class LValueEmitter {
+public:
+    BorrowCheckerEmitter& em;
+    Value do_expr(Expression* expr);
+};
+struct DomainCheckerState;
+
+struct BorrowCheckerType {
+    enum TypeType {
+        Primitive = 0,  // Unit type cant be divided any further
+                        // (stability doesn't matter)
+        Aggregate,      // Product type (stable)
+        Union,          // Sum type (unstable)
+        // I'm building these two as primitves to make my life easier
+        UniquePtr,  // Owning poiner type
+        Array,      // Owning Heap type with many elems
+        RefPtr,     // Non owning pointer type
+        LValue,
+        Named,  // Named aggregate types (correspond to the type system)
+                // support types that reference themselves
+    };
+    struct PrimitiveDetails {};
+    // because std::map is wierd
+    struct FieldMap : std::map<std::string, BorrowCheckerType> {
+        FieldMap(const FieldMap&) = delete;
+        FieldMap() = default;
+        FieldMap(FieldMap&&) noexcept = default;
+        FieldMap& operator=(const FieldMap&) = delete;
+        FieldMap& operator=(FieldMap&&) noexcept = default;
+    };
+    struct AggregateDetails {
+        AggregateDetails() = default;
+        AggregateDetails(AggregateDetails&&) noexcept = default;
+        AggregateDetails& operator=(AggregateDetails&&) noexcept = default;
+
+        AggregateDetails(const AggregateDetails&) = delete;
+        AggregateDetails& operator=(const AggregateDetails&) = delete;
+
+        AggregateDetails(FieldMap&& fields) : fields(std::move(fields)) {}
+        FieldMap fields;
+    };
+    struct UnionDetails {
+        UnionDetails() = default;
+        UnionDetails(const UnionDetails&) = delete;
+        UnionDetails& operator=(const UnionDetails&) = delete;
+
+        UnionDetails(UnionDetails&&) noexcept = default;
+        UnionDetails& operator=(UnionDetails&&) noexcept = default;
+
+        UnionDetails(FieldMap&& fields) : fields(std::move(fields)) {}
+        FieldMap fields;
+    };
+    struct UniquePtrDetails {
+        UniquePtrDetails() = default;
+        UniquePtrDetails(const UniquePtrDetails&) = delete;
+        UniquePtrDetails& operator=(const UniquePtrDetails&) = delete;
+
+        UniquePtrDetails(UniquePtrDetails&&) noexcept = default;
+        UniquePtrDetails& operator=(UniquePtrDetails&&) noexcept = default;
+
+        UniquePtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype)
+            : subtype(std::move(subtype)) {}
+        std::unique_ptr<BorrowCheckerType> subtype;
+    };
+    struct ArrayDetails {
+        ArrayDetails() = default;
+        ArrayDetails(const ArrayDetails&) = delete;
+        ArrayDetails& operator=(const ArrayDetails&) = delete;
+
+        ArrayDetails& operator=(ArrayDetails&&) noexcept = default;
+        ArrayDetails(ArrayDetails&&) noexcept = default;
+
+        ArrayDetails(std::unique_ptr<BorrowCheckerType>&& subtype)
+            : subtype(std::move(subtype)) {}
+        std::unique_ptr<BorrowCheckerType> subtype;
+    };
+    struct RefPtrDetails {
+        RefPtrDetails() = default;
+        RefPtrDetails(const RefPtrDetails&) = delete;
+        RefPtrDetails& operator=(const RefPtrDetails&) = delete;
+
+        RefPtrDetails(RefPtrDetails&&) noexcept = default;
+        RefPtrDetails& operator=(RefPtrDetails&&) noexcept = default;
+        RefPtrDetails(std::unique_ptr<BorrowCheckerType>&& subtype)
+            : subtype(std::move(subtype)) {}
+        std::unique_ptr<BorrowCheckerType> subtype;
+    };
+    struct LValueDetails {
+        LValueDetails() = default;
+        LValueDetails(const LValueDetails&) = delete;
+        LValueDetails& operator=(const LValueDetails&) = delete;
+
+        LValueDetails(LValueDetails&&) noexcept = default;
+        LValueDetails& operator=(LValueDetails&&) noexcept = default;
+        LValueDetails(std::unique_ptr<BorrowCheckerType>&& subtype)
+            : subtype(std::move(subtype)) {}
+        std::unique_ptr<BorrowCheckerType> subtype;
+        std::string origin;  // the origin of the lvalue (used for error
+                             // reporting)
+        // populated when lvalues are used in field access ex:
+        // (*a).f1.f2 = value;
+        std::vector<std::string> subpath;
+    };
+    struct NamedTypeDetails {
+        NamedTypeDetails() = default;
+        NamedTypeDetails(const NamedTypeDetails&) = delete;
+        NamedTypeDetails& operator=(const NamedTypeDetails&) = delete;
+
+        NamedTypeDetails(NamedTypeDetails&&) noexcept = default;
+        NamedTypeDetails& operator=(NamedTypeDetails&&) noexcept = default;
+        NamedTypeDetails(std::string full_type_name);
+        NamedTypeDetails(Type&& tp) : actual_type(std::move(tp)) {};
+        Type actual_type;
+        std::unordered_map<std::string, Domain> field_domains;
+    };
+    BorrowCheckerType() = default;
+    BorrowCheckerType(const BorrowCheckerType&) = delete;
+    BorrowCheckerType(BorrowCheckerType&&) noexcept = default;
+    BorrowCheckerType& operator=(BorrowCheckerType&&) noexcept = default;
+    BorrowCheckerType& operator=(const BorrowCheckerType&) = delete;
+    std::variant<PrimitiveDetails, AggregateDetails, UnionDetails,
+                 UniquePtrDetails, ArrayDetails, RefPtrDetails, LValueDetails,
+                 NamedTypeDetails>
+        details;
+    // the "bool" field marks if the domain is bidirectional
+    // for example &'a &'b i32, 'a is not bidirectional because
+    // if the reference were to be duplicated the new 'a can expand
+    // freely but the new 'b cannot expand freely and must remainn equal
+    // to the original 'b
+    std::vector<std::pair<Domain, bool>> domains;
+
+    // Bring up all nexted domains
+    void normalize();
+    // Get a borrowed version of a type into the specified domain
+    BorrowCheckerType borrowed(DomainCheckerState*) const;
+    // Make a new type with fresh domains
+    BorrowCheckerType cloned(DomainCheckerState*) const;
+    // Duplicate a type with the same domains
+    BorrowCheckerType moved(DomainCheckerState*) const;
+    BorrowCheckerType deref() const;
+    // create a new primitive type
+    static BorrowCheckerType new_primitive();
+    static BorrowCheckerType new_aggregate_from(Type&&);
+    // does not change domains of the provided type
+    static BorrowCheckerType new_array_of(BorrowCheckerType&&);
+
+    std::string to_string() const;
+};
+// Maps "Value"s to types
+struct ValueTypeMapping : std::unordered_map<std::string, BorrowCheckerType> {
+    ValueTypeMapping(const ValueTypeMapping&) = delete;
+    ValueTypeMapping() = default;
+    ValueTypeMapping(ValueTypeMapping&&) noexcept = default;
+    std::string to_string();
+};
+// Types the CFG and inserts domains
+class DomainVariableInserter {
+public:
+    // insert instructions to satisfy domain relationships when left is
+    // assiged right
+    void add_assign_constraints_between_types(const BorrowCheckerType&,
+                                              const BorrowCheckerType&);
+    // insert instructions to satisfy domain relationships when left is
+    // extended to store right (like array push)
+    void add_extend_constraints_between_types(const BorrowCheckerType&,
+                                              const BorrowCheckerType&);
+    void add_extend_constraints_between_multiple_types(
+        const BorrowCheckerType&, std::ranges::input_range auto const&);
+    void initialize_domains_to_null(const BorrowCheckerType&);
+    using InstructionListTy = decltype(BasicBlock::instructions);
+    using BlockIteratorTy = InstructionListTy::iterator;
+
+    DomainCheckerState* state;
+    InstructionListTy& instructions;
+    BlockIteratorTy current_position;
+
+    BlockIteratorTy operator()(CondBrInstruction*);
+    BlockIteratorTy operator()(BrInstruction*);
+    BlockIteratorTy operator()(RetInstruction*);
+    BlockIteratorTy operator()(PhiInstruction*);
+    BlockIteratorTy operator()(AssignInstruction*);
+    BlockIteratorTy operator()(CallFunctionInstruction*);
+    BlockIteratorTy operator()(RelocateValueInstruction*);
+    BlockIteratorTy operator()(NewAggregateInstruction*);
+    BlockIteratorTy operator()(NewArrayInstruction*);
+    BlockIteratorTy operator()(NewPrimitiveInstruction*);
+    BlockIteratorTy operator()(BorrowValueInstruction*);
+    BlockIteratorTy operator()(DerefOperation*);
+    BlockIteratorTy operator()(DerefLoadOperation*);
+    BlockIteratorTy operator()(DropInstruction*);
+    BlockIteratorTy operator()(DomainSubsetConstraint*) {
+        debugbreak();
+        return current_position;
+    }
+    BlockIteratorTy operator()(DomainDependenceEdgeConstraint*) {
+        debugbreak();
+        return current_position;
+    }
+    BlockIteratorTy operator()(DomainExtensionConstraint*) {
+        debugbreak();
+        return current_position;
+    }
+    BlockIteratorTy operator()(DomainPhiInstruction*) {
+        debugbreak();
+        return current_position;
+    }
+    BlockIteratorTy operator()(MayStoreOperation*) {
+        debugbreak();
+        return current_position;
+    }
+    BlockIteratorTy operator()(MayLoadOperation*) {
+        debugbreak();
+        return current_position;
+    }
+};
+struct PointsToGraph {
+    std::unordered_map<std::string, std::unordered_set<std::string>>
+        pointee_pairs;
+    bool add_edge(std::string domain, std::string pointee) {
+        if (pointee_pairs[domain].contains(pointee)) return false;
+        pointee_pairs[domain].insert(std::move(pointee));
+        return true;
+    }
+    std::unordered_set<std::string>& get_pointees_of(std::string domain) {
+        return pointee_pairs[domain];
+    }
+    std::string to_graphviz() {
+        std::ostringstream out;
+        out << "digraph PointeeGraph " << " {\n";
+        for (const auto& [src, targets] : pointee_pairs) {
+            if (targets.empty()) {
+                out << "    \"" << src << "\";\n";
+            } else {
+                for (const auto& dst : targets) {
+                    out << "    \"" << src << "\" -> \"" << dst << "\";\n";
+                }
+            }
+        }
+        out << "}\n";
+        auto out_str = out.str();
+        return out_str;
+    }
+};
+class InclusionPointerAnalyser {
+public:
+    PointsToGraph& ptg;
+    DomainCheckerState* state;
+
+    bool operator()(CondBrInstruction*) { return false; }
+    bool operator()(BrInstruction*) { return false; }
+    bool operator()(RetInstruction*) { return false; }
+    bool operator()(PhiInstruction*) { return false; }
+    bool operator()(AssignInstruction*);
+    bool operator()(DropInstruction*) { return false; }
+    bool operator()(CallFunctionInstruction*) { return false; }
+    bool operator()(RelocateValueInstruction*) { return false; }
+    bool operator()(NewArrayInstruction*) { return false; }
+    bool operator()(NewPrimitiveInstruction*) { return false; }
+    bool operator()(BorrowValueInstruction*) { return false; }
+    bool operator()(DerefOperation*) { return false; }
+    bool operator()(DerefLoadOperation*);
+    bool operator()(DomainSubsetConstraint* con);
+    bool operator()(DomainDependenceEdgeConstraint*) { return false; }
+    bool operator()(DomainExtensionConstraint*);
+    bool operator()(DomainPhiInstruction*) { return false; }
+    bool operator()(MayStoreOperation*) { return false; }
+    bool operator()(MayLoadOperation*) { return false; }
+    bool operator()(NewAggregateInstruction*) { return false; }
+};
+struct DominatorList {
+    // stores pairs (a, b) where b = idom(a)
+    // we can probably find all d
+    std::unordered_map<BasicBlock*, BasicBlock*> idoms;
+    std::vector<BasicBlock*> get_all_dominators_of(BasicBlock* input) const;
+    void register_for(BasicBlock* node, BasicBlock* dominator) {
+        if (idoms.contains(node)) debugbreak();
+        idoms[node] = dominator;
+    }
+};
+// produces unique names for each variable instance
+// used solely for the ssa related stuff
+struct ValueProducer {
+    std::unordered_map<std::string, size_t> var_map;
+    std::string name_for(const std::string& val);
+};
+using UseStorageTy =
+    std::unordered_map<BasicBlock*,
+                       std::unordered_map<std::string, std::string>>;
+// Represents the results of our points to analysis
+struct PointeeGraph {
+    std::unordered_map<std::string, std::unordered_set<Domain, DomainHasher>>
+        edges;
+    void add_edge(const std::string& edge, Domain&& dom) {
+        edges[edge].insert(std::move(dom));
+    }
+    void initialize(const std::string& edge) { edges[edge]; }
+    std::unordered_set<Domain, DomainHasher>& pointees_of(
+        const std::string& dom) {
+        return edges.at(dom);
+    }
+};
+
+struct DefUseGraph {
+    struct ElemHash {
+    public:
+        std::size_t operator()(
+            const std::pair<Instruction*, std::string>& x) const {
+            return std::hash<Instruction*>()(x.first) ^
+                   std::hash<std::string>()(x.second);
+        }
+    };
+    std::unordered_map<
+        Instruction*,
+        std::unordered_set<std::pair<Instruction*, std::string>, ElemHash>>
+        edges;
+    std::string to_graphviz();
+};
+struct TopLevelPointsToGraph {
+    std::unordered_map<std::string, std::unordered_set<std::string>>
+        domain_to_node;
+    enum AdditionStatus : bool { Changed = 1, Unchanged = 0 };
+    AdditionStatus add_new_relation(const std::string& domain,
+                                    const std::string& node) {
+        auto& entry = domain_to_node[domain];
+        if (entry.contains(node)) return Unchanged;
+        entry.insert(node);
+        return Changed;
+    }
+    std::unordered_set<std::string>& get_pointees_of(const std::string& dom) {
+        return domain_to_node[dom];
+    }
+    std::string to_graphviz();
+};
+// This class uses all the gathered information to determine whether a
+// function is safe or not
+struct BorrowCheckVisitor {
+    DomainCheckerState* state;
+    IRGenerator* irgen;
+    // since I've decided to go with c++ copy and "drop at the end of
+    // block" semantics, I don't think I need to check for dropped value
+    // usage in every instruction
+    void operator()(Instruction*) {}
+    void operator()(DerefLoadOperation*);
+    void operator()(DerefOperation*);
+};
+// used primarily for error reporting, It contains information about why
+// a domain was killed
+struct KillReason {
+    // is the kill from a re-assignment or from a drop?
+    enum InstructionSource { Assign, Drop };
+    InstructionSource source;
+    // what value was assigned to/dropped
+    std::string affected_value;
+    // what pointee made this eligible for killing
+    std::string bad_pointee;
+    // what instruction did the assign/drop take place
+    ASTNode* killing_instruction;
+    // for assigns, if it comes from an lvalue this is the value that
+    // was dereferenced
+    std::optional<std::string> lvalue_source;
+};
+struct DomainCheckerState {
+    // TODO make the union find
+    size_t last_id = 0;
+    ValueTypeMapping type_mapping;
+    Domain new_domain_var();
+    void register_value_base_type(const std::string& value,
+                                  BorrowCheckerType&&);
+    BorrowCheckerType type_to_borrow_checker_type(const Type& type);
+    const BorrowCheckerType& get_value_type(const Value& value);
+    const BorrowCheckerType& field_lookup(const BorrowCheckerType& type,
+                                          const std::string& base,
+                                          std::span<const std::string> fields);
+    DominatorList dominators;
+    BorrowCheckerFunction* func;
+    BasicBlock* entry_block;
+    IRGenerator* irgen;
+    PointsToGraph ptgraph;
+    DefUseGraph def_use_graph;
+    TopLevelPointsToGraph final_ptg;
+    // stores field information for named types
+    ValueTypeMapping named_value_type_cache;
+    std::unordered_map<Instruction*, std::set<std::string>> dfa_in;
+    std::unordered_map<Instruction*, std::set<std::string>> dfa_out;
+    std::unordered_map<std::string, KillReason> domain_kill_reason;
+
+    std::unique_ptr<BorrowCheckerFunction> check_function(
+        FunctionDeclaration* decl, IRGenerator* irgen,
+        const FunctionSignature& sig, TypeCheckerState* stt);
+    // doesn't do anything for now
+    void build_dominators();
+    // assigns predecessors to blocks
+    void calc_block_preds();
+    // transforms domain-related code to SSA
+    void transform_to_ssa();
+    // remove all "DomainDependenceEdge" constraints
+    // and add new assignments
+    void clear_dependencies();
+    void build_dug();
+    void do_primary_analysis();
+    void do_domain_validity_analysis(BasicBlock* entry);
+};
+}  // namespace BorrowChecker
+}  // namespace Yoyo

@@ -1,348 +1,346 @@
 #pragma once
-#include "ast_node.h"
 #include <func_sig.h>
+
+#include <cstdint>
+#include <optional>
 #include <utility>
 #include <variant>
 
-#include "type.h"
-#include "expression.h"
+#include "ast_node.h"
 #include "class_entry.h"
-#include <optional>
-#include <cstdint>
+#include "expression.h"
 #include "generic_clause.h"
-namespace Yoyo
-{
-    class ExpressionStatement;
-    class VariableDeclaration;
-    class FunctionDeclaration;
-    class ReturnStatement;
-    class WhileStatement;
-    class ClassDeclaration;
-    class ForStatement;
-    class ModuleImport;
-    class EnumDeclaration;
-    class WithStatement;
-    class OperatorOverload;
-    class GenericFunctionDeclaration;
-    class AliasDeclaration;
-    class GenericAliasDeclaration;
-    class InterfaceDeclaration;
-    class GenericInterfaceDeclaration;
-    class GenericClassDeclaration;
-    class BreakStatement;
-    class ContinueStatement;
-    class CImportDeclaration;
-    class ConstantDeclaration;
-    class UnionDeclaration;
-    class MacroDeclaration;
-    class UsingStatement;
-    typedef std::variant<
-        ForStatement*,
-        ClassDeclaration*,
-        WhileStatement*,
-        ReturnStatement*,
-        FunctionDeclaration*,
-        VariableDeclaration*,
-        ExpressionStatement*,
-        ModuleImport*,
-        EnumDeclaration*,
-        OperatorOverload*,
-        WithStatement*,
-        GenericFunctionDeclaration*,
-        GenericAliasDeclaration*,
-        AliasDeclaration*,
-        InterfaceDeclaration*,
-        GenericInterfaceDeclaration*,
-        GenericClassDeclaration*,
-        BreakStatement*,
-        ContinueStatement*,
-        CImportDeclaration*,
-        ConstantDeclaration*,
-        UnionDeclaration*,
-        MacroDeclaration*,
-        UsingStatement*> StatementVariant;
-    enum class Ownership;
-    struct Attribute {
-        std::string name;
-        std::vector<std::string> params;
-        [[nodiscard]] bool has_params() const {
-            return !params.empty();
-        }
-    };
-    class Statement : public ASTNode
-    {
-    public:
-        virtual ~Statement() = default;
-        virtual StatementVariant toVariant() = 0;
-        std::vector<Attribute> attributes;
-        AccessSpecifier access; //only really needed for declarations
-        static auto attachSLAndParent(std::unique_ptr<Statement> self, SourceLocation bg, SourceLocation end,ASTNode* parent = nullptr)
-            -> std::unique_ptr<Statement>
-        {
-            self->beg = bg;
-            self->end = end;
-            self->parent = parent;
-            return self;
-        }
-        bool is_private() const {
-            return attributes.end() == std::ranges::find_if(attributes, [](const Attribute& attr) {
-                return attr.name == "public";
-            });
-        }
-    };
-    class ExpressionStatement : public Statement
-    {
-    public:
-        std::unique_ptr<Expression> expression;
-        explicit ExpressionStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {};
-        StatementVariant toVariant() override;
-    };
-    class ModuleImport : public Statement
-    {
-    public:
-        std::string module_name;
-        std::string module_path;
-        ModuleImport(std::string name, std::string path) : module_name(std::move(name)),
-            module_path(std::move(path)) {};
-        StatementVariant toVariant() override;
-    };
-    class AliasDeclaration: public Statement
-    {
-    public:
-        Type type;
-        std::string name;
-        AliasDeclaration(std::string name, Type t) : type(std::move(t)), name(std::move(name)) {};
-        StatementVariant toVariant() override;
-    };
-    class ConstantDeclaration : public Statement
-    {
-    public:
-        Type type;
-        std::string name;
-        std::unique_ptr<Expression> expr;
-        ConstantDeclaration(std::string name, Type t, std::unique_ptr<Expression> exr) :
-            type(std::move(t)), name(std::move(name)), expr(std::move(exr)) {}
-        StatementVariant toVariant() override;
-    };
-    class GenericAliasDeclaration: public AliasDeclaration
-    {
-    public:
-        GenericClause clause;
-        explicit GenericAliasDeclaration(std::string name, Type t, GenericClause gc)
-            : AliasDeclaration(std::move(name), std::move(t)),
-            clause(std::move(gc)) {};
-        StatementVariant toVariant() override;
-    };
-    class VariableDeclaration : public Statement
-    {
-    public:
-        std::optional<Type> type;
-        Token identifier;
-        std::unique_ptr<Expression> initializer;
-        bool is_mut;
-        VariableDeclaration(Token iden, std::optional<Type> t, std::unique_ptr<Expression> init, bool mut)
-            : type(std::move(t)), identifier(iden), initializer(std::move(init)), is_mut(mut) {};
-        StatementVariant toVariant() override;
-    };
-    class FunctionDeclaration : public Statement
-    {
-    public:
-        FunctionSignature signature;
-        std::string name;
-        std::unique_ptr<Statement> body;
-        FunctionDeclaration(std::string name, FunctionSignature sig, std::unique_ptr<Statement> body)
-            : signature(std::move(sig)), name(std::move(name)), body(std::move(body)) {}
-        StatementVariant toVariant() override;
-    };
-    class GenericFunctionDeclaration: public FunctionDeclaration
-    {
-    public:
-        GenericClause clause;
-        GenericFunctionDeclaration(GenericClause cl, FunctionDeclaration body)
-            : FunctionDeclaration(std::move(body)), clause(std::move(cl)) {}
-        StatementVariant toVariant() override;
-    };
-    class OperatorOverload : public Statement
-    {
-    public:
-        FunctionSignature signature;
-        TokenType tok;
-        GenericClause clause;
-        std::unique_ptr<Statement> body;
-        OperatorOverload(TokenType ident, FunctionSignature sig, std::unique_ptr<Statement> body, GenericClause cl)
-            : signature(std::move(sig)), tok(ident), clause(std::move(cl)), body(std::move(body)) {}
-        StatementVariant toVariant() override;
-    };
-    class UnionDeclaration : public Statement
-    {
-    public:
-        std::string name;
-        std::unordered_map<std::string, Type> fields;
-        std::vector<std::unique_ptr<Statement>> sub_stats;
-        UnionDeclaration(std::string name, std::unordered_map<std::string, Type> f, std::vector<std::unique_ptr<Statement>> s)
-            : name(std::move(name)), fields(std::move(f)), sub_stats(std::move(s)) {}
-        StatementVariant toVariant() override;
-    };
-    class ReturnStatement : public Statement
-    {
-    public:
-        std::unique_ptr<Expression> expression;
-        explicit ReturnStatement(std::unique_ptr<Expression> exp) : expression(std::move(exp)) {}
-        StatementVariant toVariant() override;
-    };
-    class BreakStatement : public Statement
-    {
-        StatementVariant toVariant() override;
-    };
-    class ContinueStatement : public Statement
-    {
-        StatementVariant toVariant() override;
-    };
-    
-    class WhileStatement : public Statement
-    {
-    public:
-        std::unique_ptr<Expression> condition;
-        std::unique_ptr<Statement> body;
-        WhileStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> body)
-            : condition(std::move(cond)), body(std::move(body)) {}
-        StatementVariant toVariant() override;
-    };
-    class CImportDeclaration : public Statement
-    {
-    public:
-        std::string function_name;
-        explicit CImportDeclaration(std::string name) : function_name(std::move(name)) {}
-        StatementVariant toVariant() override;
-    };
-    class ClassDeclaration : public Statement
-    {
-    public:
-        std::string name;
-        std::vector<ClassVariable> vars;
-        std::vector<std::unique_ptr<Statement>> stats;
-        std::vector<char> domains;
-        //consider an unordered map, although types should generally implement too many interfaces
-        std::vector<InterfaceImplementation> impls;
-        std::string destructor_name;
-        std::optional<bool> is_trivially_destructible; //we use optional bool because we want to lazy evaluate
-        bool has_clone;
-        Ownership ownership;
-        ClassDeclaration(
-            Token ident,
-            std::vector<ClassVariable> vars,
-            std::vector<std::unique_ptr<Statement>> stats,
-            Ownership sh,
-            std::vector<InterfaceImplementation> impls,
-            std::vector<char> domains)
-            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), domains(std::move(domains)), impls(std::move(impls)),
-            ownership(sh){}
-        StatementVariant toVariant() override;
-    };
-    class GenericClassDeclaration : public ClassDeclaration
-    {
-    public:
-        GenericClause clause;
-        GenericClassDeclaration(
-            Token ident,
-            std::vector<ClassVariable> vars,
-            std::vector<std::unique_ptr<Statement>> stats,
-            Ownership sh,
-            std::vector<InterfaceImplementation> impls,
-            GenericClause cl,
-            std::vector<char> domains) :
-            ClassDeclaration(ident, 
-                std::move(vars), 
-                std::move(stats), sh, std::move(impls), std::move(domains)), clause(std::move(cl)) {}
-        StatementVariant toVariant() override;
-    };
-    class ForStatement : public Statement
-    {
-    public:
-        std::unique_ptr<Expression> iterable;
-        std::vector<Token> names;
-        std::unique_ptr<Statement> body;
-        ForStatement(std::vector<Token> names, std::unique_ptr<Expression> expr, std::unique_ptr<Statement> body)
-            : iterable(std::move(expr)), names(std::move(names)), body(std::move(body)) {}
-        StatementVariant toVariant() override;
-    };
+#include "type.h"
+namespace Yoyo {
+class ExpressionStatement;
+class VariableDeclaration;
+class FunctionDeclaration;
+class ReturnStatement;
+class WhileStatement;
+class ClassDeclaration;
+class ForStatement;
+class ModuleImport;
+class EnumDeclaration;
+class WithStatement;
+class OperatorOverload;
+class GenericFunctionDeclaration;
+class AliasDeclaration;
+class GenericAliasDeclaration;
+class InterfaceDeclaration;
+class GenericInterfaceDeclaration;
+class GenericClassDeclaration;
+class BreakStatement;
+class ContinueStatement;
+class CImportDeclaration;
+class ConstantDeclaration;
+class UnionDeclaration;
+class MacroDeclaration;
+class UsingStatement;
+typedef std::variant<
+    ForStatement*, ClassDeclaration*, WhileStatement*, ReturnStatement*,
+    FunctionDeclaration*, VariableDeclaration*, ExpressionStatement*,
+    ModuleImport*, EnumDeclaration*, OperatorOverload*, WithStatement*,
+    GenericFunctionDeclaration*, GenericAliasDeclaration*, AliasDeclaration*,
+    InterfaceDeclaration*, GenericInterfaceDeclaration*,
+    GenericClassDeclaration*, BreakStatement*, ContinueStatement*,
+    CImportDeclaration*, ConstantDeclaration*, UnionDeclaration*,
+    MacroDeclaration*, UsingStatement*>
+    StatementVariant;
+enum class Ownership;
+struct Attribute {
+    std::string name;
+    std::vector<std::string> params;
+    [[nodiscard]] bool has_params() const { return !params.empty(); }
+};
+class Statement : public ASTNode {
+public:
+    virtual ~Statement() = default;
+    virtual StatementVariant toVariant() = 0;
+    std::vector<Attribute> attributes;
+    AccessSpecifier access;  // only really needed for declarations
+    static auto attachSLAndParent(std::unique_ptr<Statement> self,
+                                  SourceLocation bg, SourceLocation end,
+                                  ASTNode* parent = nullptr)
+        -> std::unique_ptr<Statement> {
+        self->beg = bg;
+        self->end = end;
+        self->parent = parent;
+        return self;
+    }
+    bool is_private() const {
+        return attributes.end() ==
+               std::ranges::find_if(attributes, [](const Attribute& attr) {
+                   return attr.name == "public";
+               });
+    }
+};
+class ExpressionStatement : public Statement {
+public:
+    std::unique_ptr<Expression> expression;
+    explicit ExpressionStatement(std::unique_ptr<Expression> exp)
+        : expression(std::move(exp)) {};
+    StatementVariant toVariant() override;
+};
+class ModuleImport : public Statement {
+public:
+    std::string module_name;
+    std::string module_path;
+    ModuleImport(std::string name, std::string path)
+        : module_name(std::move(name)), module_path(std::move(path)) {};
+    StatementVariant toVariant() override;
+};
+class AliasDeclaration : public Statement {
+public:
+    Type type;
+    std::string name;
+    AliasDeclaration(std::string name, Type t)
+        : type(std::move(t)), name(std::move(name)) {};
+    StatementVariant toVariant() override;
+};
+class ConstantDeclaration : public Statement {
+public:
+    Type type;
+    std::string name;
+    std::unique_ptr<Expression> expr;
+    ConstantDeclaration(std::string name, Type t,
+                        std::unique_ptr<Expression> exr)
+        : type(std::move(t)), name(std::move(name)), expr(std::move(exr)) {}
+    StatementVariant toVariant() override;
+};
+class GenericAliasDeclaration : public AliasDeclaration {
+public:
+    GenericClause clause;
+    explicit GenericAliasDeclaration(std::string name, Type t, GenericClause gc)
+        : AliasDeclaration(std::move(name), std::move(t)),
+          clause(std::move(gc)) {};
+    StatementVariant toVariant() override;
+};
+class VariableDeclaration : public Statement {
+public:
+    std::optional<Type> type;
+    Token identifier;
+    std::unique_ptr<Expression> initializer;
+    bool is_mut;
+    VariableDeclaration(Token iden, std::optional<Type> t,
+                        std::unique_ptr<Expression> init, bool mut)
+        : type(std::move(t)),
+          identifier(iden),
+          initializer(std::move(init)),
+          is_mut(mut) {};
+    StatementVariant toVariant() override;
+};
+class FunctionDeclaration : public Statement {
+public:
+    FunctionSignature signature;
+    std::string name;
+    std::unique_ptr<Statement> body;
+    FunctionDeclaration(std::string name, FunctionSignature sig,
+                        std::unique_ptr<Statement> body)
+        : signature(std::move(sig)),
+          name(std::move(name)),
+          body(std::move(body)) {}
+    StatementVariant toVariant() override;
+};
+class GenericFunctionDeclaration : public FunctionDeclaration {
+public:
+    GenericClause clause;
+    GenericFunctionDeclaration(GenericClause cl, FunctionDeclaration body)
+        : FunctionDeclaration(std::move(body)), clause(std::move(cl)) {}
+    StatementVariant toVariant() override;
+};
+class OperatorOverload : public Statement {
+public:
+    FunctionSignature signature;
+    TokenType tok;
+    GenericClause clause;
+    std::unique_ptr<Statement> body;
+    OperatorOverload(TokenType ident, FunctionSignature sig,
+                     std::unique_ptr<Statement> body, GenericClause cl)
+        : signature(std::move(sig)),
+          tok(ident),
+          clause(std::move(cl)),
+          body(std::move(body)) {}
+    StatementVariant toVariant() override;
+};
+class UnionDeclaration : public Statement {
+public:
+    std::string name;
+    std::unordered_map<std::string, Type> fields;
+    std::vector<std::unique_ptr<Statement>> sub_stats;
+    UnionDeclaration(std::string name, std::unordered_map<std::string, Type> f,
+                     std::vector<std::unique_ptr<Statement>> s)
+        : name(std::move(name)),
+          fields(std::move(f)),
+          sub_stats(std::move(s)) {}
+    StatementVariant toVariant() override;
+};
+class ReturnStatement : public Statement {
+public:
+    std::unique_ptr<Expression> expression;
+    explicit ReturnStatement(std::unique_ptr<Expression> exp)
+        : expression(std::move(exp)) {}
+    StatementVariant toVariant() override;
+};
+class BreakStatement : public Statement {
+    StatementVariant toVariant() override;
+};
+class ContinueStatement : public Statement {
+    StatementVariant toVariant() override;
+};
 
-    class EnumDeclaration : public Statement
-    {
-    public:
-        std::string identifier;
-        std::unordered_map<std::string, int32_t> values;
-        std::vector<std::unique_ptr<Statement>> stats;
-        EnumDeclaration(std::string iden, std::unordered_map<std::string, int32_t> vals, std::vector<std::unique_ptr<Statement>> stats)
-            : identifier(std::move(iden)), values(std::move(vals)), stats(std::move(stats)) {}
-        StatementVariant toVariant() override;
-    };
-    // if |value| (optional) { }
-    // if |value| (result) {} else |error
+class WhileStatement : public Statement {
+public:
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Statement> body;
+    WhileStatement(std::unique_ptr<Expression> cond,
+                   std::unique_ptr<Statement> body)
+        : condition(std::move(cond)), body(std::move(body)) {}
+    StatementVariant toVariant() override;
+};
+class CImportDeclaration : public Statement {
+public:
+    std::string function_name;
+    explicit CImportDeclaration(std::string name)
+        : function_name(std::move(name)) {}
+    StatementVariant toVariant() override;
+};
+class ClassDeclaration : public Statement {
+public:
+    std::string name;
+    std::vector<ClassVariable> vars;
+    std::vector<std::unique_ptr<Statement>> stats;
+    std::vector<char> domains;
+    // consider an unordered map, although types should generally implement
+    // too many interfaces
+    std::vector<InterfaceImplementation> impls;
+    std::string destructor_name;
+    std::optional<bool>
+        is_trivially_destructible;  // we use optional bool because we want
+                                    // to lazy evaluate
+    bool has_clone;
+    Ownership ownership;
+    ClassDeclaration(Token ident, std::vector<ClassVariable> vars,
+                     std::vector<std::unique_ptr<Statement>> stats,
+                     Ownership sh, std::vector<InterfaceImplementation> impls,
+                     std::vector<char> domains)
+        : name(ident.text),
+          vars(std::move(vars)),
+          stats(std::move(stats)),
+          domains(std::move(domains)),
+          impls(std::move(impls)),
+          ownership(sh) {}
+    StatementVariant toVariant() override;
+};
+class GenericClassDeclaration : public ClassDeclaration {
+public:
+    GenericClause clause;
+    GenericClassDeclaration(Token ident, std::vector<ClassVariable> vars,
+                            std::vector<std::unique_ptr<Statement>> stats,
+                            Ownership sh,
+                            std::vector<InterfaceImplementation> impls,
+                            GenericClause cl, std::vector<char> domains)
+        : ClassDeclaration(ident, std::move(vars), std::move(stats), sh,
+                           std::move(impls), std::move(domains)),
+          clause(std::move(cl)) {}
+    StatementVariant toVariant() override;
+};
+class ForStatement : public Statement {
+public:
+    std::unique_ptr<Expression> iterable;
+    std::vector<Token> names;
+    std::unique_ptr<Statement> body;
+    ForStatement(std::vector<Token> names, std::unique_ptr<Expression> expr,
+                 std::unique_ptr<Statement> body)
+        : iterable(std::move(expr)),
+          names(std::move(names)),
+          body(std::move(body)) {}
+    StatementVariant toVariant() override;
+};
 
-    class WithStatement : public Statement
-    {
-    public:
-        std::string name;
-        std::unique_ptr<Expression> expression;
-        std::unique_ptr<Statement> body;
-        WithStatement(std::string name, std::unique_ptr<Expression> exp, std::unique_ptr<Statement> body)
-            : name(std::move(name)), expression(std::move(exp)), body(std::move(body)) {}
-        StatementVariant toVariant() override;
-    };
-    // I might consider making these statements
-    struct ImplBlock {
-        // impl::<...> for <Type> { }
-        InterfaceImplementation impl;
-        GenericClause clause;
-        ImplBlock(const ImplBlock&) = delete;
-        ImplBlock() = default;
-        ImplBlock(ImplBlock&&) noexcept = default;
-    };
+class EnumDeclaration : public Statement {
+public:
+    std::string identifier;
+    std::unordered_map<std::string, int32_t> values;
+    std::vector<std::unique_ptr<Statement>> stats;
+    EnumDeclaration(std::string iden,
+                    std::unordered_map<std::string, int32_t> vals,
+                    std::vector<std::unique_ptr<Statement>> stats)
+        : identifier(std::move(iden)),
+          values(std::move(vals)),
+          stats(std::move(stats)) {}
+    StatementVariant toVariant() override;
+};
+// if |value| (optional) { }
+// if |value| (result) {} else |error
 
-    class InterfaceDeclaration : public Statement
-    {
-    public:
-        std::string name;
-        std::vector<std::unique_ptr<FunctionDeclaration>> methods;
-        std::vector<ImplBlock> impl_fors;
-        StatementVariant toVariant() override;
-    };
-    class GenericInterfaceDeclaration : public InterfaceDeclaration
-    {
-    public:
-        GenericClause clause;
-        StatementVariant toVariant() override;
-    };
-    class MacroDeclaration : public Statement
-    {
-    public:
-        std::unique_ptr<Statement> body;
-        std::pair<std::string, std::string> first_param;
-        std::optional<std::pair<std::string, std::string>> second_param;
-        std::string name;
+class WithStatement : public Statement {
+public:
+    std::string name;
+    std::unique_ptr<Expression> expression;
+    std::unique_ptr<Statement> body;
+    WithStatement(std::string name, std::unique_ptr<Expression> exp,
+                  std::unique_ptr<Statement> body)
+        : name(std::move(name)),
+          expression(std::move(exp)),
+          body(std::move(body)) {}
+    StatementVariant toVariant() override;
+};
+// I might consider making these statements
+struct ImplBlock {
+    // impl::<...> for <Type> { }
+    InterfaceImplementation impl;
+    GenericClause clause;
+    ImplBlock(const ImplBlock&) = delete;
+    ImplBlock() = default;
+    ImplBlock(ImplBlock&&) noexcept = default;
+};
 
-        StatementVariant toVariant() override;
-    };
-    class UsingStatement : public Statement
-    {
-    public:
-        // Brings one entity into the current scope
-        struct UsingSingle { std::string block; std::string entity; }; // using Module::Type;
-        // Bring all top-level entities from one scope into the current scope
-        struct UsingAll { std::string block;  }; // using Module::*;
-        // Bring multiple entities into the current scope
-        struct UsingMultiple {
-            using UsingContentTy = std::variant<UsingSingle, UsingMultiple, UsingAll>;
-            std::string block; 
-            std::vector<UsingContentTy> entities; 
-        }; // using Module::{Type1, Type2, Type3};
-        using ContentTy = UsingMultiple::UsingContentTy;
-        ContentTy content;
-        UsingStatement(UsingSingle sg) : content(std::move(sg)) {};
-        UsingStatement(UsingMultiple sg) : content(std::move(sg)) {};
-        UsingStatement(UsingAll sg) : content(std::move(sg)) {};
-        UsingStatement(decltype(UsingStatement::content) ct) : content(std::move(ct)) {}
-        StatementVariant toVariant() override;
-    };
-}
+class InterfaceDeclaration : public Statement {
+public:
+    std::string name;
+    std::vector<std::unique_ptr<FunctionDeclaration>> methods;
+    std::vector<ImplBlock> impl_fors;
+    StatementVariant toVariant() override;
+};
+class GenericInterfaceDeclaration : public InterfaceDeclaration {
+public:
+    GenericClause clause;
+    StatementVariant toVariant() override;
+};
+class MacroDeclaration : public Statement {
+public:
+    std::unique_ptr<Statement> body;
+    std::pair<std::string, std::string> first_param;
+    std::optional<std::pair<std::string, std::string>> second_param;
+    std::string name;
+
+    StatementVariant toVariant() override;
+};
+class UsingStatement : public Statement {
+public:
+    // Brings one entity into the current scope
+    struct UsingSingle {
+        std::string block;
+        std::string entity;
+    };  // using Module::Type;
+    // Bring all top-level entities from one scope into the current scope
+    struct UsingAll {
+        std::string block;
+    };  // using Module::*;
+    // Bring multiple entities into the current scope
+    struct UsingMultiple {
+        using UsingContentTy =
+            std::variant<UsingSingle, UsingMultiple, UsingAll>;
+        std::string block;
+        std::vector<UsingContentTy> entities;
+    };  // using Module::{Type1, Type2, Type3};
+    using ContentTy = UsingMultiple::UsingContentTy;
+    ContentTy content;
+    UsingStatement(UsingSingle sg) : content(std::move(sg)) {};
+    UsingStatement(UsingMultiple sg) : content(std::move(sg)) {};
+    UsingStatement(UsingAll sg) : content(std::move(sg)) {};
+    UsingStatement(decltype(UsingStatement::content) ct)
+        : content(std::move(ct)) {}
+    StatementVariant toVariant() override;
+};
+}  // namespace Yoyo

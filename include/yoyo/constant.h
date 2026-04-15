@@ -1,43 +1,43 @@
 #pragma once
-#include "ir_gen.h"
 #include <cstdint>
 #include <variant>
-namespace Yoyo
-{
-    struct Type;
-    class IRGenerator;
-    struct Constant
-    {
-        std::variant<const void*, uint64_t, int64_t, double, bool> internal_repr;
-        Constant() = default;
-        Constant(uint64_t val) : internal_repr(val){}
-        Constant(int64_t val) : internal_repr(val) {}
-        Constant(bool val) : internal_repr(val) {}
-        Constant(double val) : internal_repr(val) {}
-        Constant(const void* ptr) : internal_repr(ptr) {}
-    };
-    class ConstantEvaluator
-    {
-        Constant constConvert(const Constant& in, const Type& source, const Type& dest);
-    public:
-        IRGenerator* irgen;
-        std::vector<std::pair<std::string, std::string>> disallowed_consts;
-        bool is_initial = true;
-        Type* target = nullptr;
-        Constant operator()(IntegerLiteral*);
-        Constant operator()(BooleanLiteral*);
-        Constant operator()(RealLiteral*);
-        Constant operator()(PrefixOperation*);
-        Constant operator()(NameExpression*);
-        Constant operator()(BinaryOperation*);
-        Constant operator()(GroupingExpression*);
-        Constant operator()(LogicalOperation*);
-        Constant operator()(ScopeOperation*);
-        //llvm::Constant* operator()(AsExpression*);
-        Constant operator()(CharLiteral*);
-        Constant operator()(ObjectLiteral*);
-        Constant operator()(StringLiteral*);
-        Constant operator()(MacroInvocation*);
-        Constant operator()(Expression*);
-    };
-}
+
+#include "ir_gen.h"
+namespace Yoyo {
+struct Type;
+class IRGenerator;
+struct Constant {
+    std::variant<const void*, uint64_t, int64_t, double, bool> internal_repr;
+    Constant() = default;
+    Constant(uint64_t val) : internal_repr(val) {}
+    Constant(int64_t val) : internal_repr(val) {}
+    Constant(bool val) : internal_repr(val) {}
+    Constant(double val) : internal_repr(val) {}
+    Constant(const void* ptr) : internal_repr(ptr) {}
+};
+class ConstantEvaluator {
+    Constant constConvert(const Constant& in, const Type& source,
+                          const Type& dest);
+
+public:
+    IRGenerator* irgen;
+    std::vector<std::pair<std::string, std::string>> disallowed_consts;
+    bool is_initial = true;
+    Type* target = nullptr;
+    Constant operator()(IntegerLiteral*);
+    Constant operator()(BooleanLiteral*);
+    Constant operator()(RealLiteral*);
+    Constant operator()(PrefixOperation*);
+    Constant operator()(NameExpression*);
+    Constant operator()(BinaryOperation*);
+    Constant operator()(GroupingExpression*);
+    Constant operator()(LogicalOperation*);
+    Constant operator()(ScopeOperation*);
+    // llvm::Constant* operator()(AsExpression*);
+    Constant operator()(CharLiteral*);
+    Constant operator()(ObjectLiteral*);
+    Constant operator()(StringLiteral*);
+    Constant operator()(MacroInvocation*);
+    Constant operator()(Expression*);
+};
+}  // namespace Yoyo

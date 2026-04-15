@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
 #include "parser.h"
 
+#include <catch2/catch_test_macros.hpp>
 #include <iostream>
 
-TEST_CASE("Test sum/factor precedence", "[parser]")
-{
+TEST_CASE("Test sum/factor precedence", "[parser]") {
     Yoyo::Parser p("10 + 20 * 21");
     auto exp = p.parseExpression(0);
     auto b_exp = dynamic_cast<Yoyo::BinaryOperation*>(exp.get());
@@ -15,8 +14,7 @@ TEST_CASE("Test sum/factor precedence", "[parser]")
     REQUIRE(b_exp2->op.type == Yoyo::TokenType::Star);
 }
 
-TEST_CASE("Test Member access and Call", "[parser]")
-{
+TEST_CASE("Test Member access and Call", "[parser]") {
     Yoyo::Parser p("10 + 20 * 21.lol(10, 20)");
     auto exp = p.parseExpression(0);
     auto add_exp = dynamic_cast<Yoyo::BinaryOperation*>(exp.get());
@@ -26,8 +24,7 @@ TEST_CASE("Test Member access and Call", "[parser]")
     REQUIRE(call_exp->arguments.size() == 2);
 }
 
-TEST_CASE("Test Grouping experession", "[parser]")
-{
+TEST_CASE("Test Grouping experession", "[parser]") {
     Yoyo::Parser p("(10 + 20) * 21");
     auto exp = p.parseExpression(0);
     auto product_exp = dynamic_cast<Yoyo::BinaryOperation*>(exp.get());
@@ -37,8 +34,7 @@ TEST_CASE("Test Grouping experession", "[parser]")
     REQUIRE(dynamic_cast<Yoyo::BinaryOperation*>(grp->expr.get()) != nullptr);
 }
 
-TEST_CASE("Test type parsing", "[types][parser]")
-{
+TEST_CASE("Test type parsing", "[types][parser]") {
     Yoyo::Parser p("[foo2 & foo::<bar, baz::<int>>]");
     auto type = *p.parseType(0);
     REQUIRE(type.name == "__arr");
@@ -48,8 +44,7 @@ TEST_CASE("Test type parsing", "[types][parser]")
     REQUIRE(type.subtypes[0].subtypes[1].subtypes[1].name == "baz");
 }
 
-TEST_CASE("Variable parsing", "[parser]")
-{
+TEST_CASE("Variable parsing", "[parser]") {
     Yoyo::Parser p1("lol: int;");
     Yoyo::Parser p2("lol: = 100;");
     Yoyo::Parser p3("lol: _ = 100;");
@@ -68,11 +63,9 @@ TEST_CASE("Variable parsing", "[parser]")
     auto decl3 = dynamic_cast<Yoyo::VariableDeclaration*>(s3.get());
     REQUIRE(decl3->identifier.text == "lol");
     REQUIRE(decl3->type == std::nullopt);
-
 }
 
-TEST_CASE("Tuple Literal vs Grouping", "[parser]")
-{
+TEST_CASE("Tuple Literal vs Grouping", "[parser]") {
     Yoyo::Parser p1("(10)");
     Yoyo::Parser p2("(20, 10.50)");
     auto exp1 = p1.parseExpression(0);
@@ -85,16 +78,14 @@ TEST_CASE("Tuple Literal vs Grouping", "[parser]")
     REQUIRE(tup->elements.size() == 2);
 }
 
-TEST_CASE("Error recovery", "[parser]")
-{
+TEST_CASE("Error recovery", "[parser]") {
     Yoyo::Parser p1("10 + -");
     auto expr = p1.parseExpression(0);
     REQUIRE(expr != nullptr);
     Yoyo::Parser p2("function: () -> return;");
     auto decl = p2.parseDeclaration();
 }
-TEST_CASE("Source Location", "[parser]")
-{
+TEST_CASE("Source Location", "[parser]") {
     Yoyo::Parser p1(1 + R"(
 main: () -> i32 = {
     something := 10;
@@ -107,29 +98,29 @@ main: () -> i32 = {
 }
 )");
     auto prog = p1.parseProgram();
-    auto visitor = [](auto arg, auto& self)
-    {
+    auto visitor = [](auto arg, auto& self) {
         using arg_ty = std::remove_cvref_t<decltype(arg)>;
-        if constexpr (std::is_same_v<arg_ty, Yoyo::FunctionDeclaration*>)
-        {
+        if constexpr (std::is_same_v<arg_ty, Yoyo::FunctionDeclaration*>) {
             std::cout << "Fn decl: " << arg->beg.line << ':' << arg->beg.column;
-            std::cout << ", " << arg->end.line << ':' << arg->end.column << "\n";
-            std::visit([&](auto arg) { self(arg, self);}, arg->body->toVariant());
-        }
-        else if constexpr (std::is_same_v<arg_ty, Yoyo::BlockStatement*>)
-        {
-            std::cout << "Blk Stat: " << arg->beg.line << ':' << arg->beg.column;
-            std::cout << ", " << arg->end.line << ':' << arg->end.column << "\n";
-            for(auto& stt: arg->statements) std::visit([&](auto arg) { self(arg, self);}, stt->toVariant());
-        }
-        else
-        {
+            std::cout << ", " << arg->end.line << ':' << arg->end.column
+                      << "\n";
+            std::visit([&](auto arg) { self(arg, self); },
+                       arg->body->toVariant());
+        } else if constexpr (std::is_same_v<arg_ty, Yoyo::BlockStatement*>) {
+            std::cout << "Blk Stat: " << arg->beg.line << ':'
+                      << arg->beg.column;
+            std::cout << ", " << arg->end.line << ':' << arg->end.column
+                      << "\n";
+            for (auto& stt : arg->statements)
+                std::visit([&](auto arg) { self(arg, self); },
+                           stt->toVariant());
+        } else {
             std::cout << "Stat: " << arg->beg.line << ':' << arg->beg.column;
-            std::cout << ", " << arg->end.line << ':' << arg->end.column << "\n";
+            std::cout << ", " << arg->end.line << ':' << arg->end.column
+                      << "\n";
         }
     };
-    for(auto& stat: prog)
-    {
-        std::visit([&](auto arg) {visitor(arg, visitor);}, stat->toVariant());
+    for (auto& stat : prog) {
+        std::visit([&](auto arg) { visitor(arg, visitor); }, stat->toVariant());
     }
 }

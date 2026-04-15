@@ -1,12 +1,13 @@
 #pragma once
-#include "type.h"
 #include <variant>
+
+#include "type.h"
 namespace Yoyo {
-    struct ImplConstraint {
-        Type other;
-    };
-    struct SatisfyConstraint {
-        Type scheme;
-    };
-    using Constraint = std::variant<ImplConstraint, SatisfyConstraint>;
-}
+struct ImplConstraint {
+    Type other;
+};
+struct SatisfyConstraint {
+    Type scheme;
+};
+using Constraint = std::variant<ImplConstraint, SatisfyConstraint>;
+}  // namespace Yoyo
