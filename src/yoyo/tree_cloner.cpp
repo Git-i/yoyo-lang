@@ -256,7 +256,7 @@ std::unique_ptr<Statement> StatementTreeCloner::operator()(
     }
     auto ret = std::make_unique<ClassDeclaration>(
         Token{.text = decl->name}, decl->vars, std::move(new_methods),
-        decl->ownership, std::move(new_impls));
+        decl->ownership, std::move(new_impls), decl->domains);
     for (auto& m : ret->stats) m->parent = ret.get();
     for (auto& i : ret->impls)
         for (auto& m : i.methods) m->parent = ret.get();
@@ -426,7 +426,7 @@ std::unique_ptr<Statement> StatementTreeCloner::operator()(
         stats.push_back(copy_stat(stat, nullptr));
     }
     auto ret = std::make_unique<UnionDeclaration>(decl->name, decl->fields,
-                                                  std::move(stats));
+                                                  std::move(stats), decl->domains);
     for (auto& s : ret->sub_stats) s->parent = ret.get();
     return ret;
 }
@@ -460,7 +460,7 @@ std::unique_ptr<Statement> StatementTreeCloner::operator()(
     }
     auto ret = std::make_unique<GenericClassDeclaration>(
         Token{.text = decl->name}, decl->vars, std::move(new_methods),
-        decl->ownership, std::move(new_impls), decl->clause);
+        decl->ownership, std::move(new_impls), decl->clause, decl->domains);
     for (auto& m : ret->stats) m->parent = ret.get();
     for (auto& i : ret->impls)
         for (auto& m : i.methods) m->parent = ret.get();

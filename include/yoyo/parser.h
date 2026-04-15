@@ -39,7 +39,8 @@ public:
     std::unique_ptr<Statement> parseBreakContinueStatement(Token tk);
     uint32_t GetNextTypePrecedence();
     std::vector<std::unique_ptr<Statement>> parseProgram();
-    std::optional<Type> parseType(uint32_t precedence);
+    // full controls whether the type should allow domain annotations
+    std::optional<Type> parseType(uint32_t precedence, bool full = false);
     // I'm being experimental with using syntax to support nexted generics
     // so one can write:
     // using Type::Type2::<?1> as Alias::<?1>;

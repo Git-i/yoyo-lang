@@ -26,6 +26,7 @@ struct YOYO_API Type {
     mutable bool is_mutable = false;
     bool is_lvalue = false;
     std::string block_hash;
+    std::vector<char> domains;
     bool operator==(const Type& other) const { return is_equal(other); }
     [[nodiscard]] size_t conversion_friction(const Type& other,
                                              IRGenerator*) const;

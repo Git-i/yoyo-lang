@@ -2,11 +2,14 @@
 
 #include <precedences.h>
 
+#include <cctype>
 #include <iostream>
+#include <optional>
 
 #include "expression.h"
 #include "func_sig.h"
 #include "statement.h"
+#include "token.h"
 namespace Yoyo {
 void YOYO_API debugbreak();
 Parser::Parser(std::string& src) : source(src), scn(source) {
@@ -515,8 +518,34 @@ std::unique_ptr<Statement> Parser::parseInterfaceDeclaration(Token identifier) {
     return Statement::attachSLAndParent(std::move(intf), identifier.loc,
                                         discardLocation, parent);
 }
+std::vector<char> parseDomainList(Parser& p) {
+    std::vector<char> domains;
+    if (p.discard(TokenType::LParen)) {
+        auto iden = p.Get();
+        if(!iden || iden->type != TokenType::Identifier) p.error("Extected character", iden);
+        auto to_char = [&p](std::optional<Token> in) -> char {
+            auto str = in->text;
+            if(str.size() != 1) p.error("Expected single chatacter", in);
+            if (!std::isalpha(static_cast<unsigned char>(str[0]))) p.error("Expected letter", in);
+            return str[0];
+        };
+        domains.push_back(to_char(iden));
+        while (!p.discard(TokenType::RParen)) {
+            if (!p.discard(TokenType::Comma)) p.error("Expected ','", p.Peek());
+            // we can read a character or an rparen (rparen to allow trailing commas)
+            auto next = p.Get();
+            if(!next) p.error("Expected ')' or character", next);
+            if (next->type == TokenType::RParen) break;
+            if (next->type == TokenType::Identifier) {
+                domains.push_back(to_char(iden));
+            } else p.error("Expected ')' or character", next);
+    }
+    }
+    return domains;
+} 
 std::unique_ptr<Statement> Parser::parseUnionDeclaration(Token iden) {
     if (!discard(TokenType::Union)) error("Expected 'union'", Peek());
+    auto domains = parseDomainList(*this);
     if (!discard(TokenType::Equal)) error("Expected '='", Peek());
     if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
     std::unordered_map<std::string, Type> fields;
@@ -537,7 +566,7 @@ std::unique_ptr<Statement> Parser::parseUnionDeclaration(Token iden) {
             auto as_str = std::string{iden->text};
             if (fields.contains(as_str))
                 error("Name with field already exists", Peek());
-            fields[as_str] = parseType(0).value_or(Type{});
+            fields[as_str] = parseType(0, true).value_or(Type{});
             if (!discard(TokenType::Comma)) {
                 if (!discard(TokenType::RCurly))
                     error("Expected ',' or '}'", Peek());
@@ -548,7 +577,7 @@ std::unique_ptr<Statement> Parser::parseUnionDeclaration(Token iden) {
     }
     return Statement::attachSLAndParent(
         std::make_unique<UnionDeclaration>(std::string(iden.text),
-                                           std::move(fields), std::move(stat)),
+                                           std::move(fields), std::move(stat), std::move(domains)),
         iden.loc, discardLocation, parent);
 }
 std::unique_ptr<Statement> Parser::parseMacroDeclaration(Token identifier) {
@@ -947,7 +976,7 @@ std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier,
     if (Peek() && Peek()->type == TokenType::TemplateOpen) {
         clause = parseGenericClause();
     }
-    std::vector<char> asd;
+    std::vector<char> domains = parseDomainList(*this);
     if (!discard(TokenType::Equal)) error("Expected '='", Peek());
     if (!discard(TokenType::LCurly)) error("Expected '{'", Peek());
     while (!discard(TokenType::RCurly)) {
@@ -1017,7 +1046,7 @@ std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier,
         auto next_tk = Peek();
         if (!next_tk) return nullptr;
 
-        auto type = parseType(0);
+        auto type = parseType(0, true);
         vars.push_back(ClassVariable{.name = std::string{iden.text},
                                      .type = std::move(type).value_or(Type{}),
                                      .is_static = is_static,
@@ -1031,14 +1060,15 @@ std::unique_ptr<Statement> Parser::parseClassDeclaration(Token identifier,
         }
     }
     std::unique_ptr<Statement> cs_stat;
+    Ownership own_method;
     if (!clause)
         cs_stat = std::make_unique<ClassDeclaration>(
             identifier, std::move(vars), std::move(stat), own_method,
-            std::move(impls));
+            std::move(impls), std::move(domains));
     else
         cs_stat = std::make_unique<GenericClassDeclaration>(
             identifier, std::move(vars), std::move(stat), own_method,
-            std::move(impls), std::move(clause).value());
+            std::move(impls), std::move(clause).value(), std::move(domains));
     return Statement::attachSLAndParent(std::move(cs_stat), identifier.loc,
                                         discardLocation, parent);
 }
@@ -1297,8 +1327,8 @@ std::unique_ptr<Statement> Parser::parseWithStatement(Token tk) {
 // [T] -> slice
 // [T; <expr>] -> static array
 // [T; *] -> dynammic array
-std::optional<Type> parseArrayType(Token t, Parser& parser) {
-    auto next = parser.parseType(0);
+std::optional<Type> parseArrayType(Token t, Parser& parser, bool full) {
+    auto next = parser.parseType(0, full);
     if (!next) parser.synchronizeTo({{TokenType::RSquare}});
     std::string name = "__slice";
     std::shared_ptr<FunctionSignature> sig;
@@ -1346,21 +1376,46 @@ uint32_t Parser::GetNextTypePrecedence() {
         return 0;
     }
 }
-std::optional<Type> parseTemplateTypeExpr(Parser& p, Type left) {
-    auto t = p.parseType(0);
-    if (!t)
-        p.synchronizeTo({
-            {TokenType::Comma, TokenType::Greater, TokenType::DoubleGreater}
-        });
-    left.subtypes.push_back(std::move(t).value_or(Type{}));
-    while (p.discard(TokenType::Comma)) {
-        t = p.parseType(0);
+std::optional<Type> parseTemplateTypeExpr(Parser& p, Type left, bool full) {
+    // Types come first then annotations
+    auto do_annotations = [&]() {
+        left.domains.push_back(p.Get()->text[0]);
+        while (p.discard(TokenType::Comma)) {
+            auto tk = p.Get();
+            if(!tk) return false;
+            if(tk->type != TokenType::DomainAnnotation) {
+                p.error("Expected domain annotation", tk);
+                return false;
+            }
+            left.domains.push_back(tk->text[0]);
+        }
+        return true;
+    };
+    if (p.Peek() && p.Peek()->type == TokenType::DomainAnnotation) {
+        // if we encounter annotation, there are no types in this generic 
+        if (!full) p.error("Domain annotation is not expected in this context", p.Peek());
+        if (!do_annotations()) return std::nullopt;
+    } else {
+        auto t = p.parseType(0, full);
         if (!t)
             p.synchronizeTo({
-                {TokenType::Comma, TokenType::Greater,
-                 TokenType::DoubleGreater}
+                {TokenType::Comma, TokenType::Greater, TokenType::DoubleGreater}
             });
         left.subtypes.push_back(std::move(t).value_or(Type{}));
+        while (p.discard(TokenType::Comma)) {
+            if (p.Peek() && p.Peek()->type == TokenType::DomainAnnotation) {
+                if(!full) p.error("Domain annotation is not expected in this context", p.Peek());
+                if (!do_annotations()) return std::nullopt;
+                break;
+            }
+            t = p.parseType(0, full);
+            if (!t)
+                p.synchronizeTo({
+                    {TokenType::Comma, TokenType::Greater,
+                    TokenType::DoubleGreater}
+                });
+            left.subtypes.push_back(std::move(t).value_or(Type{}));
+        }
     }
     if (!p.discard(TokenType::Greater)) {
         if (p.discard(TokenType::DoubleGreater)) {
@@ -1392,22 +1447,28 @@ std::optional<Type> parsePostfixTypeExpr(Parser& p, Type left, Token t) {
     }
     return std::nullopt;
 }
-std::optional<Type> parseRefType(Token tk, Parser& p) {
+std::optional<Type> parseRefType(Token tk, Parser& p, bool full) {
+    std::vector<char> domains;
+    if (auto annot = p.Peek(); annot && annot->type == TokenType::DomainAnnotation) {
+        if (!full) p.error("Domain Annotations are not allowed in this context", annot);
+        p.Get();
+        domains.push_back(annot->text[0]);
+    }
     auto is_mut = p.discard(TokenType::Mut);
-    auto t = *p.parseType(0);
-    if (is_mut) return Type{"__ref_mut", {std::move(t)}};
-    return Type("__ref", {std::move(t)});
+    auto t = *p.parseType(0, full);
+    if (is_mut) return Type{.name ="__ref_mut", .subtypes ={std::move(t)}, .domains = std::move(domains)};
+    return Type{.name = "__ref", .subtypes = {std::move(t)}, .domains = std::move(domains)};
 }
 std::optional<Type> parseGCRefType(Token tk, Parser& p) {
     auto t = *p.parseType(0);
     return Type("__gcref", {std::move(t)});
 }
-std::optional<Type> parseGroupType(Parser& p) {
+std::optional<Type> parseGroupType(Parser& p, bool full) {
     if (p.discard(TokenType::RParen)) return Type{"void"};
     std::optional<TokenType> seperator;
     std::vector<Type> subtypes;
     while (!p.discard(TokenType::RParen)) {
-        subtypes.push_back(p.parseType(0).value_or(Type{}));
+        subtypes.push_back(p.parseType(0, full).value_or(Type{}));
         if (p.discard(TokenType::RParen)) break;
         if (!seperator) {
             auto tk = p.Peek();
@@ -1541,7 +1602,7 @@ UsingStatement::ContentTy Parser::parseUsingContent(uint32_t generic_num) {
                     }
                 }
                 auto t = parseTemplateTypeExpr(
-                    *this, Type{.name = std::string(tk->text)});
+                    *this, Type{.name = std::string(tk->text)}, false);
                 block += t->full_name() + "::";
                 if (!Peek() || Peek()->type != TokenType::DoubleColon) {
                     error("Expected '::'", tk);
@@ -1564,7 +1625,7 @@ UsingStatement::ContentTy Parser::parseUsingContent(uint32_t generic_num) {
         }
     }
 }
-std::optional<Type> Parser::parseType(uint32_t precedence) {
+std::optional<Type> Parser::parseType(uint32_t precedence, bool full) {
     auto tk = Peek();
     if (!tk) return std::nullopt;
     std::optional<Type> t;
@@ -1575,15 +1636,15 @@ std::optional<Type> Parser::parseType(uint32_t precedence) {
         break;
     case TokenType::LSquare:
         Get();
-        t = parseArrayType(*tk, *this);
+        t = parseArrayType(*tk, *this, full);
         break;
     case TokenType::Ampersand:
         Get();
-        t = parseRefType(*tk, *this);
+        t = parseRefType(*tk, *this, full);
         break;
     case TokenType::LParen:
         Get();
-        t = parseGroupType(*this);
+        t = parseGroupType(*this, full);
         break;
     case TokenType::Caret:
         Get();
@@ -1608,7 +1669,7 @@ std::optional<Type> Parser::parseType(uint32_t precedence) {
         tk = Get();
         switch (tk->type) {
         case TokenType::TemplateOpen:
-            t = parseTemplateTypeExpr(*this, std::move(t).value());
+            t = parseTemplateTypeExpr(*this, std::move(t).value(), full);
             break;
         case TokenType::Question:
             [[fallthrough]];
@@ -1616,7 +1677,7 @@ std::optional<Type> Parser::parseType(uint32_t precedence) {
             t = parsePostfixTypeExpr(*this, std::move(t).value(), *tk);
             break;
         case TokenType::DoubleColon: {
-            std::optional<Type> tp = parseType(precedence);
+            std::optional<Type> tp = parseType(precedence, full);
             tp->name = t->full_name() + "::" + tp->name;
             t = std::move(tp);
             break;

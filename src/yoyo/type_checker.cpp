@@ -715,7 +715,10 @@ FunctionType TypeChecker::operator()(TupleLiteral* lit) const {
             return Type{"__error_type"};
         }
     }
-    lit->evaluated_type =
+    if(lit->elements.empty())
+        lit->evaluated_type = Type{.name = "void", .module = core_module};
+    else
+        lit->evaluated_type =
         Type{.name = "__tup",
              .module = irgen->module->engine->modules.at("core").get()};
     for (auto i : std::views::iota(0u, lit->elements.size())) {

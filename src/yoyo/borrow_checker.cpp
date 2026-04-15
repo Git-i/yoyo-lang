@@ -755,11 +755,11 @@ void DomainCheckerState::register_value_base_type(const std::string& value,
 BorrowCheckerType DomainCheckerState::type_to_borrow_checker_type(
     const Type& type) {
     if (type.is_integral() || type.is_floating_point() ||
-        type.get_decl_if_enum()) {
+        type.get_decl_if_enum() || type.is_void()) {
         return BorrowCheckerType::new_primitive();
     }
     if (type.get_decl_if_class(irgen) || type.get_decl_if_union()) {
-        return BorrowCheckerType::new_aggregate_from(Type(type));
+        return BorrowCheckerType::new_aggregate_from(Type(type), this);
     }
     // HACK: strings are not properly supported (so nothing fancy can
     // happen) and we just treat them like primitives
@@ -1914,6 +1914,7 @@ static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType {
         ntype.domains = type.domains;
         ntype.details.emplace<Named>(
             Type(std::get<Named>(type.details).actual_type));
+        std::get<Named>(ntype.details).initialized_domains = std::get<Named>(type.details).initialized_domains;
         return ntype;
     }
     case LValue: {
@@ -2057,10 +2058,23 @@ BorrowCheckerType BorrowCheckerType::new_primitive() {
     new_type.details.emplace<Primitive>();
     return new_type;
 }
-BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp) {
+BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp, DomainCheckerState* state) {
     BorrowCheckerType new_type;
     new_type.details.emplace<Named>(Type(tp));
-    // auto& as_named = std::get<Named>(new_type.details);
+    auto& as_named = std::get<Named>(new_type.details);
+
+    if(auto as_class = tp.get_decl_if_class(state->irgen)) {
+        for(auto dom : as_class->domains) {
+            new_type.domains.emplace_back(state->new_domain_var(), false);
+            as_named.initialized_domains[dom] = new_type.domains.size() - 1;
+        }
+    }
+    else if(auto as_union = tp.get_decl_if_union()) {
+        for(auto dom : as_union->domains) {
+            new_type.domains.emplace_back(state->new_domain_var(), false);
+            as_named.initialized_domains[dom] = new_type.domains.size() - 1;
+        }
+    }
     return new_type;
 }
 BorrowCheckerType BorrowCheckerType::new_array_of(BorrowCheckerType&& tp) {
@@ -2122,9 +2136,19 @@ std::string BorrowCheckerType::to_string() const {
                              path_str, dets.subtype->to_string());
         break;
     }
-    case Named:
-        result = std::get<Named>(details).actual_type.full_name();
+    case Named: {
+        auto& dets = std::get<Named>(details);
+        result = dets.actual_type.full_name();
+        if(!domains.empty()) {
+            auto vals = domains | std::views::keys;
+            result += "(" + vals.front().to_string();
+            for (auto& domain : vals | std::views::drop(1)) {
+                result += ", " + domain.to_string();
+            }
+            result += ")";
+        }
         break;
+    }
     default:
         debugbreak();
     }
@@ -2447,7 +2471,7 @@ BlockIteratorTy DomainVariableInserter::operator()(
 }
 BlockIteratorTy DomainVariableInserter::operator()(
     NewAggregateInstruction* inst) {
-    auto new_tp = BorrowCheckerType::new_aggregate_from(Type(inst->type_name));
+    auto new_tp = BorrowCheckerType::new_aggregate_from(Type(inst->type_name), state);
     state->register_value_base_type(inst->into, std::move(new_tp));
     return current_position;
 }

@@ -544,7 +544,7 @@ struct BorrowCheckerType {
         NamedTypeDetails(std::string full_type_name);
         NamedTypeDetails(Type&& tp) : actual_type(std::move(tp)) {};
         Type actual_type;
-        std::unordered_map<std::string, Domain> field_domains;
+        std::map<char, size_t> initialized_domains;
     };
     BorrowCheckerType() = default;
     BorrowCheckerType(const BorrowCheckerType&) = delete;
@@ -573,7 +573,7 @@ struct BorrowCheckerType {
     BorrowCheckerType deref() const;
     // create a new primitive type
     static BorrowCheckerType new_primitive();
-    static BorrowCheckerType new_aggregate_from(Type&&);
+    static BorrowCheckerType new_aggregate_from(Type&&, DomainCheckerState*);
     // does not change domains of the provided type
     static BorrowCheckerType new_array_of(BorrowCheckerType&&);
 

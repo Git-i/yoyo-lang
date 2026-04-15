@@ -230,7 +230,7 @@ BasicReference: struct(a) = {
 }
 main: fn = {
     inner2 := BasicReference {
-        .data = MaybeReference::None()
+        .data = MaybeReference::None(())
     };
     inner := BasicReference {
         .data = MaybeReference::Some(&inner2)

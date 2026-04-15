@@ -107,6 +107,7 @@ enum class TokenType {
     // Only used my operator overloads
     SquarePair,     // []
     SquarePairMut,  // mut []
+    DomainAnnotation
 };
 struct Token {
     TokenType type;

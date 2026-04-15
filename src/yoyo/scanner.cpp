@@ -397,6 +397,10 @@ std::optional<Token> Scanner::ScanCharLiteral() {
     if (Peek() == '\'') {
         std::ignore = Get();
         return Token{TokenType::CharLiteral, loc, view};
+    } else {
+        // char literal without closing ' is a lifetime annotation
+        if (num_bytes != 1) return std::nullopt;
+        return Token{TokenType::DomainAnnotation, loc, view};
     }
     return std::nullopt;
 }
