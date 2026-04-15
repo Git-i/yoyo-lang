@@ -1,8 +1,10 @@
 #pragma once
 #include "ast_node.h"
 #include "type.h"
+#include <algorithm>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <memory>
 #include <unordered_map>
 #include <variant>
@@ -31,7 +33,8 @@ struct TypeCheckerStateDiff {
         Clear,
         Add,
         Replace,
-        Remove
+        Remove,
+        Flush
     };
     enum Operand {
         ActiveConstraints,
@@ -69,9 +72,9 @@ struct RecordedTypeCheckerState {
     std::vector<ConstraintInformation> active_constraints;
     std::vector<ConstraintInformation> generated_constraints;
     std::unordered_map<std::string, SubstitutionInformation> subsitutions;
-    // TODO: store unifications here
-    RecordedTypeCheckerState applied(const TypeCheckerStateDiff& diff);
-    void apply(const TypeCheckerStateDiff& diff);
+    std::vector<UnificationInformation> unifications;
+    RecordedTypeCheckerState applied(TypeCheckerStateDiff diff);
+    void apply(TypeCheckerStateDiff diff);
     std::string to_string() {
         std::string final_string;
         final_string += "[[Active]]\n";

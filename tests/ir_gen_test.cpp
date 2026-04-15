@@ -219,10 +219,43 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test References in struct", "[borrow-checker][references]")
+{
+    std::string source = (
+R"(throwaway: fn = return;
+MaybeReference: union(a) = {
+    None: void,
+    Some: &'a BasicReference::<'a>
+}
+BasicReference: struct(a) = {
+    data: MaybeReference::<'a>
+}
+main: fn = {
+    inner2 := BasicReference {
+        .data = MaybeReference::None()
+    };
+    inner := BasicReference {
+        .data = MaybeReference::Some(&inner2)
+    };
+    value := BasicReference {
+        .data = MaybeReference::Some(&inner)
+    };
+    return;
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile().is_successful());
+    engine.prepareForExecution();
+    if constexpr (emit_ir) std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR() << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
 TEST_CASE("Test garbage collected refcells", "[gc][can_panic]")
 {
-    std::string source(1 + R"(
-func: fn(x: &mut i32, y: &mut i32) = return;
+    std::string source(
+R"(func: fn(x: &mut i32, y: &mut i32) = return;
 main: fn = {
     b: i32 = 10;
     a: ^i32 = gcnew b;

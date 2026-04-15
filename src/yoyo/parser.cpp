@@ -874,17 +874,11 @@ namespace Yoyo
         std::vector<InterfaceImplementation> impls;
         std::optional<GenericClause> clause;
         Get(); //skip the "class" or "struct" keyword
-        Ownership own_method = Ownership::Owning;
-        if(discard(TokenType::Colon))
-        {
-            if(!discard(TokenType::Ampersand)) error("Expected '&'", Peek());
-            if(discard(TokenType::Mut)) own_method = Ownership::NonOwningMut;
-            else own_method = Ownership::NonOwning;
-        }
         if (Peek() && Peek()->type == TokenType::TemplateOpen)
         {
             clause = parseGenericClause();
         }
+        std::vector<char> asd;
         if(!discard(TokenType::Equal)) error("Expected '='", Peek());
         if(!discard(TokenType::LCurly)) error("Expected '{'", Peek());
         while(!discard(TokenType::RCurly))

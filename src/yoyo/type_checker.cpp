@@ -1,3 +1,4 @@
+#include "error.h"
 #include "expression.h"
 #include "info_aggregator.h"
 #include "ir_gen.h"
@@ -741,13 +742,6 @@ namespace Yoyo
         return lit->evaluated_type;
     }
     FunctionType TypeChecker::operator()(RealLiteral* lit) const {
-        if (target) {
-            if (target->is_floating_point()) return { *target };
-            else {
-                irgen->error(Error(lit, "Cannot convert real literal to " + target->full_name()));
-                return Type{ "__error_type" };
-            }
-        }
         lit->evaluated_type = state->new_type_var();
         state->add_constraint(IsFloatConstraint{ lit->evaluated_type, lit });
         state->add_constraint(CanStoreRealConstraint{ lit->evaluated_type, std::stod(std::string(lit->token.text)), lit });
@@ -1623,8 +1617,10 @@ namespace Yoyo
             }
             // ?1 and concrete <case 3>
             else {
-                if(auto err = state->get_type_domain(type1)->equal_constrain(std::move(type2)))
+                if(auto err = state->get_type_domain(type1)->equal_constrain(std::move(type2))) {
+                    err->span = SourceSpan{.begin = con.expr->beg, .end = con.expr->end};
                     irgen->error(*err);
+                }
                 state->push_step(Info::TypeCheckerStateDiff{
                     .op = Info::TypeCheckerStateDiff::Replace,
                     .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -2319,10 +2315,20 @@ namespace Yoyo
         bool has_change = true;
         while (has_change) {
             info.iterations.push_back(info.steps.size());
-            has_change = std::erase_if(constraints, [this](TypeCheckerConstraint& elem) {
-                return std::visit(sv, elem);
+            size_t i = 0;
+            has_change = std::erase_if(constraints, [this, &i](TypeCheckerConstraint& elem) {
+                auto should_remove = std::visit(sv, elem);
+                if (should_remove) {
+                    push_step(Info::TypeCheckerStateDiff{
+                        .op = Info::TypeCheckerStateDiff::Remove,
+                        .apply_to = Info::TypeCheckerStateDiff::ActiveConstraints,
+                        .arg = i
+                    });
+                } else i++;
+                return should_remove;
                 }) != 0;
             // add newly generated constraints here
+            if(!sv.temp_constraints.empty()) push_step(Info::TypeCheckerStateDiff{.op = Info::TypeCheckerStateDiff::Flush });
             std::ranges::move(sv.temp_constraints, std::back_inserter(constraints));
             sv.temp_constraints.clear();
         }

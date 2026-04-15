@@ -221,6 +221,7 @@ namespace Yoyo
         std::string name;
         std::vector<ClassVariable> vars;
         std::vector<std::unique_ptr<Statement>> stats;
+        std::vector<char> domains;
         //consider an unordered map, although types should generally implement too many interfaces
         std::vector<InterfaceImplementation> impls;
         std::string destructor_name;
@@ -232,8 +233,9 @@ namespace Yoyo
             std::vector<ClassVariable> vars,
             std::vector<std::unique_ptr<Statement>> stats,
             Ownership sh,
-            std::vector<InterfaceImplementation> impls)
-            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), impls(std::move(impls)), 
+            std::vector<InterfaceImplementation> impls,
+            std::vector<char> domains)
+            : name(ident.text), vars(std::move(vars)), stats(std::move(stats)), domains(std::move(domains)), impls(std::move(impls)),
             ownership(sh){}
         StatementVariant toVariant() override;
     };
@@ -247,10 +249,11 @@ namespace Yoyo
             std::vector<std::unique_ptr<Statement>> stats,
             Ownership sh,
             std::vector<InterfaceImplementation> impls,
-            GenericClause cl) :
+            GenericClause cl,
+            std::vector<char> domains) :
             ClassDeclaration(ident, 
                 std::move(vars), 
-                std::move(stats), sh, std::move(impls)), clause(std::move(cl)) {}
+                std::move(stats), sh, std::move(impls), std::move(domains)), clause(std::move(cl)) {}
         StatementVariant toVariant() override;
     };
     class ForStatement : public Statement

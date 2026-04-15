@@ -22,6 +22,7 @@ sources = [
     'src/yoyo/borrow_checker.cpp',
     'src/yoyo/type_checker.cpp',
     'src/yoyo/ast_print.cpp',
+    'src/yoyo/info_aggregator.cpp',
 
     'include/yoyo/ast_node.h',
     'include/yoyo/cfg_node.h',
