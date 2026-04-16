@@ -185,6 +185,8 @@ void IRGenerator::pushScopeWithConstLock(It begin, It end) {
 
 void IRGenerator::error(const Error& e) {
     if (write_errors_to) {
+        auto as_str = e.to_string(*view, true);
+        std::cout << as_str << std::endl;
         write_errors_to->emplace_back(e, e.to_string(*view, true));
         has_error = true;
         return;

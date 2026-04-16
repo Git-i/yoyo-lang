@@ -358,14 +358,14 @@ class BorrowCheckerEmitter {
     std::string name_based_on(std::string_view other) {
         return std::to_string(counter++) + std::string(other);
     }
-    void destroy_and_remove_block() {
+    void destroy_and_remove_block(ASTNode* origin = nullptr) {
         for (auto& [name, id] : variables.back() | std::views::reverse) {
-            drop_object(Value::from(std::move(id)));
+            drop_object(Value::from(std::move(id)), origin);
         }
         variables.pop_back();
     }
-    void drop_object(Value&& val) {
-        current_block->add_instruction(new DropInstruction(std::move(val)));
+    void drop_object(Value&& val, ASTNode* origin = nullptr) {
+        current_block->add_instruction(new DropInstruction(std::move(val)), origin);
     }
 
 public:
@@ -573,7 +573,7 @@ struct BorrowCheckerType {
     BorrowCheckerType deref() const;
     // create a new primitive type
     static BorrowCheckerType new_primitive();
-    static BorrowCheckerType new_aggregate_from(Type&&, DomainCheckerState*);
+    static BorrowCheckerType new_aggregate_from(Type&&, DomainCheckerState*, const std::map<char, Domain>&);
     // does not change domains of the provided type
     static BorrowCheckerType new_array_of(BorrowCheckerType&&);
 
@@ -799,7 +799,7 @@ struct DomainCheckerState {
     Domain new_domain_var();
     void register_value_base_type(const std::string& value,
                                   BorrowCheckerType&&);
-    BorrowCheckerType type_to_borrow_checker_type(const Type& type);
+    BorrowCheckerType type_to_borrow_checker_type(const Type& type, const std::map<char, Domain>& domain_map);
     const BorrowCheckerType& get_value_type(const Value& value);
     const BorrowCheckerType& field_lookup(const BorrowCheckerType& type,
                                           const std::string& base,
@@ -816,6 +816,10 @@ struct DomainCheckerState {
     std::unordered_map<Instruction*, std::set<std::string>> dfa_in;
     std::unordered_map<Instruction*, std::set<std::string>> dfa_out;
     std::unordered_map<std::string, KillReason> domain_kill_reason;
+
+    // shared domains are used to track what domains are used by multiple references
+    // and thus should never be overwritten (only appended to)
+    std::set<std::string> shared_domains;
 
     std::unique_ptr<BorrowCheckerFunction> check_function(
         FunctionDeclaration* decl, IRGenerator* irgen,

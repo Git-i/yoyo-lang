@@ -356,6 +356,7 @@ std::unique_ptr<Expression> ExpressionTreeCloner::operator()(
         stat->else_capture_tp);
     ret->condition->parent = ret->body->parent = ret.get();
     if (ret->else_body) ret->else_body->parent = ret.get();
+    return ret;
 }
 
 std::unique_ptr<Statement> StatementTreeCloner::operator()(

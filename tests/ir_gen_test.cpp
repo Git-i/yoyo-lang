@@ -238,6 +238,16 @@ main: fn = {
     value := BasicReference {
         .data = MaybeReference::Some(&inner)
     };
+    if |a| (value.data as Some) {
+        short := BasicReference {
+            .data = MaybeReference::None(())
+        };
+        a.data = MaybeReference::Some(&short);
+    };
+
+    if |b| (inner.data as Some) {
+        *b;
+    }
     return;
 }
 )");

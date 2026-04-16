@@ -56,6 +56,8 @@ struct TypeCheckerStateDiff {
                 return "Replace";
             case Remove:
                 return "Remove";
+            case Flush:
+                return "Flush";
             }
         };
         auto operand_string = [](Operand op) {

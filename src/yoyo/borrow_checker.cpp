@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <deque>
+#include <format>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -231,14 +232,14 @@ Value BorrowCheckerEmitter::operator()(BlockExpression* expr) {
         if (current_block->is_terminated()) {
             auto store = std::move(current_block->instructions.back());
             current_block->instructions.pop_back();
-            destroy_and_remove_block();
+            destroy_and_remove_block(expr);
             current_block->instructions.push_back(std::move(store));
             return Value::empty();
         }
     }
     Value ret = Value::empty();
     if (expr->expr) ret = std::visit(*this, expr->expr->toVariant());
-    destroy_and_remove_block();
+    destroy_and_remove_block(expr);
     return ret;
 }
 Value BorrowCheckerEmitter::operator()(IntegerLiteral* lit) {
@@ -753,13 +754,24 @@ void DomainCheckerState::register_value_base_type(const std::string& value,
     type_mapping.emplace(value, std::move(type));
 }
 BorrowCheckerType DomainCheckerState::type_to_borrow_checker_type(
-    const Type& type) {
+    const Type& type, const std::map<char, Domain>& domain_map) {
     if (type.is_integral() || type.is_floating_point() ||
         type.get_decl_if_enum() || type.is_void()) {
         return BorrowCheckerType::new_primitive();
     }
     if (type.get_decl_if_class(irgen) || type.get_decl_if_union()) {
-        return BorrowCheckerType::new_aggregate_from(Type(type), this);
+        return BorrowCheckerType::new_aggregate_from(Type(type), this, domain_map);
+    }
+    if (type.is_reference()) {
+        BorrowCheckerType new_type;
+        new_type.domains.emplace_back(
+            domain_map.empty() ? new_domain_var() : domain_map.at(type.domains[0]),
+            false
+        );
+        new_type.details.emplace<BorrowCheckerType::RefPtr>(
+            std::make_unique<BorrowCheckerType>(type_to_borrow_checker_type(type.subtypes[0], domain_map))
+        );
+        return new_type;
     }
     // HACK: strings are not properly supported (so nothing fancy can
     // happen) and we just treat them like primitives
@@ -810,6 +822,8 @@ const BorrowCheckerType& DomainCheckerState::field_lookup(
         // val.f1 val.f1.f2 and val.f1.f2
         std::string name_so_far = base_name;
         Type type_so_far = named->actual_type;
+        std::map<char, Domain> concrete_domain_map;
+        for (auto[dom, idx]: named->initialized_domains) concrete_domain_map[dom] = type.domains[idx].first;
         for (auto i : std::views::iota(0u, fields.size())) {
             // auto& prev_type = (i == 0) ? type :
             // named_value_type_cache.at(name_so_far); type so far is
@@ -826,13 +840,13 @@ const BorrowCheckerType& DomainCheckerState::field_lookup(
                 if (it == decl->vars.end()) debugbreak();
                 type_so_far = it->type;
                 named_value_type_cache.emplace(
-                    name_so_far, type_to_borrow_checker_type(it->type));
+                    name_so_far, type_to_borrow_checker_type(it->type, concrete_domain_map));
                 // apply proper domain substitutions here
             } else if (auto decl = type_so_far.get_decl_if_union()) {
                 if (!decl->fields.contains(fields[i])) debugbreak();
                 type_so_far = decl->fields.at(fields[i]);
                 named_value_type_cache.emplace(
-                    name_so_far, type_to_borrow_checker_type(type_so_far));
+                    name_so_far, type_to_borrow_checker_type(type_so_far, concrete_domain_map));
             } else
                 debugbreak();
         }
@@ -1210,15 +1224,21 @@ struct TransferFunctionVisitor {
         }
         return result;
     }
-    std::set<std::string> kill_for_dropping_value(const Value& in) {
-        std::set<std::string> result;
+    std::vector<std::pair<std::string, KillReason>> kill_for_dropping_value(const Value& in) {
+        std::vector<std::pair<std::string, KillReason>> result;
         for (auto& [domain, point_to] : state->final_ptg.domain_to_node) {
             for (auto& val : point_to) {
                 // hopefully this string match would suffice
                 if (Value::from(std::string(val))
                         .to_string()
                         .starts_with(in.to_string())) {
-                    result.insert(domain);
+                    result.emplace_back(
+                        domain,
+                        KillReason{
+                            .source = KillReason::Drop,
+                            .affected_value = in.to_string(),
+                            .bad_pointee = val
+                        });
                     break;
                 }
             }
@@ -1235,21 +1255,37 @@ struct TransferFunctionVisitor {
     std::set<std::string> operator()(DomainSubsetConstraint* inst) {
         auto in = state->dfa_in[inst];
         // GEN = the new domain introduced
-        // TODO: should probably remove the old version of the domain
-        in.insert(inst->super.to_string());
+        // we can't insert a new version of a domain if sub is invalid 
+        if (in.contains(inst->sub.to_string()) || !inst->sub.is_var()) in.insert(inst->super.to_string());
+        else {
+            if (state->domain_kill_reason.contains(inst->sub.to_string()) && !state->domain_kill_reason.contains(inst->super.to_string()))
+                state->domain_kill_reason[inst->super.to_string()] = state->domain_kill_reason[inst->sub.to_string()];
+
+        }
         return in;
     }
     std::set<std::string> operator()(DomainExtensionConstraint* inst) {
         auto in = state->dfa_in[inst];
-        in.insert(inst->super.to_string());
+        if (in.contains(inst->sub.to_string()) && in.contains(inst->old_super.to_string()))
+            in.insert(inst->super.to_string());
+        // TODO: probably propagate kill reason here too (how would that work with 2 potential kills?)
         return in;
     }
     std::set<std::string> operator()(DomainPhiInstruction* inst) {
         // this intrusction introduces a new doamin only if all the
         // input domains are valid
         auto in = state->dfa_in[inst];
-
-        in.insert(inst->into);
+        bool all_inputs_valid = true;
+        for (auto& input : inst->args) {
+            // the input is valid unless it has been explicitly killed
+            if(state->domain_kill_reason.contains(input.to_string())) {
+                all_inputs_valid = false;
+                if (!state->domain_kill_reason.contains(inst->into))
+                    state->domain_kill_reason[inst->into] = state->domain_kill_reason[input.to_string()];
+                break;
+            }
+        }
+        if(all_inputs_valid) in.insert(inst->into);
         return in;
     }
     std::set<std::string> operator()(RelocateValueInstruction* inst) {
@@ -1271,6 +1307,13 @@ struct TransferFunctionVisitor {
         // The valid sets don't change during this operation
         return state->dfa_in[inst];
     }
+    std::set<std::string> operator()(MayStoreOperation* inst) {
+        // TODO: I'm not sure what this is supposed to do, or even if its supposed to be hit
+        return state->dfa_in[inst];
+    }
+    std::set<std::string> operator()(MayLoadOperation* inst) {
+        return state->dfa_in[inst];
+    }
     std::set<std::string> operator()(DerefLoadOperation* inst) {
         return state->dfa_in[inst];
     }
@@ -1280,6 +1323,10 @@ struct TransferFunctionVisitor {
         return state->dfa_in[inst];
     }
     std::set<std::string> operator()(AssignInstruction* inst) {
+        // we need to add all the may store domains into GEN, but we do the union before subtracting KILL
+        // this allows to explicitly kill bad domains
+        std::set<std::string> gen;
+        for(auto op : inst->may_stores) gen.insert(op->new_domain.to_string());
         // assign modifies a value, so it invalidates all domains that
         // points to values originating from that value this will
         // contain all the modified values by this assign (it will be
@@ -1301,14 +1348,16 @@ struct TransferFunctionVisitor {
             lhs_values.push_back(inst->lhs);
         }
         auto kill = kill_for_modifying_values(lhs_values);
-        std::vector<std::string> output;
+        std::set<std::string> output;
+        std::set<std::string> in_union_gen;
+        std::ranges::set_union(state->dfa_in[inst], gen, std::inserter(in_union_gen, in_union_gen.begin()));
         std::ranges::set_difference(
-            state->dfa_in[inst],
-            kill | std::views::transform([](auto& elem) { return elem.first; }),
-            std::back_inserter(output));
-        if (output.size() != state->dfa_in[inst].size()) {
+            in_union_gen,
+            kill | std::views::keys,
+            std::inserter(output, output.begin()));
+        if (output.size() != in_union_gen.size()) {
             // add kill reasons for the killed domains
-            auto& in = state->dfa_in[inst];
+            auto& in = in_union_gen;
             for (auto& [domain, reason] : kill) {
                 if (in.contains(domain) &&
                     !state->domain_kill_reason.contains(domain)) {
@@ -1326,10 +1375,21 @@ struct TransferFunctionVisitor {
         // the dropped value are also invalidated, and stability does
         // not matter
         auto kill = kill_for_dropping_value(inst->val);
-        std::vector<std::string> output;
-        std::ranges::set_difference(state->dfa_in[inst], kill,
-                                    std::back_inserter(output));
-        return std::set<std::string>{output.begin(), output.end()};
+        std::set<std::string> output;
+        std::ranges::set_difference(state->dfa_in[inst], kill | std::views::keys,
+                                    std::inserter(output, output.begin()));
+        if(output.size() != state->dfa_in[inst].size()) {
+            auto& in = state->dfa_in[inst];
+            for(auto& [domain, reason] : kill) {
+                if (in.contains(domain) &&
+                    !state->domain_kill_reason.contains(domain)) {
+                    reason.killing_instruction = inst->origin;
+                    if(domain.ends_with("5__3")) debugbreak();
+                    state->domain_kill_reason[domain] = reason;
+                }
+            }
+        }
+        return output;
     }
     std::set<std::string> operator()(CallFunctionInstruction* inst) {
         // functions cannot do anything with references now
@@ -2030,6 +2090,7 @@ BorrowCheckerType BorrowCheckerType::moved(DomainCheckerState*) const {
         new_type.details.emplace<Primitive>();
     } else if (auto named = std::get_if<Named>(&details); named) {
         new_type.details.emplace<Named>(Type(named->actual_type));
+        std::get<Named>(new_type.details).initialized_domains = named->initialized_domains;
     } else if (auto lvalue = std::get_if<LValue>(&details); lvalue) {
         new_type.details.emplace<LValue>(
             std::make_unique<BorrowCheckerType>(clone_type(*lvalue->subtype)));
@@ -2058,20 +2119,28 @@ BorrowCheckerType BorrowCheckerType::new_primitive() {
     new_type.details.emplace<Primitive>();
     return new_type;
 }
-BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp, DomainCheckerState* state) {
+BorrowCheckerType BorrowCheckerType::new_aggregate_from(Type&& tp, DomainCheckerState* state, const std::map<char, Domain>& substs) {
     BorrowCheckerType new_type;
     new_type.details.emplace<Named>(Type(tp));
     auto& as_named = std::get<Named>(new_type.details);
-
+    bool create_new_domains = substs.empty(); // if the map is empty we make new domains
     if(auto as_class = tp.get_decl_if_class(state->irgen)) {
         for(auto dom : as_class->domains) {
-            new_type.domains.emplace_back(state->new_domain_var(), false);
+            if(create_new_domains) new_type.domains.emplace_back(state->new_domain_var(), false);
+            else {
+                if (!substs.contains(dom)) debugbreak();
+                new_type.domains.emplace_back(substs.at(dom), false);
+            }
             as_named.initialized_domains[dom] = new_type.domains.size() - 1;
         }
     }
     else if(auto as_union = tp.get_decl_if_union()) {
         for(auto dom : as_union->domains) {
-            new_type.domains.emplace_back(state->new_domain_var(), false);
+            if(create_new_domains) new_type.domains.emplace_back(state->new_domain_var(), false);
+            else {
+                if (!substs.contains(dom)) debugbreak();
+                new_type.domains.emplace_back(substs.at(dom), false);
+            }
             as_named.initialized_domains[dom] = new_type.domains.size() - 1;
         }
     }
@@ -2450,7 +2519,7 @@ BlockIteratorTy DomainVariableInserter::operator()(
     }
     // TODO: check that the return value does not contain a reference
     state->register_value_base_type(
-        func->into, state->type_to_borrow_checker_type(func->expected_return));
+        func->into, state->type_to_borrow_checker_type(func->expected_return, {}));
     return current_position;
 }
 BlockIteratorTy DomainVariableInserter::operator()(
@@ -2471,8 +2540,12 @@ BlockIteratorTy DomainVariableInserter::operator()(
 }
 BlockIteratorTy DomainVariableInserter::operator()(
     NewAggregateInstruction* inst) {
-    auto new_tp = BorrowCheckerType::new_aggregate_from(Type(inst->type_name), state);
+    auto new_tp = BorrowCheckerType::new_aggregate_from(Type(inst->type_name), state, {});
     state->register_value_base_type(inst->into, std::move(new_tp));
+    for(auto&[field, value] : inst->values) {
+        auto& field_ty = state->get_value_type(Value::from(inst->into + "." + field));
+        add_assign_constraints_between_types(field_ty, state->get_value_type(value));
+    }
     return current_position;
 }
 BlockIteratorTy DomainVariableInserter::operator()(NewArrayInstruction* inst) {
@@ -2546,6 +2619,11 @@ void add_kill_reason_to_error(Error& err, const KillReason& reason) {
             detail += std::format(" ({} may point to {})",
                                   reason.lvalue_source.value(),
                                   reason.affected_value);
+    } else if (reason.source == KillReason::Drop) {
+        detail = std::format(
+            "Value may point to {}, which was invalidated when {} was dropped",
+            reason.bad_pointee, reason.affected_value
+        );
     }
     err.markers.emplace_back(span, std::move(detail));
 }
@@ -2564,9 +2642,16 @@ void BorrowCheckVisitor::operator()(DerefOperation* inst) {
 }
 void BorrowCheckVisitor::operator()(DerefLoadOperation* inst) {
     if (!state->dfa_in[inst].contains(inst->ref_domain.to_string())) {
-        irgen->error(Error(inst->origin,
+        // TODO: Handle missing domains without kill reason
+        if (!state->domain_kill_reason.contains(inst->ref_domain.to_string()))
+            debugbreak();
+        const auto& reason =
+            state->domain_kill_reason.at(inst->ref_domain.to_string());
+        Error err = Error(inst->origin,
                            "Attempt to dereference value that might "
-                           "point to invalid memory"));
+                           "point to invalid memory");
+        add_kill_reason_to_error(err, reason);
+        irgen->error(err);
     }
 }
 }  // namespace BorrowChecker
