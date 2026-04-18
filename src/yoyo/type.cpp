@@ -1,6 +1,8 @@
 #include "type.h"
 
+#include <algorithm>
 #include <cassert>
+#include <numeric>
 #include <ranges>
 #include <set>
 
@@ -703,6 +705,43 @@ struct MangleScanner {
         return Token{Name, ret_val};
     }
 };
+size_t Type::get_supposed_num_domains(IRGenerator* irgen) const {
+    if (is_reference()) return 1 + subtypes[0].get_supposed_num_domains(irgen);
+    if (is_static_array()) return subtypes[0].get_supposed_num_domains(irgen);
+    if (is_builtin()) return 0;
+    if (get_decl_if_enum()) return 0;
+    if (is_tuple()) {
+        auto child_num =
+            subtypes | std::views::transform([irgen](const Type& t) {
+                return t.get_supposed_num_domains(irgen);
+            });
+        return std::accumulate(child_num.begin(), child_num.end(), 0,
+                               std::plus<size_t>());
+    }
+    if (auto decl = get_decl_if_union()) return decl->domains.size();
+    if (auto decl = get_decl_if_class(irgen))
+        return decl->domains.size();
+    else
+        debugbreak();
+    return 0;
+}
+void Type::add_domains(std::span<char> domains) {
+    if (!this->domains.empty()) return;
+    if (is_reference()) {
+        this->domains.push_back(domains[0]);
+        subtypes[0].add_domains(domains.subspan(1));
+    } else if (is_static_array()) {
+        subtypes[0].add_domains(domains);
+    } else if (is_tuple()) {
+        size_t current_idx = 0;
+        for (auto& type : subtypes) {
+            type.add_domains(domains.subspan(current_idx));
+            current_idx += type.domains.size();
+        }
+    } else if (is_integral() || is_floating_point() || get_decl_if_enum()) {
+    } else
+        debugbreak();
+}
 std::string pretty_name_suffix(const Type& tp, const std::string& blk) {
     if (tp.is_mutable_reference())
         return "&mut " + tp.subtypes[0].pretty_name(blk);

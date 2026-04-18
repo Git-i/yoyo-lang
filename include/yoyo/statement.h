@@ -169,7 +169,8 @@ public:
     std::vector<std::unique_ptr<Statement>> sub_stats;
     std::vector<char> domains;
     UnionDeclaration(std::string name, std::unordered_map<std::string, Type> f,
-                     std::vector<std::unique_ptr<Statement>> s, std::vector<char> domains)
+                     std::vector<std::unique_ptr<Statement>> s,
+                     std::vector<char> domains)
         : name(std::move(name)),
           fields(std::move(f)),
           sub_stats(std::move(s)),

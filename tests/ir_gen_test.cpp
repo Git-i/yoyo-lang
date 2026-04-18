@@ -218,7 +218,32 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
-TEST_CASE("Test References in struct", "[borrow-checker][references]") {
+TEST_CASE("Test Domain for generics", "[borrow-checker][generics]") {
+    std::string source = (
+        R"(throwaway: fn = return;
+Container: struct::<T> = {
+    data1: T,
+    data2: T,
+}
+main: fn = {
+    int1: i32 = 100;
+    int2 := 200;
+
+    value := Container{.data1 = &int1, .data2 = &int2};
+}
+)");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile().is_successful());
+    engine.prepareForExecution();
+    if constexpr (emit_ir)
+        std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR()
+                  << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test References in struct", "[borrow-checker][composites]") {
     std::string source = (
         R"(throwaway: fn = return;
 MaybeReference: union(a) = {

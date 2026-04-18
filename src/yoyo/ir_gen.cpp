@@ -255,15 +255,28 @@ void IRGenerator::generateGenericClass(ModuleBase* mod, const std::string& hash,
     if (auto exists = mod->findClass(hash, name); exists.second) return;
     auto module = this->module;
     this->module = mod;
-
-    for (size_t i = 0; i < types.size(); i++)
+    std::vector<char> new_domains;
+    for (size_t i = 0; i < types.size(); i++) {
+        // add domains to the type
+        auto num_new_domains = types[i].get_supposed_num_domains(this);
+        auto current_domain_idx = new_domains.size();
+        std::ranges::copy(
+            std::views::iota(static_cast<uint8_t>('z' + 1 + current_domain_idx),
+                             static_cast<uint8_t>('z' + 1 + current_domain_idx +
+                                                  num_new_domains)),
+            std::back_inserter(new_domains));
+        auto new_type = types[i];
+        new_type.add_domains(std::span{new_domains.begin() + current_domain_idx,
+                                       new_domains.end()});
         this->module->aliases[hash + name + "::"].emplace(decl->clause.types[i],
-                                                          types[i]);
+                                                          new_type);
+    }
 
     auto ptr = StatementTreeCloner::copy_stat_specific(
         static_cast<ClassDeclaration*>(decl), nullptr);
     auto new_decl = reinterpret_cast<ClassDeclaration*>(ptr.get());
     new_decl->name = name;
+    new_decl->domains = new_domains;
     auto old_hash = this->reset_hash();
 
     this->current_Statement = &ptr;

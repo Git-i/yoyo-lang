@@ -426,8 +426,8 @@ std::unique_ptr<Statement> StatementTreeCloner::operator()(
     for (auto& stat : decl->sub_stats) {
         stats.push_back(copy_stat(stat, nullptr));
     }
-    auto ret = std::make_unique<UnionDeclaration>(decl->name, decl->fields,
-                                                  std::move(stats), decl->domains);
+    auto ret = std::make_unique<UnionDeclaration>(
+        decl->name, decl->fields, std::move(stats), decl->domains);
     for (auto& s : ret->sub_stats) s->parent = ret.get();
     return ret;
 }

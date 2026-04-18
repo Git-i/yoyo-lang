@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -130,6 +131,8 @@ struct YOYO_API Type {
     [[nodiscard]] std::string full_name_no_block() const;
     [[nodiscard]] std::string full_name_no_generics() const;
     [[nodiscard]] std::string pretty_name(const std::string& block) const;
+    [[nodiscard]] size_t get_supposed_num_domains(IRGenerator* irgen) const;
+    void add_domains(std::span<char> domains);
 
     [[nodiscard]] size_t bitsize(IRGenerator* irgen) const;
     // there's no actual sorting, just to fulfill `set` requirements
