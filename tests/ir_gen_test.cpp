@@ -225,6 +225,9 @@ Container: struct::<T> = {
     data1: T,
     data2: T,
 }
+Recursive: struct(a) = {
+    data: &'a Recursive::<'a>
+}
 main: fn = {
     int1: i32 = 100;
     int2 := 200;

@@ -22,6 +22,7 @@
 #include "expression.h"
 #include "ir_gen.h"
 #include "overload_details.h"
+#include "statement.h"
 #include "token.h"
 namespace Yoyo {
 bool has_type_variable(const Yoyo::Type& tp);
@@ -2131,6 +2132,34 @@ BorrowCheckerType BorrowCheckerType::new_primitive() {
     new_type.details.emplace<Primitive>();
     return new_type;
 }
+void check_and_fill_multidomain(ClassDeclaration* decl, std::vector<Type> disallowed_types) {
+    // its multidomain if it appears in more than 1 field, or appears in one field and the type its used in marks it
+    // multidomain
+    enum DomainType { Multi, Single };
+    std::map<char, DomainType> encountered_domains;
+    auto get_type_domains = [&](const Type& type) {
+        std::vector<std::pair<char, DomainType>> result;
+        std::ranges::transform(type.domains, std::back_inserter(result), [](char c) {
+            // TODO: make this work
+            return std::make_pair(c, Single);
+        });
+        return result;
+    };
+    for (auto& field : decl->vars) {
+        for(auto[dom, type] : get_type_domains(field.type)) {
+            if(encountered_domains.contains(dom))
+                encountered_domains[dom] = Multi;
+            else
+                encountered_domains[dom] = type;
+        }
+    }
+    std::ranges::transform(decl->domains, std::back_inserter(decl->is_multidomain), [&](char dom) {
+        DomainType type;
+        if(encountered_domains.contains(dom)) type = encountered_domains.at(dom);
+        else type = Single;
+        return type == Multi;
+    });
+}
 BorrowCheckerType BorrowCheckerType::new_aggregate_from(
     Type&& tp, DomainCheckerState* state,
     const std::map<char, Domain>& substs) {
@@ -2140,9 +2169,15 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
     bool create_new_domains =
         substs.empty();  // if the map is empty we make new domains
     if (auto as_class = tp.get_decl_if_class(state->irgen)) {
-        for (auto dom : as_class->domains) {
-            if (create_new_domains)
+        if (as_class->is_multidomain.empty() && !as_class->domains.empty()) {
+            check_and_fill_multidomain(as_class, {});
+        }
+        for (auto i : std::views::iota(0u, as_class->domains.size())) {
+            auto dom = as_class->domains[i];
+            if (create_new_domains) {
                 new_type.domains.emplace_back(state->new_domain_var(), false);
+                state->shared_domains.insert(new_type.domains.back().first.to_string());
+            }
             else {
                 if (!substs.contains(dom)) debugbreak();
                 new_type.domains.emplace_back(substs.at(dom), false);
@@ -2428,10 +2463,17 @@ void DomainVariableInserter::add_assign_constraints_between_types(
     if (left.domains.empty()) return;
     // change this for structural types, but single types can only have
     // one domain
-    current_position = instructions.emplace(
-        ++current_position,
-        new DomainSubsetConstraint(Domain(left.domains[0].first),
-                                   Domain(right.domains[0].first)));
+    if (state->shared_domains.contains(left.domains[0].first.to_string())) {
+        current_position = instructions.emplace(
+            ++current_position,
+            new DomainExtensionConstraint(Domain(left.domains[0].first),
+                                    Domain(right.domains[0].first)));
+    } else {
+        current_position = instructions.emplace(
+            ++current_position,
+            new DomainSubsetConstraint(Domain(left.domains[0].first),
+                                    Domain(right.domains[0].first)));
+    }
 }
 void DomainVariableInserter::add_extend_constraints_between_types(
     const BorrowCheckerType& left, const BorrowCheckerType& right) {

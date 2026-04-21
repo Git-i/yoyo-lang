@@ -213,6 +213,8 @@ public:
     std::vector<ClassVariable> vars;
     std::vector<std::unique_ptr<Statement>> stats;
     std::vector<char> domains;
+    // holds whether the domain is shared between multiple fields
+    std::vector<bool> is_multidomain;
     // consider an unordered map, although types should generally implement
     // too many interfaces
     std::vector<InterfaceImplementation> impls;
