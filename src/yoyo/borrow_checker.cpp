@@ -1,5 +1,7 @@
 #include "borrow_checker.h"
 
+#include <info_aggregator.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <deque>
@@ -56,6 +58,35 @@ InstructionVariant MayStoreOperation::to_variant() { return this; }
 InstructionVariant MayLoadOperation::to_variant() { return this; }
 InstructionVariant NewAggregateInstruction::to_variant() { return this; }
 InstructionVariant DropInstruction::to_variant() { return this; }
+
+std::unique_ptr<Instruction> Instruction::clone() {
+    auto cloned = std::visit(
+        []<typename T>(T* inst) {
+            return static_cast<Instruction*>(new T(*inst));
+        },
+        to_variant());
+    return std::unique_ptr<Instruction>(cloned);
+}
+std::unique_ptr<BasicBlock> BasicBlock::clone() {
+    decltype(this->instructions) new_insts;
+    new_insts.reserve(instructions.size());
+    std::ranges::transform(instructions, std::back_inserter(this->instructions),
+                           [](auto& inst) { return inst->clone(); });
+    return std::unique_ptr<BasicBlock>(
+        new BasicBlock{.debug_name = debug_name,
+                       .instructions = std::move(new_insts),
+                       .preds = preds});
+}
+
+std::unique_ptr<BorrowCheckerFunction> BorrowCheckerFunction::clone() {
+    decltype(this->blocks) new_blocks;
+    std::ranges::transform(this->blocks, std::back_inserter(new_blocks),
+                           [](auto& in) { return in->clone(); });
+    return std::unique_ptr<BorrowCheckerFunction>(new BorrowCheckerFunction{
+        .blocks = std::move(new_blocks),
+        .idx = idx  // is this even important to clone
+    });
+}
 //=======================================================
 void BorrowCheckerEmitter::operator()(EnumDeclaration*) {}
 void BorrowCheckerEmitter::operator()(UsingStatement*) {}
@@ -878,6 +909,7 @@ std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
     entry_block = function->new_block("entry");
     std::visit(BorrowCheckerEmitter{irgen, stt, &*function, entry_block},
                decl->body->toVariant());
+    info->bc_state.initial_IR = function->clone();
     std::cout << "Phase 1\n" << function->to_string() << std::endl;
     for (auto& block : function->blocks) {
         for (auto it = block->instructions.begin();
@@ -887,6 +919,7 @@ std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
                 (*it)->to_variant());
         }
     }
+    info->bc_state.domain_vars_IR = function->clone();
     std::cout << "Phase 2\n"
               << type_mapping.to_string() << "\n\n"
               << function->to_string() << std::endl;
@@ -903,10 +936,12 @@ std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
                              has_change;
         }
     }
+    info->bc_state.aux_ptg = ptgraph;
     std::cout << ptgraph.to_graphviz() << std::endl;
 
     calc_block_preds();
     transform_to_ssa();
+    info->bc_state.ssa_IR = function->clone();
     std::cout << "Phase 3\n"
               << type_mapping.to_string() << "\n\n"
               << function->to_string() << std::endl;
@@ -914,20 +949,27 @@ std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
 
     // build DUG
     build_dug();
+    info->bc_state.def_use_graphviz = def_use_graph.to_graphviz();
     std::cout << def_use_graph.to_graphviz() << std::endl;
 
     do_primary_analysis();
+    info->bc_state.final_ptg = final_ptg;
     std::cout << final_ptg.to_graphviz();
 
     do_domain_validity_analysis(
         entry_block);  // perform an analysis to know what domains are
                        // valid for every instruction
+    for (auto& [inst, set] : dfa_in)
+        info->bc_state.dfa_in[reinterpret_cast<uintptr_t>(inst)] = set;
+    for (auto& [inst, set] : dfa_out)
+        info->bc_state.dfa_out[reinterpret_cast<uintptr_t>(inst)] = set;
     std::cout << "Phase 7\n" << function->to_string(true, this) << std::endl;
 
     for (auto& block : function->blocks) {
         for (auto& inst : block->instructions)
             std::visit(BorrowCheckVisitor{this, irgen}, inst->to_variant());
     }
+    info->bc_state.value_type_map = std::move(type_mapping);
     return function;
 }
 void DomainCheckerState::do_primary_analysis() {
@@ -2132,33 +2174,38 @@ BorrowCheckerType BorrowCheckerType::new_primitive() {
     new_type.details.emplace<Primitive>();
     return new_type;
 }
-void check_and_fill_multidomain(ClassDeclaration* decl, std::vector<Type> disallowed_types) {
-    // its multidomain if it appears in more than 1 field, or appears in one field and the type its used in marks it
-    // multidomain
+void check_and_fill_multidomain(ClassDeclaration* decl,
+                                std::vector<Type> disallowed_types) {
+    // its multidomain if it appears in more than 1 field, or appears in one
+    // field and the type its used in marks it multidomain
     enum DomainType { Multi, Single };
     std::map<char, DomainType> encountered_domains;
     auto get_type_domains = [&](const Type& type) {
         std::vector<std::pair<char, DomainType>> result;
-        std::ranges::transform(type.domains, std::back_inserter(result), [](char c) {
-            // TODO: make this work
-            return std::make_pair(c, Single);
-        });
+        std::ranges::transform(type.domains, std::back_inserter(result),
+                               [](char c) {
+                                   // TODO: make this work
+                                   return std::make_pair(c, Single);
+                               });
         return result;
     };
     for (auto& field : decl->vars) {
-        for(auto[dom, type] : get_type_domains(field.type)) {
-            if(encountered_domains.contains(dom))
+        for (auto [dom, type] : get_type_domains(field.type)) {
+            if (encountered_domains.contains(dom))
                 encountered_domains[dom] = Multi;
             else
                 encountered_domains[dom] = type;
         }
     }
-    std::ranges::transform(decl->domains, std::back_inserter(decl->is_multidomain), [&](char dom) {
-        DomainType type;
-        if(encountered_domains.contains(dom)) type = encountered_domains.at(dom);
-        else type = Single;
-        return type == Multi;
-    });
+    std::ranges::transform(
+        decl->domains, std::back_inserter(decl->is_multidomain), [&](char dom) {
+            DomainType type;
+            if (encountered_domains.contains(dom))
+                type = encountered_domains.at(dom);
+            else
+                type = Single;
+            return type == Multi;
+        });
 }
 BorrowCheckerType BorrowCheckerType::new_aggregate_from(
     Type&& tp, DomainCheckerState* state,
@@ -2176,9 +2223,9 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
             auto dom = as_class->domains[i];
             if (create_new_domains) {
                 new_type.domains.emplace_back(state->new_domain_var(), false);
-                state->shared_domains.insert(new_type.domains.back().first.to_string());
-            }
-            else {
+                state->shared_domains.insert(
+                    new_type.domains.back().first.to_string());
+            } else {
                 if (!substs.contains(dom)) debugbreak();
                 new_type.domains.emplace_back(substs.at(dom), false);
             }
@@ -2467,12 +2514,12 @@ void DomainVariableInserter::add_assign_constraints_between_types(
         current_position = instructions.emplace(
             ++current_position,
             new DomainExtensionConstraint(Domain(left.domains[0].first),
-                                    Domain(right.domains[0].first)));
+                                          Domain(right.domains[0].first)));
     } else {
         current_position = instructions.emplace(
             ++current_position,
             new DomainSubsetConstraint(Domain(left.domains[0].first),
-                                    Domain(right.domains[0].first)));
+                                       Domain(right.domains[0].first)));
     }
 }
 void DomainVariableInserter::add_extend_constraints_between_types(

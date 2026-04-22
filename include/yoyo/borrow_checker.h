@@ -14,6 +14,9 @@
 
 #include "statement.h"
 namespace Yoyo {
+namespace Info {
+struct FunctionInformation;
+}
 void debugbreak();  // in src/yoyo/irgen.cpp
 class IRGenerator;
 struct TypeCheckerState;
@@ -95,6 +98,7 @@ class Instruction {
 public:
     ASTNode* origin;
     virtual ~Instruction() = default;
+    std::unique_ptr<Instruction> clone();
     virtual bool is_terminator() { return false; }
     virtual std::span<BasicBlock*> children() { return {}; };
     virtual InstructionVariant to_variant() = 0;
@@ -110,6 +114,7 @@ struct BasicBlock {
         inst->origin = origin;
         instructions.emplace_back(inst);
     }
+    std::unique_ptr<BasicBlock> clone();
     bool is_terminated() const {
         return !instructions.empty() && instructions.back()->is_terminator();
     }
@@ -331,6 +336,7 @@ struct BorrowCheckerFunction {
                                                        std::to_string(idx++)})
             .get();
     }
+    std::unique_ptr<BorrowCheckerFunction> clone();
     std::string to_string(bool add_dfa = false,
                           DomainCheckerState* state = nullptr) {
         std::string out;
@@ -586,6 +592,8 @@ struct ValueTypeMapping : std::unordered_map<std::string, BorrowCheckerType> {
     ValueTypeMapping(const ValueTypeMapping&) = delete;
     ValueTypeMapping() = default;
     ValueTypeMapping(ValueTypeMapping&&) noexcept = default;
+    ValueTypeMapping& operator=(const ValueTypeMapping&) = delete;
+    ValueTypeMapping& operator=(ValueTypeMapping&&) noexcept = default;
     std::string to_string();
 };
 // Types the CFG and inserts domains
@@ -797,6 +805,7 @@ struct KillReason {
 struct DomainCheckerState {
     // TODO make the union find
     size_t last_id = 0;
+    Info::FunctionInformation* info;
     ValueTypeMapping type_mapping;
     Domain new_domain_var();
     void register_value_base_type(const std::string& value,

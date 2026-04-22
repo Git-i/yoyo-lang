@@ -9,10 +9,11 @@
 #include <vector>
 
 #include "ast_node.h"
+#include "borrow_checker.h"
 #include "type.h"
 namespace Yoyo {
 struct TypeCheckerConstraint;
-struct Statement;
+class Statement;
 namespace Info {
 
 struct ConstraintInformation {
@@ -91,8 +92,27 @@ struct RecordedTypeCheckerState {
         return final_string;
     }
 };
+struct BorrowCheckerState {
+    // initial conversion from the AST to IR (phase1)
+    std::unique_ptr<BorrowChecker::BorrowCheckerFunction> initial_IR;
+    // inserting domain variables in the IR (phase2)
+    std::unique_ptr<BorrowChecker::BorrowCheckerFunction> domain_vars_IR;
+    // Flow insensitive points-to graph (phase3)
+    BorrowChecker::PointsToGraph aux_ptg;
+    // SSA version of function (phase4)
+    std::unique_ptr<BorrowChecker::BorrowCheckerFunction> ssa_IR;
+    // Def-Use graph used for flow sensitive analysis (phase5)
+    std::string def_use_graphviz;
+    // The flow sensitive points to graph (phase6)
+    BorrowChecker::TopLevelPointsToGraph final_ptg;
+    // The output of the dataflow analysis (phase7)
+    std::unordered_map<std::uintptr_t, std::set<std::string>> dfa_in;
+    std::unordered_map<std::uintptr_t, std::set<std::string>> dfa_out;
+    BorrowChecker::ValueTypeMapping value_type_map;
+};
 struct FunctionInformation {
     RecordedTypeCheckerState initial_state;
+    BorrowCheckerState bc_state;
     std::vector<TypeCheckerStateDiff> steps;
     // this holds a list of where the diffs for each iteration start and
     // stop
