@@ -80,8 +80,23 @@ std::unique_ptr<BasicBlock> BasicBlock::clone() {
 
 std::unique_ptr<BorrowCheckerFunction> BorrowCheckerFunction::clone() {
     decltype(this->blocks) new_blocks;
+    std::map<BasicBlock*, BasicBlock*> old_to_new_blk;
     std::ranges::transform(this->blocks, std::back_inserter(new_blocks),
-                           [](auto& in) { return in->clone(); });
+                           [&old_to_new_blk](auto& in) { 
+                                auto new_val = in->clone();
+                                old_to_new_blk[in.get()] = new_val.get();
+                                return new_val;
+                           });
+    for(auto& blk : new_blocks) {
+        std::visit([&old_to_new_blk]<typename T>(T* inp) {
+            if constexpr (std::is_same_v<T, BrInstruction>) {
+                inp->next = old_to_new_blk[inp->next];
+            } else if constexpr (std::is_same_v<T, CondBrInstruction>) {
+                for (auto& ref : inp->options)
+                    ref = old_to_new_blk[ref];
+            }
+        }, blk->instructions.back()->to_variant());
+    }
     return std::unique_ptr<BorrowCheckerFunction>(new BorrowCheckerFunction{
         .blocks = std::move(new_blocks),
         .idx = idx  // is this even important to clone
