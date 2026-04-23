@@ -102,6 +102,7 @@ public:
     virtual bool is_terminator() { return false; }
     virtual std::span<BasicBlock*> children() { return {}; };
     virtual InstructionVariant to_variant() = 0;
+    std::string to_string();
 };
 struct DomainCheckerState;
 struct BasicBlock {

@@ -5,6 +5,7 @@
 #include <ranges>
 #include <type_traits>
 
+#include "borrow_checker.h"
 #include "error.h"
 #include "expression.h"
 #include "info_aggregator.h"
@@ -2463,6 +2464,8 @@ bool ConstraintSolver::operator()(BinaryOperableConstraint& con) {
                                                  .result_type = domain->get_type_list(),
                                                  .generated_by = state->current_constraint}
         });
+        // if we managed to solve `right` we can recurse and generate possible remove the constraint
+        if (domain->concrete_types.types.size() == 1) return (*this)(con);
         return false;
     } else {
         return is_compatible(left, right, con.op, true);
@@ -2556,7 +2559,9 @@ void TypeCheckerState::resolve_function(FunctionDeclaration* decl,
     if (!constraints.empty()) {
         // This is for debugging constraints that didn't resolve
         debugbreak();
-        for (auto& con : constraints) std::visit(sv, con);
+        for (auto& con : constraints) {
+            std::visit(sv, con);
+        }
         // TODO actual reporting
         irgen->error(Error(decl, "Not enough info to resolve types"));
     }

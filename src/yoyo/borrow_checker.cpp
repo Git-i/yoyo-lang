@@ -70,7 +70,7 @@ std::unique_ptr<Instruction> Instruction::clone() {
 std::unique_ptr<BasicBlock> BasicBlock::clone() {
     decltype(this->instructions) new_insts;
     new_insts.reserve(instructions.size());
-    std::ranges::transform(instructions, std::back_inserter(this->instructions),
+    std::ranges::transform(instructions, std::back_inserter(new_insts),
                            [](auto& inst) { return inst->clone(); });
     return std::unique_ptr<BasicBlock>(
         new BasicBlock{.debug_name = debug_name,
@@ -740,6 +740,11 @@ static std::string instruction_to_string(T* inst) {
     }
     return "not implemented";
 };
+std::string Instruction::to_string() {
+    return std::visit([](auto* inst) {
+        return instruction_to_string(inst);
+    }, to_variant());
+}
 std::string BasicBlock::to_string(bool include_dfa, DomainCheckerState* state) {
     std::string instructions_string;
     auto append_set = [&instructions_string](std::set<std::string>& in) {
@@ -2223,8 +2228,9 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
             auto dom = as_class->domains[i];
             if (create_new_domains) {
                 new_type.domains.emplace_back(state->new_domain_var(), false);
-                state->shared_domains.insert(
-                    new_type.domains.back().first.to_string());
+                if (as_class->is_multidomain[i])
+                    state->shared_domains.insert(
+                        new_type.domains.back().first.to_string());
             } else {
                 if (!substs.contains(dom)) debugbreak();
                 new_type.domains.emplace_back(substs.at(dom), false);

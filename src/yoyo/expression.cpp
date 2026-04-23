@@ -59,4 +59,9 @@ ExpressionVariant IfExpression::toVariant() { return this; }
 
 ExpressionVariant TryExpression::toVariant() { return this; }
 ExpressionVariant ConditionalExtraction::toVariant() { return this; }
+
+
+BlockExpression::~BlockExpression() = default;
+BlockExpression::BlockExpression(std::vector<std::unique_ptr<Statement>> stats,
+                    std::unique_ptr<Expression> ex) : statements(std::move(stats)), expr(std::move(ex)) {}
 }  // namespace Yoyo

@@ -151,8 +151,9 @@ std::unique_ptr<ASTNode> Parser::parseExpressionOrDeclaration() {
     default: {
         auto expr = parseExpression(0);
         if (!discard(TokenType::SemiColon)) return expr;
+        auto beg = expr->beg;
         return Statement::attachSLAndParent(
-            std::make_unique<ExpressionStatement>(std::move(expr)), expr->beg,
+            std::make_unique<ExpressionStatement>(std::move(expr)), beg,
             discardLocation, parent);
     }
     }

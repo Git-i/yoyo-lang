@@ -300,9 +300,9 @@ public:
     std::vector<std::unique_ptr<Statement>> statements;
     std::unique_ptr<Expression> expr;
     BlockExpression(std::vector<std::unique_ptr<Statement>> stats,
-                    std::unique_ptr<Expression> ex)
-        : statements(std::move(stats)), expr(std::move(ex)) {}
+                    std::unique_ptr<Expression> ex);
     ExpressionVariant toVariant() override;
+    ~BlockExpression();
 };
 class YOYO_API IfExpression : public Expression {
 public:

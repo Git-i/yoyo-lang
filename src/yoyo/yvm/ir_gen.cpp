@@ -97,6 +97,7 @@ void YVMIRGenerator::doFunctionInternal(std::string fn_name,
     }
     this_func_info.typedTree = StatementTreeCloner::copy_stat(decl, nullptr);
     BorrowChecker::DomainCheckerState dm_stt{};
+    dm_stt.info = &this_func_info;
     auto current_function = dm_stt.check_function(decl, this, sig, &stt);
     std::cout << "[" << fn_name << "]" << '\n';
     std::visit(ASTPrinter{std::cout}, decl->body->toVariant());
