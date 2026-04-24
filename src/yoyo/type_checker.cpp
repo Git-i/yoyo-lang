@@ -460,7 +460,7 @@ std::optional<Error> generic_match(Type tp1, Type tp2, ASTNode* loc,
 // The return value is a pair if the match was found and if not its either
 // that there's multiple matches or no match at all (indicated by
 // NoOperatorReason)
-std::variant<std::pair<Type, std::vector<TypeCheckerConstraint>>,
+std::variant<std::tuple<Type, std::vector<TypeCheckerConstraint>, OverloadDetailsUnary*>,
              NoOperatorReason>
     unary_operator_result(
         TokenType op, const Type& subject,
@@ -507,7 +507,7 @@ std::variant<std::pair<Type, std::vector<TypeCheckerConstraint>>,
     }
     // exactly one match means we add it
     if (matches.size() == 1) {
-        return std::make_pair(std::move(result_type), std::move(collector));
+        return std::make_tuple(std::move(result_type), std::move(collector), matches[0]);
     } else if (matches.size() > 1) {
         return NoOperatorReason::MulipleMatches;
     } else if (matches.size() == 0) {
@@ -2860,7 +2860,7 @@ bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con) {
                         fn->signature.parameters[0].name == "this") {
                         // correct the right type
                         right.name = "__fn";
-                        right.block_hash = type.block_hash + type.name +
+                        right.block_hash = type.block_hash + type.full_name_no_block() +
                                            "::" + std::string(name) + "::";
                         right.module = type.module;
                         std::ranges::copy(
@@ -2930,17 +2930,32 @@ bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con) {
                                  NoOperatorReason::NoMatches) {
                         }  // fall through to UCFS
                     } else {
-                        auto& [result_tp, constraints] =
+                        auto& [result_tp, constraints, selected_ovl] =
                             std::get<0>(op_result_immutable);
                         // we cache this incase we have to revisit this
                         // constraint
+                        if(auto bexpr = dynamic_cast<BinaryOperation*>(con.expr)) {
+                            bexpr->selected_deref_coerce = selected_ovl;
+                            bexpr->deref_coerce_is_mut = false;
+                            auto& subs = con.substitution_cache[selected_ovl->statement];
+                            for(auto& type : selected_ovl->statement->clause.types) {
+                                bexpr->subtypes.push_back(subs[type]);
+                            }
+                        }
                         con.deref_result_opt = std::move(result_tp);
                         for (auto& elem : constraints)
                             add_new_constraint(std::move(elem));
                     }
                 }
             } else {
-                auto& [result_tp, constraints] = std::get<0>(op_result);
+                auto& [result_tp, constraints, selected_ovl] = std::get<0>(op_result);
+                if(auto bexpr = dynamic_cast<BinaryOperation*>(con.expr)) {
+                    bexpr->selected_deref_coerce = selected_ovl;
+                    auto& subs = con.substitution_cache[selected_ovl->statement];
+                    for(auto& type : selected_ovl->statement->clause.types) {
+                        bexpr->subtypes.push_back(subs[type]);
+                    }
+                }
                 con.deref_result_opt = std::move(result_tp);
                 for (auto& elem : constraints)
                     add_new_constraint(std::move(elem));
@@ -2958,8 +2973,9 @@ bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con) {
             // result is cached
             if (is_type_variable(deref_result.deref())) return false;
 
+            auto no_ref = deref_result.deref();
             auto [stat2, gctx2] =
-                normalize_type(deref_result, state, irgen, {});
+                normalize_type(no_ref, state, irgen, {});
             if (check_inherent_submethod(gctx2, stat2, deref_result,
                                          as_name->text,
                                          con.right->evaluated_type, con.expr))
@@ -3262,7 +3278,8 @@ bool ConstraintSolver::operator()(BorrowResultConstraint& con) {
                 else if (*invalid == NoOperatorReason::NoMatches) {
                 }
             } else {
-                auto& [type, extra_constraints] = std::get<0>(op_result);
+                // TODO: place this in the expression (the selected ovl that is)
+                auto& [type, extra_constraints, selected_ovl] = std::get<0>(op_result);
                 possible_types.add_type(Type(type));
                 if (!extra_constraints.empty()) {
                     add_new_constraint(IfEqualThenConstrain{
@@ -3386,7 +3403,8 @@ bool ConstraintSolver::operator()(BorrowResultMutConstraint& con) {
                 else if (*invalid == NoOperatorReason::NoMatches) {
                 }
             } else {
-                auto& [type, extra_constraints] = std::get<0>(op_result);
+                // TODO: place this in the expression for the evaluator
+                auto& [type, extra_constraints, selected_ovl] = std::get<0>(op_result);
                 possible_types.add_type(Type(type));
                 if (!extra_constraints.empty()) {
                     add_new_constraint(IfEqualThenConstrain{

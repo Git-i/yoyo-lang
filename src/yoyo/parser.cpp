@@ -279,8 +279,9 @@ std::unique_ptr<Statement> Parser::parseOperatorOverload(const Token& tok) {
         op->type, std::move(sig).value_or(FunctionSignature{}), std::move(body),
         std::move(clause));
     return_val->body->parent = return_val.get();
+    auto end = return_val->body->end;
     return Statement::attachSLAndParent(std::move(return_val), tok.loc,
-                                        return_val->body->end, parent);
+                                        end, parent);
 }
 
 std::vector<std::unique_ptr<Statement>> Parser::parseProgram() {
@@ -685,7 +686,7 @@ std::optional<FunctionSignature> Parser::parseFunctionSignature() {
         [this](std::string name) -> std::optional<FunctionParameter> {
         auto tk = Peek();
         if (!tk) return std::nullopt;
-        auto type = parseType(0);
+        auto type = parseType(0, true);
         return FunctionParameter{std::move(type).value_or(Type{}),
                                  std::move(name)};
     };
@@ -728,11 +729,21 @@ std::optional<FunctionSignature> Parser::parseFunctionSignature() {
     //&this and &mut this is also allowed
     else if (tk->type == TokenType::Ampersand) {
         Get();
+        std::vector<char> domains;
+        if (auto annot = Peek(); annot && annot->type == TokenType::DomainAnnotation) {
+            Get();
+            domains.push_back(annot->text[0]);
+        }
         bool is_mut = discard(TokenType::Mut);
         if (!discard(TokenType::This))
             error("Expected 'this' after '&' or '&mut'", Peek());
+        auto type = Type{ 
+            .name = is_mut ? "__ref_mut" : "__ref", 
+            .subtypes = {Type{"This"}},
+            .domains = std::move(domains)
+        };
         sig.parameters.emplace_back(
-            Type{is_mut ? "__ref_mut" : "__ref", {Type{"This"}}}, "this");
+            std::move(type), "this");
     }
     while (discard(TokenType::Comma)) {
         auto tk = Peek();
@@ -771,6 +782,7 @@ std::optional<FunctionSignature> Parser::parseFunctionSignature() {
         }
     }
     if (!discard(TokenType::RParen)) error("Expected ')'", Peek());
+    sig.domains = parseDomainList(*this);
     sig.return_is_ref = false;
     sig.returnType = Type{"__inferred", {}};
     if (discard(TokenType::Arrow)) {

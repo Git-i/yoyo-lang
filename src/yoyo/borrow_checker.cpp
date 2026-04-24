@@ -524,12 +524,61 @@ Value BorrowCheckerEmitter::operator()(PostfixOperation*) {
 }
 Value BorrowCheckerEmitter::operator()(CallOperation* op) {
     RE_REPR(op);
-    auto callee_val = std::visit(*this, op->callee->toVariant());
     auto& callee_type = op->callee->evaluated_type;
+    auto callee_val = std::visit(*this, op->callee->toVariant());
     if (callee_type.name == "__bound_fn") {
-        // TODO
-        debugbreak();
-        return Value::empty();
+        auto bexpr = dynamic_cast<BinaryOperation*>(op->callee.get());
+        auto lhs_eval = std::visit(*this, bexpr->lhs->toVariant());
+        // if we are doing deref coercion, we need to call that function
+        Value final_lhs;
+        if (bexpr->selected_deref_coerce) {
+            auto ovl = bexpr->selected_deref_coerce;
+            auto input_type = bexpr->lhs->evaluated_type;
+            if (!input_type.is_reference()) {
+                input_type = Type {
+                    .name = bexpr->deref_coerce_is_mut ? "__ref_mut" : "__ref",
+                    .subtypes = { std::move(input_type) }
+                };
+            }
+            auto fn_name = OverloadDetailsUnary::mangled_name(
+                bexpr->deref_coerce_is_mut ? TokenType::RefMut : TokenType::Ampersand,
+                std::move(input_type));
+            Value func_arg;
+            if (!bexpr->lhs->evaluated_type.is_reference()) {
+                auto borrow_res = temporary_name();
+                current_block->add_instruction(new BorrowValueInstruction(std::move(lhs_eval), std::string(borrow_res)));
+                func_arg = Value::from(std::move(borrow_res));
+            } else {
+                func_arg = std::move(lhs_eval);
+            }
+            auto interm_res = temporary_name();
+            current_block->add_instruction(new CallFunctionInstruction(
+                    std::move(fn_name),
+                    std::string(interm_res),
+                    { std::move(func_arg) },
+                    callee_type.subtypes[0]));
+            final_lhs = Value::from(std::move(interm_res));
+        } else {
+            if (!bexpr->lhs->evaluated_type.is_reference() && callee_type.subtypes[0].is_reference()) {
+                auto borrow_res = temporary_name();
+                current_block->add_instruction(new BorrowValueInstruction(std::move(lhs_eval), std::string(borrow_res)));
+                final_lhs = Value::from(std::move(borrow_res));
+            } else final_lhs = std::move(lhs_eval);
+        }
+        auto result = temporary_name();
+        std::vector<Value> args;
+        args.reserve(op->arguments.size() + 1);
+        args.push_back(std::move(final_lhs));
+        std::ranges::transform(op->arguments, std::back_inserter(args), [this](auto& arg) {
+            return std::visit(*this, arg->toVariant());
+        });
+        current_block->add_instruction(new CallFunctionInstruction(
+            std::string(callee_type.block_hash),
+            std::string(result),
+            std::move(args),
+            op->evaluated_type
+        ));
+        return Value::from(std::move(result));
     }
     if (callee_type.name.starts_with("__union_var")) {
         auto result = temporary_name();

@@ -74,6 +74,9 @@ Yoyo::YVMAppModule* addTestModule(Yoyo::YVMEngine* eng) {
     md->addFunction("(x: &str, y: &str) -> void", test_str_cmp, "str_cmp");
     return md;
 }
+std::string operator""_o(const char* in, size_t size) {
+    return std::string(std::next(in), size);
+}
 constexpr bool emit_ir = true;
 TEST_CASE("Test IR") {
     std::ifstream ifs("source.yoyo");
@@ -235,6 +238,48 @@ main: fn = {
     value := Container{.data1 = &int1, .data2 = &int2};
 }
 )");
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile().is_successful());
+    engine.prepareForExecution();
+    if constexpr (emit_ir)
+        std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR()
+                  << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test Borrow checker function calls", "[borrow-checker][function]") {
+    auto source = R"(
+Point: struct::<T> = { 
+    x: T,
+    y: T,
+
+    get_x: fn(&'a this)(a) -> &T = return &this.x;
+    get_y: fn(&'a this)(a) -> &T = return &this.y;
+}
+Point3: struct::<T> = {
+    xy: Point::<T>, z: T,
+    get_z: fn(&'a this)(a) -> &T = return &this.z;
+}
+operator: &::<T>(inp: &'a Point3::<T>)(a) -> &Point::<T> = return inp.xy; 
+main: fn = {
+    x: f32 = 100.0;
+    y := 20.0;
+    
+    value := Point{ .x, .y };
+    x_ref: mut = value.get_x();
+    y_ref: mut = value.get_y();
+
+    other := Point3 {
+        .xy = Point{ .x, .y },
+        .z = 40.0
+    };
+    x_ref = other.get_x();
+    y_ref = other.get_y();
+    z_ref = other.get_z();
+}
+)"_o; 
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);

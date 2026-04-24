@@ -17,6 +17,7 @@ class Statement;
 
 namespace Yoyo {
 struct OverloadDetailsBinary;
+struct OverloadDetailsUnary;
 class NullLiteral;
 class ObjectLiteral;
 class LogicalOperation;
@@ -158,6 +159,9 @@ public:
     std::unique_ptr<Expression> rhs;
     // populated by the type checker
     OverloadDetailsBinary* selected = nullptr;
+    // when this is a dot operation that uses deref coercion this field is populated
+    OverloadDetailsUnary* selected_deref_coerce = nullptr;
+    bool deref_coerce_is_mut = true;
     std::vector<Type> subtypes;
     ModuleBase* module;
     BinaryOperation(const Token& op, std::unique_ptr<Expression> left,

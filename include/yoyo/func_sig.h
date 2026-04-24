@@ -9,6 +9,7 @@ struct YOYO_API FunctionSignature {
     Type returnType;
     bool return_is_ref;
     std::vector<FunctionParameter> parameters;
+    std::vector<char> domains;
     std::string pretty_name(const std::string& block_hash) const;
 };
 }  // namespace Yoyo

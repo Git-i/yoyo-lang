@@ -75,6 +75,18 @@ struct OverloadDetailsUnary {
     Type obj_type;
     Type result;
     OperatorOverload* statement;
+    static std::string mangled_name(TokenType tok_tp, const Type& tp) {
+        std::string middle = "";
+        switch (tok_tp) {
+        case TokenType::Ampersand:
+            middle = "&"; break;
+        case TokenType::RefMut:
+            middle = "&mut"; break;
+        default:
+            debugbreak();
+        }
+        return "operator" + middle + tp.full_name();
+    }
 };
 
 struct ModuleOverloadDetails {
