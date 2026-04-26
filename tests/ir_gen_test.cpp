@@ -3,12 +3,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
-#include <codecvt>
-#include <csignal>
 #include <fstream>
 #include <iostream>
 
-#include "error.h"
 #ifdef USE_GRAPHVIZ
     #include "graphviz/gvc.h"
 #endif
@@ -83,9 +80,6 @@ TEST_CASE("Test IR") {
     std::ostringstream oss;
     oss << ifs.rdbuf();
     std::string src2 = oss.str();
-    int argc = 1;
-    const char* argv[] = {"foo"};
-    const char** lol = argv;
 
     std::ifstream raylib_file("raylib-yoyo/module.yoyo");
     std::ostringstream oss2;
@@ -130,7 +124,7 @@ TEST_CASE("Test IR") {
     engine.execute();
 }
 TEST_CASE("Index Operator", "[operators][array][static-array]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 ColorType: enum = { Red, Green, Blue }
 ColorValue: struct = {
     red_val: i32,
@@ -150,7 +144,7 @@ main: fn(inp: i32) = {
     arr: [i32; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     test::assert(arr[test::i32_to_u64(inp)] == inp, &"arr[inp] == inp");
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
     test_mod->addFunction("(x: i32) -> u64",
@@ -171,7 +165,7 @@ main: fn(inp: i32) = {
 }
 TEST_CASE("Mutable Index Operator", "[operators]") {
     // This test case is wrong, TODO
-    std::string source(1 + R"(
+    std::string source(R"(
 Indexer: struct = { val: u32 }
 operator: mut [](obj: &mut u32, arg: Indexer) = *obj = arg.val;
 operator: [](obj: &u32, arg: Indexer) = return;
@@ -180,7 +174,7 @@ main: fn(val: u32) = {
     b[Indexer{.val}];
     test::assert(b == val, &"b == val");
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
@@ -193,7 +187,7 @@ main: fn(val: u32) = {
     }
 }
 TEST_CASE("Test union initialization", "[unions]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 Color: union = {
     ColorRGB: struct = { r: u8, g: u8, b: u8, a: u8 }
 
@@ -212,7 +206,26 @@ main: fn = {
     test::str_cmp(&c1.to_str(), &"rgb: 10, 20, 22, 40");
     test::str_cmp(&c2.to_str(), &"hex: 12456");
 }
-)");
+)"_o);
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile().is_successful());
+    engine.prepareForExecution();
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test pointer to pointer", "[borrow-checker][pointer-to-pointer]") {
+    auto source = R"(
+Vec: struct = { x: i32, y: i32 }
+main: fn = {
+    value := Vec{.x = 100, .y = 200};
+    val_ref: &Vec = &value;
+    val_ref_ref: &&Vec = &val_ref;
+
+    val_x: &i32 = &(*val_ref_ref).x;
+}
+    )"_o;
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
@@ -262,7 +275,7 @@ Point3: struct::<T> = {
     xy: Point::<T>, z: T,
     get_z: fn(&'a this)(a) -> &T = return &this.z;
 }
-operator: &::<T>(inp: &'a Point3::<T>)(a) -> &Point::<T> = return inp.xy; 
+operator: &::<T>(inp: &'a Point3::<T>)(a) -> &Point::<T> = return &inp.xy; 
 main: fn = {
     x: f32 = 100.0;
     y := 20.0;
@@ -277,7 +290,8 @@ main: fn = {
     };
     x_ref = other.get_x();
     y_ref = other.get_y();
-    z_ref = other.get_z();
+    z_ref := other.get_z();
+
 }
 )"_o; 
     Yoyo::YVMEngine engine;
@@ -358,7 +372,7 @@ main: fn = {
     engine.execute();
 }
 TEST_CASE("Test borrow operator", "[operator][type-checker]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 Struct: struct = {
     func: fn(&this) = return;
 }
@@ -377,7 +391,7 @@ main: fn = {
     b := Wrapper{ .data = Struct2{} };
     b.func2();
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
@@ -390,14 +404,14 @@ main: fn = {
     engine.execute();
 }
 TEST_CASE("Test static array", "[array][static_array]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 id: fn::<T>(input: T) -> T = return input;
 main: fn = {
     val: i32 = 100;
     val2 := 50;
     val3 := id(val + val2);
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     auto test_md = addTestModule(&engine);
     test_md->addFunction(
@@ -416,7 +430,7 @@ main: fn = {
     engine.execute();
 }
 TEST_CASE("Test using statement", "[using][scope]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 Module1: struct = {
     Type: struct = {
         to_str: fn(&this) -> str = return "Module 1 type";
@@ -453,7 +467,7 @@ main: fn = {
         print(&Type{}.to_str());
     }
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
@@ -466,7 +480,7 @@ main: fn = {
     engine.execute();
 }
 TEST_CASE("Simple borrow checker", "[borrow-checker]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 GenericType: class::<T> = {
     value: T,
     new: fn -> GenericType::<T> = return;
@@ -481,7 +495,7 @@ main: fn = {
     y.Type::func();
     test::print(&x.value);
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
@@ -494,7 +508,7 @@ main: fn = {
     engine.execute();
 }
 TEST_CASE("Test Results", "[type-checker], [result-type]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 // test::return_result: fn -> [i64; 10] \ str;
 constant: const i32 = 10;
 main: fn -> i32 \ str = {
@@ -505,7 +519,7 @@ main: fn -> i32 \ str = {
         [10; constant]
     }
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     auto test_mod = addTestModule(&engine);
     test_mod->addFunction("-> [i64; 10] \\ str",
@@ -521,7 +535,7 @@ main: fn -> i32 \ str = {
     engine.execute();
 }
 TEST_CASE("Test if expression", "[expressions], [if-expression]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 produce: fn::<T>(val: T) -> T = return val;
 print_i32: fn(val: i32) = "${val}".test::print();
 main: fn -> bool = {
@@ -546,9 +560,9 @@ main: fn -> bool = {
     print_i32(result);
     return true;
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
-    auto test_mod = addTestModule(&engine);
+     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
@@ -559,7 +573,7 @@ main: fn -> bool = {
     engine.execute();
 }
 TEST_CASE("Test interfaces", "[type-checker], [interfaces]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 takes_intf: fn::<T: impl Interface>(arg: T) = return;
 takes_generic_intf: fn::<O, T: impl InterfaceWrapper::<O>::Interface>(arg: T) -> O = return;
 main: fn = {
@@ -589,9 +603,9 @@ InterfaceWrapper: struct::<T> = {
     Interface: interface = {
     }
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
-    auto test_mod = addTestModule(&engine);
+    addTestModule(&engine);
     auto mod = engine.addModule("source", source);
     REQUIRE(engine.compile().is_successful());
     engine.prepareForExecution();
@@ -602,7 +616,7 @@ InterfaceWrapper: struct::<T> = {
     engine.execute();
 }
 TEST_CASE("Test operator overloading", "[type-checker][operator-overloading]") {
-    std::string source(1 + R"(
+    std::string source(R"(
 // dot product
 operator: *::<T>(a: Vec2::<T>, b: Vec2::<T>) -> T = {
     return a.x * b.x + a.y * b.y;
@@ -622,7 +636,7 @@ Vec2: struct::<T> = {
     new: fn(x: T, y: T) -> Vec2::<T> = return Vec2::<T>{ .x, .y };
     to_str: fn(&this) -> str = return "{ ${this.x}, ${this.y} }";
 }
-)");
+)"_o);
     Yoyo::YVMEngine engine;
     addTestModule(&engine);
     auto mod = engine.addModule("source", source);
@@ -673,7 +687,7 @@ void prepare_edge(Yoyo::CFGNode* node, Agraph_t* graph,
 
 TEST_CASE("Test CFG", "[CFG]") {
     char name[] = "CFG";
-    std::string src(1 + R"(
+    std::string src(R"(
     main: fn = {
         var1: mut = if(true) {
             return 10;
@@ -693,7 +707,7 @@ TEST_CASE("Test CFG", "[CFG]") {
             else 20;
         }
     }
-    )");
+    )"_o);
     Yoyo::Parser p(src);
     auto graph = agopen(name, Agdirected, nullptr);
     Yoyo::CFGNodeManager manager;

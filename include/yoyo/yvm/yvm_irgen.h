@@ -4,6 +4,8 @@
 #include "borrow_checker.h"
 #include "expression.h"
 #include "info_aggregator.h"
+#include "overload_details.h"
+#include "token.h"
 #include "yoyo_vm/emitter.h"
 #include "yoyo_vm/vm.h"
 #include "yvm/native_type.h"
@@ -38,6 +40,7 @@ public:
     virtual void doClass(ClassDeclaration* decl) override { (*this)(decl); };
     virtual void doAlias(AliasDeclaration* decl) override { (*this)(decl); };
     virtual void doConst(ConstantDeclaration* decl) override { (*this)(decl); };
+    virtual void doUnaryOperator(OverloadDetailsUnary*, TokenType tok) override;
     NativeTy* toNativeType(const Type& type);
     Yvm::Type toTypeEnum(const Type& type);
 

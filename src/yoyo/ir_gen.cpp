@@ -4,6 +4,11 @@
 #include <iostream>
 #include <ranges>
 
+#include "borrow_checker.h"
+#include "module.h"
+#include "overload_details.h"
+#include "scanner.h"
+#include "token.h"
 #include "tree_cloner.h"
 #include "yvm/fwd_decl.h"
 namespace Yoyo {
@@ -288,6 +293,32 @@ void IRGenerator::generateGenericClass(ModuleBase* mod, const std::string& hash,
     this->block_hash = std::move(old_hash);
     this->module = module;
 }
+void IRGenerator::generateGenericUnaryOperator(ModuleBase* md, OverloadDetailsUnary* ovl, TokenType tok, std::span<Type> types) {
+    for (auto& type : types) type.saturate(md, this);
+    // manually replace generic types with thier corresponding substituion
+    // because I can't find a way for operators to introduce a block 
+    auto subs_generics = [=, this](Type& type, auto& self) -> void {
+        auto& clause = ovl->statement->clause;
+        auto it = std::ranges::find(clause.types, type.name);
+        if (it != clause.types.end()) {
+            auto idx = std::distance(clause.types.begin(), it);
+            type = types[idx];
+        }
+        for (auto& sub : type.subtypes) self(sub, self);
+        type.saturate(md, this);
+    };
+    OverloadDetailsUnary new_dets = *ovl;
+    subs_generics(new_dets.obj_type, subs_generics); subs_generics(new_dets.result, subs_generics);
+    auto md_hash = md->module_hash + OverloadDetailsUnary::mangled_name(tok, new_dets.obj_type) + "::";
+    for (size_t i = 0; i < types.size(); i++)
+        md->aliases[md_hash].emplace(ovl->statement->clause.types[i],
+                                                 types[i]);
+    std::swap(block_hash, md_hash);
+    std::swap(module, md);
+    doUnaryOperator(&new_dets, tok);
+    std::swap(module, md);
+    std::swap(block_hash, md_hash);
+}
 void IRGenerator::generateGenericAlias(ModuleBase* mod,
                                        const std::string& block,
                                        GenericAliasDeclaration* decl,
@@ -462,6 +493,45 @@ std::optional<Error> IRGenerator::apply_using(Type& tp, ModuleBase*& md,
     // this branch can hit on valid code in some cases like aliases
     else
         return std::nullopt;
+}
+BorrowChecker::FunctionSummary* IRGenerator::get_summary_for(std::string fn_name, ASTNode* source_expr) {
+    if(fn_name.ends_with(':')) fn_name.erase(fn_name.size() - 2, 2);
+    if (function_borrow_checker_infos.contains(fn_name)) return &function_borrow_checker_infos.at(fn_name);
+    // attempt to create the function if its not found
+
+    // look for operator overload
+    using namespace std::string_view_literals;
+    if(fn_name.starts_with("operator") && !std::isalnum(static_cast<unsigned char>(fn_name["operator"sv.size()]))) {
+        auto fn_name_no_operator =  std::string_view{fn_name.begin() + "operator"sv.size(), fn_name.end() };
+        Scanner scn{ fn_name_no_operator };
+        auto tk = scn.NextToken().value();
+        if (tk.type == TokenType::Ampersand) {
+            // check for &mut
+            auto next = scn.NextToken();
+            if (next && next->type == TokenType::Mut) tk.type = TokenType::RefMut;
+        }
+        // TODO: handle square pair and square pair mut
+        size_t type_boundary = fn_name_no_operator.substr(1).find_first_of('&');
+        std::string type_name{ fn_name_no_operator.substr(scn.GetOffset() - 1, type_boundary) };
+        
+        // unary overload type_boundary == npos 
+        if (type_boundary == std::string_view::npos) {
+            Type subject{.name = type_name}; subject.saturate(module, this);
+            // this could be a regular unary operation or a deref coercion
+            if (auto as_call = dynamic_cast<CallOperation*>(source_expr)) {
+                // a deref can only occur on a call operation using deref coercion 
+                auto callee = reinterpret_cast<BinaryOperation*>(as_call->callee.get());
+                TokenType tok = callee->deref_coerce_is_mut ? TokenType::RefMut : TokenType::Ampersand;
+                if (callee->subtypes.empty()) doUnaryOperator(callee->selected_deref_coerce, tok);
+                else generateGenericUnaryOperator(subject.deref().module, callee->selected_deref_coerce, tok, callee->subtypes);
+            }
+            // append the module to the mangled operator overload
+            fn_name = subject.deref().module->module_hash + fn_name;
+        }
+    }
+    // after generating try and see if we can find a summary 
+    if (function_borrow_checker_infos.contains(fn_name)) return &function_borrow_checker_infos.at(fn_name);
+    return nullptr;
 }
 
 }  // namespace Yoyo

@@ -168,6 +168,7 @@ public:
 class CallFunctionInstruction : public Instruction {
 public:
     std::vector<Value> val;
+    std::vector<Domain> used_domains;
     std::string function_name;
     std::string into;
     Type expected_return;
@@ -213,6 +214,7 @@ public:
 class RetInstruction : public Instruction {
 public:
     std::optional<Value> ret_val;
+    std::vector<Domain> domains_used;
     InstructionVariant to_variant() override;
     RetInstruction() : ret_val(std::nullopt) {}
     RetInstruction(Value&& val) : ret_val(val) {}
@@ -380,12 +382,12 @@ public:
     friend class LValueEmitter;
     BorrowCheckerEmitter(IRGenerator* irgen, TypeCheckerState* stt,
                          BorrowCheckerFunction* function,
-                         BasicBlock* current_block)
+                         BasicBlock* current_block, std::vector<std::pair<std::string, std::string>> vars)
         : irgen(irgen),
           stt(stt),
-          variables(1),
+          variables({std::move(vars)}),
           function(function),
-          current_block(current_block) {}
+          current_block(current_block){}
     void operator()(FunctionDeclaration*);
     void operator()(ClassDeclaration*);
     void operator()(VariableDeclaration*);
@@ -780,12 +782,15 @@ struct TopLevelPointsToGraph {
 struct BorrowCheckVisitor {
     DomainCheckerState* state;
     IRGenerator* irgen;
+    BorrowCheckerType* ret_type;
     // since I've decided to go with c++ copy and "drop at the end of
     // block" semantics, I don't think I need to check for dropped value
     // usage in every instruction
     void operator()(Instruction*) {}
     void operator()(DerefLoadOperation*);
     void operator()(DerefOperation*);
+    // ret has a special case here because its used to fill the return type of the summary
+    void operator()(RetInstruction*);
 };
 // used primarily for error reporting, It contains information about why
 // a domain was killed
@@ -802,6 +807,20 @@ struct KillReason {
     // for assigns, if it comes from an lvalue this is the value that
     // was dereferenced
     std::optional<std::string> lvalue_source;
+};
+// This struct is filled with information about functions that use domains 
+// it tells us what domains are allowed to alias, and the points to set of the return value
+// in terms of the input domains
+struct FunctionSummary {
+    // map for every domain in the return object to thier points to set
+    std::unordered_map<std::string, std::vector<std::string>> pts_result;
+    // this gives us the full type the function used for its return type (so we can accurately transfer the domains)
+    BorrowCheckerType return_type;
+    // we store input types so we can map what source was the return points to set gotten from
+    std::vector<BorrowCheckerType> input_types;
+    std::vector<char> input_domains;
+    // what were the input domains initialized to
+    std::unordered_map<char, std::string> input_domains_concrete;
 };
 struct DomainCheckerState {
     // TODO make the union find
@@ -834,7 +853,10 @@ struct DomainCheckerState {
     // references and thus should never be overwritten (only appended to)
     std::set<std::string> shared_domains;
 
-    std::unique_ptr<BorrowCheckerFunction> check_function(
+    std::pair<
+        std::unique_ptr<BorrowCheckerFunction>,
+        FunctionSummary>
+    check_function(
         FunctionDeclaration* decl, IRGenerator* irgen,
         const FunctionSignature& sig, TypeCheckerState* stt);
     // doesn't do anything for now
@@ -842,7 +864,7 @@ struct DomainCheckerState {
     // assigns predecessors to blocks
     void calc_block_preds();
     // transforms domain-related code to SSA
-    void transform_to_ssa();
+    void transform_to_ssa(UseStorageTy);
     // remove all "DomainDependenceEdge" constraints
     // and add new assignments
     void clear_dependencies();

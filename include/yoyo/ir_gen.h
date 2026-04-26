@@ -13,6 +13,7 @@
 #include "engine.h"
 #include "error.h"
 #include "module.h"
+#include "overload_details.h"
 #include "token.h"
 #include "type_checker.h"
 namespace Yoyo {
@@ -32,6 +33,7 @@ public:
                             // we want to steal it
     std::vector<CFGNodeManager> function_cfgs;
     std::vector<std::pair<Error, std::string>>* write_errors_to = nullptr;
+    std::unordered_map<std::string, BorrowChecker::FunctionSummary> function_borrow_checker_infos;
     std::string block_hash;
     bool has_error = false;
 
@@ -65,6 +67,7 @@ public:
     virtual void doClass(ClassDeclaration*) = 0;
     virtual void doAlias(AliasDeclaration*) = 0;
     virtual void doConst(ConstantDeclaration*) = 0;
+    virtual void doUnaryOperator(OverloadDetailsUnary*, TokenType tol) = 0;
     void generateGenericFunction(ModuleBase* mod, const std::string& hash,
                                  GenericFunctionDeclaration* fn,
                                  std::span<Type> types);
@@ -80,7 +83,9 @@ public:
     void generateGenericInterface(ModuleBase* md, const std::string& block,
                                   GenericInterfaceDeclaration* decl,
                                   std::span<Type> types);
+    void generateGenericUnaryOperator(ModuleBase* md, OverloadDetailsUnary* dets, TokenType tok, std::span<Type> types);
     std::optional<Error> apply_using(Type&, ModuleBase*&, std::string&);
+    BorrowChecker::FunctionSummary* get_summary_for(std::string, ASTNode*);
 };
 
 class ExpressionTypeChecker {

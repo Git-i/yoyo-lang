@@ -22,6 +22,7 @@
 #include "class_entry.h"
 #include "error.h"
 #include "expression.h"
+#include "func_sig.h"
 #include "ir_gen.h"
 #include "overload_details.h"
 #include "statement.h"
@@ -556,12 +557,12 @@ Value BorrowCheckerEmitter::operator()(CallOperation* op) {
                     std::move(fn_name),
                     std::string(interm_res),
                     { std::move(func_arg) },
-                    callee_type.subtypes[0]));
+                    callee_type.subtypes[0]), op);
             final_lhs = Value::from(std::move(interm_res));
         } else {
             if (!bexpr->lhs->evaluated_type.is_reference() && callee_type.subtypes[0].is_reference()) {
                 auto borrow_res = temporary_name();
-                current_block->add_instruction(new BorrowValueInstruction(std::move(lhs_eval), std::string(borrow_res)));
+                current_block->add_instruction(new BorrowValueInstruction(std::move(lhs_eval), std::string(borrow_res)), op);
                 final_lhs = Value::from(std::move(borrow_res));
             } else final_lhs = std::move(lhs_eval);
         }
@@ -577,7 +578,7 @@ Value BorrowCheckerEmitter::operator()(CallOperation* op) {
             std::string(result),
             std::move(args),
             op->evaluated_type
-        ));
+        ), op);
         return Value::from(std::move(result));
     }
     if (callee_type.name.starts_with("__union_var")) {
@@ -969,14 +970,37 @@ const BorrowCheckerType& DomainCheckerState::get_value_type(
     }
     return type_mapping.at(value.base_name);
 }
-std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
+std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainCheckerState::check_function(
     FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig,
     TypeCheckerState* stt) {
+    auto summary = FunctionSummary{};
     auto function = std::make_unique<BorrowCheckerFunction>();
     func = &*function;
     this->irgen = irgen;
     entry_block = function->new_block("entry");
-    std::visit(BorrowCheckerEmitter{irgen, stt, &*function, entry_block},
+
+    std::vector<std::pair<std::string, std::string>> func_params;
+    std::map<char, Domain> param_domain_map;
+    for (auto dom : sig.domains) param_domain_map[dom] = new_domain_var();
+    summary.input_domains = sig.domains;
+    std::ranges::transform(param_domain_map, std::inserter(summary.input_domains_concrete, summary.input_domains_concrete.begin()), [](auto& in) {
+        return std::make_pair(in.first, in.second.to_string());
+    });
+    for(auto& param : sig.parameters) {
+        std::string name = "__param_" + param.name;
+        func_params.emplace_back(param.name, name);
+        auto type = type_to_borrow_checker_type(param.type, param_domain_map);
+        register_value_base_type(name, std::move(type));
+    }
+    for (auto i : std::views::iota(0u, sig.domains.size())) {
+        auto dom = sig.domains[i];
+        auto domain_str = param_domain_map[dom].to_string();
+        auto target = "__inp" + std::to_string(i);
+        ptgraph.add_edge(domain_str, target);
+        final_ptg.add_new_relation(domain_str + "__0", target);
+
+    }
+    std::visit(BorrowCheckerEmitter{irgen, stt, &*function, entry_block, std::move(func_params)},
                decl->body->toVariant());
     info->bc_state.initial_IR = function->clone();
     std::cout << "Phase 1\n" << function->to_string() << std::endl;
@@ -1008,8 +1032,14 @@ std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
     info->bc_state.aux_ptg = ptgraph;
     std::cout << ptgraph.to_graphviz() << std::endl;
 
+
+    UseStorageTy storage;
+    for(auto&[_, domain] : param_domain_map) {
+        storage[entry_block][domain.to_string()] = domain.to_string() + "__0"; 
+        dfa_in[entry_block->instructions[0].get()].insert(domain.to_string() + "__0");
+    }
     calc_block_preds();
-    transform_to_ssa();
+    transform_to_ssa(std::move(storage));
     info->bc_state.ssa_IR = function->clone();
     std::cout << "Phase 3\n"
               << type_mapping.to_string() << "\n\n"
@@ -1033,13 +1063,25 @@ std::unique_ptr<BorrowCheckerFunction> DomainCheckerState::check_function(
     for (auto& [inst, set] : dfa_out)
         info->bc_state.dfa_out[reinterpret_cast<uintptr_t>(inst)] = set;
     std::cout << "Phase 7\n" << function->to_string(true, this) << std::endl;
-
+    auto ret_type = type_to_borrow_checker_type(sig.returnType, {});
     for (auto& block : function->blocks) {
         for (auto& inst : block->instructions)
-            std::visit(BorrowCheckVisitor{this, irgen}, inst->to_variant());
+            std::visit(BorrowCheckVisitor{this, irgen, &ret_type}, inst->to_variant());
     }
-    info->bc_state.value_type_map = std::move(type_mapping);
-    return function;
+    // TODO: find a way to clone this type map
+    // info->bc_state.value_type_map = std::move(type_mapping);
+    // fill summary.input_types 
+    for (auto& param : sig.parameters) {
+        summary.input_types.push_back(std::move(type_mapping.at("__param_" + param.name)));
+    }
+    for (auto& dom : ret_type.domains | std::views::keys) {
+        auto& pts_set = final_ptg.get_pointees_of(dom.to_string());
+        summary.pts_result[dom.to_string()] = std::vector<std::string>{
+            pts_set.begin(), pts_set.end()
+        };
+    }
+    summary.return_type = std::move(ret_type);
+    return std::make_pair(std::move(function), std::move(summary));
 }
 void DomainCheckerState::do_primary_analysis() {
     std::set<Instruction*> worklist;
@@ -1261,6 +1303,10 @@ void DomainCheckerState::do_primary_analysis() {
             }
         } else if (auto inst = dynamic_cast<DerefOperation*>(node)) {
             // I don't think there's any special behaviour required here
+            std::ignore = inst;
+        } else if (auto inst = dynamic_cast<CallFunctionInstruction*>(node)) {
+            std::ignore = inst;
+        } else if (auto inst = dynamic_cast<RetInstruction*>(node)) {
             std::ignore = inst;
         } else
             debugbreak();
@@ -1630,21 +1676,22 @@ std::string ValueProducer::name_for(const std::string& val) {
     return std::format("{}__{}", val, ++var_map[val]);
 }
 void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
-                            ValueProducer& producer, DomainCheckerState*);
+                            ValueProducer& producer, DomainCheckerState*, bool& entry_done);
 std::optional<std::string> lookup_var_recursive(const std::string& arg,
                                                 BasicBlock* start_at,
                                                 UseStorageTy& storage,
                                                 ValueProducer& producer,
-                                                DomainCheckerState* state) {
+                                                DomainCheckerState* state,
+                                                bool& entry_done) {
     if (start_at->preds.size() == 1) {
         auto pred = start_at->preds[0];
         if (!storage.contains(pred))
-            ssa_transform_do_block(pred, storage, producer, state);
+            ssa_transform_do_block(pred, storage, producer, state, entry_done);
 
         if (storage[pred].contains(arg))
             return storage[pred][arg];
         else
-            return lookup_var_recursive(arg, pred, storage, producer, state);
+            return lookup_var_recursive(arg, pred, storage, producer, state, entry_done);
     } else {
         auto new_name = producer.name_for(arg);
         auto phi = std::unique_ptr<DomainPhiInstruction>(
@@ -1655,13 +1702,13 @@ std::optional<std::string> lookup_var_recursive(const std::string& arg,
 
         for (auto& pred : start_at->preds) {
             if (!storage.contains(pred))
-                ssa_transform_do_block(pred, storage, producer, state);
+                ssa_transform_do_block(pred, storage, producer, state, entry_done);
 
             if (storage[pred].contains(arg))
                 phi->args.push_back(Domain(storage[pred][arg]));
             else {
                 if (auto val = lookup_var_recursive(arg, pred, storage,
-                                                    producer, state))
+                                                    producer, state, entry_done))
                     phi->args.push_back(Domain(*val));
                 else
                     return std::nullopt;
@@ -1688,9 +1735,13 @@ std::optional<std::string> lookup_var_recursive(const std::string& arg,
 }
 void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
                             ValueProducer& producer,
-                            DomainCheckerState* state) {
-    if (storage.contains(block)) return;
+                            DomainCheckerState* state, bool& entry_done) {
+    if (storage.contains(block)) {
+        if(block != state->entry_block) return;
+        if (entry_done) return;
+    }
     auto& storage_entry = storage[block];
+    if(block == state->entry_block) entry_done = true;
     // perform local value numbering for everything in this block
     // and collect un-numbered uses into this vector
     std::vector<std::reference_wrapper<std::string>> unfound_uses;
@@ -1811,6 +1862,15 @@ void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
                         }
                     }
                 }
+                if constexpr (std::is_same_v<T, RetInstruction>) {
+                    RetInstruction* inst = tp;
+                    for(auto& dom : inst->domains_used) {
+                        if (storage_entry.contains(dom.name))
+                            dom.name = storage_entry[dom.name];
+                        else
+                            unfound_uses.push_back(std::ref(dom.name));
+                    }
+                }
                 if constexpr (std::is_same_v<T, DerefLoadOperation>) {
                     // if its a reference to reference add may load
                     // instructions
@@ -1844,6 +1904,15 @@ void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
                         }
                     }
                 }
+                if constexpr (std::is_same_v<T, CallFunctionInstruction>) {
+                    for(auto& used_domain : tp->used_domains) {
+                        if (storage_entry.contains(used_domain.name))
+                            used_domain.name =
+                                storage_entry[used_domain.name];
+                        else
+                            unfound_uses.push_back(std::ref(used_domain.name));
+                    }
+                }
                 if constexpr (std::is_same_v<T, DerefOperation>) {
                     if (storage_entry.contains(tp->ref_domain.name))
                         tp->ref_domain.name =
@@ -1860,13 +1929,13 @@ void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
             unfound_uses, [&, pred = block->preds[0]](
                               std::reference_wrapper<std::string> arg) {
                 if (!storage.contains(pred))
-                    ssa_transform_do_block(pred, storage, producer, state);
+                    ssa_transform_do_block(pred, storage, producer, state, entry_done);
 
                 if (storage[pred].contains(arg))
                     arg.get() = storage[pred][arg];
                 else {
                     if (auto val = lookup_var_recursive(arg, pred, storage,
-                                                        producer, state))
+                                                        producer, state, entry_done))
                         arg.get() = *val;
                     else
                         return false;
@@ -1886,13 +1955,13 @@ void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
 
                 for (auto& pred : block->preds) {
                     if (!storage.contains(pred))
-                        ssa_transform_do_block(pred, storage, producer, state);
+                        ssa_transform_do_block(pred, storage, producer, state, entry_done);
 
                     if (storage[pred].contains(arg))
                         phi->args.push_back(Domain(storage[pred][arg]));
                     else {
                         if (auto val = lookup_var_recursive(arg, pred, storage,
-                                                            producer, state))
+                                                            producer, state, entry_done))
                             phi->args.push_back(Domain(*val));
                         else
                             return false;
@@ -1921,12 +1990,12 @@ void ssa_transform_do_block(BasicBlock* block, UseStorageTy& storage,
     }
     if (!unfound_uses.empty()) debugbreak();
 }
-void DomainCheckerState::transform_to_ssa() {
+void DomainCheckerState::transform_to_ssa(UseStorageTy latest_variables) {
     ValueProducer producer;
-    UseStorageTy latest_variables;
     // this is not post order, its just kinda close to it
+    bool entry_done = false;
     for (auto& block : func->blocks) {
-        ssa_transform_do_block(block.get(), latest_variables, producer, this);
+        ssa_transform_do_block(block.get(), latest_variables, producer, this, entry_done);
     }
 }
 void DomainCheckerState::clear_dependencies() {
@@ -1987,6 +2056,7 @@ void DomainCheckerState::build_dug() {
         void operator()(DomainSubsetConstraint* con) {
             add_definition(con->super.to_string(), con);
             if (con->sub.is_var()) add_use(con->sub.to_string(), con);
+            if (!con->lvalue_domain.empty()) add_use(con->lvalue_domain, con);
         }
         void operator()(DomainExtensionConstraint* con) {
             add_definition(con->super.to_string(), con);
@@ -2036,6 +2106,12 @@ void DomainCheckerState::build_dug() {
             // not sure how to handle this, however as there may be an
             // associated store or reborrow
             add_use(op->ref_domain.to_string(), op);
+        }
+        void operator()(RetInstruction* op) {
+            for (auto& dom : op->domains_used) add_use(dom.to_string(), op);
+        }
+        void operator()(CallFunctionInstruction* op) {
+            for(auto& dom : op->used_domains) add_use(dom.to_string(), op);
         }
         void operator()(Instruction*) {}
     };
@@ -2656,7 +2732,13 @@ BlockIteratorTy DomainVariableInserter::operator()(BrInstruction*) {
 BlockIteratorTy DomainVariableInserter::operator()(DropInstruction*) {
     return current_position;  // Lvalue's cannot be dropped, so...
 }
-BlockIteratorTy DomainVariableInserter::operator()(RetInstruction*) {
+BlockIteratorTy DomainVariableInserter::operator()(RetInstruction* inst) {
+    if (inst->ret_val) {
+        auto& val_tp = state->get_value_type(*inst->ret_val);
+        for(auto& dom : val_tp.domains | std::views::keys) {
+            inst->domains_used.push_back(dom);
+        }
+    }
     return current_position;
 }
 BlockIteratorTy DomainVariableInserter::operator()(PhiInstruction* inst) {
@@ -2680,22 +2762,79 @@ BlockIteratorTy DomainVariableInserter::operator()(AssignInstruction* inst) {
 }
 BlockIteratorTy DomainVariableInserter::operator()(
     CallFunctionInstruction* func) {
-    // we implement this only for functions that don't have anything to
-    // do with references i.e no input or output references
+    bool has_references = false;
 
     // check that no inputs have anything to do with references
     for (auto i : std::views::iota(0u, func->val.size())) {
         auto& in = func->val[i];
         if (!state->get_value_type(in).domains.empty()) {
-            state->irgen->error(Error(
-                func->origin, "References are not supported in function calls",
-                std::format("The {}th parameter contains a reference", i + 1)));
+            has_references = true;
         }
     }
-    // TODO: check that the return value does not contain a reference
-    state->register_value_base_type(
-        func->into,
-        state->type_to_borrow_checker_type(func->expected_return, {}));
+    if (!has_references) {
+        state->register_value_base_type(
+            func->into,
+            state->type_to_borrow_checker_type(func->expected_return, {}));
+        return current_position;
+    }
+    auto summary = state->irgen->get_summary_for(func->function_name, func->origin);
+    if(!summary) {
+        state->irgen->error(Error(func->origin, "Function " + func->function_name + " could not be found"));
+    }
+    // TODO: handle functions that might write to locals through references 
+    auto new_type = state->type_to_borrow_checker_type(func->expected_return, {});
+    // we use this function to make the return points to set value, a value that is relevant to the current function 
+    size_t i = 0;
+    auto recontextualize_value = [summary, this, func, &i](const std::string& in) -> Value {
+        i++;
+        using namespace std::string_view_literals;
+        auto new_val = Value::from(std::string(in));
+        // return value points to sets are always of the form __inp{n}
+        auto n = std::string_view{new_val.base_name.begin() + "__inp"sv.size(), new_val.base_name.end()};
+        uint32_t idx;
+        auto res = std::from_chars(n.data(), n.data() + n.size(), idx);
+        if (res.ec != std::errc()) debugbreak();
+
+        // __inp{n} corresponds to the nth input domain 
+        auto source_domain = summary->input_domains[idx];
+
+        // we need to map the input domain to the corresponding local domain and make the lvalue of it 
+        auto foreign_domain = summary->input_domains_concrete[source_domain];
+        Domain local_domain;
+        for (auto i : std::views::iota(0u, summary->input_types.size())) {
+            auto it = std::ranges::find_if(summary->input_types[i].domains, [&foreign_domain](auto& in) {
+                return in.first.to_string() == foreign_domain;
+            });
+            if (it == summary->input_types[i].domains.end()) continue;
+            auto idx = std::distance(summary->input_types[i].domains.begin(), it);
+            auto& type = state->get_value_type(func->val[i]);
+            local_domain = type.domains[idx].first;
+            break;
+        }
+        func->used_domains.push_back(local_domain);
+        BorrowCheckerType val_type;
+        val_type.domains = { {local_domain, false} };
+        val_type.details.emplace<BorrowCheckerType::LValue>(
+            std::make_unique<BorrowCheckerType>(BorrowCheckerType::new_primitive())
+        );
+        auto& sub = std::get<BorrowCheckerType::LValue>(val_type.details);
+        for (auto& mem : new_val.subpaths) sub.subpath.push_back(mem);
+
+        std::string result = std::to_string(reinterpret_cast<std::uintptr_t>(func)) + std::to_string(i); 
+        state->register_value_base_type(result, std::move(val_type));
+
+        auto final_value = Value::from(std::move(result));
+        return final_value;
+    };
+    for (auto i : std::views::iota(0u, new_type.domains.size())) {
+        auto& points_to_set = summary->pts_result[summary->return_type.domains[i].first.to_string()];
+        for (auto value : points_to_set | std::views::transform(recontextualize_value)) {
+            auto inst = new DomainSubsetConstraint(Domain(new_type.domains[i].first), value.as_domain());
+            
+            current_position = instructions.emplace(++current_position, inst);
+        }
+    }
+    state->register_value_base_type(func->into, std::move(new_type));
     return current_position;
 }
 BlockIteratorTy DomainVariableInserter::operator()(
@@ -2804,6 +2943,15 @@ void add_kill_reason_to_error(Error& err, const KillReason& reason) {
             reason.bad_pointee, reason.affected_value);
     }
     err.markers.emplace_back(span, std::move(detail));
+}
+void BorrowCheckVisitor::operator()(RetInstruction* inst) {
+    if (inst->ret_val) {
+        for (auto i : std::views::iota(0u, inst->domains_used.size())) {
+            for (auto& points_to : state->final_ptg.get_pointees_of(inst->domains_used[i].to_string())) {
+                state->final_ptg.add_new_relation(ret_type->domains[i].first.to_string(), points_to);
+            }
+        }
+    }
 }
 void BorrowCheckVisitor::operator()(DerefOperation* inst) {
     if (!state->dfa_in[inst].contains(inst->ref_domain.to_string())) {

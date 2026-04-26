@@ -2860,9 +2860,9 @@ bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con) {
                         fn->signature.parameters[0].name == "this") {
                         // correct the right type
                         right.name = "__fn";
-                        right.block_hash = type.block_hash + type.full_name_no_block() +
+                        right.block_hash = no_reference.block_hash + no_reference.full_name_no_block() +
                                            "::" + std::string(name) + "::";
-                        right.module = type.module;
+                        right.module = no_reference.module;
                         std::ranges::copy(
                             fn->signature.parameters |
                                 std::views::transform(
@@ -2884,7 +2884,7 @@ bool ConstraintSolver::operator()(BinaryDotCompatibleConstraint& con) {
                         auto result_type =
                             Type{.name = "__bound_fn",  // the first parameter
                                  .subtypes = right.subtypes,
-                                 .module = type.module,
+                                 .module = right.module,
                                  .block_hash = right.block_hash};
                         add_new_constraint(
                             EqualConstraint{result, result_type, expr});
