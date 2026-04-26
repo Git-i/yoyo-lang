@@ -542,7 +542,7 @@ std::vector<char> parseDomainList(Parser& p) {
             if (!next) p.error("Expected ')' or character", next);
             if (next->type == TokenType::RParen) break;
             if (next->type == TokenType::Identifier) {
-                domains.push_back(to_char(iden));
+                domains.push_back(to_char(next));
             } else
                 p.error("Expected ')' or character", next);
         }

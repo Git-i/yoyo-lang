@@ -581,6 +581,8 @@ struct BorrowCheckerType {
     // Duplicate a type with the same domains
     BorrowCheckerType moved(DomainCheckerState*) const;
     BorrowCheckerType deref() const;
+    // every domain can only point to one type of values, get that type with a fresh set of domains (if any)
+    std::optional<BorrowCheckerType> get_pointee_type(Domain dom, DomainCheckerState*) const;
     // create a new primitive type
     static BorrowCheckerType new_primitive();
     static BorrowCheckerType new_aggregate_from(Type&&, DomainCheckerState*,
@@ -819,6 +821,9 @@ struct FunctionSummary {
     // we store input types so we can map what source was the return points to set gotten from
     std::vector<BorrowCheckerType> input_types;
     std::vector<char> input_domains;
+    // these represents domains used for lvalue objects, and their points to set
+    // not that lvalue modifications are not flow sensitive
+    std::unordered_map<std::string, std::vector<std::string>> input_lvalues;
     // what were the input domains initialized to
     std::unordered_map<char, std::string> input_domains_concrete;
 };
@@ -827,6 +832,7 @@ struct DomainCheckerState {
     size_t last_id = 0;
     Info::FunctionInformation* info;
     ValueTypeMapping type_mapping;
+    FunctionSummary* summary;
     Domain new_domain_var();
     void register_value_base_type(const std::string& value,
                                   BorrowCheckerType&&);

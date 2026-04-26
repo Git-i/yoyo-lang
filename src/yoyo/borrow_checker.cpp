@@ -973,7 +973,8 @@ const BorrowCheckerType& DomainCheckerState::get_value_type(
 std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainCheckerState::check_function(
     FunctionDeclaration* decl, IRGenerator* irgen, const FunctionSignature& sig,
     TypeCheckerState* stt) {
-    auto summary = FunctionSummary{};
+    auto summr = FunctionSummary{};
+    summary = &summr;
     auto function = std::make_unique<BorrowCheckerFunction>();
     func = &*function;
     this->irgen = irgen;
@@ -982,23 +983,41 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
     std::vector<std::pair<std::string, std::string>> func_params;
     std::map<char, Domain> param_domain_map;
     for (auto dom : sig.domains) param_domain_map[dom] = new_domain_var();
-    summary.input_domains = sig.domains;
-    std::ranges::transform(param_domain_map, std::inserter(summary.input_domains_concrete, summary.input_domains_concrete.begin()), [](auto& in) {
+    summr.input_domains = sig.domains;
+    std::ranges::transform(param_domain_map, std::inserter(summr.input_domains_concrete, summr.input_domains_concrete.begin()), [](auto& in) {
         return std::make_pair(in.first, in.second.to_string());
     });
-    for(auto& param : sig.parameters) {
-        std::string name = "__param_" + param.name;
-        func_params.emplace_back(param.name, name);
-        auto type = type_to_borrow_checker_type(param.type, param_domain_map);
-        register_value_base_type(name, std::move(type));
-    }
     for (auto i : std::views::iota(0u, sig.domains.size())) {
         auto dom = sig.domains[i];
         auto domain_str = param_domain_map[dom].to_string();
         auto target = "__inp" + std::to_string(i);
         ptgraph.add_edge(domain_str, target);
         final_ptg.add_new_relation(domain_str + "__0", target);
-
+    }
+    for(auto& param : sig.parameters) {
+        std::string name = "__param_" + param.name;
+        func_params.emplace_back(param.name, name);
+        auto type = type_to_borrow_checker_type(param.type, param_domain_map);
+        auto generate_pointee_pointees = [this](BorrowCheckerType& type, Domain dom, auto& self) -> void {
+            auto pointed_to = type.get_pointee_type(dom, this);
+            if (pointed_to) {
+                auto this_val_name = *ptgraph.get_pointees_of(dom.to_string()).begin();
+                for (auto i : std::views::iota(0u, pointed_to->domains.size())) {
+                    auto inner_dom = pointed_to->domains[i].first.to_string();
+                    ptgraph.add_edge(inner_dom, this_val_name + "_pts" + std::to_string(i));
+                    self(pointed_to.value(), pointed_to->domains[i].first, self);
+                    summary->input_lvalues.emplace(inner_dom, std::vector<std::string>{});
+                }
+                register_value_base_type(
+                    this_val_name,
+                    std::move(pointed_to).value()
+                );
+            }
+        };
+        for (auto [dom, _] : type.domains) {
+            generate_pointee_pointees(type, dom, generate_pointee_pointees);
+        }
+        register_value_base_type(name, std::move(type));
     }
     std::visit(BorrowCheckerEmitter{irgen, stt, &*function, entry_block, std::move(func_params)},
                decl->body->toVariant());
@@ -1070,18 +1089,18 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
     }
     // TODO: find a way to clone this type map
     // info->bc_state.value_type_map = std::move(type_mapping);
-    // fill summary.input_types 
+    // fill summr.input_types 
     for (auto& param : sig.parameters) {
-        summary.input_types.push_back(std::move(type_mapping.at("__param_" + param.name)));
+        summr.input_types.push_back(std::move(type_mapping.at("__param_" + param.name)));
     }
     for (auto& dom : ret_type.domains | std::views::keys) {
         auto& pts_set = final_ptg.get_pointees_of(dom.to_string());
-        summary.pts_result[dom.to_string()] = std::vector<std::string>{
+        summr.pts_result[dom.to_string()] = std::vector<std::string>{
             pts_set.begin(), pts_set.end()
         };
     }
-    summary.return_type = std::move(ret_type);
-    return std::make_pair(std::move(function), std::move(summary));
+    summr.return_type = std::move(ret_type);
+    return std::make_pair(std::move(function), std::move(summr));
 }
 void DomainCheckerState::do_primary_analysis() {
     std::set<Instruction*> worklist;
@@ -2190,6 +2209,42 @@ static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType {
     }
     return BorrowCheckerType{};
 };
+std::optional<BorrowCheckerType> BorrowCheckerType::get_pointee_type(Domain dom, DomainCheckerState* stt) const {
+    using namespace std::string_view_literals;
+    switch (static_cast<TypeType>(details.index())) {
+        case RefPtr: {
+            // easiest case, all we need to do is return the subtype (it already has fresh unused domains)
+            return std::get<RefPtr>(details).subtype->cloned(stt);
+        }
+        case Aggregate: [[fallthrough]];
+        // for these two, I might implement them later
+        case UniquePtr: [[fallthrough]];
+        case Array: [[fallthrough]];
+        // this case should never be hit
+        case LValue: [[fallthrough]];
+        case Union: debugbreak(); break;
+        case Primitive: return std::nullopt;
+
+        case Named: {
+            auto& dets = std::get<Named>(details);
+            auto get_pointed = [](char domain, const Type& tp) -> const Type& {
+
+            };
+            auto it = std::ranges::find_if(domains, [&dom](auto& in) { return in.first.to_string() == dom.to_string(); });
+            if(it == domains.end()) return std::nullopt;
+            auto idx = std::distance(domains.begin(), it);
+            char dom_char;
+            auto map_it = std::ranges::find_if(dets.initialized_domains, [idx](auto& in){
+                return in.second == idx;
+            });
+            if (map_it == dets.initialized_domains.end()) return std::nullopt;
+            dom_char = map_it->first;
+            return stt->type_to_borrow_checker_type(get_pointed(dom_char, dets.actual_type), {});
+        }
+
+    }
+    return std::nullopt;
+}
 BorrowCheckerType BorrowCheckerType::borrowed(DomainCheckerState* stt) const {
     BorrowCheckerType new_type;
     new_type.domains.emplace_back(stt->new_domain_var(), false);
