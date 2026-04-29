@@ -308,15 +308,23 @@ main: fn = {
 TEST_CASE("Test Borrow checker function calls with ref to ref", "[borrow-checker][function][pointer-to-pointer]") {
     auto source = R"(
 rebind_reference: fn(val: &'a mut &'b i32, new_ref: &'c i32)(a, b, c) = *val = new_ref;
+rebind_reference3: fn(val: &'a mut &'b mut &'c i32, new_ref1: &'e i32)(a, b, c, d, e) = {
+    **val = new_ref1;
+}
 rebind_reference2: fn(val: &'a mut &'b mut &'c i32, new_ref1: &'d mut &'e i32, new_ref: &'f i32)(a, b, c, d, e, f) = {
     *val = new_ref1;
     **val = new_ref;
+    ***val = 100;
 }
 main: fn = {
     val1: i32 = 100; val2: i32 = 200;
 
     mut_ref: mut &i32 = &val1;
-    rebind_reference(&mut mut_ref, &val2);
+    mut_ref_new: mut &i32 = &val2;
+    mut_mut_ref: mut &mut &i32 = &mut mut_ref;
+    // rebind_reference2(&mut mut_mut_ref, &mut mut_ref_new, &val1);
+    // rebind_reference(&mut mut_ref, &val2);
+    rebind_reference3(&mut mut_mut_ref, &val2);
 }
 )"_o; 
     Yoyo::YVMEngine engine;

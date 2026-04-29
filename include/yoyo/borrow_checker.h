@@ -582,7 +582,7 @@ struct BorrowCheckerType {
     BorrowCheckerType moved(DomainCheckerState*) const;
     BorrowCheckerType deref() const;
     // every domain can only point to one type of values, get that type with a fresh set of domains (if any)
-    std::optional<BorrowCheckerType> get_pointee_type(Domain dom, DomainCheckerState*) const;
+    std::optional<std::pair<BorrowCheckerType, std::string>> get_pointee_type(Domain dom, DomainCheckerState*) const;
     // create a new primitive type
     static BorrowCheckerType new_primitive();
     static BorrowCheckerType new_aggregate_from(Type&&, DomainCheckerState*,
@@ -821,9 +821,11 @@ struct FunctionSummary {
     // we store input types so we can map what source was the return points to set gotten from
     std::vector<BorrowCheckerType> input_types;
     std::vector<char> input_domains;
-    // these represents domains used for lvalue objects, and their points to set
-    // not that lvalue modifications are not flow sensitive
+    // these represents domains used for lvalue objects, and their points to set.
+    // note that lvalue modifications are not flow sensitive
     std::unordered_map<std::string, std::vector<std::string>> input_lvalues;
+    // the path to go from each input to get to __pts{n} of that input `__deref` if all thats required is a deref
+    std::unordered_map<std::string, std::vector<std::string>> input_pts_path;
     // what were the input domains initialized to
     std::unordered_map<char, std::string> input_domains_concrete;
 };

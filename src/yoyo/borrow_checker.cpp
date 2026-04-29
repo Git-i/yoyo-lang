@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <format>
 #include <iostream>
@@ -858,7 +859,7 @@ void DomainCheckerState::register_value_base_type(const std::string& value,
 BorrowCheckerType DomainCheckerState::type_to_borrow_checker_type(
     const Type& type, const std::map<char, Domain>& domain_map) {
     if (type.is_integral() || type.is_floating_point() ||
-        type.get_decl_if_enum() || type.is_void()) {
+        type.get_decl_if_enum() || type.is_void() || type.is_boolean()) {
         return BorrowCheckerType::new_primitive();
     }
     if (type.get_decl_if_class(irgen) || type.get_decl_if_union()) {
@@ -999,18 +1000,21 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
         func_params.emplace_back(param.name, name);
         auto type = type_to_borrow_checker_type(param.type, param_domain_map);
         auto generate_pointee_pointees = [this](BorrowCheckerType& type, Domain dom, auto& self) -> void {
-            auto pointed_to = type.get_pointee_type(dom, this);
-            if (pointed_to) {
+            auto pointed_to_and_path = type.get_pointee_type(dom, this);
+            if (pointed_to_and_path) {
+                auto& [pointed_to, path] = pointed_to_and_path.value();
                 auto this_val_name = *ptgraph.get_pointees_of(dom.to_string()).begin();
-                for (auto i : std::views::iota(0u, pointed_to->domains.size())) {
-                    auto inner_dom = pointed_to->domains[i].first.to_string();
+                for (auto i : std::views::iota(0u, pointed_to.domains.size())) {
+                    summary->input_pts_path[this_val_name].emplace_back(path);
+                    pointed_to.domains[i].first.name += "__pts_" + this_val_name;
+                    auto inner_dom = pointed_to.domains[i].first.to_string();
                     ptgraph.add_edge(inner_dom, this_val_name + "_pts" + std::to_string(i));
-                    self(pointed_to.value(), pointed_to->domains[i].first, self);
+                    self(pointed_to, pointed_to.domains[i].first, self);
                     summary->input_lvalues.emplace(inner_dom, std::vector<std::string>{});
                 }
                 register_value_base_type(
                     this_val_name,
-                    std::move(pointed_to).value()
+                    std::move(pointed_to)
                 );
             }
         };
@@ -1087,9 +1091,9 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
         for (auto& inst : block->instructions)
             std::visit(BorrowCheckVisitor{this, irgen, &ret_type}, inst->to_variant());
     }
-    // TODO: find a way to clone this type map
-    // info->bc_state.value_type_map = std::move(type_mapping);
-    // fill summr.input_types 
+    for (const auto&[val, ty] : type_mapping) {
+        info->bc_state.value_type_map.emplace(val, ty.moved(this));
+    }
     for (auto& param : sig.parameters) {
         summr.input_types.push_back(std::move(type_mapping.at("__param_" + param.name)));
     }
@@ -1098,6 +1102,11 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
         summr.pts_result[dom.to_string()] = std::vector<std::string>{
             pts_set.begin(), pts_set.end()
         };
+    }
+    for (auto&[dom, pts_to] : ptgraph.pointee_pairs) {
+        // lvalue have __pts_ so they must contain '_'
+        if (dom.find_first_of('_') == std::string::npos) continue;
+        std::ranges::copy(pts_to, std::back_inserter(summr.input_lvalues[dom]));
     }
     summr.return_type = std::move(ret_type);
     return std::make_pair(std::move(function), std::move(summr));
@@ -2209,12 +2218,15 @@ static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType {
     }
     return BorrowCheckerType{};
 };
-std::optional<BorrowCheckerType> BorrowCheckerType::get_pointee_type(Domain dom, DomainCheckerState* stt) const {
+std::optional<std::pair<BorrowCheckerType, std::string>> BorrowCheckerType::get_pointee_type(Domain dom, DomainCheckerState* stt) const {
     using namespace std::string_view_literals;
     switch (static_cast<TypeType>(details.index())) {
         case RefPtr: {
             // easiest case, all we need to do is return the subtype (it already has fresh unused domains)
-            return std::get<RefPtr>(details).subtype->cloned(stt);
+            return std::make_pair(
+                std::get<RefPtr>(details).subtype->cloned(stt),
+                "__deref"
+            );
         }
         case Aggregate: [[fallthrough]];
         // for these two, I might implement them later
@@ -2227,7 +2239,7 @@ std::optional<BorrowCheckerType> BorrowCheckerType::get_pointee_type(Domain dom,
 
         case Named: {
             auto& dets = std::get<Named>(details);
-            auto get_pointed = [](char domain, const Type& tp) -> const Type& {
+            auto get_pointed = [](char domain, const Type& tp) -> std::pair<const Type&, std::string> {
 
             };
             auto it = std::ranges::find_if(domains, [&dom](auto& in) { return in.first.to_string() == dom.to_string(); });
@@ -2239,7 +2251,8 @@ std::optional<BorrowCheckerType> BorrowCheckerType::get_pointee_type(Domain dom,
             });
             if (map_it == dets.initialized_domains.end()) return std::nullopt;
             dom_char = map_it->first;
-            return stt->type_to_borrow_checker_type(get_pointed(dom_char, dets.actual_type), {});
+            auto[pointed, field] = get_pointed(dom_char, dets.actual_type);
+            return std::make_pair(stt->type_to_borrow_checker_type(pointed, {}), field);
         }
 
     }
@@ -2837,36 +2850,108 @@ BlockIteratorTy DomainVariableInserter::operator()(
         state->irgen->error(Error(func->origin, "Function " + func->function_name + " could not be found"));
     }
     // TODO: handle functions that might write to locals through references 
+    
+    // map every points to set of __param_*, __inp{n} and __inp{n}_pts{n}* to a concrete domain
+    std::unordered_map<std::string, Domain> forgn_to_local_domain;
+    std::unordered_map<std::string, Value> inp_value_map;
+    // fill forgn to local domain for all the parameters
+    for (auto i : std::views::iota(0u, summary->input_domains.size())) {
+        auto source = summary->input_domains[i];
+        auto foreign_domain = summary->input_domains_concrete[source];
+        for (auto j : std::views::iota(0u, summary->input_types.size())) {
+            auto it = std::ranges::find_if(summary->input_types[j].domains, [&foreign_domain](auto& in) {
+                return in.first.to_string() == foreign_domain;
+            });
+            if (it == summary->input_types[j].domains.end()) continue;
+            auto idx = std::distance(summary->input_types[j].domains.begin(), it);
+            auto& type = state->get_value_type(func->val[j]);
+            forgn_to_local_domain[foreign_domain] = type.domains[idx].first;
+            break;
+        }
+    }
+    // returns true if there's no domain with the name `in`
+    auto fill_forgn_to_local_for_inp = [this, summary, func, &forgn_to_local_domain, &inp_value_map](std::string in, Value val, auto& self) -> bool {
+        auto it = std::ranges::find_if(summary->input_lvalues, [&in](const auto& val) { return val.first.ends_with(in); });
+        if (it == summary->input_lvalues.end()) return true;
+        auto val_name = std::to_string(reinterpret_cast<std::uintptr_t>(func)) + in;
+        auto val_pts_name = std::to_string(reinterpret_cast<std::uintptr_t>(func)) + "_pts" + in;
+        auto new_op1 = new DerefOperation(Value(val), val_name);
+        current_position = instructions.emplace(++current_position, new_op1);
+        (*this)(new_op1);
+        // auto new_op2 = new DerefOperation(Value::from(std::string(val_name)), val_pts_name);
+        // current_position = instructions.emplace(++current_position, new_op2);
+        // (*this)(new_op2);
+        forgn_to_local_domain[it->first] = state->get_value_type(Value::from(std::string(val_name))).domains[1].first;
+        inp_value_map[it->first] = Value::from(std::string(val_name));
+        for(auto i : std::views::iota(0u, summary->input_pts_path[in].size())) {
+            auto& path = summary->input_pts_path[in][i];
+            Value new_val;
+            if (path == "__deref") {
+                // new_val = Value::from(std::move(val_name));
+                // new_val = val;
+                auto other_op = new DerefLoadOperation(Value(val), val_name + "load");
+                current_position = instructions.emplace(++current_position, other_op);
+                (*this)(other_op);
+                new_val = Value::from(val_name + "load");
+            }
+            else new_val = val.member(std::move(path));
+            self(in + "_pts" + std::to_string(i), std::move(new_val), self);
+        }
+        return false;
+    };
+    auto clone = std::vector<std::pair<std::string, Domain>>{forgn_to_local_domain.begin(), forgn_to_local_domain.end()};
+    for (auto&[frgn, local] : clone) {
+        using namespace std::string_view_literals;
+        for (auto j : std::views::iota(0u, summary->input_types.size())) {
+            auto it = std::ranges::find_if(summary->input_types[j].domains, [&frgn](auto& in) {
+                return in.first.to_string() == frgn;
+            });
+            if (it == summary->input_types[j].domains.end()) continue;
+            auto& type = state->get_value_type(func->val[j]);
+            auto[subtype, path] = type.get_pointee_type(local, state).value();
+            Value value_to_deref;
+            if (path == "__deref") {
+                value_to_deref = Value(func->val[j]);
+                // auto val_name =  std::to_string(reinterpret_cast<std::uintptr_t>(func)) + "__param_deref" + std::to_string(j);
+                // auto new_op = new DerefLoadOperation(Value(func->val[j]), val_name);
+                // (*this)(new_op);
+                // current_position = instructions.emplace(++current_position, new_op);
+                // value_to_deref = Value::from(std::move(val_name));
+            } else value_to_deref = Value(func->val[j]).member(std::move(path));
+            std::string inp_name = "__inp" + std::string(std::string_view(frgn).substr("'?"sv.size()));
+            fill_forgn_to_local_for_inp(inp_name, std::move(value_to_deref), fill_forgn_to_local_for_inp);
+            break;
+        }
+    }
+    for (auto& loc_dom : forgn_to_local_domain | std::views::values) func->used_domains.push_back(loc_dom);
     auto new_type = state->type_to_borrow_checker_type(func->expected_return, {});
     // we use this function to make the return points to set value, a value that is relevant to the current function 
     size_t i = 0;
-    auto recontextualize_value = [summary, this, func, &i](const std::string& in) -> Value {
+    auto recontextualize_value = [summary, this, func, &i, &forgn_to_local_domain](const std::string& in) -> Value {
         i++;
         using namespace std::string_view_literals;
         auto new_val = Value::from(std::string(in));
         // return value points to sets are always of the form __inp{n}
-        auto n = std::string_view{new_val.base_name.begin() + "__inp"sv.size(), new_val.base_name.end()};
-        uint32_t idx;
-        auto res = std::from_chars(n.data(), n.data() + n.size(), idx);
-        if (res.ec != std::errc()) debugbreak();
-
-        // __inp{n} corresponds to the nth input domain 
-        auto source_domain = summary->input_domains[idx];
-
-        // we need to map the input domain to the corresponding local domain and make the lvalue of it 
-        auto foreign_domain = summary->input_domains_concrete[source_domain];
+        auto pts_loc = in.find("_pts");
         Domain local_domain;
-        for (auto i : std::views::iota(0u, summary->input_types.size())) {
-            auto it = std::ranges::find_if(summary->input_types[i].domains, [&foreign_domain](auto& in) {
-                return in.first.to_string() == foreign_domain;
-            });
-            if (it == summary->input_types[i].domains.end()) continue;
-            auto idx = std::distance(summary->input_types[i].domains.begin(), it);
-            auto& type = state->get_value_type(func->val[i]);
-            local_domain = type.domains[idx].first;
-            break;
+        if (pts_loc == std::string::npos) {
+            auto n = std::string_view{new_val.base_name.begin() + "__inp"sv.size(), new_val.base_name.end()};
+            uint32_t idx;
+            auto res = std::from_chars(n.data(), n.data() + n.size(), idx);
+            if (res.ec != std::errc()) debugbreak();
+
+            // __inp{n} corresponds to the nth input domain 
+            auto source_domain = summary->input_domains[idx];
+
+            // we need to map the input domain to the corresponding local domain and make the lvalue of it 
+            auto foreign_domain = summary->input_domains_concrete[source_domain];
+            local_domain = forgn_to_local_domain[foreign_domain];
+        } else {
+            auto no_pts = std::string_view{ new_val.base_name.begin(),  new_val.base_name.begin() + pts_loc };
+            auto it = std::ranges::find_if(forgn_to_local_domain, [no_pts](auto& in) { return in.first.ends_with(no_pts); });
+            if (it == forgn_to_local_domain.end()) debugbreak();
+            local_domain = it->second;
         }
-        func->used_domains.push_back(local_domain);
         BorrowCheckerType val_type;
         val_type.domains = { {local_domain, false} };
         val_type.details.emplace<BorrowCheckerType::LValue>(
@@ -2881,6 +2966,14 @@ BlockIteratorTy DomainVariableInserter::operator()(
         auto final_value = Value::from(std::move(result));
         return final_value;
     };
+    for (auto&[lv, pts]: summary->input_lvalues) {
+        auto& loc_dom = forgn_to_local_domain[lv];
+        for (auto& pt : pts) {
+            auto inst = new AssignInstruction(Value(inp_value_map[lv]), recontextualize_value(pt));
+            // auto inst = new DomainExtensionConstraint(Domain(loc_dom), recontextualize_value(pt).as_domain());
+            current_position = instructions.emplace(++current_position, inst);
+        }
+    }
     for (auto i : std::views::iota(0u, new_type.domains.size())) {
         auto& points_to_set = summary->pts_result[summary->return_type.domains[i].first.to_string()];
         for (auto value : points_to_set | std::views::transform(recontextualize_value)) {
@@ -2954,7 +3047,12 @@ BlockIteratorTy DomainVariableInserter::operator()(
 }
 BlockIteratorTy DomainVariableInserter::operator()(DerefOperation* op) {
     auto& reference_type = state->get_value_type(op->reference);
-    op->ref_domain = reference_type.domains[0].first;
+    // lvalue dereference chain 
+    if (auto as_lval = std::get_if<BorrowCheckerType::LValue>(&reference_type.details)) {
+        op->ref_domain = as_lval->subtype->domains[0].first;
+    } else {
+        op->ref_domain = reference_type.domains[0].first;
+    }
     auto type = reference_type.deref();
     std::get<BorrowCheckerType::LValue>(type.details).origin =
         op->reference.to_string();
