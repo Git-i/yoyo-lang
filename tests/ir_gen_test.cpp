@@ -322,9 +322,9 @@ main: fn = {
     mut_ref: mut &i32 = &val1;
     mut_ref_new: mut &i32 = &val2;
     mut_mut_ref: mut &mut &i32 = &mut mut_ref;
-    // rebind_reference2(&mut mut_mut_ref, &mut mut_ref_new, &val1);
+    rebind_reference2(&mut mut_mut_ref, &mut mut_ref_new, &val1);
     // rebind_reference(&mut mut_ref, &val2);
-    rebind_reference3(&mut mut_mut_ref, &val2);
+    // rebind_reference3(&mut mut_mut_ref, &val2);
 }
 )"_o; 
     Yoyo::YVMEngine engine;

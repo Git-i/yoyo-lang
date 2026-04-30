@@ -194,6 +194,10 @@ public:
     AssignInstruction(Value&& lhs, Value&& rhs) : lhs(lhs), rhs(rhs) {}
     InstructionVariant to_variant() override;
 };
+class AssignExtendInstruction : public AssignInstruction {
+public:
+    AssignExtendInstruction(Value&& lhs, Value&& rhs) : AssignInstruction(std::move(lhs), std::move(rhs)) {}
+};
 class PhiInstruction : public Instruction {
 public:
     std::vector<Value> args;

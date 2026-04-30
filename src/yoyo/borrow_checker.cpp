@@ -1240,6 +1240,8 @@ void DomainCheckerState::do_primary_analysis() {
             auto& pts_lhs =
                 final_ptg.get_pointees_of(inst->lhs_domain.to_string());
             bool is_single_update = pts_lhs.size() == 1;
+            // if this an assign extend constraint, we always multi update
+            if (dynamic_cast<AssignExtendInstruction*>(inst)) is_single_update = false;
 
             bool has_change = false;
             for (auto& elem : pts_lhs) {
@@ -2969,7 +2971,7 @@ BlockIteratorTy DomainVariableInserter::operator()(
     for (auto&[lv, pts]: summary->input_lvalues) {
         auto& loc_dom = forgn_to_local_domain[lv];
         for (auto& pt : pts) {
-            auto inst = new AssignInstruction(Value(inp_value_map[lv]), recontextualize_value(pt));
+            auto inst = new AssignExtendInstruction(Value(inp_value_map[lv]), recontextualize_value(pt));
             // auto inst = new DomainExtensionConstraint(Domain(loc_dom), recontextualize_value(pt).as_domain());
             current_position = instructions.emplace(++current_position, inst);
         }
