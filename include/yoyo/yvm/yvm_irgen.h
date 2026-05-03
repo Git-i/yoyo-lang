@@ -133,7 +133,7 @@ public:
                                             StructNativeTy* str_type);
     std::vector<Type> fillArgs(bool, const std::vector<Type>&,
                                const std::unique_ptr<Expression>&,
-                               std::vector<std::unique_ptr<Expression>>& exprs);
+                               std::vector<std::unique_ptr<Expression>>& exprs, BinaryOperation* = nullptr);
     std::vector<Type> doInvoke(CallOperation* op, const Type&);
     std::vector<Type> doUnionVar(CallOperation* op, Type&);
     // Convert the object at stack top of type "type" to reference

@@ -1169,6 +1169,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(PrefixOperation* op) {
         return {};
     }
     case TokenType::Ampersand: {
+        return std::visit(LValueEvaluator{irgen}, op->operand->toVariant());
         auto operand = std::visit(*this, op->operand->toVariant());
         if (!target.subtypes[0].should_sret()) {
             irgen->builder->write_alloca(
@@ -1264,7 +1265,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(PostfixOperation*) {
 std::vector<Type> YVMExpressionEvaluator::fillArgs(
     bool uses_sret, const std::vector<Type>& sig,
     const std::unique_ptr<Expression>& first_expr,
-    std::vector<std::unique_ptr<Expression>>& exprs) {
+    std::vector<std::unique_ptr<Expression>>& exprs, BinaryOperation* source_expr) {
     if (uses_sret) {
         returned_alloc_addr = irgen->builder->write_alloca(
             NativeType::get_size(irgen->toNativeType(sig.back())));
@@ -1283,11 +1284,20 @@ std::vector<Type> YVMExpressionEvaluator::fillArgs(
             !extended_lifetimes
                  .emplace_back(std::visit(*this, first_expr->toVariant()))
                  .empty();
-        // if we are targeting a reference as the first argument, we don't
-        // need to implicit convert
-        if (!(sig[0].is_reference() && !sig[0].is_gc_reference() &&
-              tp.is_equal(sig[0].deref())))
+        // if we are targeting a reference as the first argument, we don't need
+        // implicit convert, but we need deref coercion (if source_expr is valid)
+        if (!(sig[0].is_reference() && !sig[0].is_gc_reference() && source_expr))
             implicitConvert(first_expr.get(), tp, sig[0], false, true);
+        else {
+            if (!tp.deref().is_equal(sig[0].deref()) && source_expr->selected_deref_coerce) {
+                auto mangled_name = tp.deref().module->module_hash + OverloadDetailsUnary::mangled_name(
+                    source_expr->deref_coerce_is_mut ? TokenType::RefMut : TokenType::Ampersand,
+                    source_expr->deref_coerce_is_mut ? tp.mutable_reference_to() : tp.reference_to()
+                );
+                irgen->builder->write_fn_addr(mangled_name);
+                irgen->builder->write_2b_inst(OpCode::Call, 1);
+            }
+        }
     }
     for (size_t i = 0; i < exprs.size(); i++) {
         auto& tp = exprs[i]->evaluated_type;
@@ -1362,7 +1372,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(CallOperation* op) {
                 bool uses_sret = fn->sig.returnType.should_sret();
 
                 fillArgs(uses_sret, callee_t.subtypes, expr->lhs,
-                         op->arguments);
+                         op->arguments, expr);
                 irgen->builder->write_fn_addr(function_name);
                 irgen->builder->write_2b_inst(
                     OpCode::Call, op->arguments.size() + 1 + uses_sret);
@@ -1429,7 +1439,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(CallOperation* op) {
 
             bool uses_sret = return_t.should_sret();
 
-            fillArgs(uses_sret, callee_t.subtypes, expr->lhs, op->arguments);
+            fillArgs(uses_sret, callee_t.subtypes, expr->lhs, op->arguments, expr);
             irgen->builder->write_fn_addr(fn_name);
             irgen->builder->write_2b_inst(OpCode::Call, 2);
             if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
@@ -1445,7 +1455,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(CallOperation* op) {
             op->callee->evaluated_type.subtypes.back().should_sret();
 
         auto extensions =
-            fillArgs(uses_sret, callee_t.subtypes, expr->lhs, op->arguments);
+            fillArgs(uses_sret, callee_t.subtypes, expr->lhs, op->arguments, expr);
         if (is_lambda)
             irgen->builder->write_fn_addr(irgen->block_hash + right_t.name);
         else

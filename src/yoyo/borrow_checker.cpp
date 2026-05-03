@@ -307,17 +307,19 @@ Value BorrowCheckerEmitter::operator()(BooleanLiteral* lit) {
 }
 Value BorrowCheckerEmitter::operator()(TupleLiteral* exp) {
     RE_REPR(exp);
-    std::vector<Value> args;
+    std::unordered_map<std::string, Value> args;
     args.reserve(exp->elements.size());
+    size_t i = 0;
     std::ranges::transform(
-        exp->elements, std::back_inserter(args),
-        [this](auto& expr) { return std::visit(*this, expr->toVariant()); });
+        exp->elements,
+        std::inserter(args, args.begin()),
+        [this, &i](auto& expr) { return std::pair{ std::to_string(i++), std::visit(*this, expr->toVariant()) }; });
 
     auto name = temporary_name();
     current_block->add_instruction(
-        new CallFunctionInstruction("__builtin_make_tuple", std::string(name),
-                                    std::move(args), exp->evaluated_type),
-        exp);
+        new NewAggregateInstruction(std::move(args), Type(exp->evaluated_type), std::string(name)),
+        exp
+    );
     return Value::from(std::move(name));
 }
 Value BorrowCheckerEmitter::operator()(ArrayLiteral* lit) {
@@ -485,8 +487,12 @@ Value BorrowCheckerEmitter::operator()(BinaryOperation* op) {
     } else if (token_tp == TokenType::Dot &&
                op->evaluated_type.name != "__bound_fn") {
         // memeber access
-        auto as_name = dynamic_cast<NameExpression*>(op->rhs.get());
-        if (!as_name) debugbreak();
+        std::string member_name;
+        if (auto as_name = dynamic_cast<NameExpression*>(op->rhs.get())) {
+            member_name = as_name->text;
+        } else if (auto as_int_lit = dynamic_cast<IntegerLiteral*>(op->rhs.get())) {
+            member_name = as_int_lit->text;
+        } else debugbreak();
         auto left_value = std::visit(*this, op->lhs->toVariant());
         // If access is behind a reference, we need to desugar into
         // dereference + access
@@ -496,9 +502,9 @@ Value BorrowCheckerEmitter::operator()(BinaryOperation* op) {
                 new DerefLoadOperation(std::move(left_value), new_value), op);
             left_value = Value::from(std::move(new_value));
         }
-        return left_value.member(std::string(as_name->text));
+        return left_value.member(std::move(member_name));
     } else {
-        // TODO
+        // TODO: do something
         // could be function binding or assignment
         return Value::empty();
     }
@@ -531,6 +537,7 @@ Value BorrowCheckerEmitter::operator()(CallOperation* op) {
     if (callee_type.name == "__bound_fn") {
         auto bexpr = dynamic_cast<BinaryOperation*>(op->callee.get());
         auto lhs_eval = std::visit(*this, bexpr->lhs->toVariant());
+        RE_REPR(bexpr->rhs.get());
         // if we are doing deref coercion, we need to call that function
         Value final_lhs;
         if (bexpr->selected_deref_coerce) {
@@ -954,6 +961,11 @@ const BorrowCheckerType& DomainCheckerState::field_lookup(
                 named_value_type_cache.emplace(
                     name_so_far, type_to_borrow_checker_type(
                                      type_so_far, concrete_domain_map));
+            } else if(type_so_far.is_tuple()) {
+                auto as_int = std::stoull(fields[i]);
+                // if (type_so_far.subtypes[as_int].is_reference()) __builtin_debugtrap();
+                type_so_far = Type(type_so_far.subtypes[as_int]);
+                named_value_type_cache.emplace(name_so_far, type_to_borrow_checker_type(type_so_far, concrete_domain_map));
             } else
                 debugbreak();
         }
@@ -2456,6 +2468,23 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
                 new_type.domains.emplace_back(substs.at(dom), false);
             }
             as_named.initialized_domains[dom] = new_type.domains.size() - 1;
+        }
+    } else if (tp.is_tuple()) {
+        auto& type = as_named.actual_type;
+        if (create_new_domains) {
+            char dom = 'a';
+            for (auto& subt : type.subtypes) {
+                for (auto i : std::views::iota(0u, subt.get_supposed_num_domains(state->irgen))) {
+                    subt.domains.push_back(dom);
+                    new_type.domains.emplace_back(state->new_domain_var(), false);
+                    as_named.initialized_domains[dom++] = new_type.domains.size() - 1;
+                }
+            } 
+        } else {
+            for (auto dom : type.domains) {
+                new_type.domains.emplace_back(substs.at(dom), false);
+                as_named.initialized_domains[dom] = new_type.domains.size() - 1;
+            }
         }
     }
     return new_type;

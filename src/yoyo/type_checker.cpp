@@ -884,6 +884,7 @@ FunctionType TypeChecker::operator()(NameExpression* ex) const {
     if (auto [name_pf, c] = module->findConst(hash, ex->text); c) {
         return {std::get<0>(*c)};
     }
+    irgen->error(Error(ex, std::format("The name {} does not exist in this scope", ex->text)));
     return Type{"__error_type"};
 }
 FunctionType TypeChecker::operator()(GenericNameExpression* ex) const {

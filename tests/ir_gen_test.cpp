@@ -262,6 +262,31 @@ main: fn = {
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }
+TEST_CASE("Test Borrow Checker Tuples", "[borrow-checker][tuples]") {
+    auto source = R"(
+main: fn = {
+    tup1: (i32, f32) = (10, 20.0);
+    ref1: &i32 = &tup1.0;
+    tup2: (&i32, &f32) = (ref1, &tup1.1);
+}
+)";
+    Yoyo::YVMEngine engine;
+    addTestModule(&engine);
+    auto mod = engine.addModule("source", source);
+    REQUIRE(engine.compile().is_successful());
+    engine.prepareForExecution();
+    if constexpr (emit_ir)
+        std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR()
+                  << std::flush;
+    auto fib = createFiberFor(mod, "source::main");
+    engine.execute();
+}
+TEST_CASE("Test Borrow Checker Arrays", "[borrow-checker][arrays]") {
+
+}
+TEST_CASE("Test Borrow Checker Optionals", "[borrow-checker][optionals]") {
+
+}
 TEST_CASE("Test Borrow checker function calls", "[borrow-checker][function]") {
     auto source = R"(
 Point: struct::<T> = { 
@@ -284,6 +309,7 @@ main: fn = {
     x_ref: mut = value.get_x();
     y_ref: mut = value.get_y();
 
+    test::print("${*x_ref}, ${*y_ref}");
     other := Point3 {
         .xy = Point{ .x, .y },
         .z = 40.0
@@ -291,7 +317,7 @@ main: fn = {
     x_ref = other.get_x();
     y_ref = other.get_y();
     z_ref := other.get_z();
-
+    test::print("${*x_ref}, ${*y_ref}, ${*z_ref}");
 }
 )"_o; 
     Yoyo::YVMEngine engine;
