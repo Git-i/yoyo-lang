@@ -153,8 +153,50 @@ void BorrowCheckerEmitter::operator()(VariableDeclaration* decl) {
     variables.back().emplace_back(std::string(decl->identifier.text),
                                   std::move(variable_name));
 }
-void BorrowCheckerEmitter::operator()(ForStatement*) {
-    // TODO
+void BorrowCheckerEmitter::operator()(ForStatement* stat) {
+    auto for_check = function->new_block("for_check");
+    stat->iterator_out = stt->best_repr(stat->iterator_out);
+    if (has_type_variable(stat->iterator_out)) debugbreak();
+
+    auto iterable = std::visit(*this, stat->iterable->toVariant());
+    if (!stat->iterable->evaluated_type.is_reference()) {
+        std::string borrow_res = temporary_name();
+        current_block->add_instruction(new BorrowValueInstruction(
+            std::move(iterable), std::string(borrow_res)
+        ), stat);
+        iterable = Value::from(std::move(borrow_res));
+    }
+    current_block->add_instruction(new BrInstruction(for_check));
+    current_block = for_check;
+    auto fn_name = stat->iterable->evaluated_type.full_name() + "::core::Iterator::<" + stat->iterator_out.full_name() + ">::next";
+    auto this_elem = temporary_name();
+    current_block->add_instruction(new CallFunctionInstruction(std::move(fn_name), std::string(this_elem), {
+        iterable
+    }, Type{.name = "__opt", .subtypes = {stat->iterator_out}}));
+    
+    auto for_body = function->new_block("for_body");
+    auto for_exit = function->new_block("for_exit");
+    current_block->add_instruction(new CondBrInstruction({for_body, for_exit}, Value::from(std::string(this_elem))));
+
+    current_block = for_body;
+    variables.emplace_back();
+    auto var_name = name_based_on(stat->names[0].text);
+    variables.back().emplace_back(std::string(stat->names[0].text), var_name);
+    current_block->add_instruction(new RelocateValueInstruction(
+        Value::from(std::move(this_elem)).member("value"),
+        std::move(var_name)
+    ));
+    std::visit(*this, stat->body->toVariant());
+    Instruction* terminator;
+    if (current_block->is_terminated()) {
+        terminator = current_block->instructions.back().release();
+        current_block->instructions.pop_back();
+    } else terminator = new BrInstruction(for_check);
+
+    destroy_and_remove_block(stat);
+    current_block->add_instruction(terminator);
+
+    current_block = for_exit;
 }
 void BorrowCheckerEmitter::operator()(ReturnStatement* stat) {
     if (stat->expression) {
@@ -178,6 +220,10 @@ Value BorrowCheckerEmitter::operator()(ConditionalExtraction* stat) {
     // already correct, we just need to borrow (or move) it. and for the
     // first 2 cases we need a .value field
     auto cond = std::visit(*this, stat->condition->toVariant());
+    // optionals extract to .value
+    if (stat->condition->evaluated_type.is_optional()) {
+        cond.member("value");
+    }
     auto then_block = function->new_block("cond_extract_then");
     auto else_block =
         stat->else_body ? function->new_block("cond_extract_else") : nullptr;
@@ -187,7 +233,6 @@ Value BorrowCheckerEmitter::operator()(ConditionalExtraction* stat) {
 
     current_block = then_block;
     auto then_capture_name = name_based_on(stat->captured_name);
-    variables.emplace_back();
     variables.back().emplace_back(stat->captured_name, then_capture_name);
     if (stat->then_capture_tp == ConditionalExtraction::Own) {
         // TODO: figure out hove move works in this IR
@@ -199,12 +244,10 @@ Value BorrowCheckerEmitter::operator()(ConditionalExtraction* stat) {
 
     auto then_value = std::visit(*this, stat->body->toVariant());
     if (!current_block->is_terminated()) {
-        destroy_and_remove_block();
         current_block->add_instruction(new BrInstruction(cont_block));
     } else {
         auto last = std::move(current_block->instructions.back());
         current_block->instructions.pop_back();
-        destroy_and_remove_block();
         current_block->instructions.push_back(std::move(last));
     }
     auto else_value = Value::empty();
@@ -651,12 +694,16 @@ Value BorrowCheckerEmitter::operator()(ObjectLiteral* lit) {
         value_map[name] = std::visit(*this, expr->toVariant());
     }
     current_block->add_instruction(new NewAggregateInstruction(
-        std::move(value_map), Type(lit->evaluated_type), std::string(name)));
+        std::move(value_map), Type(lit->evaluated_type), std::string(name)), lit);
     return Value::from(std::move(name));
 }
 Value BorrowCheckerEmitter::operator()(NullLiteral* lit) {
     RE_REPR(lit);
-    return Value::empty();
+    auto res = temporary_name();
+    current_block->add_instruction(new NewAggregateInstruction(
+        {}, Type(lit->evaluated_type), std::string(res)
+    ), lit);
+    return Value::from(std::move(res));
 }
 Value BorrowCheckerEmitter::operator()(AsExpression* ss) {
     RE_REPR(ss);
@@ -665,7 +712,17 @@ Value BorrowCheckerEmitter::operator()(AsExpression* ss) {
     if (ss->evaluated_type.name.starts_with("__conv_result")) {
         return std::visit(*this, ss->expr->toVariant())
             .member(std::string(ss->dest.name));
-    }
+    } else if (ss->evaluated_type.is_optional()) {
+        auto inner = std::visit(*this, ss->expr->toVariant());
+        auto name = temporary_name();
+        if (!ss->evaluated_type.subtypes[0].is_equal(ss->expr->evaluated_type)) {
+            debugbreak();
+        }
+        current_block->add_instruction(new NewAggregateInstruction(
+            {{"value", std::move(inner)}}, Type(ss->evaluated_type), std::string(name))
+        , ss);
+        return Value::from(std::move(name));
+    } else debugbreak();
     return Value::empty();
 }
 Value BorrowCheckerEmitter::operator()(CharLiteral* lit) {
@@ -869,7 +926,7 @@ BorrowCheckerType DomainCheckerState::type_to_borrow_checker_type(
         type.get_decl_if_enum() || type.is_void() || type.is_boolean()) {
         return BorrowCheckerType::new_primitive();
     }
-    if (type.get_decl_if_class(irgen) || type.get_decl_if_union()) {
+    if (type.get_decl_if_class(irgen) || type.get_decl_if_union() || type.is_tuple() || type.is_optional()) {
         return BorrowCheckerType::new_aggregate_from(Type(type), this,
                                                      domain_map);
     }
@@ -942,6 +999,7 @@ const BorrowCheckerType& DomainCheckerState::field_lookup(
             // guaranteed to be a struct/union/tuple/array by the type
             // system
             name_so_far += "." + fields[i];
+
             if (auto decl = type_so_far.get_decl_if_class(this->irgen)) {
                 auto it = std::ranges::find_if(
                     decl->vars, [&fields, i](ClassVariable& var) {
@@ -966,8 +1024,18 @@ const BorrowCheckerType& DomainCheckerState::field_lookup(
                 // if (type_so_far.subtypes[as_int].is_reference()) __builtin_debugtrap();
                 type_so_far = Type(type_so_far.subtypes[as_int]);
                 named_value_type_cache.emplace(name_so_far, type_to_borrow_checker_type(type_so_far, concrete_domain_map));
+            } else if(type_so_far.is_optional()) {
+                if (fields[i] != "value")
+                    debugbreak();
+
+                type_so_far = Type(type_so_far.subtypes[0]);
+                named_value_type_cache.emplace(name_so_far, type_to_borrow_checker_type(type_so_far, concrete_domain_map));
             } else
                 debugbreak();
+            if (i == fields.size() - 1) continue;
+            auto& this_type = named_value_type_cache.at(name_so_far);
+            for (auto [dom, idx] : std::get<BorrowCheckerType::Named>(this_type.details).initialized_domains)
+                concrete_domain_map[dom] = this_type.domains[idx].first;
         }
         return named_value_type_cache.at(full_name);
     } else
@@ -1017,10 +1085,14 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
                 auto& [pointed_to, path] = pointed_to_and_path.value();
                 auto this_val_name = *ptgraph.get_pointees_of(dom.to_string()).begin();
                 for (auto i : std::views::iota(0u, pointed_to.domains.size())) {
-                    summary->input_pts_path[this_val_name].emplace_back(path);
-                    pointed_to.domains[i].first.name += "__pts_" + this_val_name;
+                    // summary->input_pts_path[this_val_name].emplace_back(path);
+                    auto& dst_vec = summary->input_pts_path[this_val_name + std::to_string(i)];
+                    dst_vec.reserve(dst_vec.size() + path.size());
+                    std::ranges::copy(path, std::back_inserter(dst_vec));
+
+                    pointed_to.domains[i].first.name += "__pts_" + this_val_name + std::to_string(i);
                     auto inner_dom = pointed_to.domains[i].first.to_string();
-                    ptgraph.add_edge(inner_dom, this_val_name + "_pts" + std::to_string(i));
+                    ptgraph.add_edge(inner_dom, this_val_name + std::to_string(i) + "_pts" + std::to_string(i));
                     self(pointed_to, pointed_to.domains[i].first, self);
                     summary->input_lvalues.emplace(inner_dom, std::vector<std::string>{});
                 }
@@ -1035,8 +1107,12 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
         }
         register_value_base_type(name, std::move(type));
     }
-    std::visit(BorrowCheckerEmitter{irgen, stt, &*function, entry_block, std::move(func_params)},
+    auto emitter = BorrowCheckerEmitter{irgen, stt, &*function, entry_block, std::move(func_params)};
+    std::visit(emitter,
                decl->body->toVariant());
+    if (emitter.current_block->instructions.empty()) {
+        emitter.current_block->add_instruction(new RetInstruction(std::nullopt));
+    }
     info->bc_state.initial_IR = function->clone();
     std::cout << "Phase 1\n" << function->to_string() << std::endl;
     for (auto& block : function->blocks) {
@@ -1398,7 +1474,7 @@ struct TransferFunctionVisitor {
                                        &current_type->details)) {
                         // access of a struct field is stable, and that
                         // of a union is not
-                        if (as_named->actual_type.get_decl_if_union()) {
+                        if (as_named->actual_type.get_decl_if_union() || as_named->actual_type.is_optional()) {
                             is_unstable = true;
                             affected_value = elem.to_string();
                         }
@@ -2232,15 +2308,27 @@ static auto clone_type(const BorrowCheckerType& type) -> BorrowCheckerType {
     }
     return BorrowCheckerType{};
 };
-std::optional<std::pair<BorrowCheckerType, std::string>> BorrowCheckerType::get_pointee_type(Domain dom, DomainCheckerState* stt) const {
+std::optional<std::pair<BorrowCheckerType, std::vector<std::string>>> BorrowCheckerType::get_pointee_type(Domain dom, DomainCheckerState* stt) const {
     using namespace std::string_view_literals;
+    using namespace std::string_literals;
     switch (static_cast<TypeType>(details.index())) {
         case RefPtr: {
             // easiest case, all we need to do is return the subtype (it already has fresh unused domains)
-            return std::make_pair(
-                std::get<RefPtr>(details).subtype->cloned(stt),
-                "__deref"
-            );
+            if (dom == domains[0].first)
+                return std::make_pair(
+                    std::get<RefPtr>(details).subtype->cloned(stt),
+                    std::vector{"__deref"s}
+                );
+            else {
+                auto path_from_here = std::get<RefPtr>(details).subtype->get_pointee_type(dom, stt);
+                if (!path_from_here) debugbreak();
+                auto& path_vec = path_from_here->second;
+                path_vec.emplace(path_vec.begin(), "__deref");
+                return std::pair{
+                    std::move(path_from_here->first),
+                    std::move(path_from_here->second)
+                };
+            }
         }
         case Aggregate: [[fallthrough]];
         // for these two, I might implement them later
@@ -2253,8 +2341,29 @@ std::optional<std::pair<BorrowCheckerType, std::string>> BorrowCheckerType::get_
 
         case Named: {
             auto& dets = std::get<Named>(details);
-            auto get_pointed = [](char domain, const Type& tp) -> std::pair<const Type&, std::string> {
-
+            auto get_pointed = [stt, &dets, this, &dom](char domain, const Type& tp) -> std::pair<BorrowCheckerType, std::vector<std::string>> {
+                if (auto cls = tp.get_decl_if_class(stt->irgen)) {
+                    auto it = std::ranges::find_if(cls->vars, [domain](const ClassVariable& var) {
+                        auto contains_dom = [domain](const Type& type, auto& self) {
+                            if (std::ranges::find(type.domains, domain) != type.domains.end()) return true;
+                            for (auto& sub : type.subtypes)
+                                if (self(sub, self)) return true;
+                            return false;
+                        };
+                        return contains_dom(var.type, contains_dom);
+                    });
+                    std::map<char, Domain> concrete_domain_map;
+                    for (auto [dom, idx] : dets.initialized_domains)
+                        concrete_domain_map[dom] = this->domains[idx].first;
+                    auto path_from_here = stt->type_to_borrow_checker_type(it->type, concrete_domain_map).get_pointee_type(dom, stt);
+                    if (!path_from_here) { debugbreak(); }
+                    auto& path_vec = path_from_here->second;
+                    path_vec.insert(path_vec.begin(), it->name);
+                    return std::pair{ 
+                        std::move(path_from_here->first),
+                        std::move(path_from_here->second)
+                    };
+                }
             };
             auto it = std::ranges::find_if(domains, [&dom](auto& in) { return in.first.to_string() == dom.to_string(); });
             if(it == domains.end()) return std::nullopt;
@@ -2265,8 +2374,7 @@ std::optional<std::pair<BorrowCheckerType, std::string>> BorrowCheckerType::get_
             });
             if (map_it == dets.initialized_domains.end()) return std::nullopt;
             dom_char = map_it->first;
-            auto[pointed, field] = get_pointed(dom_char, dets.actual_type);
-            return std::make_pair(stt->type_to_borrow_checker_type(pointed, {}), field);
+            return get_pointed(dom_char, dets.actual_type);
         }
 
     }
@@ -2447,7 +2555,8 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
             check_and_fill_multidomain(as_class, {});
         }
         for (auto i : std::views::iota(0u, as_class->domains.size())) {
-            auto dom = as_class->domains[i];
+            auto defined_dom = as_class->domains[i];
+            auto dom = tp.domains.empty() ? as_class->domains[i] : tp.domains[i];
             if (create_new_domains) {
                 new_type.domains.emplace_back(state->new_domain_var(), false);
                 if (as_class->is_multidomain[i])
@@ -2457,7 +2566,7 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
                 if (!substs.contains(dom)) debugbreak();
                 new_type.domains.emplace_back(substs.at(dom), false);
             }
-            as_named.initialized_domains[dom] = new_type.domains.size() - 1;
+            as_named.initialized_domains[defined_dom] = new_type.domains.size() - 1;
         }
     } else if (auto as_union = tp.get_decl_if_union()) {
         for (auto dom : as_union->domains) {
@@ -2469,7 +2578,7 @@ BorrowCheckerType BorrowCheckerType::new_aggregate_from(
             }
             as_named.initialized_domains[dom] = new_type.domains.size() - 1;
         }
-    } else if (tp.is_tuple()) {
+    } else if (tp.is_tuple() || tp.is_optional()) {
         auto& type = as_named.actual_type;
         if (create_new_domains) {
             char dom = 'a';
@@ -2600,12 +2709,12 @@ bool InclusionPointerAnalyser::operator()(DerefLoadOperation* op) {
     auto out_domain = out_t.domains[0].first;
     // if its a pointer-to-pointer load, the result introduces a new
     // domain
-    for (auto pointee : ptg.get_pointees_of(op->ref_domain.to_string())) {
+    for (const auto& pointee : ptg.get_pointees_of(op->ref_domain.to_string())) {
         // all the pointees of the pointees of the references are
         // pointees of the output domain
         DomainSubsetConstraint con(
             Domain(out_domain),
-            Domain(state->get_value_type(Value::from(std::move(pointee)))
+            Domain(state->get_value_type(Value::from(std::string(pointee)))
                        .domains[0]
                        .first));
         has_change = (*this)(&con) || has_change;
@@ -2678,6 +2787,9 @@ bool InclusionPointerAnalyser::operator()(DomainExtensionConstraint* con) {
     return false;
 }
 Value LValueEmitter::do_expr(Expression* expr) {
+    auto stt = this->em.stt;
+    auto irgen = this->em.irgen;
+    RE_REPR(expr);
     if (auto px = dynamic_cast<PrefixOperation*>(expr)) {
         if (px->op.type == TokenType::Star) {
             auto this_eval = std::visit(em, px->operand->toVariant());
@@ -2912,21 +3024,35 @@ BlockIteratorTy DomainVariableInserter::operator()(
         // auto new_op2 = new DerefOperation(Value::from(std::string(val_name)), val_pts_name);
         // current_position = instructions.emplace(++current_position, new_op2);
         // (*this)(new_op2);
-        forgn_to_local_domain[it->first] = state->get_value_type(Value::from(std::string(val_name))).domains[1].first;
+        auto& type = state->get_value_type(Value::from(std::string(val_name)));
+        // this used to be 1
+        forgn_to_local_domain[it->first] = std::get<BorrowCheckerType::LValue>(type.details).subtype->domains[0].first;
         inp_value_map[it->first] = Value::from(std::string(val_name));
-        for(auto i : std::views::iota(0u, summary->input_pts_path[in].size())) {
-            auto& path = summary->input_pts_path[in][i];
-            Value new_val;
-            if (path == "__deref") {
-                // new_val = Value::from(std::move(val_name));
-                // new_val = val;
-                auto other_op = new DerefLoadOperation(Value(val), val_name + "load");
-                current_position = instructions.emplace(++current_position, other_op);
-                (*this)(other_op);
-                new_val = Value::from(val_name + "load");
+
+        auto val_name_load = val_name + "load";
+        auto new_op2 = new DerefLoadOperation(Value(val), val_name_load);
+        current_position = instructions.emplace(++current_position, new_op2);
+        (*this)(new_op2);
+        for (auto i : std::views::iota(0u)) {
+            Value new_val = Value::from(std::string(val_name_load));
+            auto new_in = in + "_pts0" + std::to_string(i);
+            if (!summary->input_pts_path.contains(new_in)) break;
+
+            auto& pts_path = summary->input_pts_path.at(new_in);
+            for(auto i : std::views::iota(0u, pts_path.size())) {
+                auto& path = pts_path[i];
+                if (path == "__deref") {
+                    // new_val = Value::from(std::move(val_name));
+                    // new_val = val;
+                    if (i == pts_path.size() - 1) continue;
+                    auto other_op = new DerefLoadOperation(Value(new_val), val_name + "load");
+                    current_position = instructions.emplace(++current_position, other_op);
+                    (*this)(other_op);
+                    new_val = Value::from(val_name + "load");
+                }
+                else new_val = new_val.member(std::string(path));
             }
-            else new_val = val.member(std::move(path));
-            self(in + "_pts" + std::to_string(i), std::move(new_val), self);
+            if (self(in + "_pts0" + std::to_string(i), std::move(new_val), self)) break;
         }
         return false;
     };
@@ -2940,17 +3066,37 @@ BlockIteratorTy DomainVariableInserter::operator()(
             if (it == summary->input_types[j].domains.end()) continue;
             auto& type = state->get_value_type(func->val[j]);
             auto[subtype, path] = type.get_pointee_type(local, state).value();
-            Value value_to_deref;
-            if (path == "__deref") {
-                value_to_deref = Value(func->val[j]);
+            Value value_to_deref = Value(func->val[j]);
+
+            for (auto idx: std::views::iota(0u, path.size() - 1)) {
+                auto& path_seg = path[idx];
+                if (path_seg == "__deref") {
+                    auto val_name = std::to_string(reinterpret_cast<std::uintptr_t>(func)) + "__param_deref" + std::to_string(j * 10 + idx);
+                    auto new_op = new DerefLoadOperation(Value(value_to_deref), val_name);
+                    (*this)(new_op);
+                    current_position = instructions.emplace(++current_position, new_op);
+                    value_to_deref = Value::from(std::move(val_name));
+                } else value_to_deref.member(std::move(path_seg));
+            }
+            if (path.back() == "__deref") {
+                // this is the correct version but its commendted out because its already done
+                // value_to_deref = Value(func->val[j]);
+
+
                 // auto val_name =  std::to_string(reinterpret_cast<std::uintptr_t>(func)) + "__param_deref" + std::to_string(j);
                 // auto new_op = new DerefLoadOperation(Value(func->val[j]), val_name);
                 // (*this)(new_op);
                 // current_position = instructions.emplace(++current_position, new_op);
                 // value_to_deref = Value::from(std::move(val_name));
-            } else value_to_deref = Value(func->val[j]).member(std::move(path));
+            } else {
+                value_to_deref.member(std::move(path.back()));
+            }
             std::string inp_name = "__inp" + std::string(std::string_view(frgn).substr("'?"sv.size()));
-            fill_forgn_to_local_for_inp(inp_name, std::move(value_to_deref), fill_forgn_to_local_for_inp);
+            for (auto i : std::views::iota(0u)) {
+                auto inp_name_new = inp_name + std::to_string(i);
+                if(fill_forgn_to_local_for_inp(inp_name_new, value_to_deref, fill_forgn_to_local_for_inp))
+                    break;
+            }
             break;
         }
     }

@@ -355,6 +355,7 @@ struct BorrowCheckerFunction {
 };
 
 class BorrowCheckerEmitter {
+    friend struct DomainCheckerState;
     IRGenerator* irgen;
     TypeCheckerState* stt;
     // std::vector -- each block
@@ -586,7 +587,7 @@ struct BorrowCheckerType {
     BorrowCheckerType moved(DomainCheckerState*) const;
     BorrowCheckerType deref() const;
     // every domain can only point to one type of values, get that type with a fresh set of domains (if any)
-    std::optional<std::pair<BorrowCheckerType, std::string>> get_pointee_type(Domain dom, DomainCheckerState*) const;
+    std::optional<std::pair<BorrowCheckerType, std::vector<std::string>>> get_pointee_type(Domain dom, DomainCheckerState*) const;
     // create a new primitive type
     static BorrowCheckerType new_primitive();
     static BorrowCheckerType new_aggregate_from(Type&&, DomainCheckerState*,

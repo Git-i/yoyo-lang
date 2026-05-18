@@ -303,7 +303,8 @@ std::unique_ptr<Statement> StatementTreeCloner::operator()(ForStatement* stat) {
     auto ret = std::make_unique<ForStatement>(
         stat->names, copy_expr(stat->iterable, nullptr),
         copy_stat(stat->body, nullptr));
-    ret->iterable->parent = ret->body->parent = nullptr;
+    ret->iterable->parent = ret->body->parent = ret.get();
+    return ret;
 }
 
 std::unique_ptr<Expression> ExpressionTreeCloner::operator()(

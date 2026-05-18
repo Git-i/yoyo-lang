@@ -681,9 +681,10 @@ std::vector<Type> doBasicBinaryOp(YVMExpressionEvaluator* eval,
     }
 }
 std::vector<Type> YVMExpressionEvaluator::doCmp(
-    ComparisonPredicate p, Expression* lhs, Expression* rhs,
+    ComparisonPredicate p, BinaryOperation* op,
     const Type& left_type_og, const Type& right_type_og,
     const Type& result_type, OverloadDetailsBinary* target_ovl) {
+    auto lhs = op->lhs.get(); auto rhs = op->rhs.get();
     constexpr int32_t eq = 1;
     // constexpr int32_t ne = 0;
     // constexpr int32_t unord = 4;
@@ -709,7 +710,7 @@ std::vector<Type> YVMExpressionEvaluator::doCmp(
     auto rhs_e = std::visit(*this, rhs->toVariant());
     implicitConvert(rhs, right_type, target_ovl->right, false, true);
 
-    auto fn = getOperatorFunction(TokenType::Spaceship, irgen, target_ovl);
+    auto fn = op->module->module_hash + getOperatorFunction(TokenType::Spaceship, irgen, target_ovl);
     if (!rhs_e.empty()) {
         irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1 + rhs_e.size());
         irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
@@ -847,10 +848,10 @@ std::vector<Type> YVMExpressionEvaluator::LValueEvaluator::operator()(
         return {};
     }
     auto& left_t = bop->lhs->evaluated_type;
-    if (!left_t.is_mutable && !left_t.is_reference()) {
-        irgen->error(Error(bop, "Expression cannot evaluate to lvalue"));
-        return {};
-    }
+    // if (!left_t.is_mutable && !left_t.is_reference()) {
+    //     irgen->error(Error(bop, "Expression cannot evaluate to lvalue"));
+    //     return {};
+    // }
     return YVMExpressionEvaluator{irgen}.doDot(bop->lhs.get(), bop->rhs.get(),
                                                left_t, false);
 }
@@ -1222,17 +1223,17 @@ std::vector<Type> YVMExpressionEvaluator::operator()(BinaryOperation* op) {
         switch (op->op.type) {
             using enum TokenType;
         case Greater:
-            return doCmp(GT, lhs, rhs, left_t, right_t, res, op->selected);
+            return doCmp(GT, op, left_t, right_t, res, op->selected);
         case Less:
-            return doCmp(LT, lhs, rhs, left_t, right_t, res, op->selected);
+            return doCmp(LT, op, left_t, right_t, res, op->selected);
         case GreaterEqual:
-            return doCmp(EQ_GT, lhs, rhs, left_t, right_t, res, op->selected);
+            return doCmp(EQ_GT, op, left_t, right_t, res, op->selected);
         case LessEqual:
-            return doCmp(EQ_LT, lhs, rhs, left_t, right_t, res, op->selected);
+            return doCmp(EQ_LT, op, left_t, right_t, res, op->selected);
         case BangEqual:
-            return doCmp(NE, lhs, rhs, left_t, right_t, res, op->selected);
+            return doCmp(NE, op, left_t, right_t, res, op->selected);
         case DoubleEqual:
-            return doCmp(EQ, lhs, rhs, left_t, right_t, res, op->selected);
+            return doCmp(EQ, op, left_t, right_t, res, op->selected);
         default:
             break;
         }

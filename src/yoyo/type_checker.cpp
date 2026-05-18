@@ -1,4 +1,5 @@
 #include "type_checker.h"
+#include <sys/types.h>
 
 #include <cmath>
 #include <iterator>
@@ -572,7 +573,7 @@ void TypeChecker::operator()(WhileStatement* stat) {
 void TypeChecker::operator()(ForStatement* stat) {
     auto iter = std::visit(targetless(), stat->iterable->toVariant());
     auto item = state->new_type_var();
-
+    stat->iterator_out = item;
     state->add_constraint(ImplInterfaceConstraint{
         iter,
         Type{
@@ -955,10 +956,11 @@ FunctionType TypeChecker::operator()(BinaryOperation* expr) const {
         // == and != support any return type
         if (expr->op.type == DoubleEqual || expr->op.type == BangEqual) {
             expr->evaluated_type = Type{.name = "bool", .module = core_module};
-        } else if (expr->op.type == Spaceship) {
+        } else if (tk == Spaceship) {
             state->add_constraint(
                 ComparableConstraint{expr->evaluated_type, expr});
-            expr->evaluated_type = Type{.name = "bool", .module = core_module};
+            // non spaceship comparisons are reduced to bool
+            if (tk != expr->op.type) expr->evaluated_type = Type{.name = "bool", .module = core_module};
         }
         if (target) {
             state->add_constraint(
@@ -1487,6 +1489,7 @@ bool has_type_variable(const Type& tp) {
 // reduce the domain but still return false (eg to string constraint)
 bool ConstraintSolver::operator()(IsIntegerConstraint& con) {
     auto type = state->best_repr(con.type);
+    if (type.is_error_ty()) return true;
     if (is_type_variable(type)) {
         auto domain = state->get_type_domain(type);
         auto grp = Domain::Group{};
@@ -1500,7 +1503,10 @@ bool ConstraintSolver::operator()(IsIntegerConstraint& con) {
         grp.add_type(Type{.name = "u32", .module = core_module});
         grp.add_type(Type{.name = "u64", .module = core_module});
         if (auto error = domain->add_and_intersect(std::move(grp), state))
+        {
+            error->span = SourceSpan{con.expr->beg, con.expr->end};
             irgen->error(*error);
+        }
         state->push_step(Info::TypeCheckerStateDiff{
             .op = Info::TypeCheckerStateDiff::Replace,
             .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -1515,8 +1521,11 @@ bool ConstraintSolver::operator()(IsIntegerConstraint& con) {
     }
     return true;
 }
+uint64_t getIntMaxOf(const Type& type);
+int64_t getIntMinOf(const Type& type);
 bool ConstraintSolver::operator()(CanStoreIntegerConstraint& con) {
     auto type = state->best_repr(con.type);
+    if (type.is_error_ty()) return true;
     if (is_type_variable(type)) {
         if (auto as_u64 = std::get_if<uint64_t>(&con.value)) {
             if (auto err =
@@ -1529,7 +1538,6 @@ bool ConstraintSolver::operator()(CanStoreIntegerConstraint& con) {
                 irgen->error(err.value());
             }
         }
-        return true;
         state->push_step(Info::TypeCheckerStateDiff{
             .op = Info::TypeCheckerStateDiff::Replace,
             .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -1537,20 +1545,55 @@ bool ConstraintSolver::operator()(CanStoreIntegerConstraint& con) {
                                                  type.name, state->get_type_domain(type)->get_type_list(),
                                                  state->current_constraint}
         });
+        return true;
     } else {
-        // TODO
+        if (!type.is_integral()) {
+            irgen->error(Error(con.expr, std::format("The type {} must be integral", type.full_name())));
+            return true;
+        }
+        auto check_positive = [&](uint64_t val) {
+            if (type.is_signed_integral()) {
+                if (getIntMaxOf(type) < val) {
+                    irgen->error(Error(con.expr, std::format("The type {} cannot store the value {}", type.full_name(), val)));
+                }
+            }
+            else {
+                if (!(static_cast<uint64_t>(getIntMinOf(type) <= val) && getIntMaxOf(type) >= val)) {
+                    irgen->error(Error(con.expr, std::format("The type {} cannot store the value {}", type.full_name(), val)));
+                }
+            }
+
+        };
+        if (auto as_u64 = std::get_if<uint64_t>(&con.value)) {
+            check_positive(*as_u64);
+        } else {
+            auto as_i64 = std::get<int64_t>(con.value);
+            if (as_i64 > 0) check_positive(static_cast<uint64_t>(as_i64));
+
+            if (!type.is_signed_integral()) {
+                irgen->error(Error(con.expr, std::format("The type {} cannot store the value {}", type.full_name(), as_i64)));
+            } else {
+                if (getIntMinOf(type) > as_i64) {
+                    irgen->error(Error(con.expr, std::format("Type type {} cannot store the value {}", type.full_name(), as_i64)));
+                }
+            }
+        }
     }
     return true;
 }
 bool ConstraintSolver::operator()(IsFloatConstraint& con) {
     auto type = state->best_repr(con.type);
+    if (type.is_error_ty()) return true;
     if (is_type_variable(type)) {
         auto domain = state->get_type_domain(type);
         auto grp = Domain::Group{};
         grp.add_type(Type{.name = "f32", .module = core_module});
         grp.add_type(Type{.name = "f64", .module = core_module});
         if (auto error = domain->add_and_intersect(std::move(grp), state))
+        {
+            error->span = SourceSpan{con.expr->beg, con.expr->end};
             irgen->error(*error);
+        }
         state->push_step(Info::TypeCheckerStateDiff{
             .op = Info::TypeCheckerStateDiff::Replace,
             .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -1566,8 +1609,11 @@ bool ConstraintSolver::operator()(IsFloatConstraint& con) {
     }
     return true;
 }
+double getFloatMinOf(const Type&);
+double getFloatMaxOf(const Type&);
 bool ConstraintSolver::operator()(CanStoreRealConstraint& con) {
     auto type = state->best_repr(con.type);
+    if (type.is_error_ty()) return true;
     if (is_type_variable(type)) {
         if (auto err =
                 state->get_type_domain(type)->constrain_to_store(con.value)) {
@@ -1581,7 +1627,12 @@ bool ConstraintSolver::operator()(CanStoreRealConstraint& con) {
                                                  state->current_constraint}
         });
     } else {
-        // TODO
+        if (
+            (getFloatMinOf(type) > con.value) ||
+            (getFloatMaxOf(type) < con.value)
+        ) {
+            irgen->error(Error(con.expr, std::format("Type type {} cannot store {}", type.full_name(), con.value)));
+        }
     }
     return true;
 }
@@ -1734,6 +1785,9 @@ bool can_match(Type tp1, Type tp2) {
 bool ConstraintSolver::operator()(EqualConstraint& con) {
     auto type1 = state->best_repr(con.type1);
     auto type2 = state->best_repr(con.type2);
+    if (type1.is_error_ty() || type2.is_error_ty()) {
+        return true;
+    }
     if (is_type_variable(type1)) {
         // ?1 and ?2 <case 1>
         if (is_type_variable(type2)) {
@@ -1748,7 +1802,10 @@ bool ConstraintSolver::operator()(EqualConstraint& con) {
             // concrete types the validation can be handled by the state
             if (auto err = state->get_type_domain(type1)->equal_constrain(
                     std::move(type2)))
+            {
+                err->span = SourceSpan{con.expr->beg, con.expr->end};
                 irgen->error(*err);
+            }
             state->push_step(Info::TypeCheckerStateDiff{
                 .op = Info::TypeCheckerStateDiff::Replace,
                 .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -1778,7 +1835,10 @@ bool ConstraintSolver::operator()(EqualConstraint& con) {
         if (is_type_variable(type2)) {
             if (auto err = state->get_type_domain(type2)->equal_constrain(
                     std::move(type1)))
+            {
+                err->span = SourceSpan{con.expr->beg, con.expr->end};
                 irgen->error(*err);
+            }
             state->push_step(Info::TypeCheckerStateDiff{
                 .op = Info::TypeCheckerStateDiff::Replace,
                 .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -1815,7 +1875,10 @@ bool ConstraintSolver::operator()(EqualConstraint& con) {
         if (is_type_variable(type2)) {
             if (auto err = state->get_type_domain(type2)->equal_constrain(
                     std::move(type1)))
+            {
+                err->span = SourceSpan{ con.expr->beg, con.expr->end };
                 irgen->error(*err);
+            }
             state->push_step(Info::TypeCheckerStateDiff{
                 .op = Info::TypeCheckerStateDiff::Replace,
                 .apply_to = Info::TypeCheckerStateDiff::Substitutions,
@@ -1846,6 +1909,7 @@ bool ConstraintSolver::operator()(EqualConstraint& con) {
 }
 bool ConstraintSolver::operator()(OwningConstraint& con) {
     auto type = state->best_repr(con.type);
+    if (type.is_error_ty()) return true;
     if (has_type_variable(type)) {
         return false;
     }
@@ -1871,7 +1935,7 @@ bool ConstraintSolver::operator()(IsInvocableConstraint& con) {
 bool ConstraintSolver::operator()(ValidAsFunctionArgConstraint& con) {
     auto callee = state->best_repr(con.function);
     auto arg = state->best_repr(con.type);
-
+    if (callee.is_error_ty() || arg.is_error_ty()) return true;
     if (is_type_variable(callee)) {
         return false;
     }
@@ -2176,6 +2240,7 @@ bool ConstraintSolver::operator()(ImplInterfaceConstraint& con) {
                 for (auto& [id, group] : type_generic_groups) {
                     if (auto err = subject_constraints[id].add_and_intersect(
                             std::move(group), state)) {
+                        err->span = SourceSpan{con.expr->beg, con.expr->end};
                         irgen->error(err.value());
                     }
                 }
@@ -2213,6 +2278,7 @@ bool ConstraintSolver::operator()(ImplInterfaceConstraint& con) {
     auto intf = state->best_repr(con.interface);
     // Importnat Assumption: intf cannot be a type variable
     if (is_type_variable(intf)) return false;
+    if (type.is_error_ty() || intf.is_error_ty()) return true;
     auto [intf_decl, b] = normalize_type(intf, state, irgen, {});
     if (intf_decl == nullptr)
         intf_decl = get_type_stat(intf, intf.block_hash, intf.module, true);
@@ -2632,9 +2698,15 @@ bool ConstraintSolver::operator()(RefExtractsToConstraint& con) {
             con.expr, "Invalid type for reference conditional extraction"));
         return true;
     }
+    auto mutable_reference_to = [base = core_module](const Type& tp) {
+        return Type{.name = "__ref_mut", .subtypes = {tp}, .module = base};
+    };
+    auto reference_to = [base = core_module](const Type& tp) {
+        return Type{.name = "__ref", .subtypes = {tp}, .module = base};
+    };
     add_new_constraint(EqualConstraint{
-        type.is_mutable ? type.subtypes[0].mutable_reference_to()
-                        : type.subtypes[0].reference_to(),
+        type.is_mutable ? mutable_reference_to(type.subtypes[0])
+                        : reference_to(type.subtypes[0]),
         target, con.expr});
     return true;
 }
@@ -2679,6 +2751,7 @@ bool ConstraintSolver::operator()(AsConstraint& con) {
         return true;
     }
     normalize_type(con.dest, state, irgen, {});
+    add_new_constraint(EqualConstraint{ con.dest, con.result, con.expr });
     add_new_constraint(
         ConvertibleToConstraint{con.input_type, con.dest, con.expr});
     return true;
@@ -2696,8 +2769,10 @@ bool ConstraintSolver::operator()(ConvertibleToConstraint& con) {
             gp.add_type(
                 Type{.name = "__opt", .subtypes{src}, .module = core_module});
             if (auto err = state->get_type_domain(dst)->add_and_intersect(
-                    std::move(gp), state))
+                    std::move(gp), state)) {
+                err->span = SourceSpan{con.expr->beg, con.expr->end};
                 irgen->error(err.value());
+            }
             return true;
         }
     } else {
@@ -3293,6 +3368,7 @@ bool ConstraintSolver::operator()(BorrowResultConstraint& con) {
         }
         if (auto error = state->get_type_domain(result)->add_and_intersect(
                 std::move(possible_types), state)) {
+            error->span = SourceSpan{con.expr->beg, con.expr->end};
             irgen->error(error.value());
         }
         state->push_step(Info::TypeCheckerStateDiff{
@@ -3415,6 +3491,7 @@ bool ConstraintSolver::operator()(BorrowResultMutConstraint& con) {
         }
         if (auto error = state->get_type_domain(result)->add_and_intersect(
                 std::move(possible_types), state)) {
+            error->span = SourceSpan{con.expr->beg, con.expr->end};
             irgen->error(error.value());
         }
         state->push_step(Info::TypeCheckerStateDiff{

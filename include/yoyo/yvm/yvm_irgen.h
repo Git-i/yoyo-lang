@@ -126,7 +126,7 @@ public:
                             OverloadDetailsBinary*);
     std::vector<Type> doRange(Expression*, Expression*, const Type&,
                               const Type&, const Type&, OverloadDetailsBinary*);
-    std::vector<Type> doCmp(ComparisonPredicate p, Expression*, Expression*,
+    std::vector<Type> doCmp(ComparisonPredicate p, BinaryOperation*,
                             const Type& left_type, const Type& right_type,
                             const Type&, OverloadDetailsBinary*);
     std::vector<Type> doSingleStringLiteral(const std::string& text,

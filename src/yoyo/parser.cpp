@@ -1272,10 +1272,11 @@ std::unique_ptr<Statement> Parser::parseForStatement(Token tk) {
     if (!expr) synchronizeTo({{TokenType::RParen}});
     if (!discard(TokenType::RParen)) error("Expected ')'", Peek());
     auto then = parseStatement();
+    auto then_end = then->end;
     return Statement::attachSLAndParent(
         std::make_unique<ForStatement>(std::move(vars), std::move(expr),
                                        std::move(then)),
-        tk.loc, then->end, parent);
+        tk.loc, then_end, parent);
 }
 
 std::unique_ptr<Statement> Parser::parseWhileStatement(Token tk) {

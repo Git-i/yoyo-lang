@@ -350,7 +350,7 @@ void IRGenerator::generateGenericInterface(ModuleBase* md,
     if (auto [_, exists] = md->findInterface(block, name); exists) return;
     auto new_interface = StatementTreeCloner::copy_stat_specific(
         static_cast<InterfaceDeclaration*>(decl), nullptr);
-    auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.get());
+    auto itf = reinterpret_cast<InterfaceDeclaration*>(new_interface.release());
     itf->name = name;
     // TODO interface visitors to automatically saturate signatures
     for (size_t i = 0; i < types.size(); i++)

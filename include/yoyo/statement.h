@@ -117,8 +117,16 @@ public:
 };
 class VariableDeclaration : public Statement {
 public:
+    // Huge hack
+    struct OwnedToken: Token {
+        std::string storage;
+        OwnedToken(Token tk) : Token(tk) {
+            storage = std::string(text);
+            text = storage;
+        }
+    };
     std::optional<Type> type;
-    Token identifier;
+    OwnedToken identifier;
     std::unique_ptr<Expression> initializer;
     bool is_mut;
     VariableDeclaration(Token iden, std::optional<Type> t,
@@ -254,6 +262,8 @@ public:
     std::unique_ptr<Expression> iterable;
     std::vector<Token> names;
     std::unique_ptr<Statement> body;
+    // filled by the type checker
+    Type iterator_out;
     ForStatement(std::vector<Token> names, std::unique_ptr<Expression> expr,
                  std::unique_ptr<Statement> body)
         : iterable(std::move(expr)),

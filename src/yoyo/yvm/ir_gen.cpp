@@ -331,7 +331,10 @@ void YVMIRGenerator::operator()(ClassDeclaration* decl) {
             pair = impl.impl_for.module->findInterface(impl.impl_for.block_hash,
                                                        impl.impl_for.name);
         auto [hash, interface] = std::move(pair);
-        if (!interface) continue;
+        if (!interface) {
+            error(Error(impl.location, std::format("Could not find interface {}", impl.impl_for.full_name())));
+            continue;
+        }
         if (impl.methods.size() != interface->methods.size()) {
             continue;
         }
