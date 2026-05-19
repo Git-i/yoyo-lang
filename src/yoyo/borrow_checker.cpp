@@ -1110,6 +1110,7 @@ std::pair<std::unique_ptr<BorrowCheckerFunction>, FunctionSummary> DomainChecker
     auto emitter = BorrowCheckerEmitter{irgen, stt, &*function, entry_block, std::move(func_params)};
     std::visit(emitter,
                decl->body->toVariant());
+    if (irgen->has_error) return {nullptr, std::move(summr)};
     if (emitter.current_block->instructions.empty()) {
         emitter.current_block->add_instruction(new RetInstruction(std::nullopt));
     }
@@ -1297,7 +1298,13 @@ void DomainCheckerState::do_primary_analysis() {
                 debugbreak();
             else {
                 // sub is null
-                debugbreak();
+                for (auto& pointee :
+                     final_ptg.get_pointees_of(inst->old_super.to_string())) {
+                    has_change =
+                        (final_ptg.add_new_relation(inst->super.to_string(),
+                                                    pointee) == Changed) ||
+                        has_change;
+                }
             }
             if (has_change) {
                 for (auto [use, domain] : def_use_graph.edges[node])
@@ -1546,7 +1553,7 @@ struct TransferFunctionVisitor {
     }
     std::set<std::string> operator()(DomainExtensionConstraint* inst) {
         auto in = state->dfa_in[inst];
-        if (in.contains(inst->sub.to_string()) &&
+        if ((in.contains(inst->sub.to_string()) || !inst->sub.is_var()) &&
             in.contains(inst->old_super.to_string()))
             in.insert(inst->super.to_string());
         // TODO: probably propagate kill reason here too (how would that work

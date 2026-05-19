@@ -102,6 +102,9 @@ void YVMIRGenerator::doFunctionInternal(std::string fn_name,
     BorrowChecker::DomainCheckerState dm_stt{};
     dm_stt.info = &this_func_info;
     auto [current_function, summary] = dm_stt.check_function(decl, this, sig, &stt);
+    if (has_error) {
+        return;
+    }
     std::cout << "[" << fn_name << "]" << '\n';
     function_borrow_checker_infos[fn_name] = std::move(summary);
     std::visit(ASTPrinter{std::cout}, decl->body->toVariant());

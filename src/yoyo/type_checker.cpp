@@ -315,7 +315,10 @@ auto normalize_type(
     iterated_type.name = iterated_type.full_name_no_generics();
     auto iterator = UnsaturatedTypeIterator(iterated_type);
     Statement* current_stat = nullptr;
-    if (iterator.is_end()) {
+    if (!tp.block_hash.empty() && tp.module) {
+        // if the type is already normalized, skip to subtypes
+        // __builtin_debgtrap();
+    } else if (iterator.is_end()) {
         // if we have no subtyes chances are that they're in the last as a
         // string
         auto last = iterator.last(tp.subtypes.empty());
@@ -3322,6 +3325,7 @@ bool ConstraintSolver::operator()(BorrowResultConstraint& con) {
     // result(if defined))
     auto subject = state->best_repr(con.subject);
     auto result = state->best_repr(con.result);
+    if (subject.is_error_ty() || result.is_error_ty()) return true;
     // maybe we should tell the domain to default to *result
     if (is_type_variable(subject) && is_type_variable(result)) {
         return false;

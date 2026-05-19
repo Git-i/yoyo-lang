@@ -5,6 +5,7 @@
 #include <cctype>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
 
 #include "expression.h"
 #include "func_sig.h"
@@ -396,7 +397,7 @@ void Parser::error(std::string message, std::optional<Token> tk) {
               << "\nline: " << (tk ? std::to_string(tk->loc.line) : "Invalid")
               << " col: " << (tk ? std::to_string(tk->loc.column) : "Invalid")
               << std::endl;
-    debugbreak();
+    throw std::runtime_error("Parser failed");
 }
 
 void Parser::synchronizeTo(std::span<const TokenType> t) {

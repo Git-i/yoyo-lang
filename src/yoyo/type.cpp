@@ -418,7 +418,14 @@ void Type::saturate(ModuleBase* src, IRGenerator* irgen, bool do_verify) {
         saturate(src, irgen);
     }
 
-    if (do_verify && !verify()) debugbreak();
+    if (do_verify && !verify()) {
+        if (!irgen) debugbreak();
+        else
+            irgen->error(Error(SourceSpan{
+                SourceLocation{1, 1},
+                SourceLocation{1, 2}
+            }, std::format("Could not verify the type {}", full_name())));
+    }
 
     for (auto& sub : subtypes) sub.saturate(src, irgen, do_verify);
     if (name == "__arr_s_uneval") {
