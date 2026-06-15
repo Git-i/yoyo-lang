@@ -22,6 +22,7 @@ sources = [
     'src/yoyo/borrow_checker.cpp',
     'src/yoyo/type_checker.cpp',
     'src/yoyo/ast_print.cpp',
+    'src/yoyo/info_aggregator.cpp',
 
     'include/yoyo/ast_node.h',
     'include/yoyo/cfg_node.h',
@@ -128,3 +129,4 @@ if gvz.found()
 endif
 irgen_test = executable('ir_gen_test', ['tests/ir_gen_test.cpp'], dependencies: irgen_deps, cpp_args: irgen_args)
 test('irgen', irgen_test, workdir: meson.current_source_dir() / 'tests')
+meson.override_dependency('yoyo-lang', yoyo_dep)

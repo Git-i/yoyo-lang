@@ -1,0 +1,144 @@
+#pragma once
+#include <algorithm>
+#include <cstdint>
+#include <format>
+#include <iterator>
+#include <memory>
+#include <unordered_map>
+#include <variant>
+#include <vector>
+
+#include "ast_node.h"
+#include "borrow_checker.h"
+#include "type.h"
+namespace Yoyo {
+struct TypeCheckerConstraint;
+class Statement;
+namespace Info {
+
+struct ConstraintInformation {
+    std::variant<ASTNode*, uintptr_t> generated_by;
+    std::unique_ptr<TypeCheckerConstraint> constraint;
+};
+struct SubstitutionInformation {
+    std::string type_var;
+    std::vector<Type> result_type;
+    uint64_t generated_by;
+};
+struct UnificationInformation {
+    std::string parent_var;
+    std::string other_var;
+    uint64_t generated_by;
+};
+struct TypeCheckerStateDiff {
+    enum Operator { Clear, Add, Replace, Remove, Flush };
+    enum Operand {
+        ActiveConstraints,
+        GeneratedConstraints,
+        Substitutions,
+        Unifications
+    };
+    Operator op;
+    Operand apply_to;
+    // this specifies what to apply the Operations
+    // size_t is used to specify what constraint to target
+    // std::string  specifies what substitution to target
+    std::variant<size_t, ConstraintInformation, SubstitutionInformation,
+                 UnificationInformation>
+        arg;
+    std::string to_string() {
+        auto operator_string = [](Operator op) {
+            switch (op) {
+            case Clear:
+                return "Clear";
+            case Add:
+                return "Add";
+            case Replace:
+                return "Replace";
+            case Remove:
+                return "Remove";
+            case Flush:
+                return "Flush";
+            }
+        };
+        auto operand_string = [](Operand op) {
+            switch (op) {
+            case ActiveConstraints:
+                return "Active Constraints";
+            case GeneratedConstraints:
+                return "Generated Constraints";
+            case Substitutions:
+                return "Substitutions";
+            case Unifications:
+                return "Unifications";
+            }
+        };
+        return std::format("Apply {} to {}", operator_string(op),
+                           operand_string(apply_to));
+    }
+};
+struct RecordedTypeCheckerState {
+    std::vector<ConstraintInformation> active_constraints;
+    std::vector<ConstraintInformation> generated_constraints;
+    std::unordered_map<std::string, SubstitutionInformation> subsitutions;
+    std::vector<UnificationInformation> unifications;
+    RecordedTypeCheckerState applied(TypeCheckerStateDiff diff);
+    void apply(TypeCheckerStateDiff diff);
+    std::string to_string() {
+        std::string final_string;
+        final_string += "[[Active]]\n";
+        final_string += "[[Generated]]\n";
+        final_string += "[[Substitutions]]";
+        return final_string;
+    }
+};
+struct BorrowCheckerState {
+    // initial conversion from the AST to IR (phase1)
+    std::unique_ptr<BorrowChecker::BorrowCheckerFunction> initial_IR;
+    // inserting domain variables in the IR (phase2)
+    std::unique_ptr<BorrowChecker::BorrowCheckerFunction> domain_vars_IR;
+    // Flow insensitive points-to graph (phase3)
+    BorrowChecker::PointsToGraph aux_ptg;
+    // SSA version of function (phase4)
+    std::unique_ptr<BorrowChecker::BorrowCheckerFunction> ssa_IR;
+    // Def-Use graph used for flow sensitive analysis (phase5)
+    std::string def_use_graphviz;
+    // The flow sensitive points to graph (phase6)
+    BorrowChecker::TopLevelPointsToGraph final_ptg;
+    // The output of the dataflow analysis (phase7)
+    std::unordered_map<std::uintptr_t, std::set<std::string>> dfa_in;
+    std::unordered_map<std::uintptr_t, std::set<std::string>> dfa_out;
+    BorrowChecker::ValueTypeMapping value_type_map;
+};
+struct FunctionInformation {
+    RecordedTypeCheckerState initial_state;
+    BorrowCheckerState bc_state;
+    std::vector<TypeCheckerStateDiff> steps;
+    // this holds a list of where the diffs for each iteration start and
+    // stop
+    std::vector<size_t> iterations;
+    std::unique_ptr<Statement> typedTree;
+    std::string to_string() {
+        std::string final_string = "Initial state:\n";
+        final_string += initial_state.to_string() + "\n";
+
+        final_string += "Operations:\n";
+        for (auto& diff : steps) {
+            final_string += diff.to_string() + "\n\n";
+        }
+        if (!steps.empty()) {
+            final_string.pop_back();
+            final_string.pop_back();
+        }
+        return final_string;
+    }
+};
+// This struct is responsible for collecting detailed about the type
+// checker and borrow checker phases of compilation, so it can be
+// supplied to other programs for inspection
+struct InformationAggregator {
+    // map from function full name to detailed info
+    std::unordered_map<std::string, FunctionInformation> function_info;
+};
+}  // namespace Info
+}  // namespace Yoyo
