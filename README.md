@@ -2,9 +2,6 @@
 
 Yoyo is (going to be) a statically typed, research language, written in C++20.
 
-> [!IMPORTANT]
-> This implementation is very far from useful
-
 ## Syntax
 
 The syntax is heavily inspired by [cpp2/cppfront](https://github.com/hsutter/cppfront)
