@@ -517,6 +517,17 @@ Value BorrowCheckerEmitter::operator()(BinaryOperation* op) {
         current_block->add_instruction(
             new AssignInstruction(std::move(lhs), std::move(rhs)), op);
         return Value::empty();
+    } else if (token_tp == TokenType::DoubleDot) {
+        auto result = temporary_name();
+        auto lhs = std::visit(*this, op->lhs->toVariant());
+        auto rhs = std::visit(*this, op->rhs->toVariant());
+
+        current_block->add_instruction(new NewAggregateInstruction(
+            {{"begin", std::move(lhs)}, {"end", std::move(rhs)}},
+            Type(op->evaluated_type),
+            std::string(result)
+        ), op);
+        return Value::from(std::move(result));
     } else if (token_tp != TokenType::Dot && token_tp != TokenType::Equal) {
         auto result = temporary_name();
         auto lhs = std::visit(*this, op->lhs->toVariant());
@@ -1253,7 +1264,6 @@ void DomainCheckerState::do_primary_analysis() {
                 // there
                 if (auto lval = std::get_if<BorrowCheckerType::LValue>(
                         &val_type.details)) {
-                    bool has_change = false;
                     for (auto& pointee :
                          final_ptg.get_pointees_of(inst->lvalue_domain)) {
                         auto edge = pointee;
@@ -3280,6 +3290,19 @@ void add_kill_reason_to_error(Error& err, const KillReason& reason) {
             reason.bad_pointee, reason.affected_value);
     }
     err.markers.emplace_back(span, std::move(detail));
+}
+void BorrowCheckVisitor::operator()(CallFunctionInstruction* inst) {
+    for (const auto& domain : inst->used_domains) {
+        if (domain.is_null()) continue; // used domain can be null if it was defined after the function (in the introduced instructions)
+        if (!state->dfa_in[inst].contains(domain.to_string())) {
+            if (!state->domain_kill_reason.contains(domain.to_string()))
+                debugbreak();
+            const auto& reason = state->domain_kill_reason.at(domain.to_string());
+            Error err(inst->origin, "Attempt to call function with a value that might point to invalid memory");
+            add_kill_reason_to_error(err, reason);
+            irgen->error(err);
+        }
+    }
 }
 void BorrowCheckVisitor::operator()(RetInstruction* inst) {
     if (inst->ret_val) {

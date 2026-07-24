@@ -27,6 +27,9 @@ public:
     virtual ~ModuleBase() = default;
     ModuleOverloadDetails overloads;
     Engine* engine;
+    std::unordered_map<std::string, BorrowChecker::FunctionSummary>& get_bc_infos() {
+        return *engine->function_borrow_checker_infos;
+    }
     std::unordered_map<std::string, ModuleBase*> modules;
     std::string module_hash;
     std::unordered_map<std::string, std::vector<FunctionDetails>> functions;

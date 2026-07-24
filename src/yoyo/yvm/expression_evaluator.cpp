@@ -499,6 +499,7 @@ void YVMExpressionEvaluator::clone(Expression* xp, const Type& left_type,
 }
 void YVMExpressionEvaluator::destroy(const Type& type) const {
     if (type.is_trivially_destructible(irgen, false)) {
+        if (type.is_void()) return;
         irgen->builder->write_1b_inst(OpCode::Pop);
         return;
     }
@@ -1247,6 +1248,25 @@ std::vector<Type> YVMExpressionEvaluator::operator()(BinaryOperation* op) {
         std::visit(*this, r_as_var);
         std::visit(LValueEvaluator{irgen}, l_as_var);
         implicitConvert(rhs, right_t, left_t, true, false);
+        irgen->builder->write_1b_inst(Yvm::OpCode::Pop);
+        return {};
+    }
+    case DoubleDot: {
+        auto as_native = reinterpret_cast<StructNativeTy*>(irgen->toNativeType(op->evaluated_type));
+        auto as_enum = irgen->toTypeEnum(op->lhs->evaluated_type);
+        irgen->builder->write_alloca(NativeType::get_size(as_native));
+        auto last_alloc = irgen->builder->last_alloc_addr();
+        std::visit(YVMExpressionEvaluator{irgen}, op->lhs->toVariant());
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native, 0));
+        irgen->builder->write_2b_inst(OpCode::Store, as_enum);
+
+        std::visit(YVMExpressionEvaluator{irgen}, op->rhs->toVariant());
+        irgen->builder->write_2b_inst(OpCode::RevStackAddr, 1);
+        irgen->builder->write_ptr_off(NativeType::getElementOffset(as_native, 1));
+        irgen->builder->write_2b_inst(OpCode::Store, as_enum);
+
+        returned_alloc_addr = last_alloc;
         return {};
     }
     default:;  // TODO
@@ -1377,7 +1397,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(CallOperation* op) {
                 irgen->builder->write_fn_addr(function_name);
                 irgen->builder->write_2b_inst(
                     OpCode::Call, op->arguments.size() + 1 + uses_sret);
-                if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+                if (uses_sret || op->evaluated_type.is_void()) irgen->builder->write_1b_inst(OpCode::Pop);
                 if (return_t.is_non_owning(irgen))
                     ;
                 // stealUsages(args, return_value);
@@ -1465,7 +1485,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(CallOperation* op) {
         // expr->rhs->toVariant()));
         irgen->builder->write_2b_inst(OpCode::Call,
                                       op->arguments.size() + 1 + uses_sret);
-        if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+        if (uses_sret || op->evaluated_type.is_void()) irgen->builder->write_1b_inst(OpCode::Pop);
         if (return_t.is_non_owning(irgen)) {
             return extensions;
         } else {
@@ -1483,7 +1503,7 @@ std::vector<Type> YVMExpressionEvaluator::operator()(CallOperation* op) {
 
     irgen->builder->write_2b_inst(OpCode::Call,
                                   op->arguments.size() + uses_sret);
-    if (uses_sret) irgen->builder->write_1b_inst(OpCode::Pop);
+    if (uses_sret || op->evaluated_type.is_void()) irgen->builder->write_1b_inst(OpCode::Pop);
     if (return_t.is_non_owning(irgen))
         return extensions;
     else {

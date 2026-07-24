@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include "yvm/yvm_module.h"
 
 #ifdef USE_GRAPHVIZ
     #include "graphviz/gvc.h"
@@ -818,6 +819,7 @@ TEST_CASE("Debug Test from file", "[filetest][debug]") {
     if constexpr (emit_ir)
         std::cout << reinterpret_cast<Yoyo::YVMModule*>(mod)->dumpIR()
                   << std::flush;
+    std::cout << reinterpret_cast<Yoyo::YVMModule*>(engine.modules.at("core").get())->dumpIR() << std::endl;
     auto fib = createFiberFor(mod, "source::main");
     engine.execute();
 }

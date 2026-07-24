@@ -20,6 +20,9 @@ void debugbreak() {
 #endif
 }
 
+std::unordered_map<std::string, BorrowChecker::FunctionSummary>& IRGenerator::get_bc_infos() {
+    return *module->engine->function_borrow_checker_infos;
+}
 void IRGenerator::saturateSignature(FunctionSignature& sig,
                                     ModuleBase* module) {
     sig.returnType.saturate(module, this);
@@ -285,7 +288,7 @@ void IRGenerator::generateGenericClass(ModuleBase* mod, const std::string& hash,
     auto old_hash = this->reset_hash();
 
     this->current_Statement = &ptr;
-    std::visit(ForwardDeclaratorPass1{reinterpret_cast<YVMModule*>(module),
+    std::visit(ForwardDeclaratorPass1{reinterpret_cast<YVMModule*>(this->module),
                                       block_hash},
                new_decl->toVariant());
     doClass(new_decl);
@@ -496,6 +499,7 @@ std::optional<Error> IRGenerator::apply_using(Type& tp, ModuleBase*& md,
 }
 BorrowChecker::FunctionSummary* IRGenerator::get_summary_for(std::string fn_name, ASTNode* source_expr) {
     if(fn_name.ends_with(':')) fn_name.erase(fn_name.size() - 2, 2);
+    auto& function_borrow_checker_infos = *module->engine->function_borrow_checker_infos.get();
     if (function_borrow_checker_infos.contains(fn_name)) return &function_borrow_checker_infos.at(fn_name);
     // attempt to create the function if its not found
 

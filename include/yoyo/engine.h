@@ -13,10 +13,13 @@ class Statement;
 class Type;
 struct Constant;
 class IRGenerator;
+namespace BorrowChecker { struct FunctionSummary; }
 class YOYO_API Engine {
 protected:
+    friend class IRGenerator;
+    friend class ModuleBase;
     Runtime rt;
-
+    std::unique_ptr<std::unordered_map<std::string, BorrowChecker::FunctionSummary>> function_borrow_checker_infos;
 public:
     Engine();
     virtual ~Engine() = default;

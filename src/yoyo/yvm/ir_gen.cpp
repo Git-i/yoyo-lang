@@ -10,6 +10,7 @@
 #include "statement.h"
 #include "token.h"
 #include "tree_cloner.h"
+#include "yvm/native_type.h"
 #include "yvm/yvm_irgen.h"
 using enum Yvm::OpCode;
 namespace Yoyo {
@@ -26,29 +27,33 @@ NativeTy* YVMIRGenerator::toNativeType(const Type& type) {
 }
 Yvm::Type YVMIRGenerator::toTypeEnum(const Type& type) {
     auto nt = toNativeType(type);
-    if (nt == NativeType::getI8())
-        return Yvm::Type::i8;
-    else if (nt == NativeType::getI16())
-        return Yvm::Type::i16;
-    else if (nt == NativeType::getI32())
-        return Yvm::Type::i32;
-    else if (nt == NativeType::getI64())
-        return Yvm::Type::i64;
-    else if (nt == NativeType::getU8())
-        return Yvm::Type::u8;
-    else if (nt == NativeType::getU16())
-        return Yvm::Type::u16;
-    else if (nt == NativeType::getU32())
-        return Yvm::Type::u32;
-    else if (nt == NativeType::getU64())
-        return Yvm::Type::u64;
-    else if (nt == NativeType::getF32())
-        return Yvm::Type::f32;
-    else if (nt == NativeType::getF64())
-        return Yvm::Type::f64;
-    else if (nt == NativeType::getPtrTy())
-        return Yvm::Type::ptr;
-    return static_cast<Yvm::Type>(-1);
+    return toTypeEnum(nt);
+}
+Yvm::Type YVMIRGenerator::toTypeEnum(NativeTy* nt) {
+        if (nt == NativeType::getI8())
+            return Yvm::Type::i8;
+        else if (nt == NativeType::getI16())
+            return Yvm::Type::i16;
+        else if (nt == NativeType::getI32())
+            return Yvm::Type::i32;
+        else if (nt == NativeType::getI64())
+            return Yvm::Type::i64;
+        else if (nt == NativeType::getU8())
+            return Yvm::Type::u8;
+        else if (nt == NativeType::getU16())
+            return Yvm::Type::u16;
+        else if (nt == NativeType::getU32())
+            return Yvm::Type::u32;
+        else if (nt == NativeType::getU64())
+            return Yvm::Type::u64;
+        else if (nt == NativeType::getF32())
+            return Yvm::Type::f32;
+        else if (nt == NativeType::getF64())
+            return Yvm::Type::f64;
+        else if (nt == NativeType::getPtrTy())
+            return Yvm::Type::ptr;
+        return static_cast<Yvm::Type>(-1);
+
 }
 void handleCImport(YVMIRGenerator* irgen, ModuleBase::FunctionDetails* dets,
                    CImportDeclaration* body, const std::string& fn_name) {
@@ -106,7 +111,7 @@ void YVMIRGenerator::doFunctionInternal(std::string fn_name,
         return;
     }
     std::cout << "[" << fn_name << "]" << '\n';
-    function_borrow_checker_infos[fn_name] = std::move(summary);
+    get_bc_infos()[fn_name] = std::move(summary);
     std::visit(ASTPrinter{std::cout}, decl->body->toVariant());
 
     decltype(this->variables) new_fn_vars;
@@ -177,6 +182,9 @@ void YVMIRGenerator::operator()(ExpressionStatement* stat) {
     auto eval = YVMExpressionEvaluator{this};
     std::visit(eval, as_var);
     if (!ty.is_lvalue) eval.destroy(ty);
+    else {
+        if (!ty.is_void()) builder->write_1b_inst(Yvm::OpCode::Pop);
+    }
 }
 void YVMIRGenerator::operator()(ConstantDeclaration* decl) {
     auto [_, constant] = module->findConst(block_hash, decl->name);
@@ -463,82 +471,60 @@ void YVMIRGenerator::operator()(ForStatement* stat) {
     // check if it implements iterator interface
     if (ty.is_error_ty())
         std::visit(YVMExpressionEvaluator{this}, stat->iterable->toVariant());
-    if (auto cls = ty.get_decl_if_class(this)) {
-        auto decl = cls;
-        auto hash =
-            ty.module->findClass(ty.block_hash, cls->name).second->first;
-        Yoyo::InterfaceImplementation* impl = nullptr;
-        for (auto& im : decl->impls) {
-            if (im.impl_for.module ==
-                    module->engine->modules.at("core").get() &&
-                im.impl_for.name == "Iterator") {
-                if (impl) {
-                    error(Error(
-                        stat, "Type implements multiple iterator interfaces"));
-                    break;
-                }
-                impl = &im;
-            }
-        }
-        if (!impl) {
-            error(Error(stat->iterable.get(),
-                        "Expression does not evaluate to an iterable type"));
-            return;
-        }
-        std::string fn_name = hash + "core::Iterator" +
-                              mangleGenericArgs(impl->impl_for.subtypes) +
-                              "::next";
-        auto memory_ty = reinterpret_cast<StructNativeTy*>(
-            toNativeType(impl->methods[0]->signature.returnType));
-        std::visit(YVMExpressionEvaluator{this}, stat->iterable->toVariant());
-        if (!ty.is_lvalue) {
-            builder->write_fn_addr("__destructor_for_" + ty.full_name());
-            builder->write_1b_inst(RegObj);
-        }
-        builder->write_alloca(NativeType::get_size(memory_ty));
-        //------------- Iterator::next() args
-        auto for_bb = builder->create_label("for_begin");
-        builder->write_1b_inst(Dup);              //< return addr
-        builder->write_2b_inst(RevStackAddr, 2);  //< iterable object
-        //--------------------------------------------
-        pushScope();
-        auto for_cont = builder->unq_label_name("for_cont");
-        builder->write_fn_addr(fn_name);
-        builder->write_2b_inst(Call, 2);
-        builder->write_1b_inst(Pop);  // discard the return value
-        // bring the return value to the top of the stack
-        builder->write_1b_inst(Dup);
-        // register this for destruction
-        builder->write_fn_addr(
-            "__destructor_for_" +
-            impl->methods[0]->signature.returnType.full_name());
+    std::string fn_name = stat->iterable->evaluated_type.full_name() + "::core::Iterator::<" +
+        stat->iterator_out.full_name() +
+        ">::next";
+    Type ret_type = Type{.name = "__opt", .subtypes = { stat->iterator_out }};
+    auto memory_ty = reinterpret_cast<StructNativeTy*>(
+        toNativeType(ret_type));
+    std::visit(YVMExpressionEvaluator{this}, stat->iterable->toVariant());
+    if (!ty.is_lvalue) {
+        builder->write_fn_addr("__destructor_for_" + ty.full_name());
         builder->write_1b_inst(RegObj);
-        builder->write_ptr_off(NativeType::getElementOffset(memory_ty, 1));
-        builder->write_2b_inst(Load, Yvm::Type::u8);
+    }
+    builder->write_alloca(NativeType::get_size(memory_ty));
+    //------------- Iterator::next() args
+    auto for_bb = builder->create_label("for_begin");
+    builder->write_1b_inst(Dup);              //< return addr
+    builder->write_2b_inst(RevStackAddr, 2);  //< iterable object
+    //--------------------------------------------
+    pushScope();
+    auto for_cont = builder->unq_label_name("for_cont");
+    builder->write_fn_addr(fn_name);
+    builder->write_2b_inst(Call, 2);
+    builder->write_1b_inst(Pop);  // discard the return value
+    // bring the return value to the top of the stack
+    builder->write_1b_inst(Dup);
+    // register this for destruction
+    // builder->write_fn_addr(
+    //     "__destructor_for_" +
+    //     ret_type.full_name());
+    // builder->write_1b_inst(RegObj);
+    builder->write_ptr_off(NativeType::getElementOffset(memory_ty, 1));
+    builder->write_2b_inst(Load, Yvm::Type::u8);
 
-        builder->create_jump(JumpIfFalse, for_cont);
-        // for loop body
-        variables.back().emplace_back(
-            stat->names[0].text,
-            VariableEntry{
-                VariableIndex{builder->last_alloc_addr(), VariableIndex::Alloc},
-                impl->impl_for.subtypes[0]
+    builder->create_jump(JumpIfFalse, for_cont);
+    // for loop body
+    variables.back().emplace_back(
+        stat->names[0].text,
+        VariableEntry{
+            VariableIndex{builder->last_alloc_addr(), VariableIndex::Alloc},
+            stat->iterator_out
         });
-        current_Statement = &stat->body;
-        auto old_break_to = break_to;
-        auto old_cont_to = continue_to;
-        break_to = for_cont;
-        continue_to = for_bb;
-        std::visit(*this, stat->body->toVariant());
-        break_to = old_break_to;
-        continue_to = old_cont_to;
-        popScope();
-        // the actual loop
-        builder->create_jump(Jump, for_bb);
-        builder->create_label(for_cont);
-        if (!ty.is_lvalue) {
-            YVMExpressionEvaluator{this}.destroy(ty);
-        }
+    current_Statement = &stat->body;
+    auto old_break_to = break_to;
+    auto old_cont_to = continue_to;
+    break_to = for_cont;
+    continue_to = for_bb;
+    std::visit(*this, stat->body->toVariant());
+    break_to = old_break_to;
+    continue_to = old_cont_to;
+    popScope();
+    // the actual loop
+    builder->create_jump(Jump, for_bb);
+    builder->create_label(for_cont);
+    if (!ty.is_lvalue) {
+        YVMExpressionEvaluator{this}.destroy(ty);
     }
 }
 void YVMIRGenerator::operator()(BreakStatement* s) {

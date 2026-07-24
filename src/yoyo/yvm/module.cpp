@@ -1,12 +1,18 @@
 #include <yvm/yvm_engine.h>
 #include <yvm/yvm_irgen.h>
 
+#include <memory>
 #include <numbers>
 #include <ranges>
 
+#include "borrow_checker.h"
+#include "class_entry.h"
 #include "engine.h"
+#include "generic_clause.h"
 #include "ir_gen.h"
 #include "yoyo_vm/disassembler.h"
+#include "yoyo_vm/instructions.h"
+#include "yvm/native_type.h"
 #include "yvm/yvm_module.h"
 namespace Yoyo {
 
@@ -382,6 +388,7 @@ void YVMModule::makeBuiltinModule(YVMEngine* eng) {
         em.write_1b_inst(Yvm::OpCode::Ret);
         em.close_function(&mod->code, mangled_name_for("+"));
 
+        em.write_1b_inst(Yvm::OpCode::Switch);
         em.write_1b_inst(sub_for.at(t.name));
         em.write_1b_inst(Yvm::OpCode::Ret);
         em.close_function(&mod->code, mangled_name_for("-"));
@@ -390,6 +397,7 @@ void YVMModule::makeBuiltinModule(YVMEngine* eng) {
         em.write_1b_inst(Yvm::OpCode::Ret);
         em.close_function(&mod->code, mangled_name_for("*"));
 
+        em.write_1b_inst(Yvm::OpCode::Switch);
         em.write_1b_inst(div_for.at(t.name));
         em.write_1b_inst(Yvm::OpCode::Ret);
         em.close_function(&mod->code, mangled_name_for("/"));
@@ -409,6 +417,7 @@ void YVMModule::makeBuiltinModule(YVMEngine* eng) {
         em.write_1b_inst(Yvm::OpCode::Ret);
 
         em.create_label(ne_bb);
+        em.write_1b_inst(Yvm::OpCode::Switch);
         em.write_2b_inst(
             t.is_signed_integral() ? Yvm::OpCode::ICmpGt : Yvm::OpCode::UCmpGt,
             *t.integer_width());
@@ -453,6 +462,99 @@ void YVMModule::makeBuiltinModule(YVMEngine* eng) {
     em.write_2b_inst(Yvm::OpCode::ExternalIntrinsic, 11);
     em.close_function(&mod->code, "core::sleep");
     //-----------------------------------------------------------------------
+
+    //-----------------range iterators--------------------------------------
+    // a range is roughly equivalent to:
+    // Range: struct::<T: impl core::Integer> = {
+    //      begin: T, end: T,
+    //      impl core::Iterator::<T> {
+    //          next: fn(&'a mut this)(a) -> u32? = {
+    //              old = this.begin;
+    //              this.begin = this.begin + 1;
+    //              return if (old >= this.end) { null }
+    //                     else old as _?
+    //          }
+    //      }
+    // }
+    // we can optimize this a bit because we know optionals use struct return
+    // our stack looks like this [0: sret, 1: range pointer]
+    
+    // we also only provide only integer ranges
+    for (auto& t : std::ranges::subrange(types.begin() + 2, types.end())) {
+        Type optional_type = Type{ .name = "__opt", .module = mod, .block_hash = ""  };
+        optional_type.subtypes.emplace_back(t);
+        auto elem_native = mod->toNativeType(t, "", nullptr, {});
+        auto ret_native = reinterpret_cast<StructNativeTy*>(mod->toNativeType(optional_type, "", nullptr, {}));
+        auto elem_native_yvm = YVMIRGenerator::toTypeEnum(elem_native);
+        auto native_type = reinterpret_cast<StructNativeTy*>(eng->struct_manager.get_struct_type({
+            {elem_native, elem_native}
+        }));
+        // duplicate the range pointer
+        em.write_1b_inst(Yvm::OpCode::Dup);
+        // read begin (Should be no-op)
+        em.write_ptr_off(NativeType::getElementOffset(native_type, 0));
+        em.write_2b_inst( Yvm::OpCode::Load, elem_native_yvm);
+        // we need to store the value of begin before adding 1 to our out
+        em.write_1b_inst(Yvm::OpCode::Dup);
+        em.write_2b_inst(Yvm::OpCode::StackAddr, 0);
+        em.write_ptr_off(NativeType::getElementOffset(ret_native, 0));
+        em.write_2b_inst(Yvm::OpCode::Store, elem_native_yvm);
+        // we need to compare with end, if its less we set the optional to true
+        em.write_1b_inst(Yvm::OpCode::Dup);
+        // load the param
+        em.write_2b_inst(Yvm::OpCode::StackAddr, 1);
+        em.write_ptr_off(NativeType::getElementOffset(native_type, 1));
+        em.write_2b_inst(Yvm::OpCode::Load, elem_native_yvm);
+        const auto int_width = t.integer_width().value();
+        // valid if end > begin
+        em.write_2b_inst(Yvm::OpCode::UCmpGt, int_width);
+        em.write_2b_inst(Yvm::OpCode::StackAddr, 0);
+        em.write_ptr_off(NativeType::getElementOffset(ret_native, 1));
+        em.write_2b_inst(Yvm::OpCode::Store, elem_native_yvm);
+        // we need to write a constant with the correct type use it for addition
+        switch (int_width) {
+            case 8: em.write_const<uint8_t>(1); em.write_1b_inst(Yvm::OpCode::Add8); break;
+            case 16: em.write_const<uint16_t>(1); em.write_1b_inst(Yvm::OpCode::Add16); break;
+            case 32: em.write_const<uint32_t>(1); em.write_1b_inst(Yvm::OpCode::Add32); break;
+            case 64: em.write_const<uint64_t>(1); em.write_1b_inst(Yvm::OpCode::Add64); break;
+        }
+        // the stack looks like [0: sret, 1: range pointer, 2: begin + 1]
+        // we need to write the result of begin + 1 into begin
+        em.write_2b_inst(Yvm::OpCode::StackAddr, 1);
+        em.write_ptr_off(NativeType::getElementOffset(native_type, 0));
+        em.write_2b_inst(Yvm::OpCode::Store, elem_native_yvm);
+        em.write_1b_inst(Yvm::OpCode::RetVoid);
+        auto fn_name = "core::range::<" + t.name + ">::core::Iterator::<" + t.name + ">::next";
+        em.close_function(&mod->code, fn_name);
+        auto& bc_infos = mod->get_bc_infos(); 
+        auto& summary = bc_infos[fn_name];
+        summary.input_domains = {'a'};
+        summary.input_domains_concrete = {{'a', "'?0"}};
+        summary.return_type = BorrowChecker::BorrowCheckerType::new_primitive();
+        BorrowChecker::BorrowCheckerType input_type;
+        BorrowChecker::Domain dom; dom.name = "'?0";
+        input_type.domains = {{dom, true}};
+        input_type.details.emplace<BorrowChecker::BorrowCheckerType::RefPtrDetails>(std::unique_ptr<BorrowChecker::BorrowCheckerType>(
+            new BorrowChecker::BorrowCheckerType(BorrowChecker::BorrowCheckerType::new_primitive())
+        ));
+        summary.input_types.push_back(std::move(input_type));
+    }
+    auto range_class = new GenericClassDeclaration(
+        Token{ .text = "range" },
+        std::vector<ClassVariable>{
+            ClassVariable{ .name = "begin", .type = Type{"T"} },
+            ClassVariable{ .name = "end", .type = Type{"T"} }
+        },
+        std::vector<std::unique_ptr<Statement>>{}, Ownership::Owning,
+        std::vector<InterfaceImplementation>{},
+        GenericClause{.types = { "T"} },
+        std::vector<char>{}
+    );
+    range_class->impls.push_back(InterfaceImplementation{
+        Type{.name = "core::Iterator", .subtypes = {Type{"T"}}},
+        SourceSpan{}, {}
+    });
+    mod->generic_classes[mod->module_hash].emplace_back(range_class);
 }
 std::string YVMModule::dumpIR() {
     std::string final;

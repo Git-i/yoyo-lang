@@ -18,6 +18,8 @@
 #include "type_checker.h"
 namespace Yoyo {
 class IRGenerator {
+protected:
+    std::unordered_map<std::string, BorrowChecker::FunctionSummary>& get_bc_infos();
 public:
     template <std::input_iterator It>
     void pushScopeWithConstLock(It begin, It end);
@@ -33,7 +35,6 @@ public:
                             // we want to steal it
     std::vector<CFGNodeManager> function_cfgs;
     std::vector<std::pair<Error, std::string>>* write_errors_to = nullptr;
-    std::unordered_map<std::string, BorrowChecker::FunctionSummary> function_borrow_checker_infos;
     std::string block_hash;
     bool has_error = false;
 

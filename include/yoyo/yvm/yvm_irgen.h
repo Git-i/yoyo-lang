@@ -42,6 +42,7 @@ public:
     virtual void doConst(ConstantDeclaration* decl) override { (*this)(decl); };
     virtual void doUnaryOperator(OverloadDetailsUnary*, TokenType tok) override;
     NativeTy* toNativeType(const Type& type);
+    static Yvm::Type toTypeEnum(NativeTy* type);
     Yvm::Type toTypeEnum(const Type& type);
 
     void doFunctionInternal(std::string fn_name, const FunctionSignature& sig,

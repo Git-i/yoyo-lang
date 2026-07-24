@@ -17,7 +17,9 @@ extern "C" const char* __asan_default_options() {
     // NEED TO REPORT THIS ISSUE
     return "detect_container_overflow=0";
 }
-Engine::Engine() {}
+Engine::Engine() {
+    function_borrow_checker_infos = std::make_unique<decltype(function_borrow_checker_infos)::element_type>();
+}
 
 std::string_view Engine::viewString(void* str) {
     struct String {

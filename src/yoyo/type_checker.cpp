@@ -315,7 +315,7 @@ auto normalize_type(
     iterated_type.name = iterated_type.full_name_no_generics();
     auto iterator = UnsaturatedTypeIterator(iterated_type);
     Statement* current_stat = nullptr;
-    if (!tp.block_hash.empty() && tp.module) {
+    if (!tp.block_hash.empty() && tp.module && tp.subtypes.empty()) {
         // if the type is already normalized, skip to subtypes
         // __builtin_debgtrap();
     } else if (iterator.is_end()) {
@@ -1023,9 +1023,13 @@ FunctionType TypeChecker::operator()(BinaryOperation* expr) const {
     case DoubleDotEqual:
         irgen->error(Error(expr, "Not implemented yet"));
         return {};
-    case DoubleDot:
-        irgen->error(Error(expr, "Not implemented yet"));
-        return {};
+    case DoubleDot: {
+        auto lhs = std::visit(targetless(), expr->lhs->toVariant());
+        auto rhs = std::visit(targetless(), expr->rhs->toVariant());
+        state->add_constraint(EqualConstraint{ lhs, rhs , expr });
+        expr->evaluated_type = Type{.name = "range", .subtypes = {lhs}, .module = core_module, .block_hash = "core::"};
+        return expr->evaluated_type;
+    }
     default:
         irgen->error(Error(expr, "Internal error"));
         debugbreak();

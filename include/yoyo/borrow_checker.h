@@ -798,6 +798,10 @@ struct BorrowCheckVisitor {
     void operator()(DerefOperation*);
     // ret has a special case here because its used to fill the return type of the summary
     void operator()(RetInstruction*);
+    // for this we need to verify two things
+    // - all mutable domains are exclusive
+    // - all input domains are valid
+    void operator()(CallFunctionInstruction*);
 };
 // used primarily for error reporting, It contains information about why
 // a domain was killed
