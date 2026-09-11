@@ -77,7 +77,7 @@ endif
 
 if backend == 'yvm' or backend == 'both'
     yoyo_vm = subproject('yoyo-vm')
-    deps += [yoyo_vm.get_variable('yoyo_vm_dep'), dependency('libffi')]
+    deps += [yoyo_vm.get_variable('yoyo_vm_dep'), dependency('libffi'), dependency('minicoro')]
     sources += [
         'include/yoyo/yvm/yvm_irgen.h',
         'include/yoyo/yvm/yvm_engine.h',
@@ -112,7 +112,7 @@ endif
 yoyo_lib = library(
     'yoyo',
     sources,
-    include_directories: ['include/yoyo', 'subprojects/minicoro'],
+    include_directories: ['include/yoyo'],
     dependencies: deps,
     cpp_args: yoyo_args)
 yoyo_dep = declare_dependency(compile_args: dependency_args, include_directories: 'include/yoyo', link_with: yoyo_lib,dependencies: deps)

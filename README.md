@@ -21,6 +21,20 @@ Notes:
 
 Expressions have mostly the same syntax and precedence rules as C++.
 
+## Building
+
+After cloning the repository you can run the following to build the project
+
+```bash
+meson setup builddir
+cd builddir
+meson compile
+```
+
+Inside `builddir/` there should be the dynamic library for the compiler.
+
+If you need to test out the compiler there is a [Qt/QML frontend that I hacked together](https://github.com/Git-i/yoyo_viz)
+
 ## Memory Safety
 
 The memory safety approach used here is a variation of the borrow checker inspired
